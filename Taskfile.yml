@@ -1,0 +1,136 @@
+version: '3'
+
+vars:
+  GODOT: '{{.GODOT | default "/Users/apprenticegc/Work/lunar-horse/tools/Godot_mono.app/Contents/MacOS/Godot"}}'
+  GODOT_PROJECT: 'project/hosts/complete-app'
+  BUILD_DIR: 'build'
+  ASSEMBLY: 'complete-app'
+  UNIFY: 'dotnet tool run unify-build --'
+  # GitVersion via local tool; falls back to 0.1.0 when the repo has no commits yet.
+  GITVERSION_MAJORMINORPATCH:
+    sh: 'dotnet tool run dotnet-gitversion /output json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get(\"MajorMinorPatch\",\"0.1.0\"))" 2>/dev/null || echo 0.1.0'
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  restore:
+    desc: Restore dotnet tools (unify-build, gitversion)
+    cmds:
+      - dotnet tool restore
+
+  build:
+    desc: Build the Godot .NET project (dotnet build)
+    dir: '{{.GODOT_PROJECT}}'
+    cmds:
+      - dotnet build
+
+  build:release:
+    desc: Build the Godot .NET project in Release configuration
+    dir: '{{.GODOT_PROJECT}}'
+    cmds:
+      - dotnet build -c Release
+
+  format:
+    desc: Run dotnet format on the project
+    dir: '{{.GODOT_PROJECT}}'
+    cmds:
+      - dotnet format
+
+  run:
+    desc: Run the Godot project (editor)
+    cmds:
+      - '{{.GODOT}} --path {{.GODOT_PROJECT}}'
+
+  run:headless:
+    desc: Run the Godot project headless (verification run)
+    cmds:
+      - '{{.GODOT}} --headless --path {{.GODOT_PROJECT}}'
+
+  version:
+    desc: Print the GitVersion-derived MajorMinorPatch used for artifacts
+    cmds:
+      - echo "{{.GITVERSION_MAJORMINORPATCH}}"
+
+  version:full:
+    desc: Print full GitVersion JSON output
+    cmds:
+      - dotnet tool run dotnet-gitversion /output json
+
+  build:godot:
+    desc: Export the Godot app for all configured platforms via UnifyBuild (version from GitVersion)
+    deps: [restore]
+    cmds:
+      - '{{.UNIFY}} BuildGodot'
+    env:
+      GITVERSION_MAJORMINORPATCH: "{{.GITVERSION_MAJORMINORPATCH}}"
+
+  build:godot:desktop:
+    desc: Export the Godot app for desktop platforms only via UnifyBuild
+    deps: [restore]
+    cmds:
+      - '{{.UNIFY}} BuildGodotDesktop'
+    env:
+      GITVERSION_MAJORMINORPATCH: "{{.GITVERSION_MAJORMINORPATCH}}"
+
+  artifacts:
+    desc: List exported artifacts under build/_artifacts/<version>/godot/
+    cmds:
+      - ls -la {{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/
+
+  changelog:
+    desc: Generate CHANGELOG.md from conventional commits (unreleased + tagged)
+    cmds:
+      - git-cliff -o CHANGELOG.md
+
+  changelog:unreleased:
+    desc: Print the unreleased changelog section to stdout
+    cmds:
+      - git-cliff --unreleased
+
+  changelog:tag:
+    desc: Generate changelog and create a version tag
+    cmds:
+      - git-cliff --tag {{.CLI_ARGS}}
+
+  repomix:
+    desc: Pack the repo into a single file for LLM context (repomix-output.xml)
+    cmds:
+      - repomix
+
+  repomix:md:
+    desc: Pack the repo as markdown
+    cmds:
+      - repomix --style markdown
+
+  export:debug:macos:
+    desc: Export a macOS debug build directly via Godot (bypasses UnifyBuild)
+    cmds:
+      - '{{.GODOT}} --headless --path {{.GODOT_PROJECT}} --export-debug "macOS" {{.BUILD_DIR}}/{{.ASSEMBLY}}.app'
+
+  clean:
+    desc: Remove build artifacts and Godot mono temp files
+    cmds:
+      - rm -rf {{.BUILD_DIR}}/_artifacts
+      - rm -rf {{.GODOT_PROJECT}}/.godot/mono
+      - rm -rf {{.GODOT_PROJECT}}/bin {{.GODOT_PROJECT}}/obj
+
+  hooks:install:
+    desc: Install pre-commit hooks into .git
+    cmds:
+      - pre-commit install --install-hooks -t commit-msg -t pre-commit
+
+  hooks:run:
+    desc: Run pre-commit on all files
+    cmds:
+      - pre-commit run --all-files
+
+  verify:
+    desc: Build .NET + headless run + Godot desktop export via UnifyBuild
+    cmds:
+      - task build
+      - task run:headless
+      - task build:godot:desktop
+      - task artifacts

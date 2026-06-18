@@ -1,0 +1,36 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: "^project/hosts/complete-app/.godot/"
+      - id: end-of-file-fixer
+        exclude: "^project/hosts/complete-app/.godot/"
+      - id: check-yaml
+        files: "^(.pre-commit-config.yaml|cliff.toml|Taskfile.yml|GitVersion.yml)$"
+      - id: check-toml
+        files: "\\.toml$"
+      - id: check-json
+        files: "repomix\\.config\\.json$"
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: detect-private-key
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.8.3
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
+
+  - repo: local
+    hooks:
+      - id: dotnet-format
+        name: dotnet format (Godot .NET project)
+        entry: dotnet format project/hosts/complete-app/complete-app.csproj --include
+        language: system
+        files: "project/hosts/complete-app/.*\\.cs$"
+        pass_filenames: true
+        require_serial: true

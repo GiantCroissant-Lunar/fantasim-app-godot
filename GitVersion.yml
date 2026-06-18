@@ -1,0 +1,18 @@
+# GitVersion 6.x configuration.
+# Trunk-based with Mainline version strategy so every commit on main
+# produces a deployable version without pre-bumping.
+workflow: TrunkBased/preview1
+strategies:
+  - ConfiguredNextVersion
+  - Mainline
+assembly-versioning-scheme: MajorMinorPatch
+assembly-file-versioning-scheme: MajorMinorPatch
+tag-prefix: "[vV]"
+version-in-branch-pattern: "releases?(?:/|\\-)?(?<version>\\d+(?:\\.\\d+){0,3})"
+major-version-bump-message: "^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(?:\\([^n]+\\))?(?:!)?:"
+minor-version-bump-message: "^feat(?:\\([^)]+\\))?:"
+patch-version-bump-message: "^fix(?:\\([^)]+\\))?:"
+no-bump-message: "\\+semver:\\s*(none|skip)"
+commit-date-format: "yyyy-MM-dd"
+ignore:
+  commits-before: "2026-01-01"

@@ -1,0 +1,30 @@
+# Godot 4+ specific ignores
+.godot/
+/android/
+
+# .NET build artifacts
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+*.pidb
+*.bock
+*.lock.json
+*.nuget.props
+*.nuget.targets
+
+# Godot mono temp
+.godot/mono/
+.nuke/temp/
+
+# Tool outputs
+build/
+repomix-output.*
+CHANGELOG.md
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
