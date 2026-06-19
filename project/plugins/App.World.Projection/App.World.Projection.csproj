@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.World.Projection</RootNamespace>
+    <AssemblyName>FantaSim.App.World.Projection</AssemblyName>
+    <ServiceArchiTier>T3</ServiceArchiTier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+
+  <!--
+    T3 field projection. App-side only: references the App.World T1 contract
+    (FantaSim.App.World.Contracts) and the R3/DynamicData reactive packages.
+    No Godot, no fantasim-world types, no Akka, no iii. The projection consumes
+    WorldFieldValues/WorldScalarFieldValues DTOs and the GenerationChanged
+    callback surface exposed by IService, and projects them into R3
+    observables and an ObservableCollection of view models.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="R3" />
+    <PackageReference Include="DynamicData" />
+  </ItemGroup>
+
+</Project>
