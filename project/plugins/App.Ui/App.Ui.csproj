@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.Ui</RootNamespace>
+    <AssemblyName>FantaSim.App.Ui</AssemblyName>
+    <ServiceArchiTier>T3</ServiceArchiTier>
+  </PropertyGroup>
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\contracts\App.Ui\App.Ui.csproj" />
+    <ProjectReference Include="..\..\contracts\App.Resource\App.Resource.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="GiantCroissant.CrosscutFoundation.Messaging.Contracts" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+</Project>

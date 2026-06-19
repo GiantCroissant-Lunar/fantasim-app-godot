@@ -1,0 +1,23 @@
+<Project Sdk="Godot.NET.Sdk/4.6.3">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.Resource.Bundle</RootNamespace>
+    <AssemblyName>FantaSim.App.Resource.Bundle.Seam</AssemblyName>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <ServiceArchiTier>T4</ServiceArchiTier>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\contracts\App.Resource\App.Resource.csproj" />
+    <ProjectReference Include="..\App.Resource\App.Resource.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" Version="0.1.5" />
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Hosting" Version="0.1.5" />
+    <PackageReference Include="GiantCroissant.RegistryArchi.Contracts" Version="0.1.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+  </ItemGroup>
+</Project>

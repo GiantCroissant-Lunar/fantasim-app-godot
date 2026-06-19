@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <RootNamespace>FantaSim.App.SceneFlow</RootNamespace>
+    <AssemblyName>FantaSim.App.SceneFlow.Contracts</AssemblyName>
+    <ServiceArchiTier>T1</ServiceArchiTier>
+  </PropertyGroup>
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" />
+    <PackageReference Include="GiantCroissant.ServiceArchi.Contracts" />
+    <PackageReference Include="GiantCroissant.ServiceArchi.SourceGen" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

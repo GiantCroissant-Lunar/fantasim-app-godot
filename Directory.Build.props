@@ -1,0 +1,19 @@
+<Project>
+
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <DefaultItemExcludes>$(DefaultItemExcludes);GeneratedOut\**;**\GeneratedOut\**</DefaultItemExcludes>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <UseProjectReferences Condition="'$(UseProjectReferences)' == ''">false</UseProjectReferences>
+    <PlateProjectsRoot Condition="'$(PlateProjectsRoot)' == ''">/Users/apprenticegc/Work/lunar-horse/plate-projects</PlateProjectsRoot>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+</Project>

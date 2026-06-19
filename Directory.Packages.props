@@ -1,0 +1,42 @@
+<Project>
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" Version="0.1.5" />
+    <PackageVersion Include="GiantCroissant.PluginArchi.Extensibility.Hosting" Version="0.1.5" />
+    <PackageVersion Include="GiantCroissant.PluginArchi.Extensibility.Hosting.Abstractions" Version="0.1.5" />
+    <PackageVersion Include="GiantCroissant.PluginArchi.SourceGenerators" Version="0.1.5" PrivateAssets="all" />
+    <PackageVersion Include="GiantCroissant.ServiceArchi.Contracts" Version="0.1.1" />
+    <PackageVersion Include="GiantCroissant.ServiceArchi.Core" Version="0.1.1" />
+    <PackageVersion Include="GiantCroissant.ServiceArchi.SourceGen" Version="0.1.1" PrivateAssets="all" />
+    <PackageVersion Include="GiantCroissant.RegistryArchi.Contracts" Version="0.1.1" />
+    <PackageVersion Include="GiantCroissant.RegistryArchi.Core" Version="0.1.1" />
+    <PackageVersion Include="GiantCroissant.DependencyArchi.Abstractions" Version="0.1.1" />
+    <PackageVersion Include="GiantCroissant.DependencyArchi.MicrosoftExtensions" Version="0.1.1" />
+    <PackageVersion Include="GiantCroissant.DependencyArchi.SourceGenerators" Version="0.1.1" PrivateAssets="all" />
+    <PackageVersion Include="GiantCroissant.CrosscutFoundation.Messaging.Contracts" Version="0.2.2" />
+    <PackageVersion Include="GiantCroissant.CrosscutFoundation.Messaging.MessagePipe" Version="0.2.2" />
+    <PackageVersion Include="GiantCroissant.CrosscutFoundation.Messaging.MessagePipe.ServiceArchi" Version="0.2.2" />
+    <PackageVersion Include="GiantCroissant.CrosscutFoundation.Logging.Contracts" Version="0.2.2" />
+    <PackageVersion Include="GiantCroissant.CrosscutFoundation.Logging.Console" Version="0.2.2" />
+    <PackageVersion Include="GiantCroissant.CrosscutFoundation.Logging.Console.ServiceArchi" Version="0.2.2" />
+    <PackageVersion Include="BoomHud.Foundation" Version="0.1.18" />
+    <PackageVersion Include="BoomHud.Godot.Runtime" Version="0.1.18" />
+    <PackageVersion Include="UnifyEcs.Core" Version="0.1.1" />
+    <PackageVersion Include="UnifyEcs.Runtime.Arch" Version="0.1.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="Akka" Version="1.5.69" />
+    <PackageVersion Include="Akka.TestKit.Xunit2" Version="1.5.69" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageVersion Include="xunit" Version="2.9.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+</Project>
