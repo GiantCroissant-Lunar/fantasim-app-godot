@@ -8,6 +8,30 @@
   <ItemGroup>
     <CompilerVisibleProperty Include="ServiceArchiTier" />
   </ItemGroup>
+
+  <!--
+    T3 ECS field-reduction path. The sibling fantasim-world field/catalog/reducer contracts
+    are referenced ONLY via project references rooted at $(YokanProjectsRoot) when
+    UseProjectReferences=true. The local lunar-horse feed does not carry FantaSim.World.*
+    packages today, so the default (UseProjectReferences=false) build compiles only the
+    Akka/ECS actor spine; the field components + ReduceFieldsSystem are compiled under
+    USE_PROJECT_REFERENCES. T1 contracts (App.Ecs.Contracts) never reference world-lib types.
+  -->
+  <PropertyGroup Condition="'$(UseProjectReferences)' == 'true'">
+    <DefineConstants>$(DefineConstants);USE_PROJECT_REFERENCES</DefineConstants>
+  </PropertyGroup>
+
+  <!--
+    InternalsVisibleTo: EcsWorldActor/EcsSupervisorActor/EcsMessages + the ECS field components
+    and ReduceFieldsSystem are internal so they are not part of the plugin's public surface.
+    Behavioral coverage of supervisor routing, world lifecycle, duplicate handling, UpdateAll
+    fan-out, supervision, and field reduction determinism requires direct TestKit / type access
+    to these actors and components. The minimal attribute below exposes them to the test
+    assembly only; no other assembly gains access and no public API is added.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="App.Ecs.Tests" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\contracts\App.Ecs\App.Ecs.csproj" />
   </ItemGroup>
@@ -17,5 +41,16 @@
     <PackageReference Include="GiantCroissant.CrosscutFoundation.Messaging.Contracts" />
     <PackageReference Include="Akka" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <!--
+    Sibling fantasim-world field contracts/plugins. World.Fields.Core transitively brings in
+    World.Fields (+ TimeDete.Time.Primitives + RegistryArchi, both present in the local feed).
+    TruthStream is NOT referenced here: ReduceFieldsSystem is reducer/catalog-only; the
+    cross-path determinism test lives in App.Ecs.Tests and pulls TruthStream in itself.
+  -->
+  <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Fields\World.Fields.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\World.Fields.Core\World.Fields.Core.csproj" />
   </ItemGroup>
 </Project>
