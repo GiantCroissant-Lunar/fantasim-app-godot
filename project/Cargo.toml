@@ -1,0 +1,7 @@
+# Cargo workspace for the native Rust roles used by fantasim-app-godot.
+#   native/iii-bridge -> godot-rust (gdext) cdylib loaded INTO the Godot host (IiiClient node)
+[workspace]
+resolver = "2"
+members = [
+    "native/iii-bridge",
+]
