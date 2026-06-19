@@ -1,0 +1,16 @@
+{
+  "3": {
+    "class_type": "KSampler",
+    "inputs": { "seed": 0, "steps": 20, "cfg": 7.0, "sampler_name": "euler", "scheduler": "normal", "denoise": 1.0, "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["5", 0] }
+  },
+  "4": { "class_type": "CheckpointLoaderSimple", "inputs": { "ckpt_name": "PLACEHOLDER_CKPT" } },
+  "5": { "class_type": "EmptyLatentImage", "inputs": { "width": 768, "height": 768, "batch_size": 1 } },
+  "6": { "class_type": "CLIPTextEncode", "inputs": { "text": "PLACEHOLDER_PROMPT", "clip": ["4", 1] } },
+  "7": { "class_type": "CLIPTextEncode", "inputs": { "text": "low quality, blurry, multiple objects, cluttered background, cropped", "clip": ["4", 1] } },
+  "8": { "class_type": "VAEDecode", "inputs": { "samples": ["3", 0], "vae": ["4", 2] } },
+  "9": { "class_type": "SaveImage", "inputs": { "filename_prefix": "fantasim", "images": ["8", 0] } },
+  "10": { "class_type": "TripoSRModelLoader", "inputs": { "model": "TripoSR_model.ckpt", "chunk_size": 8192 } },
+  "11": { "class_type": "TripoSRSampler", "inputs": { "model": ["10", 0], "reference_image": ["8", 0], "reference_mask": ["13", 1], "geometry_resolution": 256, "threshold": 25.0 } },
+  "12": { "class_type": "TripoSRViewer", "inputs": { "mesh": ["11", 0] } },
+  "13": { "class_type": "RemoveBackgroundNode", "inputs": { "image": ["8", 0] } }
+}

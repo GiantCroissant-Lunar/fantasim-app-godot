@@ -1,0 +1,4 @@
+# Python iii workers (comfy/blender/pipeline). Install into project/workers/.venv:
+#   python3 -m venv project/workers/.venv
+#   project/workers/.venv/bin/pip install -r project/workers/requirements.txt
+iii-sdk==0.19.4
