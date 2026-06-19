@@ -7,6 +7,12 @@
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Akka" Version="1.5.69" />
+    <ProjectReference Include="..\..\plugins\App.Common\App.Common.csproj" />
+    <ProjectReference Include="..\..\plugins\App.Resource\App.Resource.csproj" />
+    <ProjectReference Include="..\..\plugins\App.Resource.Bundle.Seam\App.Resource.Bundle.Seam.csproj" />
+    <ProjectReference Include="..\..\plugins\App.SceneFlow\App.SceneFlow.csproj" />
+    <ProjectReference Include="..\..\plugins\App.Ecs\App.Ecs.csproj" />
+    <ProjectReference Include="..\..\plugins\App.Ui\App.Ui.csproj" />
+    <ProjectReference Include="..\..\plugins\App.Ui.Seam\App.Ui.Seam.csproj" />
   </ItemGroup>
 </Project>
