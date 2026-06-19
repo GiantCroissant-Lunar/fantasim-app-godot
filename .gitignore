@@ -23,6 +23,13 @@ build/
 repomix-output.*
 CHANGELOG.md
 
+# Staged collectible-bundle plugin DLLs (copied from each tier's build output before PCK export).
+# Bundle sources (manifest.json + scenes) are tracked; the packed .dll is a build artifact.
+project/bundles/*/*.dll
+
+# Build-generated symlink (bundle:link): content-app/bundles -> ../../bundles
+project/hosts/content-app/bundles
+
 # OS / editor cruft
 .DS_Store
 Thumbs.db

@@ -10,6 +10,8 @@ public partial class Host : Node
 {
     private AppComposition? _composition;
     private CollectibleBundles? _collectibleBundles;
+    private FantaSim.App.Ecs.IService? _ecs;
+    private bool _ecsWorldReady;
 
     public override void _Ready()
     {
@@ -30,6 +32,42 @@ public partial class Host : Node
 
         GD.Print("[Host] composed services: Resource, SceneFlow, Ecs, World, Command, Ui");
         GD.Print("[Host] composition activated.");
+
+        // Enter the root scene tier and KEEP it loaded (the correct flow — re-entry/teardown is a
+        // test concern, not the running app). Deferred so _Ready stays non-blocking and the bundle's
+        // entry scene mounts on the main thread after the tree is ready.
+        Callable.From(EnterInitialScenes).CallDeferred();
+    }
+
+    // Boot the real scene flow: enter the "stage" tier under app-root. SceneFlow finds no resident
+    // activator, loads stage.pck via the Resource service into a collectible ALC, the bundle's
+    // StagePlugin registers its activator across the ALC boundary, and SceneFlow activates it.
+    private async void EnterInitialScenes()
+    {
+        try
+        {
+            var registry = _composition!.Bootstrap.Registry;
+            var sceneFlow = registry.Get<FantaSim.App.SceneFlow.IService>();
+            var resource = registry.Get<FantaSim.App.Resource.IService>();
+
+            var stage = await sceneFlow.EnterAsync(new FantaSim.App.SceneFlow.SceneRequest("stage"));
+            GD.Print($"[Host] entered scene '{stage.SceneId}'; bundleLoaded={resource.IsLoaded("stage")}; activeScenes={sceneFlow.ActiveScenes.Count}");
+
+            // Enter assist UNDER stage — a nested dynamic parent. Assist shares the one app kernel
+            // through stage's child provider, across two collectible ALCs (same kernel hash in the log).
+            var assist = await sceneFlow.EnterAsync(new FantaSim.App.SceneFlow.SceneRequest("assist", "stage"));
+            GD.Print($"[Host] entered scene '{assist.SceneId}' under '{assist.ParentSceneId}'; bundleLoaded={resource.IsLoaded("assist")}; activeScenes={sceneFlow.ActiveScenes.Count}");
+        }
+        catch (Exception ex)
+        {
+            GD.PushError($"[Host] initial scene entry failed: {ex}");
+        }
+    }
+
+    public override void _Process(double delta)
+    {
+        if (!_ecsWorldReady || _ecs is null) return;
+        _ecs.UpdateAll((float)delta);
     }
 
     private CollectibleBundles LoadCollectibleBundles()
@@ -80,6 +118,19 @@ public partial class Host : Node
         composition.Bootstrap.Registry.Register<FantaSim.App.Ecs.IService>(
             ecs,
             new ServiceRegistration { Tags = new[] { "ecs" }, Description = "ECS service" });
+        _ecs = ecs;
+        try
+        {
+            ecs.CreateWorld(new FantaSim.App.Ecs.EcsWorldSpec("main"));
+            ecs.InitializeWorld("main");
+            _ecsWorldReady = true;
+            GD.Print("[Host] ECS world 'main' created + initialized");
+        }
+        catch (Exception ex)
+        {
+            _ecsWorldReady = false;
+            GD.PushError($"[Host] ECS bootstrap failed: {ex.Message}");
+        }
         GD.Print("[Host] registered: Ecs");
     }
 

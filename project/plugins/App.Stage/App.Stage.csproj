@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.Stage</RootNamespace>
+    <AssemblyName>FantaSim.App.Stage</AssemblyName>
+    <!--
+      First real collectible scene-tier bundle. Loaded from stage.pck into its own collectible
+      ALC at runtime; the host does NOT reference this project (a resident reference would defeat
+      collectibility, and collectible-bundles.json excludes FantaSim.App.Stage from the shared
+      policy). Lean slice: a plain ServiceCollection child scope — no DependencyArchi scope plans,
+      no world-stage presenter.
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ISceneActivator / ISceneActivation. Resolves from the shared parent ALC at runtime
+         (FantaSim.App.SceneFlow.Contracts is shared by the "FantaSim.App." policy prefix); only
+         FantaSim.App.Stage.dll is packed into the PCK. -->
+    <ProjectReference Include="..\..\contracts\App.SceneFlow\App.SceneFlow.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="GiantCroissant.ServiceArchi.Contracts" />
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" />
+    <!-- Source generator completes the [Plugin] partial (emits IPlugin.Descriptor). -->
+    <PackageReference Include="GiantCroissant.PluginArchi.SourceGenerators" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+</Project>

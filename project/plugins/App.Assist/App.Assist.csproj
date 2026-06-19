@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.Assist</RootNamespace>
+    <AssemblyName>FantaSim.App.Assist</AssemblyName>
+    <!--
+      Second collectible scene-tier bundle, entered UNDER "stage" (dynamic parent). Mirrors App.Stage
+      (lean: plain ServiceCollection child scope, no DependencyArchi, no presenter). The host does NOT
+      reference this project; collectible-bundles.json excludes FantaSim.App.Assist from the shared
+      policy so it loads into its own collectible ALC, and AssistActivator forwards the shared kernel
+      from its parent (stage), proving the kernel flows down the parent chain across two ALCs.
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\contracts\App.SceneFlow\App.SceneFlow.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="GiantCroissant.ServiceArchi.Contracts" />
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" />
+    <PackageReference Include="GiantCroissant.PluginArchi.SourceGenerators" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,9 @@
+{
+  "bundleId": "assist",
+  "displayName": "Assist",
+  "version": "0.1.0",
+  "pluginAssembly": "FantaSim.App.Assist.dll",
+  "metadata": {
+    "bundleType": "scene-tier"
+  }
+}

@@ -2,11 +2,12 @@
   "bundleId": "stage",
   "displayName": "Stage",
   "version": "0.1.0",
-  "entryScene": "res://bundles/stage/scenes/stage_entry.tscn",
+  "entryScene": "scenes/stage_entry.tscn",
+  "pluginAssembly": "FantaSim.App.Stage.dll",
   "scenes": [
-    "res://bundles/stage/scenes/stage_entry.tscn"
+    "scenes/stage_entry.tscn"
   ],
   "metadata": {
-    "bundleType": "content-only"
+    "bundleType": "scene-tier"
   }
 }
