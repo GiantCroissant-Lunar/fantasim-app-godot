@@ -1,0 +1,16 @@
+using ServiceArchi.Contracts;
+using ServiceArchi.Contracts.Attributes;
+
+namespace FantaSim.App.Ecs;
+
+[ServiceContract]
+[SelectionStrategy(SelectionMode.HighestPriority)]
+public interface IService
+{
+    EcsWorldInfo CreateWorld(EcsWorldSpec spec);
+    bool DestroyWorld(string worldId);
+    EcsWorldInfo GetWorld(string worldId);
+    IReadOnlyList<EcsWorldInfo> ListWorlds();
+    void UpdateWorld(string worldId, float deltaTime);
+    void UpdateAll(float deltaTime);
+}
