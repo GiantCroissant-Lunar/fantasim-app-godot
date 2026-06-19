@@ -45,3 +45,7 @@ project/hosts/complete-app/bin/*.dll
 Thumbs.db
 .vscode/
 .idea/
+
+# iii engine --use-default-config runtime data written to cwd; Godot csproj backups
+data/
+*.csproj.old
