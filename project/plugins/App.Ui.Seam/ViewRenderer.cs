@@ -193,7 +193,7 @@ public sealed class ViewRenderer : IDisposable
         var home = Text(agentRuntime, "homePathLabel", "not loaded");
         var error = Text(agentRuntime, "error");
 
-        SetLabel(shell, "RuntimeModeValue", Text(agentRuntime, "runtime", "iii + Hermes through App.Command"));
+        SetLabel(shell, "RuntimeModeValue", Text(agentRuntime, "runtime", "local in-process orchestration"));
         SetLabel(shell, "RuntimeProfileValue", string.IsNullOrWhiteSpace(home) ? profile : $"{profile} - {home}");
         SetLabel(shell, "RuntimeModelValue", Text(agentRuntime, "modelLabel", "glm-5.2 via Ollama Cloud / Zai"));
         SetLabel(shell, "RuntimeWorkerValue", Text(agentRuntime, "workerState", "not loaded"));
