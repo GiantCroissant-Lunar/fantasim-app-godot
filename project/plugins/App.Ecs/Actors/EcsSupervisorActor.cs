@@ -19,25 +19,42 @@ internal sealed class EcsSupervisorActor : ReceiveActor
 
         Receive<CreateWorld>(m =>
         {
-            if (_worldActors.ContainsKey(m.Spec.WorldId))
+            if (_worldActors.TryGetValue(m.Spec.WorldId, out var existing))
             {
-                _worldActors[m.Spec.WorldId].Tell(new GetWorldSnapshot(m.Spec.WorldId));
+                // Forward so the world actor's GetWorldSnapshot reply returns to the original
+                // sender (the IService.CreateWorld caller), not to this supervisor.
+                existing.Forward(new GetWorldSnapshot(m.Spec.WorldId));
                 return;
             }
             var child = Context.ActorOf(
                 Props.Create(() => new EcsWorldActor(m.Spec, _loggerFactory)),
                 m.Spec.WorldId);
             _worldActors[m.Spec.WorldId] = child;
+            Context.Watch(child);
             _log.LogInformation("Created ECS world: {WorldId}", m.Spec.WorldId);
-            child.Tell(new GetWorldSnapshot(m.Spec.WorldId));
+            child.Forward(new GetWorldSnapshot(m.Spec.WorldId));
         });
 
         Receive<DestroyWorld>(m =>
         {
             if (_worldActors.TryGetValue(m.WorldId, out var child))
+            {
+                // Drop the mapping before forwarding so ListWorlds/UpdateAll never
+                // route to a child that is stopping. Terminated is only a backup.
+                _worldActors.Remove(m.WorldId);
                 child.Forward(m);
+            }
             else
                 Sender.Tell(false);
+        });
+
+        // Remove dead world actors from the map so ListWorlds/UpdateAll no longer
+        // route to a stopped child (which would silently drop or time out).
+        Receive<Terminated>(m =>
+        {
+            var id = m.ActorRef.Path.Name;
+            if (_worldActors.TryGetValue(id, out var child) && child.Equals(m.ActorRef))
+                _worldActors.Remove(id);
         });
 
         Receive<UpdateWorld>(m =>
