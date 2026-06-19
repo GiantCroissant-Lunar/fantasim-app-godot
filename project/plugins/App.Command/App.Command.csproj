@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.Command</RootNamespace>
+    <AssemblyName>FantaSim.App.Command</AssemblyName>
+    <ServiceArchiTier>T3</ServiceArchiTier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+
+  <!--
+    App.Command.Tests exercises LocalOrchestrator and Service internals against fakes
+    registered in the IRegistry. The orchestrator resolves App.World / App.Ecs services
+    via ServiceArchi IRegistry.Get<T>; the test fakes live in the test assembly.
+  -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="App.Command.Tests" />
+  </ItemGroup>
+
+  <!--
+    T3 command orchestrator. App-side T1 contracts are always referenced. The iii native
+    bridge (Rust/Hermes) is deferred behind the IiiBridgeOrchestrator stub; this project
+    does not reference App.Agent, App.Stage, or any Hermes/Python bridge.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\contracts\App.Command\App.Command.csproj" />
+    <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+    <ProjectReference Include="..\..\contracts\App.Ecs\App.Ecs.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="GiantCroissant.ServiceArchi.Contracts" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+</Project>
