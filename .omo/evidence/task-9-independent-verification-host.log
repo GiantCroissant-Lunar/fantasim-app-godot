@@ -1,0 +1,173 @@
+# Task 9 Independent Verification - Host composition and runtime wiring
+# Generated: 2026-06-19
+# Verifier: independent read-only pass
+
+## Scope
+- Plan: .omo/plans/iii-runtime-spine.md Task 9
+- Worker evidence: .omo/evidence/task-9-iii-runtime-spine.qa.log
+- Changed files inspected:
+  - project/hosts/complete-app/Host.cs
+  - project/hosts/complete-app/complete-app.csproj
+  - project/plugins/App.Common/Bootstrap.cs
+  - project/plugins/App.Ui.Seam/ViewRenderer.cs
+
+## AdversarialVerify verdict
+
+verdict: needs-fix
+confidence: high
+
+### Blocking findings
+
+1. PLAN-ORDER VIOLATION: Projection inserted between World and Command
+   - Plan specifies exact composition order: Resource -> SceneFlow -> Ecs -> World -> Command -> Ui
+   - Current Host.cs _Ready order (lines 24-30): Resource -> SceneFlow -> Ecs -> World -> Projection -> Command -> Ui
+   - ComposeProjection is called between ComposeWorld and ComposeCommand.
+   - Strict reading of the plan: this is a plan-order violation. Functionally it is not broken because ComposeProjection only depends on App.World.IService and ComposeCommand only depends on registry/loggerFactory, so no runtime dependency is violated. Nevertheless the exact sequence in the plan is not followed.
+   - Required fix: either remove ComposeProjection from between World and Command (place it after Ui or integrate it inside ComposeWorld), or formally amend the plan to accept Projection between World and Command.
+
+2. ACCEPTANCE CRITERIA GAP: Smoke logs do not enumerate six composed services
+   - Task 9 acceptance criteria: "headless/export smoke logs six services and no old runtime fallback"
+   - Plan success criterion #6: "Exported/headless app smoke logs six composed services and a real orchestration runtime mode, not iii + Hermes through App.Command fallback."
+   - Actual dev headless smoke output (see task-9-independent-headless-smoke.log):
+       [Host] composition root starting...
+       [Host] composition activated.
+       [Main] Host autoload should have composed all services.
+   - Actual exported headless smoke output (see task-9-independent-exported-headless-smoke.log):
+       [Host] composition root starting...
+       [Host] composition activated.
+       [Main] Host autoload should have composed all services.
+   - The logs do not list six services. They only assert that the autoload "should have composed all services". The "no old runtime fallback" part is satisfied (ViewRenderer fallback changed), but the "logs six services" part is not.
+   - Required fix: add explicit per-service log lines in Host.cs (e.g., GD.Print("[Host] registered: ...") after each registration), or update the acceptance criteria to remove the literal logging requirement.
+
+## Confirmed requirements (no issues)
+
+3. REGISTERED SERVICES
+   - App.World.IService registered in ComposeWorld with tags ["world"], description "World service".
+   - App.World.Projection.Services.FieldProjectionService registered in ComposeProjection with tags ["world", "projection"], description "Field projection service".
+   - App.Command.Orchestration.IWorldOrchestration (LocalOrchestrator) registered in ComposeCommand with tags ["command", "orchestration"], description "World orchestration seam (local in-process)".
+   - App.Command.IService registered in ComposeCommand with tags ["command"], description "Command service".
+   - App.Command.IClient (InProcessClient) registered in ComposeCommand with tags ["command", "client"], description "In-process command client".
+   - Existing Resource, SceneFlow, Ecs, and Ui registrations are preserved; no existing services were removed.
+   - Tags and descriptions are sensible and consistent with existing services.
+
+4. SHARED ASSEMBLY POLICY
+   - Bootstrap.cs SharedAssemblyPolicy prefixes include:
+       "FantaSim.World."
+       "FantaSim.App.World."
+       "FantaSim.App.Command."
+   - Existing prefixes (System., Microsoft., Godot*, PluginArchi., ServiceArchi., RegistryArchi., DependencyArchi., CrosscutFoundation., MessagePipe, BoomHud, R3, ReactiveUI, DynamicData, FantaSim.App., Akka, Newtonsoft.Json) are preserved.
+   - Required policy additions confirmed present.
+
+5. HOST PROJECT REFERENCES
+   - complete-app.csproj includes required ProjectReference entries:
+       App.World
+       App.Command
+       App.World.Projection
+   - Existing references (App.Common, App.Resource, App.Resource.Bundle.Seam, App.SceneFlow, App.Ecs, App.Ui, App.Ui.Seam) are preserved.
+
+6. NO DISALLOWED RUNTIME BEHAVIOR
+   - Host.cs contains no references to Hermes, Python, iii-bridge, App.Agent, App.Stage, or per-tick iii calls.
+   - LocalOrchestrator triggers generation/tick/refresh via command requests; it does not drive per-tick simulation math and does not spawn external processes.
+   - IiiBridgeOrchestrator stub remains deferred and is not registered in Host.cs.
+   - ViewRenderer.cs line 196 fallback changed from "iii + Hermes through App.Command" to "local in-process orchestration".
+   - Note: ViewRenderer.cs line 153 subtitle still contains the word "Hermes" as legacy UI label text, but this is not runtime wiring and is outside the specific fallback called out in the plan.
+
+## Independent command evidence
+
+### dotnet build project/FantaSim.sln (default)
+Command: dotnet build project/FantaSim.sln
+Working dir: /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot
+Result: Build succeeded. 0 Warning(s), 0 Error(s).
+Time Elapsed: ~00:00:01.63
+
+### dotnet build -p:UseProjectReferences=true project/FantaSim.sln
+Command: dotnet build -p:UseProjectReferences=true project/FantaSim.sln
+Result: Build succeeded. 21 Warning(s), 0 Error(s).
+Warnings breakdown (all pre-existing, none introduced by Task 9):
+  - 2x NU1903 from fantasim-world/project/plugins/World.TruthStream.Core (MessagePack 3.1.4)
+  - 19x xUnit1031 from project/tests/App.Ecs.Tests
+
+### Targeted tests (all run --no-build after projrefs build)
+App.Command.Tests:  Passed 11/11  (Results: project/tests/App.Command.Tests/TestResults/task-9-independent-app-command-tests.trx)
+App.World.Tests:    Passed  5/5   (Results: project/tests/App.World.Tests/TestResults/task-9-independent-app-world-tests.trx)
+App.World.Projection.Tests: Passed 4/4 (Results: project/tests/App.World.Projection.Tests/TestResults/task-9-independent-app-world-projection-tests.trx)
+App.Ecs.Tests:      Passed 20/20  (Results: project/tests/App.Ecs.Tests/TestResults/task-9-independent-app-ecs-tests.trx)
+
+### Godot desktop export
+Command: task build:godot:desktop
+Result: Build succeeded.
+UnifyBuild targets:
+  - Compile: Succeeded
+  - BuildGodotDesktop: Succeeded (duration ~0:16)
+Artifacts:
+  - build/_artifacts/5.0.0/godot/osx/complete-app.app
+  - build/_artifacts/5.0.0/godot/osx/complete-app.zip
+  - build/_artifacts/5.0.0/godot/osx/version.json
+
+### Headless smoke (dev project)
+Command: /Users/apprenticegc/Work/lunar-horse/tools/Godot_mono.app/Contents/MacOS/Godot --headless --path project/hosts/complete-app --quit-after 2000
+Output (saved to .omo/evidence/task-9-independent-headless-smoke.log):
+  Godot Engine v4.6.3.stable.mono.official.7d41c59c4 - https://godotengine.org
+  [Host] composition root starting...
+  [Host] composition activated.
+  [Main] Host autoload should have composed all services.
+  [INFO] CoordinatedShutdown invoked ... Exiting with [ExitCode:0].
+Exit code: 0
+
+### Headless smoke (exported app)
+Command: build/_artifacts/5.0.0/godot/osx/complete-app.app/Contents/MacOS/complete-app --headless --quit-after 2000
+Output (saved to .omo/evidence/task-9-independent-exported-headless-smoke.log):
+  Godot Engine v4.6.3.stable.mono.official.7d41c59c4 - https://godotengine.org
+  [Host] composition root starting...
+  [Host] composition activated.
+  [Main] Host autoload should have composed all services.
+  [INFO] CoordinatedShutdown invoked ... Exiting with [ExitCode:0].
+Exit code: 0
+
+## Adversarial probes
+
+### dirty_worktree
+Command: git status --short
+Observation: Exactly the four Task 9 files are modified in the product tree:
+  - project/hosts/complete-app/Host.cs
+  - project/hosts/complete-app/complete-app.csproj
+  - project/plugins/App.Common/Bootstrap.cs
+  - project/plugins/App.Ui.Seam/ViewRenderer.cs
+Other modified/untracked files are from earlier tasks, .omo bookkeeping, AGENTS.md, or vault/handover and were not touched by Task 9.
+
+### stale_state
+Observation: All builds and tests executed fresh with no stale-assembly errors. Godot .godot/mono temp was rebuilt during export. Test results are from the current verification run, not reused worker artifacts.
+
+### misleading_success_output
+Observation:
+  - dotnet build reported actual success (0 errors, no suppressed diagnostics).
+  - Export produced a real complete-app.app bundle and zip (verified by ls).
+  - Headless runs produced real boot logs and exited with code 0.
+  - However, "[Host] composition activated" does NOT by itself prove six service registrations; it only proves _Ready completed without exception.
+
+### long_commands
+  - task build:godot:desktop completed in ~16 seconds.
+  - dotnet build -p:UseProjectReferences=true completed in ~3.4 seconds.
+  - Longest test run: App.Ecs.Tests at ~1 second.
+No commands hung or required timeout extension.
+
+### generated/cached artifacts
+Generated during verification (normal build outputs, not product code):
+  - project/hosts/complete-app/.godot/mono/temp/bin/Debug/
+  - project/plugins/App.Resource.Bundle.Seam/.godot/mono/temp/bin/Debug/
+  - project/plugins/App.Ui.Seam/.godot/mono/temp/bin/Debug/
+  - project/tests/*/TestResults/
+  - build/_artifacts/5.0.0/godot/osx/
+No Task-9 logic depends on these caches.
+
+## Summary
+
+Task 9 functionally wires Host composition, shared policy, and runtime-mode reporting as intended. Builds, targeted tests, Godot export, and both headless smoke runs pass independently.
+
+Under strict adversarial reading of the plan, two issues remain:
+1. ComposeProjection is inserted between ComposeWorld and ComposeCommand, violating the exact stated order Resource -> SceneFlow -> Ecs -> World -> Command -> Ui.
+2. The smoke logs do not enumerate six composed services; they only assert that composition activated.
+
+Both issues are correctable with small changes to Host.cs (reorder and add per-service log lines) or by formally amending the plan/acceptance criteria.
+
+Therefore the independent verification verdict is: needs-fix.

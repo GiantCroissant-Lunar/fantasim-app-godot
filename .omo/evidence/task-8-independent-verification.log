@@ -1,0 +1,111 @@
+# Task 8 Independent Verification Log
+# Plan: .omo/plans/iii-runtime-spine.md
+# Task: 8 App.World.Projection T3 (R3 + ObservableCollection)
+# Verifier: Sisyphus-Junior (independent, read-only)
+# Date: 2026-06-19
+
+## Acceptance criteria (from plan lines 133-138)
+- Create project/plugins/App.World.Projection/ with R3/DynamicData package refs.
+- Field projection service: listens to App.World changes, emits R3 observable updates,
+  maintains ObservableCollection/DynamicData-backed collection of view models.
+- No Godot, no fantasim-world reactive deps.
+- Projection tests pass: subscribed observable emits after generation change;
+  collection count matches seeded fields.
+
+## Files inspected (Task 8 scoped, untracked)
+- project/plugins/App.World.Projection/App.World.Projection.csproj
+- project/plugins/App.World.Projection/AssemblyInfo.cs
+- project/plugins/App.World.Projection/Services/FieldProjectionService.cs
+- project/plugins/App.World.Projection/ViewModels/FieldValueViewModel.cs
+- project/tests/App.World.Projection.Tests/App.World.Projection.Tests.csproj
+- project/tests/App.World.Projection.Tests/FieldProjectionServiceTests.cs
+- project/contracts/App.World/App.World.csproj (T1, dependency)
+- project/contracts/App.World/Services/IService.cs (T1)
+- project/contracts/App.World/Dto/WorldDtos.cs (T1)
+- project/plugins/App.World/App.World.csproj (T3, dependency)
+- project/FantaSim.sln (lines 48-56: App.World, App.World.Projection, tests enrolled)
+- Directory.Packages.props (R3 1.3.1, DynamicData 9.4.31)
+- Directory.Build.props (YokanProjectsRoot)
+
+## Dependency/boundary audit
+- App.World.Projection.csproj refs: App.World T1 contract + R3 + DynamicData. NO Godot, Akka, iii, fantasim-world.
+- App.World T1 (App.World.csproj): only PluginArchi/ServiceArchi packages. Pure.
+- App.World T3 (plugins/App.World/App.World.csproj): NO R3, NO DynamicData. Reactive deps NOT added to fantasim-world orchestrator. Correct.
+- fantasim-world repo: git status shows only untracked AGENTS.md (user-owned, pre-existing). NO diff, NO new deps. Confirmed clean.
+- FieldProjectionService.cs: `using R3;` + System.Collections.ObjectModel.ObservableCollection. Consumes only FantaSim.App.World.Dto types (WorldFieldValues, WorldScalarFieldValues, WorldGenerationChangedEvent). No world-lib types leak.
+- DynamicData referenced in csproj but SourceList/SourceCache not used (plan deviation recorded in ledger; deferred to avoid speculative API). Acceptable: ObservableCollection satisfies the plan's "ObservableCollection/DynamicData-backed" wording.
+
+## Test coverage audit (FieldProjectionServiceTests.cs)
+- 4 tests, all [Fact], deterministic FakeWorldService (no real world-lib):
+  1. Collection_count_matches_seeded_fields_after_construction  -> acceptance "collection count matches seeded fields"
+  2. GenerationChanged_observable_emits_after_generation_change  -> acceptance "subscribed observable emits after generation change"
+  3. Collection_refreshes_to_latest_values_after_generation_change
+  4. Collection_keeps_configured_fields_but_clears_unreported_values_after_change
+- Both plan acceptance criteria explicitly covered by tests 1 and 2.
+
+## Commands run and results
+
+### 1. dotnet build project/plugins/App.World.Projection/App.World.Projection.csproj
+EXIT=0. Build succeeded. 0 Warning(s), 0 Error(s).
+
+### 2. dotnet test project/tests/App.World.Projection.Tests/App.World.Projection.Tests.csproj (default)
+EXIT=0. Passed! Failed: 0, Passed: 4, Skipped: 0, Total: 4, Duration: 10 ms.
+TRX: project/tests/App.World.Projection.Tests/TestResults/task-8-independent-verify.trx
+
+### 3. dotnet test -p:UseProjectReferences=true project/tests/App.World.Projection.Tests/App.World.Projection.Tests.csproj
+EXIT=0. Passed! Failed: 0, Passed: 4, Skipped: 0, Total: 4, Duration: 8 ms.
+TRX: project/tests/App.World.Projection.Tests/TestResults/task-8-independent-verify-projref.trx
+(Note: projection tests only reference App.World T1 + Projection T3, neither of which is UseProjectReferences-gated, so projref mode exercises the same code path.)
+
+### 4. dotnet build project/FantaSim.sln (default)
+EXIT=0. Build succeeded. 17 Warning(s) [all pre-existing xUnit1031 in App.Ecs.Tests], 0 Error(s).
+
+### 5. dotnet build -p:UseProjectReferences=true project/FantaSim.sln
+First run: EXIT=1, Build FAILED. 2 errors, BOTH in project/tests/App.Ecs.Tests/TestSystems.cs:
+  - CS0118: 'World' is a namespace but is used like a type (line 17)
+  - CS0535: 'CountingEntitySystem' does not implement 'IArchSystem.Execute(World, float)' (line 13)
+  TestSystems.cs is a Task 7 file (uses IArchSystem/ArchWorld, ECS field systems). NOT a Task 8 file.
+  This was a STALE_STATE artifact: immediate rebuild succeeded.
+Second run: EXIT=0, Build succeeded. Only pre-existing NU1903 MessagePack warnings from fantasim-world/World.TruthStream.Core (anticipated by task brief).
+Third run: EXIT=0, Build succeeded. Stable.
+
+### Isolated projref builds of Task 8 projects (to decouple from Task 7 defect)
+- dotnet build -p:UseProjectReferences=true project/plugins/App.World.Projection/App.World.Projection.csproj -> EXIT=0, 0 warnings, 0 errors.
+- dotnet build -p:UseProjectReferences=true project/tests/App.World.Projection.Tests/App.World.Projection.Tests.csproj -> EXIT=0, 0 warnings, 0 errors.
+
+## Adversarial class probes
+
+### dirty_worktree
+git status --short shows Task 8 scoped untracked paths exactly:
+  ?? project/plugins/App.World.Projection/
+  ?? project/tests/App.World.Projection.Tests/
+No modifications to source/test/csproj/solution/plan/ledger/AGENTS.md/vault/handover/.omo/run-continuation by this verifier.
+Other dirty/untracked files (App.Ecs, Directory.Build.props, FantaSim.sln M, App.Command, App.World, etc.) belong to Tasks 1-7, NOT Task 8. Distinguished correctly.
+
+### stale_state
+DETECTED: First projref solution build failed due to stale obj/ cache (Task 7 TestSystems.cs 'World' namespace collision under projref). Immediate rebuild succeeded and stayed green. Task 8's own projects never exhibited stale_state. Pre-existing transient, not a Task 8 defect.
+
+### misleading_success_output
+DETECTED in tooling: piping dotnet through `tail` masks the real exit code (reports EXIT=0 on Build FAILED). Caught by re-running with redirect+explicit `$?`. Real exits recorded above. Task 8's own outputs are truthful (4/4 tests, clean builds).
+
+### flaky_tests
+PROBE: 3 consecutive no-build reruns of projection tests. Results: 4/4 passed each run, durations 8ms/8ms/11ms. Deterministic. Not flaky. FakeWorldService is in-memory, no timing/threading/IO dependence.
+
+### long_commands
+All builds/tests completed in <5s wall each. No long-running commands. NU1903 warnings are pre-existing and documented; not treated as failure.
+
+## Plan deviation (from ledger, confirmed)
+DynamicData is referenced in csproj but SourceList/SourceCache deferred; ObservableCollection used directly with R3 Subject for the observable stream. This satisfies the plan's "ObservableCollection/DynamicData-backed collection" wording (either/or). Not a failure.
+
+## Verdict
+CONFIRMED. Task 8 acceptance criteria met:
+- R3 + ObservableCollection projection over app-side DTOs: YES
+- No Godot, no fantasim-world reactive deps, no Akka/iii in projection: YES
+- No reactive deps added to App.World T3 or fantasim-world: YES
+- fantasim-world repo clean (no diff, no new deps): YES
+- Tests cover subscribed observable emission after generation change (test 2): YES
+- Tests cover collection count matching seeded fields (test 1): YES
+- All 5 required commands runnable; Task 8-scoped builds/tests green in both default and projref modes: YES
+- Solution projref transient failure isolated to Task 7 file (TestSystems.cs), not Task 8; rebuild stable: NOTED, not a Task 8 blocker.
+
+Confidence: HIGH.

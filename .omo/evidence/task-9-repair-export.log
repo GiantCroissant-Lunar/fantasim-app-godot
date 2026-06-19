@@ -1,0 +1,168 @@
+task: [restore] dotnet tool restore
+task: [restore] dotnet tool restore
+Tool 'gitversion.tool' (version '6.5.1') was restored. Available commands: dotnet-gitversion
+Tool 'unifybuild.tool' (version '0.1.2-1') was restored. Available commands: unify-build
+
+Restore was successful.
+Tool 'gitversion.tool' (version '6.5.1') was restored. Available commands: dotnet-gitversion
+Tool 'unifybuild.tool' (version '0.1.2-1') was restored. Available commands: unify-build
+
+Restore was successful.
+task: [build] dotnet build project/FantaSim.sln
+  Determining projects to restore...
+  Restored /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.World/App.World.csproj (in 106 ms).
+  Restored /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj (in 110 ms).
+  Restored /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.Ecs/App.Ecs.csproj (in 88 ms).
+  Restored /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.World.Tests/App.World.Tests.csproj (in 106 ms).
+  Restored /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/hosts/complete-app/complete-app.csproj (in 110 ms).
+  19 of 24 projects are up-to-date for restore.
+  App.Ecs -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/contracts/App.Ecs/bin/Debug/net8.0/FantaSim.App.Ecs.Contracts.dll
+  App.Ui -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/contracts/App.Ui/bin/Debug/net8.0/FantaSim.App.Ui.Contracts.dll
+  App.SceneFlow -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/contracts/App.SceneFlow/bin/Debug/netstandard2.1/FantaSim.App.SceneFlow.Contracts.dll
+  App.Common -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.Common/bin/Debug/net8.0/FantaSim.App.Common.dll
+  App.Resource -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/contracts/App.Resource/bin/Debug/netstandard2.1/FantaSim.App.Resource.Contracts.dll
+  App.Command -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/contracts/App.Command/bin/Debug/net8.0/FantaSim.App.Command.Contracts.dll
+  App.Resource -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.Resource/bin/Debug/net8.0/FantaSim.App.Resource.dll
+  App.World -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/contracts/App.World/bin/Debug/net8.0/FantaSim.App.World.Contracts.dll
+  App.SceneFlow -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.SceneFlow/bin/Debug/net8.0/FantaSim.App.SceneFlow.dll
+  App.Ui -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.Ui/bin/Debug/net8.0/FantaSim.App.Ui.dll
+  App.Resource.Bundle.Seam -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.Resource.Bundle.Seam/.godot/mono/temp/bin/Debug/FantaSim.App.Resource.Bundle.Seam.dll
+  App.Ecs -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.Ecs/bin/Debug/net8.0/FantaSim.App.Ecs.dll
+  App.Ui.Seam -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.Ui.Seam/.godot/mono/temp/bin/Debug/FantaSim.App.Ui.Seam.dll
+  App.Ui.Tests -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ui.Tests/bin/Debug/net8.0/App.Ui.Tests.dll
+  App.Resource.Tests -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Resource.Tests/bin/Debug/net8.0/App.Resource.Tests.dll
+  App.Command -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.Command/bin/Debug/net8.0/FantaSim.App.Command.dll
+  App.World.Projection -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.World.Projection/bin/Debug/net8.0/FantaSim.App.World.Projection.dll
+  App.SceneFlow.Tests -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.SceneFlow.Tests/bin/Debug/net8.0/App.SceneFlow.Tests.dll
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsWorldActorTests.cs(43,74): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(43,61): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(137,65): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(68,61): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(75,38): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(77,66): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(82,61): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(103,61): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(107,38): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(112,64): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(157,80): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(158,80): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(161,38): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(163,38): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(170,93): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(171,93): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsWorldActorTests.cs(141,73): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+  App.Command.Tests -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Command.Tests/bin/Debug/net8.0/App.Command.Tests.dll
+  App.Ecs.Tests -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/bin/Debug/net8.0/App.Ecs.Tests.dll
+  App.World -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.World/bin/Debug/net8.0/FantaSim.App.World.dll
+  complete-app -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/hosts/complete-app/.godot/mono/temp/bin/Debug/complete-app.dll
+  App.World.Projection.Tests -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.World.Projection.Tests/bin/Debug/net8.0/App.World.Projection.Tests.dll
+  App.World.Tests -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.World.Tests/bin/Debug/net8.0/App.World.Tests.dll
+
+Build succeeded.
+
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsWorldActorTests.cs(43,74): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(43,61): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(137,65): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(68,61): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(75,38): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(77,66): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(82,61): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(103,61): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(107,38): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(112,64): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(157,80): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(158,80): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(161,38): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(163,38): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(170,93): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsSupervisorActorTests.cs(171,93): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/EcsWorldActorTests.cs(141,73): warning xUnit1031: Test methods should not use blocking task operations, as they can cause deadlocks. Use an async test method and await instead. (https://xunit.net/xunit.analyzers/rules/xUnit1031) [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj]
+    17 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:02.73
+task: [build:godot:desktop] dotnet tool run unify-build -- BuildGodotDesktop
+​
+[39;1m███╗   ██╗██╗   ██╗██╗  ██╗███████╗[0m
+[39;1m████╗  ██║██║   ██║██║ ██╔╝██╔════╝[0m
+[39;1m██╔██╗ ██║██║   ██║█████╔╝ █████╗  [0m
+[39;1m██║╚██╗██║██║   ██║██╔═██╗ ██╔══╝  [0m
+[39;1m██║ ╚████║╚██████╔╝██║  ██╗███████╗[0m
+[39;1m╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝[0m
+​
+[38;5;45;1mNUKE Execution Engine version 8.0.0 (OSX,.NETCoreApp,Version=v8.0)[0m
+​
+​
+[39;1m╬════════════[0m
+[39;1m║ [38;5;45;1mCompile[0m[0m
+[39;1m╬═══[0m
+​
+[38;5;247m17:17:12[0m[38;5;247m [[0m[38;5;45;1mINF[0m[38;5;247m] [0m[39mLoading build configuration[0m
+​
+[39;1m╬══════════════════════[0m
+[39;1m║ [38;5;45;1mBuildGodotDesktop[0m[0m
+[39;1m╬═════════════[0m
+​
+[38;5;247m17:17:12[0m[38;5;247m [[0m[38;5;45;1mINF[0m[38;5;247m] [0m[39mLoading build configuration[0m
+[38;5;247m17:17:12[0m[38;5;247m [[0m[38;5;45;1mINF[0m[38;5;247m] [0m[39mLoading build configuration[0m
+[38;5;247m17:17:12[0m[38;5;247m [[0m[38;5;45;1mINF[0m[38;5;247m] [0m[39mExporting [osx] -> macOS...[0m
+[38;5;247m17:17:12[0m[38;5;247m [[0m[38;5;45;1mINF[0m[38;5;247m] [0m[39m> [0m[38;5;45;1m/Users/apprenticegc/Work/lunar-horse/tools/Godot_mono.app/Contents/MacOS/Godot[0m[39m [0m[38;5;45;1m--headless --path /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/hosts/complete-app --export-release macOS /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/build/_artifacts/5.0.0/godot/osx/complete-app.zip[0m
+[38;5;247m17:17:12[0m[38;5;247m [[0m[38;5;45;1mINF[0m[38;5;247m] [0m[39m@ [0m[38;5;45;1m/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/hosts/complete-app[0m
+[38;5;247m17:17:12[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39mGodot Engine v4.6.3.stable.mono.official.7d41c59c4 - https://godotengine.org[0m
+[38;5;247m17:17:13[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[0m
+[38;5;247m17:17:14[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[   0% ] [90m[1mfirst_scan_filesystem[22m | Started Project initialization (5 steps)[39m[0m[0m
+[38;5;247m17:17:14[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[   0% ] [90m[1mfirst_scan_filesystem[22m | Scanning file structure...[39m[0m[0m
+[38;5;247m17:17:14[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  16% ] [90m[1mfirst_scan_filesystem[22m | Loading global class names...[39m[0m[0m
+[38;5;247m17:17:14[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  33% ] [90m[1mfirst_scan_filesystem[22m | Verifying GDExtensions...[39m[0m[0m
+[38;5;247m17:17:14[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  50% ] [90m[1mfirst_scan_filesystem[22m | Creating autoload scripts...[39m[0m[0m
+[38;5;247m17:17:14[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  66% ] [90m[1mfirst_scan_filesystem[22m | Initializing plugins...[39m[0m[0m
+[38;5;247m17:17:14[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  83% ] [90m[1mfirst_scan_filesystem[22m | Starting file scan...[39m[0m[0m
+[38;5;247m17:17:14[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[92m[ DONE ][39m [1mfirst_scan_filesystem[22m[0m
+[38;5;247m17:17:14[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[0m[0m
+[38;5;247m17:17:14[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[   0% ] [90m[1mupdate_scripts_classes[22m | Started Registering global classes... (2 steps)[39m[0m[0m
+[38;5;247m17:17:14[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[   0% ] [90m[1mupdate_scripts_classes[22m | [39m[0m[0m
+[38;5;247m17:17:14[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  33% ] [90m[1mupdate_scripts_classes[22m | [39m[0m[0m
+[38;5;247m17:17:14[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[92m[ DONE ][39m [1mupdate_scripts_classes[22m[0m
+[38;5;247m17:17:14[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[0m[0m
+[38;5;247m17:17:14[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[   0% ] [90m[1mdotnet_publish_project[22m | Started Publishing .NET project... (1 steps)[39m[0m[0m
+[38;5;247m17:17:14[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[   0% ] [90m[1mdotnet_publish_project[22m | Running dotnet publish[39m[0m[0m
+[38;5;247m17:17:17[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[92m[ DONE ][39m [1mdotnet_publish_project[22m[0m
+[38;5;247m17:17:17[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[0m[0m
+[38;5;247m17:17:17[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[   0% ] [90m[1mdotnet_publish_project[22m | Started Publishing .NET project... (1 steps)[39m[0m[0m
+[38;5;247m17:17:17[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[   0% ] [90m[1mdotnet_publish_project[22m | Running dotnet publish[39m[0m[0m
+[38;5;247m17:17:19[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[92m[ DONE ][39m [1mdotnet_publish_project[22m[0m
+[38;5;247m17:17:19[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[0m[0m
+[38;5;247m17:17:19[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[   0% ] [90m[1mexport[22m | Started Exporting for macOS (3 steps)[39m[0m[0m
+[38;5;247m17:17:19[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[   0% ] [90m[1mexport[22m | Creating app bundle[39m[0m[0m
+[38;5;247m17:17:20[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  25% ] [90m[1mexport[22m | Making PKG[39m[0m[0m
+[38;5;247m17:17:20[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[   0% ] [90m[1msavepack[22m | Started Packing (102 steps)[39m[0m[0m
+[38;5;247m17:17:20[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[   1% ] [90m[1msavepack[22m | Storing File: res://config/collectible-bundles.json[39m[0m[0m
+[38;5;247m17:17:20[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  17% ] [90m[1msavepack[22m | Storing File: res://Host.cs[39m[0m[0m
+[38;5;247m17:17:20[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  33% ] [90m[1msavepack[22m | Storing File: res://.godot/imported/icon.svg-218a8f2b3041327d8a5756f3a245f83b.ctex[39m[0m[0m
+[38;5;247m17:17:20[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  33% ] [90m[1msavepack[22m | Storing File: res://icon.svg.import[39m[0m[0m
+[38;5;247m17:17:20[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  50% ] [90m[1msavepack[22m | Storing File: res://Main.cs[39m[0m[0m
+[38;5;247m17:17:20[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  66% ] [90m[1msavepack[22m | Storing File: res://.godot/exported/133200997/export-bcb0d2eb5949c52b6a65bfe9de3e985b-Main.scn[39m[0m[0m
+[38;5;247m17:17:20[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  82% ] [90m[1msavepack[22m | Storing File: res://RuntimeStatusViewSource.cs[39m[0m[0m
+[38;5;247m17:17:20[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  82% ] [90m[1msavepack[22m | Storing File: res://Main.tscn.remap[39m[0m[0m
+[38;5;247m17:17:20[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  82% ] [90m[1msavepack[22m | Storing File: res://.godot/global_script_class_cache.cfg[39m[0m[0m
+[38;5;247m17:17:20[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  82% ] [90m[1msavepack[22m | Storing File: res://icon.svg[39m[0m[0m
+[38;5;247m17:17:20[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  82% ] [90m[1msavepack[22m | Storing File: res://.godot/uid_cache.bin[39m[0m[0m
+[38;5;247m17:17:20[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  82% ] [90m[1msavepack[22m | Storing File: res://project.binary[39m[0m[0m
+[38;5;247m17:17:20[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[92m[ DONE ][39m [1msavepack[22m[0m
+[38;5;247m17:17:20[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[0m[0m
+[38;5;247m17:17:21[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[  75% ] [90m[1mexport[22m | Making ZIP[39m[0m[0m
+[38;5;247m17:17:29[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[92m[ DONE ][39m [1mexport[22m[0m
+[38;5;247m17:17:29[0m[38;5;247m [[0m[39;1mDBG[0m[38;5;247m] [0m[39m[0m[0m
+[38;5;247m17:17:30[0m[38;5;247m [[0m[38;5;45;1mINF[0m[38;5;247m] [0m[39mExtracted runnable bundle -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/build/_artifacts/5.0.0/godot/osx[0m
+[38;5;247m17:17:30[0m[38;5;247m [[0m[38;5;45;1mINF[0m[38;5;247m] [0m[39mDone: /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/build/_artifacts/5.0.0/godot/osx[0m
+​
+[39;1m═════════════════════════════════════════[0m
+[38;5;45;1mTarget               Status      Duration[0m
+[39;1m─────────────────────────────────────────[0m
+[32;1mCompile              Succeeded     < 1sec[0m
+[32;1mBuildGodotDesktop    Succeeded       0:18[0m
+[39;1m─────────────────────────────────────────[0m
+[38;5;45;1mTotal                                0:18[0m
+[39;1m═════════════════════════════════════════[0m
+​
+[32;1mBuild succeeded on 6/19/2026 5:17:30 PM. ＼（＾ᴗ＾）／[0m

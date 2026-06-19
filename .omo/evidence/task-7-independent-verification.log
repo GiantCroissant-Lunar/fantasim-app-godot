@@ -1,0 +1,175 @@
+# Task 7 Independent Verification — iii-runtime-spine
+
+**Verifier:** Sisyphus-Junior (independent read-only verifier)
+**Date:** 2026-06-19
+**Task:** Add ECS field components, ReduceFieldsSystem, and determinism test
+**Plan ref:** `.omo/plans/iii-runtime-spine.md` Task 7 (line 125)
+**Recovery note:** `.omo/notepads/iii-runtime-spine/issues.md` (bg_41cab294 cancelled; existing logs untrusted)
+
+---
+
+## 1. Files Inspected (read-only)
+
+| Path | Role | Notes |
+|------|------|-------|
+| `project/plugins/App.Ecs/Fields/FieldComponents.cs` | T3 components | `#if USE_PROJECT_REFERENCES`; `FieldSubject`, `FieldContributionBuffer`, `ResolvedFields` all `internal` |
+| `project/plugins/App.Ecs/Systems/ReduceFieldsSystem.cs` | T3 system | `internal sealed`, `#if USE_PROJECT_REFERENCES`; groups by (Field, Subject, Tick), canonical sort (Tick, ProducerId ordinal), catalog+reducer lookup, reduce, write ResolvedFields, clear buffer |
+| `project/plugins/App.Ecs/App.Ecs.csproj` | T3 plugin | T3 tier; world refs gated on `UseProjectReferences=true`; `InternalsVisibleTo App.Ecs.Tests`; TruthStream NOT referenced here (test pulls it in) |
+| `project/tests/App.Ecs.Tests/ReduceFieldsSystemTests.cs` | tests | 4 tests: shuffled determinism, canonical sort load-bearing (FirstValueReducer failing-first), buffer clear, direct-reduce==truth-stream materialized-reduce |
+| `project/tests/App.Ecs.Tests/TestSystems.cs` | helper | `CountingEntitySystem` for non-field actor behavioral tests |
+| `project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj` | test proj | mirrors `USE_PROJECT_REFERENCES` define; pulls World.Fields/World.Fields.Core + World.TruthStream/World.TruthStream.Core project refs |
+| `project/contracts/App.Ecs/App.Ecs.csproj` | T1 | T1 tier; no world-lib refs |
+| `project/contracts/App.Ecs/EcsModel.cs` | T1 DTOs | no world-lib types |
+| `project/contracts/App.Ecs/Services/IService.cs` | T1 service | no world-lib types |
+
+---
+
+## 2. T1/T3 Boundary Audit
+
+- Grep `FantaSim.World|World.Fields|World.TruthStream|TimeDete` in `project/contracts/App.Ecs/`: **0 matches**.
+- Grep same in `project/plugins/App.Ecs/Actors/`: **0 matches**.
+- All Task 7 components/system are `internal` and `#if USE_PROJECT_REFERENCES`-gated.
+- Verdict: **No world-lib types leak through App.Ecs T1.** T3-internal confirmed.
+
+---
+
+## 3. ReduceFieldsSystem Behavior Audit
+
+`ReduceFieldsSystem.Execute` (line 47-101):
+1. Groups by (Field via perField dict, Subject, Tick via GroupKey) — matches plan.
+2. Catalog lookup via `_catalog.TryGet(fieldId, ...)` (line 80); reducer lookup via `_reducers.TryGet(descriptor.Reducer, ...)` (line 82).
+3. Canonical sort: `list.Sort(CompareCanonically)` (line 89); `CompareCanonically` = (Tick asc, ProducerId ordinal) (line 104-109).
+4. Reduce: `reducer.Reduce(descriptor, list)` (line 90).
+5. Write resolved: `resolved.ByField[fieldId] = resolvedValue` (line 95); latest tick wins (line 91).
+6. Clear buffer: `contributions.Clear()` (line 99).
+All six plan-required behaviors present.
+
+---
+
+## 4. Test Coverage Audit
+
+| Plan acceptance (line 130) | Test | Status |
+|---|---|---|
+| Shuffled contributions deterministic | `Shuffled_contributions_reduce_to_identical_value_under_canonical_sort` | PASS |
+| Canonical sort load-bearing / failing-first | `Canonical_sort_makes_order_sensitive_reducer_deterministic` (test-only `FirstValueReducer`) | PASS |
+| Buffer clear | `Reduce_clears_contribution_buffer_in_place` | PASS |
+| Direct reduce == truth-stream materialized/reduce | `Direct_reduce_equals_truth_stream_materialized_reduce` (InMemoryTruthEventStore + DelegateMaterializer) | PASS |
+
+All four required scenarios covered.
+
+---
+
+## 5. Commands Run & Results
+
+### 5a. Build App.Ecs plugin
+```
+dotnet build -p:UseProjectReferences=true project/plugins/App.Ecs/App.Ecs.csproj
+```
+Result: **Build succeeded. 0 Warning(s) 0 Error(s)** in 0.86s.
+Artifact: `/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.Ecs/bin/Debug/net8.0/FantaSim.App.Ecs.dll`
+
+### 5b. ReduceFieldsSystemTests (filtered)
+```
+dotnet test -p:UseProjectReferences=true project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj \
+  --filter FullyQualifiedName~ReduceFieldsSystemTests \
+  --logger "trx;LogFileName=task-7-independent-reduce.trx" --results-directory .omo/evidence
+```
+Result: **Passed! Failed: 0, Passed: 4, Skipped: 0, Total: 4, Duration: 39 ms**
+TRX: `.omo/evidence/task-7-independent-reduce.trx`
+Test names (verified via console logger):
+- `ReduceFieldsSystemTests.Canonical_sort_makes_order_sensitive_reducer_deterministic`
+- `ReduceFieldsSystemTests.Shuffled_contributions_reduce_to_identical_value_under_canonical_sort`
+- `ReduceFieldsSystemTests.Reduce_clears_contribution_buffer_in_place`
+- `ReduceFieldsSystemTests.Direct_reduce_equals_truth_stream_materialized_reduce`
+
+### 5c. Full App.Ecs.Tests
+```
+dotnet test -p:UseProjectReferences=true project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj \
+  --logger "trx;LogFileName=task-7-independent-full-ecs.trx" --results-directory .omo/evidence
+```
+Result: **Passed! Failed: 0, Passed: 20, Skipped: 0, Total: 20, Duration: 1 s**
+TRX: `.omo/evidence/task-7-independent-full-ecs.trx`
+
+### 5d. Build FantaSim.sln
+```
+dotnet build -p:UseProjectReferences=true project/FantaSim.sln
+```
+Result: **Build succeeded. 2 Warning(s) 0 Error(s)** in 1.76s.
+Warnings: 2× NU1903 MessagePack 3.1.4 (fantasim-world World.TruthStream.Core — pre-existing, NOT Task 7).
+
+### 5e. Re-run ReduceFields (flakiness probe)
+Second run: **Passed! Failed: 0, Passed: 4, Skipped: 0, Total: 4, Duration: 37 ms** — stable.
+
+### 5f. Default build (no UseProjectReferences) test count probe
+`dotnet test project/tests/App.Ecs.Tests/App.Ecs.Tests.csproj`: 16 tests pass.
+With `UseProjectReferences=true`: 20 tests pass (16 actor + 4 reduce).
+Correct configuration-dependent behavior — reduce tests are `#if`-gated, not silently failing.
+
+---
+
+## 6. Adversarial Probes
+
+### dirty_worktree
+- `git status` (fantasim-app-godot): Task-7-relevant files present as modified/untracked (expected mid-plan). Modified: App.Ecs.csproj, EcsSupervisorActor.cs, App.Ecs.Tests.csproj; deleted App.EcsSmokeTests.cs. Untracked: Fields/, Systems/, ReduceFieldsSystemTests.cs, TestSystems.cs.
+- `git status` (fantasim-world): **NO diff** (only untracked AGENTS.md, unrelated). World-lib boundary respected.
+- No product files modified by this verifier.
+
+### stale_state
+- issues.md mentioned transient `UseProjectReferences` solution build failure isolated to `TestSystems.cs` cache behavior.
+- This verifier did NOT reproduce it: solution build succeeded on first run (1.76s).
+- Stale `TestResults/task-5-iii-runtime-spine.test.trx` (Jun 19 14:44) present in App.Ecs.Tests/TestResults/ — leftover from Task 5, not Task 7. My TRX outputs went to `.omo/evidence/`.
+- Verdict: stale_state not reproduced; transient if it ever occurs.
+
+### misleading_success_output
+- Verified test names actually execute via `--logger "console;verbosity=normal"` — 4 named tests ran and passed with real assertions (not skipped stubs).
+- `#if USE_PROJECT_REFERENCES` correctly excludes reduce tests when world-refs absent (16 vs 20 test count). No silent skip伪装 as pass.
+- Verdict: clean.
+
+### flaky_tests
+- ReduceFields tests run twice: 39 ms then 37 ms, both 4/4 pass. No timing sensitivity, no async race in deterministic test data.
+- Verdict: stable, not flaky.
+
+### long_commands
+- Build App.Ecs: 0.86s. Build solution: 1.76s. Test (full): ~2.7s wall. All well under any reasonable timeout.
+- Verdict: fast.
+
+---
+
+## 7. Pre-existing vs Task 7 Warnings
+
+| Warning | Source | Pre-existing? |
+|---|---|---|
+| NU1903 MessagePack 3.1.4 | fantasim-world World.TruthStream.Core | YES — pre-existing, not Task 7 |
+| xUnit1031 (EcsSupervisorActorTests, EcsWorldActorTests) | App.Ecs.Tests actor tests | YES — Task 3 actor tests |
+| xUnit1031 (ReduceFieldsSystemTests.cs:187) | `store.AppendAsync(...).GetAwaiter().GetResult()` in `Direct_reduce_equals_truth_stream_materialized_reduce` | **Task 7-introduced** — minor; matches existing codebase convention (actor tests use same pattern); `InMemoryTruthEventStore` is synchronous so no deadlock risk in practice |
+
+Task 7 adds one xUnit1031 warning at ReduceFieldsSystemTests.cs:187. This is a minor analyzer warning consistent with the existing test style in this codebase (actor tests use the same `.GetAwaiter().GetResult()` pattern). Not a blocking defect — the test is deterministic over an in-memory synchronous store. Noted for transparency.
+
+---
+
+## 8. Evidence Artifacts
+
+- `.omo/evidence/task-7-independent-reduce.trx` — 4 reduce tests TRX
+- `.omo/evidence/task-7-independent-full-ecs.trx` — 20 full App.Ecs.Tests TRX
+- `.omo/evidence/task-7-independent-verification.log` — this log
+- `/tmp/task7-build-ecs.log`, `/tmp/task7-test-reduce.log`, `/tmp/task7-test-full-ecs.log`, `/tmp/task7-build-sln.log` — transient stdout captures
+
+Pre-existing untrusted Task 7 logs (NOT used as proof): `task-7-iii-runtime-spine.build.log`, `task-7-iii-runtime-spine.test.log`, `task-7-iii-runtime-spine.trx` (all from cancelled bg_41cab294).
+
+---
+
+## 9. Cleanup Receipt
+
+- No product files modified by this verifier.
+- No source/test/csproj/solution/plan/ledger/AGENTS.md/handover/run-continuation files edited.
+- No commits made.
+- Only files written: `.omo/evidence/task-7-independent-verification.log` (this file), `.omo/evidence/task-7-independent-reduce.trx`, `.omo/evidence/task-7-independent-full-ecs.trx` (test result artifacts).
+- Plan checkbox 7 NOT toggled. Ledger NOT appended.
+
+---
+
+## 10. Verdict
+
+**CONFIRMED.** Task 7 acceptance criteria met. All required commands green. T3-internal boundary respected. No world-lib types leak through T1. All four required test scenarios pass and are load-bearing. fantasim-world has no diff. Adversarial probes found no blocking defects. One minor xUnit1031 warning at ReduceFieldsSystemTests.cs:187 is Task 7-introduced but consistent with codebase conventions and not a defect.
+
+Confidence: HIGH.

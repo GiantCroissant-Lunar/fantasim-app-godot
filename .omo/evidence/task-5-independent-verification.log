@@ -1,0 +1,161 @@
+# Task 5 Independent Verification Log
+# Verifier: independent read-only (Sisyphus-Junior, GLM 5.2)
+# Date: 2026-06-19
+# Plan: .omo/plans/iii-runtime-spine.md
+# Task: 5 App.World T3 orchestrator
+
+## 1. Plan + DoneClaim re-read
+
+- Task 5 acceptance criteria: `dotnet build -p:UseProjectReferences=true project/FantaSim.sln` exits 0; duplicate field id validation test throws as expected.
+- DoneClaim deviation: default build uses StubWorldRuntime because local feed lacks FantaSim.World.* packages; real WorldRuntime compiles only under UseProjectReferences=true.
+- DoneClaim commands list all six required gates; verdict was needs-independent-verification.
+
+## 2. Files inspected (actual current files, not worker claims)
+
+### project/plugins/App.World/
+- App.World.csproj (52 lines): T3 plugin. ProjectReference to App.World + App.Ecs contracts always; sibling fantasim-world project refs only under Condition="'$(UseProjectReferences)' == 'true'". DefineConstants adds USE_PROJECT_REFERENCES under same condition. No FantaSim.World.* package refs.
+- AssemblyInfo.cs: [assembly: PluginSharedContract] present.
+- Services/IWorldRuntime.cs (36 lines): internal seam interface + WorldRuntimeFactory with #if USE_PROJECT_REFERENCES selecting WorldRuntime vs StubWorldRuntime.
+- Services/WorldRuntime.cs (137 lines): #if USE_PROJECT_REFERENCES wrapped. Composes CompositeFieldCatalog + FieldReducerRegistry + DefaultReducers + CatalogValidator + InMemoryTruthEventStore at construction. Maps onto app-side DTOs. Internal test hook ctor accepts explicit descriptors.
+- Services/StubWorldRuntime.cs (30 lines): no-op runtime for default path. Returns empty/zero world.
+- Services/Service.cs (80 lines): public sealed Service : IService, IDisposable. Delegates to IWorldRuntime. Subscriber list with lock for GenerationChanged.
+
+### project/tests/App.World.Tests/
+- App.World.Tests.csproj (23 lines): mirrors USE_PROJECT_REFERENCES define from plugin. ProjectReferences to App.World plugin + contract.
+- WorldRuntimeTests.cs (138 lines): #if USE_PROJECT_REFERENCES wrapped. 5 tests: GetOverview, Duplicate_field_id_throws, Unregistered_reducer_throws, RunGeneration_appends_truth_event, GetFieldValues_maps_catalog. All structured Given/When/Then. No sleep/delay/timeout patterns.
+
+### project/FantaSim.sln
+- 3 new project entries added: App.World contract, App.World plugin, App.World.Tests. All with Debug/Release x Any CPU/x64/x86 configurations. Nested under solution folders.
+
+### project/contracts/App.World/ (T1 boundary purity)
+- App.World.csproj (16 lines): only GiantCroissant.ServiceArchi/PluginArchi packages. No FantaSim.World.* refs.
+- Dto/WorldDtos.cs (61 lines): pure C# records. No world-lib types.
+- Services/IService.cs (17 lines): pure app-side DTOs only.
+- Boundary grep: NO FantaSim.World/Akka/Godot/R3/Hermes/App.Agent/iii references found.
+
+## 3. Deviation safety assessment
+
+Documented deviation: default build path uses StubWorldRuntime; real WorldRuntime compiles only under UseProjectReferences=true.
+
+Assessment: ACCEPTABLE and safely implemented.
+- The split is compile-time via #if USE_PROJECT_REFERENCES, not runtime branching. The real WorldRuntime cannot silently hide — it literally does not compile under default build.
+- WorldRuntimeFactory.Create() is the single selection point; #if selects WorldRuntime vs StubWorldRuntime.
+- The test project mirrors the same define, so tests only run under UseProjectReferences=true. Under default build, App.World.Tests yields 0 tests (confirmed by run).
+- This means `dotnet test project/FantaSim.sln` (default) will NOT exercise App.World tests. Only `dotnet test -p:UseProjectReferences=true` runs them. This is a known consequence of the deviation and is acceptable because the local feed lacks FantaSim.World.* packages — the alternative (pack-to-feed) is explicitly out of scope per plan must-not-have.
+- The plan's success criteria #3 says "dotnet test project/FantaSim.sln exits 0" — this will pass (0 tests in App.World.Tests is not a failure), but the App.World tests only run under the project-ref flag. This is consistent with the documented deviation.
+
+Risk: A future operator running `dotnet test project/FantaSim.sln` without the flag will see App.World.Tests report "No test is available" and may misread this as a discovery failure rather than the expected conditional-compilation outcome. Mitigation: the test project csproj has a clear comment explaining this.
+
+## 4. T1 boundary purity (re-verified)
+
+grep -rEn "FantaSim\.World\.|Akka|Godot|R3\.|using.*Hermes|App\.Agent" project/contracts/App.World/ --include="*.cs" --include="*.csproj" (excluding obj/bin):
+Result: NO forbidden references found.
+
+grep for "iii|YokanProjects|UseProjectReferences" in T1:
+Result: NO references found.
+
+dotnet list project/contracts/App.World/App.World.csproj package:
+Result: only GiantCroissant.PluginArchi/ServiceArchi packages. No FantaSim.World.*.
+
+T1 boundary is PURE.
+
+## 5. Build/test gate results (independent reruns)
+
+### Gate 1: dotnet build project/plugins/App.World/App.World.csproj (default)
+Result: Build succeeded. 0 Warning(s), 0 Error(s). Elapsed 00:00:00.79.
+Real path: NO (stub compiled).
+
+### Gate 2: dotnet build -p:UseProjectReferences=true project/plugins/App.World/App.World.csproj
+Result: Build succeeded. 2 Warning(s), 0 Error(s). Elapsed 00:00:02.28.
+Warnings: NU1903 MessagePack 3.1.4 high severity vulnerability (from World.TruthStream.Core, pre-existing in fantasim-world, NOT introduced by Task 5).
+Real path: YES — FantaSim.World.Fields/TruthStream/Parameters + Core dlls all built.
+
+### Gate 3: dotnet build project/FantaSim.sln (default)
+Result: Build succeeded. 0 Warning(s), 0 Error(s). Elapsed 00:00:01.83.
+All 20 projects built including App.World plugin (stub path) and App.World.Tests.
+
+### Gate 4: dotnet build -p:UseProjectReferences=true project/FantaSim.sln
+Result: Build succeeded. 2 Warning(s), 0 Error(s). Elapsed 00:00:03.32.
+Warnings: NU1903 MessagePack (pre-existing in fantasim-world).
+All 25 projects built including sibling fantasim-world contracts/plugins.
+
+### Gate 5: dotnet test -p:UseProjectReferences=true project/tests/App.World.Tests/App.World.Tests.csproj
+Result: Passed! - Failed: 0, Passed: 5, Skipped: 0, Total: 5, Duration: 22 ms.
+Tests run (detailed): all 5 WorldRuntimeTests passed, individual durations <1ms to 14ms.
+- Duplicate_field_id_in_catalog_throws_at_composition: Passed [<1ms] — acceptance criterion met.
+- Unregistered_reducer_in_catalog_throws_at_composition: Passed [<1ms].
+- RunGeneration_appends_truth_event_and_marks_world_dirty: Passed [11ms].
+- GetOverview_reports_composed_field_count: Passed [1ms].
+- GetFieldValues_maps_catalog_descriptors_to_dto: Passed [1ms].
+
+### Gate 5b (adversarial): dotnet test project/tests/App.World.Tests/App.World.Tests.csproj (default, no flag)
+Result: "No test is available in ... App.World.Tests.dll" — 0 tests discovered.
+This is the expected consequence of #if USE_PROJECT_REFERENCES wrapping the entire test class. Not a failure (exit 0), but confirms tests only run under project-ref flag.
+
+### Gate 6: GIT_MASTER=1 git status --short --branch in fantasim-world
+Result: ## main / ?? AGENTS.md (untracked, pre-existing user file per plan guardrails).
+git diff --stat (tracked): EMPTY.
+fantasim-world has NO tracked edits. Confirmed.
+
+## 6. Adversarial class probes
+
+### dirty_worktree
+- App.World plugin + tests are untracked (new files, `??` in git status). Expected — they are new Task 5 artifacts.
+- Modified tracked files relevant to Task 5: project/FantaSim.sln (added App.World entries). Also contains App.Command entries (Task 1, already verified).
+- Other modified files (Directory.Build.props, Directory.Packages.props, App.Ecs files) belong to Tasks 1-4, not Task 5.
+- fantasim-world tracked diff: EMPTY. No world-lib tracked edits.
+- VERDICT: scoped edits only. No world-lib tracked diff. PASS.
+
+### stale_state
+- Read actual current files (not worker claims). All file contents match what worker described.
+- Worker's TRX evidence matches independent test rerun exactly (5/5 same tests, same outcomes).
+- VERDICT: actual current files verified. PASS.
+
+### misleading_success_output
+- All 6 gates rerun independently. Results match worker claims exactly.
+- The only nuance: default-build App.World.Tests yields 0 tests (not a failure, but not exercising real path). Worker did not explicitly claim this; DoneClaim's deviation note covers it implicitly.
+- VERDICT: no misleading success output detected. PASS with note.
+
+### flaky_tests
+- No Thread.Sleep, Task.Delay, sleep, TimeSpan.From, or Timeout patterns in test code.
+- All 5 tests deterministic, total 22ms, individual <14ms.
+- No ordering dependency (tests use fresh ServiceRegistry per test).
+- VERDICT: tests are deterministic. PASS.
+
+### long_commands
+- Build durations: default plugin 0.79s, project-ref plugin 2.28s, default solution 1.83s, project-ref solution 3.32s, test run 2.34s.
+- All well within reasonable bounds. No long-command risk.
+- Warning risk: NU1903 MessagePack vulnerability is pre-existing in fantasim-world's World.TruthStream.Core. Not introduced by Task 5. Should be tracked as a known upstream risk, not a Task 5 blocker.
+- VERDICT: no long-command risk. PASS.
+
+### stale_state/generated artifacts: #if USE_PROJECT_REFERENCES split cannot silently hide real path
+- The split is compile-time (#if), not runtime. Under default build, WorldRuntime.cs is not compiled at all — the type does not exist in the assembly.
+- WorldRuntimeFactory.Create() uses #if to select; there is no runtime fallback that could silently pick the stub when project-ref is requested.
+- Verified: under -p:UseProjectReferences=true, the 5 WorldRuntimeTests tests actually executed and passed (proving the real WorldRuntime type was compiled and instantiated).
+- Verified: under default build, 0 tests discovered (proving the #if-wrapped test class was excluded).
+- VERDICT: the split is sound and cannot silently hide. PASS.
+
+## 7. Verdict
+
+AdversarialVerify: confirmed
+
+Confidence: 0.92
+
+Evidence summary:
+- All 6 required gates passed independently (build default, build projref, solution default, solution projref, test projref, fantasim-world git clean).
+- T1 boundary pure (no forbidden refs, no FantaSim.World.* packages).
+- Deviation is acceptable, documented, and safely implemented via compile-time #if split.
+- 5/5 App.World tests pass under UseProjectReferences=true, including duplicate FieldId validation (acceptance criterion met).
+- fantasim-world has zero tracked edits.
+- Tests are deterministic (no sleep/flaky patterns).
+- NU1903 MessagePack warning is pre-existing in fantasim-world, not a Task 5 introduction.
+
+Required fixes: NONE.
+
+Notes for downstream tasks (6-8):
+- Tasks 6-8 can start. Task 5 is complete.
+- Task 6 (App.Command T3) depends on Task 5 via IWorldRuntime/Service — Service is now available.
+- Task 7 (ReduceFieldsSystem) depends on Task 5 via CompositeFieldCatalog/FieldReducerRegistry — these are now composed in WorldRuntime.
+- Task 8 (App.World.Projection) depends on Task 5 via Service.SubscribeGenerationChanged — the subscriber list is live.
+- Downstream tasks must use -p:UseProjectReferences=true when running tests that touch the real world runtime.
+- The default-build "0 tests in App.World.Tests" behavior is expected; do not treat it as a regression in future verification waves.

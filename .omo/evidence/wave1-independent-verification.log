@@ -1,0 +1,88 @@
+Wave 1 Independent Verification Log
+====================================
+Date: 2026-06-19
+Verifier: read-only independent pass (no edits to product/plan/ledger files)
+Plan: .omo/plans/iii-runtime-spine.md Tasks 1-4 + solution integration
+
+== Gate results (re-run by verifier, not worker claims) ==
+
+1. dotnet build project/contracts/App.Command/App.Command.csproj
+   Result: Build succeeded. 0 Warning(s) 0 Error(s). Exit 0. Time 0.38s.
+   Output assembly: FantaSim.App.Command.Contracts.dll
+
+2. dotnet build project/contracts/App.World/App.World.csproj
+   Result: Build succeeded. 0 Warning(s) 0 Error(s). Exit 0. Time 0.37s.
+   Output assembly: FantaSim.App.World.Contracts.dll
+
+3. dotnet build project/FantaSim.sln
+   Result: Build succeeded. 0 Warning(s) 0 Error(s). Exit 0. Time 2.28s.
+   Builds all 18 projects including App.Command + App.World.
+
+4. dotnet test project/FantaSim.sln --filter FullyQualifiedName~App.Ecs.Tests
+   Result: Passed! Failed: 0, Passed: 16, Skipped: 0, Total: 16, Duration ~1s. Exit 0.
+   Re-run (flakiness probe): same 16/16 pass, ~1s. No sleeps in tests (confirmed by source read).
+
+5. GIT_MASTER=1 git status --short --branch (sibling fantasim-world repo)
+   Result: ## main; only untracked AGENTS.md (pre-existing, not a Wave 1 edit).
+   No tracked file modifications. World-lib boundary respected.
+
+== T1 purity (grep for Akka|Godot|R3.|Hermes|App.Agent|FantaSim.World|DynamicData) ==
+
+project/contracts/App.Command: 0 matches.
+project/contracts/App.World:  0 matches.
+dotnet list package on App.Command.csproj: only GiantCroissant.* (PluginArchi, ServiceArchi, SourceGen).
+dotnet list package on App.World.csproj:  only GiantCroissant.* (PluginArchi, ServiceArchi, SourceGen). No FantaSim.World.* refs.
+
+== Solution integration (project/FantaSim.sln) ==
+
+App.Command: line 46, GUID {91245F0C-16FC-4E54-8C8B-4B01DD65B5EF}, path contracts\App.Command\App.Command.csproj.
+App.World:   line 48, GUID {06B1FFF5-CEB1-499B-AE79-B3C59C35271D}, path contracts\App.World\App.World.csproj.
+Both nested under contracts solution folder GUID {A73F2606-6D4C-3EEE-1759-0E59DCFEF523} (lines 297-298).
+Full build configuration present for Debug|Any CPU, Debug|x64, Debug|x86, Release|* variants (lines 252-275).
+
+== Dirty-worktree boundaries (pre-existing files NOT modified by Wave 1) ==
+
+AGENTS.md: untracked, pre-existing (?? in git status). Not staged, not modified by workers.
+vault/handover/2026-06-19-restoration-progress-and-next-steps.md: staged (A) pre-existing. 349 lines, not a Wave 1 worker edit.
+.omo/run-continuation/ses_122f53be7ffe721B1S8hyWwwoE.json: modified, diff is only trailing-newline addition (cosmetic, not Wave 1 task content).
+.omo/run-continuation/ses_124c84619ffeE5TGE5dCsg8O8M.json: modified, diff is only trailing-newline addition (cosmetic, not Wave 1 task content).
+Other .omo/run-continuation/ses_*.json: untracked, pre-existing.
+
+== Wave 1 scoped file changes (tracked) ==
+
+Modified: Directory.Build.props (+YokanProjectsRoot line 16), Directory.Packages.props (+R3 line 8, +DynamicData line 9),
+  project/FantaSim.sln (+30 lines for App.Command/App.World projects + configs + nesting),
+  project/plugins/App.Ecs/Actors/EcsSupervisorActor.cs (CreateWorld idempotency forward, DestroyWorld drop-before-forward, Terminated cleanup, ListWorlds bounded Ask, UpdateAll fan-out),
+  project/plugins/App.Ecs/App.Ecs.csproj (+InternalsVisibleTo App.Ecs.Tests).
+Deleted: project/tests/App.Ecs.Tests/App.EcsSmokeTests.cs (replaced by behavioral tests).
+Untracked new: project/contracts/App.Command/{App.Command.csproj, CommandTypes.cs, Orchestration/IWorldOrchestration.cs, AssemblyInfo.cs},
+  project/contracts/App.World/{App.World.csproj, Dto/WorldDtos.cs, Services/IService.cs, Services/Service.cs, AssemblyInfo.cs},
+  project/tests/App.Ecs.Tests/{EcsServiceTests.cs, EcsSupervisorActorTests.cs, EcsWorldActorTests.cs, TestSystems.cs}.
+
+No Wave 1 commits observed (git log shows 5 prior commits, none Wave 1). All work in working tree, as expected for plan.
+
+== Worker evidence log cross-check (misleading_success_output probe) ==
+
+.omo/evidence/task-1-iii-runtime-spine.build.log: 0 warnings, 0 errors. Matches independent run.
+.omo/evidence/task-2-iii-runtime-spine.build.log: 0 warnings, 0 errors. Matches independent run.
+.omo/evidence/task-3-iii-runtime-spine.trx: Counters total=16 executed=16 passed=16 failed=0 timeout=0. Matches independent run (16/16).
+.omo/evidence/task-4-iii-runtime-spine.build.log: 0 warnings, 0 errors. Matches independent run.
+.omo/evidence/task-wave1-solution-integration.build.log: 0 warnings, 0 errors. Matches independent run.
+
+== Adversarial class findings ==
+
+dirty_worktree: PASS. Workers did not touch AGENTS.md, vault/handover/*, or .omo/run-continuation/* (except cosmetic trailing newline on 2 files, not task content). Only scoped files changed.
+stale_state: PASS. Verifier read actual current files; all claims checked against current tree, not worker prose. Worker evidence logs match independent re-runs.
+misleading_success_output: PASS. All 5 worker evidence logs match independent gate re-runs exactly (0 errors/warnings, 16/16 tests).
+flaky_tests: PASS. App.Ecs.Tests run twice, both 16/16 pass, ~1s each. Source read confirms no Thread.Sleep; uses Akka Ask with bounded TimeSpan timeouts + TestKit probes (WaitForStableZero, WaitEntityCount with bounded loops). No timeout warnings.
+long_commands: LOW RISK. Build commands <5s each; test filter run ~1s. dotnet test FantaSim.sln full would be slower but the filtered App.Ecs.Tests run is fast. No timeout risk for the gates actually required by Wave 1.
+
+== Verdict ==
+
+confirmed. All Wave 1 acceptance criteria independently verified:
+- T1 contracts build clean and have zero forbidden runtime references in public surface or package refs.
+- App.Command + App.World integrated into FantaSim.sln under contracts solution folder with full build configs.
+- App.Ecs behavioral tests (16) pass deterministically, no sleeps, no flakiness on re-run.
+- YokanProjectsRoot added; R3 + DynamicData package versions added; no world-lib package versions leaked into props.
+- fantasim-world sibling repo has no tracked modifications (only pre-existing untracked AGENTS.md).
+- Dirty-worktree boundaries respected; no Wave 1 worker touched user/agent pre-existing files.

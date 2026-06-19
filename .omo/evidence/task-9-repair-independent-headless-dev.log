@@ -1,0 +1,14 @@
+Godot Engine v4.6.3.stable.mono.official.7d41c59c4 - https://godotengine.org
+
+[Host] composition root starting...
+[Host] registered: Resource
+[Host] registered: SceneFlow
+[Host] registered: Ecs
+[Host] registered: World
+[Host] World detail: projection registered
+[Host] registered: Command (orchestration healthy, 3 commands)
+[Host] registered: Ui
+[Host] composed services: Resource, SceneFlow, Ecs, World, Command, Ui
+[Host] composition activated.
+[Main] Host autoload should have composed all services.
+[INFO][06/19/2026 09:25:23.429Z][Thread 0001][CoordinatedShutdown (akka://fantasim)] CoordinatedShutdown invoked due to [Reason:Akka.Actor.CoordinatedShutdown+ActorSystemTerminateReason]. Exiting with [ExitCode:0].

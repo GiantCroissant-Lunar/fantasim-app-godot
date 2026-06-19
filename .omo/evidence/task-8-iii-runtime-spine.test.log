@@ -1,0 +1,26 @@
+  Determining projects to restore...
+  Restored /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.World.Projection.Tests/App.World.Projection.Tests.csproj (in 163 ms).
+  2 of 3 projects are up-to-date for restore.
+  App.World -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/contracts/App.World/bin/Debug/net8.0/FantaSim.App.World.Contracts.dll
+  App.World.Projection -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.World.Projection/bin/Debug/net8.0/FantaSim.App.World.Projection.dll
+  App.World.Projection.Tests -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.World.Projection.Tests/bin/Debug/net8.0/App.World.Projection.Tests.dll
+Test run for /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.World.Projection.Tests/bin/Debug/net8.0/App.World.Projection.Tests.dll (.NETCoreApp,Version=v8.0)
+VSTest version 17.14.1 (arm64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 8.0.24)
+[xUnit.net 00:00:00.03]   Discovering: App.World.Projection.Tests
+[xUnit.net 00:00:00.07]   Discovered:  App.World.Projection.Tests
+[xUnit.net 00:00:00.07]   Starting:    App.World.Projection.Tests
+[xUnit.net 00:00:00.10]   Finished:    App.World.Projection.Tests
+  Passed FantaSim.App.World.Projection.Tests.FieldProjectionServiceTests.Collection_refreshes_to_latest_values_after_generation_change [7 ms]
+  Passed FantaSim.App.World.Projection.Tests.FieldProjectionServiceTests.GenerationChanged_observable_emits_after_generation_change [2 ms]
+  Passed FantaSim.App.World.Projection.Tests.FieldProjectionServiceTests.Collection_count_matches_seeded_fields_after_construction [1 ms]
+  Passed FantaSim.App.World.Projection.Tests.FieldProjectionServiceTests.Collection_keeps_configured_fields_but_clears_unreported_values_after_change [< 1 ms]
+
+Test Run Successful.
+Total tests: 4
+     Passed: 4
+ Total time: 0.5951 Seconds
+Results File: /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.World.Projection.Tests/TestResults/_Juis-Mac-mini_2026-06-19_14_53_56.trx

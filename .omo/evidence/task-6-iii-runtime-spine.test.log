@@ -1,0 +1,12 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  App.Ecs -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/contracts/App.Ecs/bin/Debug/net8.0/FantaSim.App.Ecs.Contracts.dll
+  App.Command -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/contracts/App.Command/bin/Debug/net8.0/FantaSim.App.Command.Contracts.dll
+  App.World -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/contracts/App.World/bin/Debug/net8.0/FantaSim.App.World.Contracts.dll
+  App.Command -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.Command/bin/Debug/net8.0/FantaSim.App.Command.dll
+  App.Command.Tests -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Command.Tests/bin/Debug/net8.0/App.Command.Tests.dll
+Test run for /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Command.Tests/bin/Debug/net8.0/App.Command.Tests.dll (.NETCoreApp,Version=v8.0)
+A total of 1 test files matched the specified pattern.
+Results File: /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Command.Tests/TestResults/.omo/evidence/task-6-iii-runtime-spine.trx
+
+Passed!  - Failed:     0, Passed:    11, Skipped:     0, Total:    11, Duration: 25 ms - App.Command.Tests.dll (net8.0)

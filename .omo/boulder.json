@@ -1,0 +1,85 @@
+{
+  "schema_version": 2,
+  "active_work_id": "iii-runtime-spine",
+  "works": {
+    "iii-runtime-spine": {
+      "work_id": "iii-runtime-spine",
+      "active_plan": ".omo/plans/iii-runtime-spine.md",
+      "plan_name": "iii-runtime-spine",
+      "session_ids": [
+        "opencode:ses_121e024cfffetZvO3SV7qiF5aG"
+      ],
+      "status": "completed",
+      "worktree_path": null,
+      "session_origins": {},
+      "task_sessions": {
+        "todo:6": {
+          "task_key": "todo:6",
+          "task_label": "6",
+          "task_title": "Add `App.Command` T3 local orchestration implementation",
+          "session_id": "opencode:ses_121173932ffeffRsymjtY1nPSM",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "started_at": "2026-06-19T08:10:00.000Z",
+          "ended_at": "2026-06-19T08:17:23.000Z",
+          "elapsed_ms": 443000,
+          "status": "completed",
+          "updated_at": "2026-06-19T08:17:23.000Z"
+        },
+        "todo:8": {
+          "task_key": "todo:8",
+          "task_label": "8",
+          "task_title": "Add `App.World.Projection` T3 using R3 plus `ObservableCollection`",
+          "session_id": "opencode:ses_1211738dfffeRE33pfaxwrkug7",
+          "agent": "Sisyphus-Junior",
+          "category": "unspecified-high",
+          "started_at": "2026-06-19T08:10:00.000Z",
+          "ended_at": "2026-06-19T08:24:57.000Z",
+          "elapsed_ms": 897000,
+          "status": "completed",
+          "updated_at": "2026-06-19T08:24:57.000Z"
+        }
+      },
+      "updated_at": "2026-06-19T09:38:25.474Z",
+      "ended_at": "2026-06-19T09:38:25.474Z"
+    }
+  },
+  "session_ids": [
+    "opencode:ses_121e024cfffetZvO3SV7qiF5aG"
+  ],
+  "session_origins": {},
+  "task_sessions": {
+    "todo:6": {
+      "task_key": "todo:6",
+      "task_label": "6",
+      "task_title": "Add `App.Command` T3 local orchestration implementation",
+      "session_id": "opencode:ses_121173932ffeffRsymjtY1nPSM",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "started_at": "2026-06-19T08:10:00.000Z",
+      "ended_at": "2026-06-19T08:17:23.000Z",
+      "elapsed_ms": 443000,
+      "status": "completed",
+      "updated_at": "2026-06-19T08:17:23.000Z"
+    },
+    "todo:8": {
+      "task_key": "todo:8",
+      "task_label": "8",
+      "task_title": "Add `App.World.Projection` T3 using R3 plus `ObservableCollection`",
+      "session_id": "opencode:ses_1211738dfffeRE33pfaxwrkug7",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "started_at": "2026-06-19T08:10:00.000Z",
+      "ended_at": "2026-06-19T08:24:57.000Z",
+      "elapsed_ms": 897000,
+      "status": "completed",
+      "updated_at": "2026-06-19T08:24:57.000Z"
+    }
+  },
+  "active_plan": ".omo/plans/iii-runtime-spine.md",
+  "plan_name": "iii-runtime-spine",
+  "status": "completed",
+  "updated_at": "2026-06-19T09:38:25.474Z",
+  "worktree_path": null,
+  "ended_at": "2026-06-19T09:38:25.474Z"
+}

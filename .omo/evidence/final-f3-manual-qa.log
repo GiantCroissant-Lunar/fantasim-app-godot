@@ -1,0 +1,143 @@
+# F3 Final Manual QA - iii-runtime-spine plan
+
+Plan: .omo/plans/iii-runtime-spine.md (Final Verification Wave F3)
+Wave: F3 (Real manual QA)
+Ran fresh from repo root: /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot
+Started: 2026-06-19T09:30:41Z
+Ended:   2026-06-19T09:33:35Z
+Operator: Sisyphus-Junior (independent lane)
+
+## Verdict
+
+<verdict>PASS</verdict>
+<confidence>HIGH</confidence>
+
+All F3 success criteria met. `task verify` exits 0; `task build:godot:desktop` exits 0
+and exports a runnable macOS app; both dev and exported headless smokes emit all six
+`[Host] registered:` lines plus the `composed services:` line with all six names; the old
+runtime fallback string `iii + Hermes through App.Command` is absent from `project/`.
+
+## Command outcomes
+
+| # | Command | Exit | Duration | Evidence |
+|---|---|---|---|---|
+| 1 | `task verify` | 0 | 31s | final-f3-task-verify.log |
+| 2 | `task build:godot:desktop` | 0 | 22s | final-f3-build.log |
+| 3 | dev headless smoke (`Godot --headless --path project/hosts/complete-app --quit-after 2000`) | 0 | 15s | final-f3-dev-smoke.log |
+| 4 | exported headless smoke (`build/_artifacts/5.0.0/godot/osx/complete-app.app/Contents/MacOS/complete-app --headless --quit-after 2000`) | 0 | 16s | final-f3-export-smoke.log |
+| 5 | `rg -n "iii \+ Hermes through App\.Command" project` | 1 (no matches) | <1s | inline below |
+| 6 | `dotnet build -p:UseProjectReferences=true project/FantaSim.sln` (plan sc #2) | 0 | 2s | final-f3-projref-build.log |
+| 7 | `dotnet test -p:UseProjectReferences=true --no-build project/FantaSim.sln` (plan sc #3 incl. App.World tests) | 0 | 3s | final-f3-projref-test.log |
+
+## Six-service registration - dev smoke (final-f3-dev-smoke.log)
+
+```
+[Host] composition root starting...
+[Host] registered: Resource
+[Host] registered: SceneFlow
+[Host] registered: Ecs
+[Host] registered: World
+[Host] World detail: projection registered
+[Host] registered: Command (orchestration healthy, 3 commands)
+[Host] registered: Ui
+[Host] composed services: Resource, SceneFlow, Ecs, World, Command, Ui
+[Host] composition activated.
+[Main] Host autoload should have composed all services.
+[INFO][06/19/2026 09:32:11.106Z][Thread 0001][CoordinatedShutdown (akka://fantasim)] CoordinatedShutdown invoked due to [Reason:Akka.Actor.CoordinatedShutdown+ActorSystemTerminateReason]. Exiting with [ExitCode:0].
+```
+
+## Six-service registration - exported headless smoke (final-f3-export-smoke.log)
+
+```
+Godot Engine v4.6.3.stable.mono.official.7d41c59c4 - https://godotengine.org
+[INFO][06/19/2026 09:32:16.193Z][Thread 0001][CoordinatedShutdown (akka://fantasim)] CoordinatedShutdown invoked due to [Reason:Akka.Actor.CoordinatedShutdown+ActorSystemTerminateReason]. Exiting with [ExitCode:0].
+[Host] composition root starting...
+[Host] registered: Resource
+[Host] registered: SceneFlow
+[Host] registered: Ecs
+[Host] registered: World
+[Host] World detail: projection registered
+[Host] registered: Command (orchestration healthy, 3 commands)
+[Host] registered: Ui
+[Host] composed services: Resource, SceneFlow, Ecs, World, Command, Ui
+[Host] composition activated.
+[Main] Host autoload should have composed all services.
+```
+
+Note: in the exported run the Akka `CoordinatedShutdown` line printed before the `[Host]`
+block because Godot autoload `Main.cs` writes its Akka teardown handler ahead of the
+`[Host]` `GD.Print` ordering under mono headless; the composition log itself is fully
+present and the process exits 0 via Godot's `--quit-after 2000`. Both orderings are
+deterministic and not a fallback.
+
+## Old fallback string probe (plan sc #6)
+
+Command: `rg -n "iii \+ Hermes through App\.Command" project`
+Result: exit 1 (no matches). Old fallback absent from project source.
+
+## Test summary - default path (final-f3-task-verify.log)
+
+- App.Resource.Tests.dll       : Passed 1, Failed 0, Skipped 0, Total 1
+- App.SceneFlow.Tests.dll      : Passed 1, Failed 0, Skipped 0, Total 1
+- App.Ui.Tests.dll             : Passed 1, Failed 0, Skipped 0, Total 1
+- App.World.Projection.Tests.dll: Passed 4, Failed 0, Skipped 0, Total 4
+- App.Command.Tests.dll        : Passed 11, Failed 0, Skipped 0, Total 11
+- App.Ecs.Tests.dll            : Passed 16, Failed 0, Skipped 0, Total 16
+- App.World.Tests.dll          : 0 tests discovered (uses `USE_PROJECT_REFERENCES` define; default build path intentionally compiles them out; covered by the project-refs test run below)
+- Build: 0 Warning(s), 0 Error(s); overall `task verify` exit 0
+
+## Test summary - project-refs path (final-f3-projref-test.log, plan sc #2/#3)
+
+- App.Resource.Tests.dll       : Passed 1, Failed 0, Skipped 0, Total 1
+- App.SceneFlow.Tests.dll      : Passed 1, Failed 0, Skipped 0, Total 1
+- App.Ui.Tests.dll             : Passed 1, Failed 0, Skipped 0, Total 1
+- App.World.Projection.Tests.dll: Passed 4, Failed 0, Skipped 0, Total 4
+- App.Command.Tests.dll        : Passed 11, Failed 0, Skipped 0, Total 11
+- App.Ecs.Tests.dll            : Passed 20, Failed 0, Skipped 0, Total 20 (project-refs path adds World-coupled Ecs tests)
+- App.World.Tests.dll          : Passed 5, Failed 0, Skipped 0, Total 5 (compiled in via `USE_PROJECT_REFERENCES`)
+- Total across project-refs path: 43 tests, 0 failed, 0 skipped
+- Build: 2 NU1903 warnings about MessagePack 3.1.4 GHSA-hv8m-jj95-wg3x (pre-existing in fantasim-world's World.TruthStream.Core, NOT introduced by this plan; tracked as FYI not blocking), 0 Errors
+
+## Plan success criteria check (sc #1-#7)
+
+1. `dotnet build project/FantaSim.sln` exit 0 default props - PASS (covered inside `task verify`)
+2. `dotnet build -p:UseProjectReferences=true project/FantaSim.sln` exit 0 sibling world refs - PASS (final-f3-projref-build.log)
+3. `dotnet test project/FantaSim.sln` exit 0 incl. App.Ecs/World/Command/World.Projection tests - PASS (default: 34 tests green; project-refs: 43 tests green incl. all required suites)
+4. `task verify` exit 0 - PASS
+5. `task build:godot:desktop` exports successfully - PASS (final-f3-build.log; export artifact produced at build/_artifacts/5.0.0/godot/osx/complete-app.app)
+6. Exported/headless app smoke logs six composed services and a real orchestration runtime mode, not the `iii + Hermes through App.Command` fallback - PASS (six services emitted in both smokes; Command line reports `orchestration healthy, 3 commands`; old fallback string absent)
+7. `fantasim-world` has no diff and no new Akka/R3/Godot/iii dependencies - PASS (fantasim-world working tree: only untracked `AGENTS.md`, unrelated to this plan; no diff to tracked files; no new runtime deps introduced there)
+
+## Adversarial class probes
+
+- **stale_state**: All commands rerun fresh from repo root. `task verify` regenerated stage.pck and complete-app.zip with timestamps 17:31 (after this lane started). No cached smoke outputs were reused; both smoke binaries were launched against freshly built artifacts.
+- **misleading_success_output**: Parsed the actual smoke log text for each of the six service names (`[Host] registered: Resource`, `SceneFlow`, `Ecs`, `World`, `Command`, `Ui`) plus the literal `composed services: Resource, SceneFlow, Ecs, World, Command, Ui` line. Exit 0 alone was not trusted; the strings were verified present in both dev and export smoke logs. Also verified the old fallback string is literally absent via ripgrep.
+- **long_commands**: Longest command was `task verify` at 31s; `task build:godot:desktop` at 22s; both smoke runs at 15-16s. No hangs, no timeouts (max wall budget was 1800s for verify, 120s for smoke; all returned well within budget).
+- **generated/cached artifacts**: Generated by this lane under build/_artifacts/5.0.0/godot/:
+    - bundles/stage.pck
+    - osx/complete-app.app/Contents/MacOS/complete-app (185MB executable, mtime 17:31)
+    - osx/complete-app.zip (134MB, mtime 17:31)
+    - osx/version.json
+  Test artifacts regenerated: project/tests/*/bin/Debug/net8.0/*.dll, project/tests/*/TestResults/.
+- **dirty_worktree**: All changes observed via `git status --porcelain` at lane end are pre-existing from the implementation waves of the iii-runtime-spine plan (Host.cs, Bootstrap.cs, ViewRenderer.cs, new App.Command/App.World/App.World.Projection plugin trees, etc.). This F3 lane wrote only files under `.omo/evidence/` and regenerated build/test artifacts under `build/`, `project/tests/*/bin/`, `project/tests/*/TestResults/`, and `project/hosts/content-app/bundles` (symlink). No product files, plan files, ledger, or notepads were edited by this lane.
+
+## Classification notes / pre-existing issues
+
+- App.World.Tests in default build path shows 0 tests discovered (test discoverer warning). This is by design: the test project compiles its real fixtures only under `USE_PROJECT_REFERENCES=true` because they exercise the project-referenced WorldRuntime composition. Plan success criterion #3 calls out App.World catalog tests; the project-refs test run (final-f3-projref-test.log) shows 5/5 passing. Not blocking for F3.
+- NU1903 MessagePack 3.1.4 GHSA-hv8m-jj95-wg3x warning in fantasim-world's World.TruthStream.Core appears only under project-refs build. It is pre-existing in fantasim-world (not introduced or modified by this plan) and lives outside the fantasim-app-godot repo. Tracked as FYI, not blocking for F3. The plan's must-NOT boundary (no Akka/R3/Godot/iii deps in fantasim-world, no diff in fantasim-world) is unaffected: MessagePack was already a fantasim-world dependency before this plan.
+
+## Blocking issues
+
+None. All F3 success criteria pass.
+
+## Evidence path
+
+.omo/evidence/final-f3-manual-qa.log           (this file)
+.omo/evidence/final-f3-task-verify.log          (task verify full output)
+.omo/evidence/final-f3-build.log                (task build:godot:desktop full output)
+.omo/evidence/final-f3-dev-smoke.log            (dev headless smoke full output)
+.omo/evidence/final-f3-export-smoke.log         (exported headless smoke full output)
+.omo/evidence/final-f3-projref-build.log        (project-refs build full output, plan sc #2)
+.omo/evidence/final-f3-projref-test.log         (project-refs test full output, plan sc #3)
+
+F3 lane complete. No commit performed. No product/plan/ledger/notepad files edited. F3 is not marked complete in the plan file; only evidence is produced for the orchestrator to consume.

@@ -1,0 +1,94 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="08188214-4c5a-4aff-8278-9a0bad7191af" name="@Juis-Mac-mini 2026-06-19 14:57:15" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-06-19T14:57:15.5211250+08:00" queuing="2026-06-19T14:57:15.5211250+08:00" start="2026-06-19T14:57:15.1233100+08:00" finish="2026-06-19T14:57:15.5302710+08:00" />
+  <TestSettings name="default" id="2918d2ed-3aba-486e-8d82-400db23911a6">
+    <Deployment runDeploymentRoot="_Juis-Mac-mini_2026-06-19_14_57_15" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="e3d24100-d46e-41a4-8aea-9a1e914a21c3" testId="e3de1bd6-525d-4b02-981b-8bafba79539b" testName="FantaSim.App.Command.Tests.LocalOrchestratorTests.Tick_forwards_delta_to_ecs_update_all" computerName="Juis-Mac-mini" duration="00:00:00.0043708" startTime="2026-06-19T14:57:15.4976390+08:00" endTime="2026-06-19T14:57:15.4976390+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="e3d24100-d46e-41a4-8aea-9a1e914a21c3" />
+    <UnitTestResult executionId="bac732c7-34ac-4257-9f78-263eec7cfcd7" testId="38a0f97d-090c-1a9c-5960-bfbffb612af8" testName="FantaSim.App.Command.Tests.LocalOrchestratorTests.Refresh_reports_overview_without_ecs_update" computerName="Juis-Mac-mini" duration="00:00:00.0001854" startTime="2026-06-19T14:57:15.5073650+08:00" endTime="2026-06-19T14:57:15.5073650+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="bac732c7-34ac-4257-9f78-263eec7cfcd7" />
+    <UnitTestResult executionId="4d8f1ea4-e658-40f4-a268-6b47f1fd7ad8" testId="97ba6794-1f3e-2349-6b18-168ad8cc92fe" testName="FantaSim.App.Command.Tests.LocalOrchestratorTests.Generate_drives_world_generation_and_ecs_update_then_returns_success" computerName="Juis-Mac-mini" duration="00:00:00.0109344" startTime="2026-06-19T14:57:15.4932380+08:00" endTime="2026-06-19T14:57:15.4932380+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="4d8f1ea4-e658-40f4-a268-6b47f1fd7ad8" />
+    <UnitTestResult executionId="aa0c6d76-6fbc-496b-abb8-479665aa3ae1" testId="a822f1e4-8e61-f073-6af0-6e57c48cb28e" testName="FantaSim.App.Command.Tests.IiiBridgeOrchestratorTests.TriggerAsync_throws_documented_NotImplementedException" computerName="Juis-Mac-mini" duration="00:00:00.0022624" startTime="2026-06-19T14:57:15.4896750+08:00" endTime="2026-06-19T14:57:15.4896750+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="aa0c6d76-6fbc-496b-abb8-479665aa3ae1" />
+    <UnitTestResult executionId="843d3ac7-3731-4aba-b2f2-9e7f6931cdb9" testId="79c20acb-7854-e212-289f-8d75a12293c7" testName="FantaSim.App.Command.Tests.CommandServiceTests.ExecuteAsync_routes_registered_command_to_handler" computerName="Juis-Mac-mini" duration="00:00:00.0042286" startTime="2026-06-19T14:57:15.4886680+08:00" endTime="2026-06-19T14:57:15.4886680+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="843d3ac7-3731-4aba-b2f2-9e7f6931cdb9" />
+    <UnitTestResult executionId="1c9ee1f4-12b9-41ec-867b-f7739563a62b" testId="858c0908-388b-c1aa-e957-8abf722283fe" testName="FantaSim.App.Command.Tests.CommandServiceTests.ExecuteAsync_world_orchestrate_delegates_to_local_orchestrator" computerName="Juis-Mac-mini" duration="00:00:00.0128292" startTime="2026-06-19T14:57:15.5074240+08:00" endTime="2026-06-19T14:57:15.5074240+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1c9ee1f4-12b9-41ec-867b-f7739563a62b" />
+    <UnitTestResult executionId="0a3eb8be-79b3-4b22-8b6f-6deee226d0e3" testId="e6138a32-4c86-e507-e18d-530b1999dd86" testName="FantaSim.App.Command.Tests.LocalOrchestratorTests.Unknown_command_returns_typed_error" computerName="Juis-Mac-mini" duration="00:00:00.0005098" startTime="2026-06-19T14:57:15.4981650+08:00" endTime="2026-06-19T14:57:15.4981650+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0a3eb8be-79b3-4b22-8b6f-6deee226d0e3" />
+    <UnitTestResult executionId="c79ca9a1-a168-4803-9023-c7e147e709d5" testId="5e79081c-5ef5-4c34-335a-eb79151fb94d" testName="FantaSim.App.Command.Tests.CommandServiceTests.ExecuteAsync_unknown_command_returns_typed_error" computerName="Juis-Mac-mini" duration="00:00:00.0001778" startTime="2026-06-19T14:57:15.5074420+08:00" endTime="2026-06-19T14:57:15.5074420+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c79ca9a1-a168-4803-9023-c7e147e709d5" />
+    <UnitTestResult executionId="729a712c-21d0-47c0-a3b6-29a3054cc9a6" testId="3e9c5874-9ac4-6bb4-7bbc-f2e777c9a645" testName="FantaSim.App.Command.Tests.LocalOrchestratorTests.Health_reports_ok_only_when_both_services_registered" computerName="Juis-Mac-mini" duration="00:00:00.0003327" startTime="2026-06-19T14:57:15.4988250+08:00" endTime="2026-06-19T14:57:15.4988250+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="729a712c-21d0-47c0-a3b6-29a3054cc9a6" />
+    <UnitTestResult executionId="2e4d3013-5ad6-4c99-94ce-5f94c5658b1d" testId="d1ebc71c-f9ac-3d2d-5d0d-d61fa3aaeb82" testName="FantaSim.App.Command.Tests.LocalOrchestratorTests.Generate_without_world_registered_returns_missing_service_error" computerName="Juis-Mac-mini" duration="00:00:00.0002941" startTime="2026-06-19T14:57:15.4984760+08:00" endTime="2026-06-19T14:57:15.4984770+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="2e4d3013-5ad6-4c99-94ce-5f94c5658b1d" />
+    <UnitTestResult executionId="a0b07b8f-4a89-4574-bede-1d0d0b59da20" testId="2fa98fec-1cd2-790c-ae4b-721d04bd2148" testName="FantaSim.App.Command.Tests.IiiBridgeOrchestratorTests.HealthAsync_throws_documented_NotImplementedException" computerName="Juis-Mac-mini" duration="00:00:00.0042295" startTime="2026-06-19T14:57:15.4877380+08:00" endTime="2026-06-19T14:57:15.4877450+08:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a0b07b8f-4a89-4574-bede-1d0d0b59da20" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="FantaSim.App.Command.Tests.CommandServiceTests.ExecuteAsync_routes_registered_command_to_handler" storage="/users/apprenticegc/work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/app.command.tests/bin/debug/net8.0/app.command.tests.dll" id="79c20acb-7854-e212-289f-8d75a12293c7">
+      <Execution id="843d3ac7-3731-4aba-b2f2-9e7f6931cdb9" />
+      <TestMethod codeBase="/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Command.Tests/bin/Debug/net8.0/App.Command.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="FantaSim.App.Command.Tests.CommandServiceTests" name="ExecuteAsync_routes_registered_command_to_handler" />
+    </UnitTest>
+    <UnitTest name="FantaSim.App.Command.Tests.IiiBridgeOrchestratorTests.TriggerAsync_throws_documented_NotImplementedException" storage="/users/apprenticegc/work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/app.command.tests/bin/debug/net8.0/app.command.tests.dll" id="a822f1e4-8e61-f073-6af0-6e57c48cb28e">
+      <Execution id="aa0c6d76-6fbc-496b-abb8-479665aa3ae1" />
+      <TestMethod codeBase="/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Command.Tests/bin/Debug/net8.0/App.Command.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="FantaSim.App.Command.Tests.IiiBridgeOrchestratorTests" name="TriggerAsync_throws_documented_NotImplementedException" />
+    </UnitTest>
+    <UnitTest name="FantaSim.App.Command.Tests.LocalOrchestratorTests.Health_reports_ok_only_when_both_services_registered" storage="/users/apprenticegc/work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/app.command.tests/bin/debug/net8.0/app.command.tests.dll" id="3e9c5874-9ac4-6bb4-7bbc-f2e777c9a645">
+      <Execution id="729a712c-21d0-47c0-a3b6-29a3054cc9a6" />
+      <TestMethod codeBase="/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Command.Tests/bin/Debug/net8.0/App.Command.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="FantaSim.App.Command.Tests.LocalOrchestratorTests" name="Health_reports_ok_only_when_both_services_registered" />
+    </UnitTest>
+    <UnitTest name="FantaSim.App.Command.Tests.LocalOrchestratorTests.Tick_forwards_delta_to_ecs_update_all" storage="/users/apprenticegc/work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/app.command.tests/bin/debug/net8.0/app.command.tests.dll" id="e3de1bd6-525d-4b02-981b-8bafba79539b">
+      <Execution id="e3d24100-d46e-41a4-8aea-9a1e914a21c3" />
+      <TestMethod codeBase="/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Command.Tests/bin/Debug/net8.0/App.Command.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="FantaSim.App.Command.Tests.LocalOrchestratorTests" name="Tick_forwards_delta_to_ecs_update_all" />
+    </UnitTest>
+    <UnitTest name="FantaSim.App.Command.Tests.LocalOrchestratorTests.Generate_without_world_registered_returns_missing_service_error" storage="/users/apprenticegc/work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/app.command.tests/bin/debug/net8.0/app.command.tests.dll" id="d1ebc71c-f9ac-3d2d-5d0d-d61fa3aaeb82">
+      <Execution id="2e4d3013-5ad6-4c99-94ce-5f94c5658b1d" />
+      <TestMethod codeBase="/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Command.Tests/bin/Debug/net8.0/App.Command.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="FantaSim.App.Command.Tests.LocalOrchestratorTests" name="Generate_without_world_registered_returns_missing_service_error" />
+    </UnitTest>
+    <UnitTest name="FantaSim.App.Command.Tests.IiiBridgeOrchestratorTests.HealthAsync_throws_documented_NotImplementedException" storage="/users/apprenticegc/work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/app.command.tests/bin/debug/net8.0/app.command.tests.dll" id="2fa98fec-1cd2-790c-ae4b-721d04bd2148">
+      <Execution id="a0b07b8f-4a89-4574-bede-1d0d0b59da20" />
+      <TestMethod codeBase="/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Command.Tests/bin/Debug/net8.0/App.Command.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="FantaSim.App.Command.Tests.IiiBridgeOrchestratorTests" name="HealthAsync_throws_documented_NotImplementedException" />
+    </UnitTest>
+    <UnitTest name="FantaSim.App.Command.Tests.LocalOrchestratorTests.Refresh_reports_overview_without_ecs_update" storage="/users/apprenticegc/work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/app.command.tests/bin/debug/net8.0/app.command.tests.dll" id="38a0f97d-090c-1a9c-5960-bfbffb612af8">
+      <Execution id="bac732c7-34ac-4257-9f78-263eec7cfcd7" />
+      <TestMethod codeBase="/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Command.Tests/bin/Debug/net8.0/App.Command.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="FantaSim.App.Command.Tests.LocalOrchestratorTests" name="Refresh_reports_overview_without_ecs_update" />
+    </UnitTest>
+    <UnitTest name="FantaSim.App.Command.Tests.LocalOrchestratorTests.Generate_drives_world_generation_and_ecs_update_then_returns_success" storage="/users/apprenticegc/work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/app.command.tests/bin/debug/net8.0/app.command.tests.dll" id="97ba6794-1f3e-2349-6b18-168ad8cc92fe">
+      <Execution id="4d8f1ea4-e658-40f4-a268-6b47f1fd7ad8" />
+      <TestMethod codeBase="/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Command.Tests/bin/Debug/net8.0/App.Command.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="FantaSim.App.Command.Tests.LocalOrchestratorTests" name="Generate_drives_world_generation_and_ecs_update_then_returns_success" />
+    </UnitTest>
+    <UnitTest name="FantaSim.App.Command.Tests.CommandServiceTests.ExecuteAsync_unknown_command_returns_typed_error" storage="/users/apprenticegc/work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/app.command.tests/bin/debug/net8.0/app.command.tests.dll" id="5e79081c-5ef5-4c34-335a-eb79151fb94d">
+      <Execution id="c79ca9a1-a168-4803-9023-c7e147e709d5" />
+      <TestMethod codeBase="/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Command.Tests/bin/Debug/net8.0/App.Command.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="FantaSim.App.Command.Tests.CommandServiceTests" name="ExecuteAsync_unknown_command_returns_typed_error" />
+    </UnitTest>
+    <UnitTest name="FantaSim.App.Command.Tests.LocalOrchestratorTests.Unknown_command_returns_typed_error" storage="/users/apprenticegc/work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/app.command.tests/bin/debug/net8.0/app.command.tests.dll" id="e6138a32-4c86-e507-e18d-530b1999dd86">
+      <Execution id="0a3eb8be-79b3-4b22-8b6f-6deee226d0e3" />
+      <TestMethod codeBase="/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Command.Tests/bin/Debug/net8.0/App.Command.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="FantaSim.App.Command.Tests.LocalOrchestratorTests" name="Unknown_command_returns_typed_error" />
+    </UnitTest>
+    <UnitTest name="FantaSim.App.Command.Tests.CommandServiceTests.ExecuteAsync_world_orchestrate_delegates_to_local_orchestrator" storage="/users/apprenticegc/work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/app.command.tests/bin/debug/net8.0/app.command.tests.dll" id="858c0908-388b-c1aa-e957-8abf722283fe">
+      <Execution id="1c9ee1f4-12b9-41ec-867b-f7739563a62b" />
+      <TestMethod codeBase="/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Command.Tests/bin/Debug/net8.0/App.Command.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="FantaSim.App.Command.Tests.CommandServiceTests" name="ExecuteAsync_world_orchestrate_delegates_to_local_orchestrator" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="e3de1bd6-525d-4b02-981b-8bafba79539b" executionId="e3d24100-d46e-41a4-8aea-9a1e914a21c3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="38a0f97d-090c-1a9c-5960-bfbffb612af8" executionId="bac732c7-34ac-4257-9f78-263eec7cfcd7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="97ba6794-1f3e-2349-6b18-168ad8cc92fe" executionId="4d8f1ea4-e658-40f4-a268-6b47f1fd7ad8" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="a822f1e4-8e61-f073-6af0-6e57c48cb28e" executionId="aa0c6d76-6fbc-496b-abb8-479665aa3ae1" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="79c20acb-7854-e212-289f-8d75a12293c7" executionId="843d3ac7-3731-4aba-b2f2-9e7f6931cdb9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="858c0908-388b-c1aa-e957-8abf722283fe" executionId="1c9ee1f4-12b9-41ec-867b-f7739563a62b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e6138a32-4c86-e507-e18d-530b1999dd86" executionId="0a3eb8be-79b3-4b22-8b6f-6deee226d0e3" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5e79081c-5ef5-4c34-335a-eb79151fb94d" executionId="c79ca9a1-a168-4803-9023-c7e147e709d5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="3e9c5874-9ac4-6bb4-7bbc-f2e777c9a645" executionId="729a712c-21d0-47c0-a3b6-29a3054cc9a6" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d1ebc71c-f9ac-3d2d-5d0d-d61fa3aaeb82" executionId="2e4d3013-5ad6-4c99-94ce-5f94c5658b1d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="2fa98fec-1cd2-790c-ae4b-721d04bd2148" executionId="a0b07b8f-4a89-4574-bede-1d0d0b59da20" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="11" executed="11" passed="11" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 8.0.24)
+[xUnit.net 00:00:00.03]   Discovering: App.Command.Tests
+[xUnit.net 00:00:00.05]   Discovered:  App.Command.Tests
+[xUnit.net 00:00:00.05]   Starting:    App.Command.Tests
+[xUnit.net 00:00:00.09]   Finished:    App.Command.Tests
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

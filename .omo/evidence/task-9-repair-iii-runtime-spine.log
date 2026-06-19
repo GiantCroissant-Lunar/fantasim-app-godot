@@ -1,0 +1,97 @@
+# Task 9 Repair - iii-runtime-spine
+# Generated: 2026-06-19
+# Scope: repair Task 9 independent-verification blockers for Host composition order and UI runtime-mode reporting.
+
+## Changes made
+
+1. `project/hosts/complete-app/Host.cs`
+   - Removed `ComposeProjection` as a top-level composition step.
+   - Integrated projection registration inside `ComposeWorld` (World detail, tags ["world","projection"]).
+   - Enforced strict top-level order: Resource -> SceneFlow -> Ecs -> World -> Command -> Ui.
+   - Added explicit per-service `GD.Print` logs, including a summary line that enumerates the six top-level services.
+   - Added runtime health logging in `ComposeCommand` using `IWorldOrchestration.HealthAsync`.
+   - Registered a new `RuntimeStatusViewSource` in `ComposeUi` so the UI data model has a producer-side `agentRuntime.runtime` value.
+
+2. `project/hosts/complete-app/RuntimeStatusViewSource.cs` (new)
+   - Implements `FantaSim.App.Ui.IViewSource`.
+   - Builds a `RuntimeSurfaceDocument` whose `agentRuntime.runtime` field is populated from the real `IWorldOrchestration.HealthAsync` result.
+   - No visual/layout changes; it only supplies the data model.
+
+3. `project/plugins/App.Ui.Seam/ViewRenderer.cs`
+   - Unchanged in this repair. The fallback text remains "local in-process orchestration", which is truthful and now superseded by the active runtime-status view source.
+
+4. `project/hosts/complete-app/complete-app.csproj`, `project/plugins/App.Common/Bootstrap.cs`
+   - Unchanged in this repair (already contained required project refs and SharedAssemblyPolicy prefixes).
+
+## Verification commands and results
+
+### dotnet build project/FantaSim.sln (default)
+- Result: Build succeeded. 0 Warning(s), 0 Error(s).
+- Log: `.omo/evidence/task-9-repair-build-default.log`
+
+### dotnet build -p:UseProjectReferences=true project/FantaSim.sln
+- Result: Build succeeded. 21 Warning(s), 0 Error(s).
+- Warnings are pre-existing: NU1903 (MessagePack) and xUnit1031 (App.Ecs.Tests).
+- Log: `.omo/evidence/task-9-repair-build-projrefs.log`
+
+### Targeted tests (after projrefs build)
+- App.Command.Tests: Passed 11/11
+- App.World.Tests: Passed 5/5
+- App.World.Projection.Tests: Passed 4/4
+- App.Ecs.Tests: Passed 20/20
+- Logs: `.omo/evidence/task-9-repair-app-*-tests.log`
+
+### Full solution test (after default build)
+- All discovered test assemblies passed. App.World.Tests reports "No test is available" under default build because its real tests are gated by `UseProjectReferences=true`; this is expected and covered by the targeted projrefs run above.
+- Log: `.omo/evidence/task-9-repair-tests-full.log`
+
+### task build:godot:desktop
+- Result: Build succeeded; exported `build/_artifacts/5.0.0/godot/osx/complete-app.app` and zip.
+- Log: `.omo/evidence/task-9-repair-export.log`
+
+### Dev headless smoke
+- Command: `/Users/apprenticegc/Work/lunar-horse/tools/Godot_mono.app/Contents/MacOS/Godot --headless --path project/hosts/complete-app --quit-after 2000`
+- Output includes:
+  - `[Host] registered: Resource`
+  - `[Host] registered: SceneFlow`
+  - `[Host] registered: Ecs`
+  - `[Host] registered: World`
+  - `[Host] World detail: projection registered`
+  - `[Host] registered: Command (orchestration healthy, 3 commands)`
+  - `[Host] registered: Ui`
+  - `[Host] composed services: Resource, SceneFlow, Ecs, World, Command, Ui`
+- Exit code: 0
+- Log: `.omo/evidence/task-9-repair-headless-dev.log`
+
+### Exported headless smoke
+- Command: `build/_artifacts/5.0.0/godot/osx/complete-app.app/Contents/MacOS/complete-app --headless --quit-after 2000`
+- Output includes the same six service log lines and summary as the dev smoke.
+- Exit code: 0
+- Log: `.omo/evidence/task-9-repair-headless-exported.log`
+
+## rg probes
+
+### Stale fallback string
+- Command: `rg -n "iii \+ Hermes through App\.Command" project`
+- Result: no matches.
+
+### Runtime reads/writes after repair
+- Command: `rg -n "agentRuntime|\"runtime\"|RuntimeModeValue" project`
+- Result: `RuntimeStatusViewSource.cs` now writes `agentRuntime.runtime`; `ViewRenderer.cs` reads it.
+
+### Forbidden runtime references in Task 9 scoped files
+- Command: `rg -n -i "Hermes|Python|iii.bridge|iii-bridge|App\.Agent|App\.Stage|per-tick" project/hosts/complete-app/Host.cs project/hosts/complete-app/RuntimeStatusViewSource.cs project/hosts/complete-app/complete-app.csproj project/plugins/App.Common/Bootstrap.cs project/plugins/App.Ui.Seam/ViewRenderer.cs`
+- Result: only match is the pre-existing `Subtitle` label text in `ViewRenderer.cs:153`, which is a legacy UI label, not runtime wiring.
+
+## Adversarial probes
+
+- dirty_worktree: Task 9 scoped files changed by this repair are `Host.cs` and new `RuntimeStatusViewSource.cs`. Pre-existing Task 9 good files (`complete-app.csproj`, `Bootstrap.cs`, `ViewRenderer.cs`) were already modified before this repair; other repo changes are from earlier tasks and bookkeeping files.
+- stale_state: all builds/tests/smokes were rerun after edits; `UseProjectReferences=true` rebuild confirmed App.World.Tests pass.
+- misleading_success_output: smoke logs explicitly name all six services and a real health status, not just `[Host] composition activated.`
+- long_commands: export completed in ~18 seconds; no timeouts required.
+- generated/cached artifacts: build outputs, `.godot/mono/temp`, `build/_artifacts`, and `TestResults` are generated; no product logic depends on them.
+
+## Residual risks
+
+- The runtime-status view source is registered but not auto-mounted; a view consumer must request `runtime-status` for the value to be rendered. This matches the existing architecture where `IViewSource` producers are registered and `IService`/`IViewHost` consumers control visibility.
+- `RuntimeStatusViewSource.BuildDocument` reads `IWorldOrchestration.HealthAsync` synchronously via `.GetAwaiter().GetResult()`. The current `LocalOrchestrator.HealthAsync` is a trivial `Task.FromResult`, so this is safe, but future non-trivial implementations should consider async document builds.

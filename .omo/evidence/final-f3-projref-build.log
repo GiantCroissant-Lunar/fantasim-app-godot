@@ -1,0 +1,50 @@
+=== F3.10 project-refs build (plan success criterion #2) ===
+Start: 2026-06-19T09:33:30Z
+Command: dotnet build -p:UseProjectReferences=true project/FantaSim.sln
+---
+  Determining projects to restore...
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-world/project/plugins/World.TruthStream.Core/World.TruthStream.Core.csproj : warning NU1903: Package 'MessagePack' 3.1.4 has a known high severity vulnerability, https://github.com/advisories/GHSA-hv8m-jj95-wg3x [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/FantaSim.sln]
+  All projects are up-to-date for restore.
+  App.Resource -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/contracts/App.Resource/bin/Debug/netstandard2.1/FantaSim.App.Resource.Contracts.dll
+  App.Ui -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/contracts/App.Ui/bin/Debug/net8.0/FantaSim.App.Ui.Contracts.dll
+  App.Common -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.Common/bin/Debug/net8.0/FantaSim.App.Common.dll
+  App.SceneFlow -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/contracts/App.SceneFlow/bin/Debug/netstandard2.1/FantaSim.App.SceneFlow.Contracts.dll
+  App.Ecs -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/contracts/App.Ecs/bin/Debug/net8.0/FantaSim.App.Ecs.Contracts.dll
+  App.World -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/contracts/App.World/bin/Debug/net8.0/FantaSim.App.World.Contracts.dll
+  App.Command -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/contracts/App.Command/bin/Debug/net8.0/FantaSim.App.Command.Contracts.dll
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-world/project/plugins/World.TruthStream.Core/World.TruthStream.Core.csproj : warning NU1903: Package 'MessagePack' 3.1.4 has a known high severity vulnerability, https://github.com/advisories/GHSA-hv8m-jj95-wg3x
+  App.SceneFlow -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.SceneFlow/bin/Debug/net8.0/FantaSim.App.SceneFlow.dll
+  App.Resource -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.Resource/bin/Debug/net8.0/FantaSim.App.Resource.dll
+  World.TruthStream -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-world/project/contracts/World.TruthStream/bin/Debug/net8.0/FantaSim.World.TruthStream.Contracts.dll
+  World.Fields -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-world/project/contracts/World.Fields/bin/Debug/net8.0/FantaSim.World.Fields.Contracts.dll
+  App.World.Projection -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.World.Projection/bin/Debug/net8.0/FantaSim.App.World.Projection.dll
+  App.Ui -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.Ui/bin/Debug/net8.0/FantaSim.App.Ui.dll
+  App.Command -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.Command/bin/Debug/net8.0/FantaSim.App.Command.dll
+  World.Fields.Core -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-world/project/plugins/World.Fields.Core/bin/Debug/net8.0/FantaSim.World.Fields.Core.dll
+  World.TruthStream.Core -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-world/project/plugins/World.TruthStream.Core/bin/Debug/net8.0/FantaSim.World.TruthStream.Core.dll
+  App.SceneFlow.Tests -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.SceneFlow.Tests/bin/Debug/net8.0/App.SceneFlow.Tests.dll
+  App.Resource.Bundle.Seam -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.Resource.Bundle.Seam/.godot/mono/temp/bin/Debug/FantaSim.App.Resource.Bundle.Seam.dll
+  World.Parameters -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-world/project/contracts/World.Parameters/bin/Debug/net8.0/FantaSim.World.Parameters.Contracts.dll
+  App.Resource.Tests -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Resource.Tests/bin/Debug/net8.0/App.Resource.Tests.dll
+  App.Ecs -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.Ecs/bin/Debug/net8.0/FantaSim.App.Ecs.dll
+  App.Ui.Tests -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ui.Tests/bin/Debug/net8.0/App.Ui.Tests.dll
+  App.Ui.Seam -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.Ui.Seam/.godot/mono/temp/bin/Debug/FantaSim.App.Ui.Seam.dll
+  App.World -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/plugins/App.World/bin/Debug/net8.0/FantaSim.App.World.dll
+  App.Command.Tests -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Command.Tests/bin/Debug/net8.0/App.Command.Tests.dll
+  App.World.Projection.Tests -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.World.Projection.Tests/bin/Debug/net8.0/App.World.Projection.Tests.dll
+  complete-app -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/hosts/complete-app/.godot/mono/temp/bin/Debug/complete-app.dll
+  App.Ecs.Tests -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.Ecs.Tests/bin/Debug/net8.0/App.Ecs.Tests.dll
+  App.World.Tests -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.World.Tests/bin/Debug/net8.0/App.World.Tests.dll
+
+Build succeeded.
+
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-world/project/plugins/World.TruthStream.Core/World.TruthStream.Core.csproj : warning NU1903: Package 'MessagePack' 3.1.4 has a known high severity vulnerability, https://github.com/advisories/GHSA-hv8m-jj95-wg3x [/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/FantaSim.sln]
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-world/project/plugins/World.TruthStream.Core/World.TruthStream.Core.csproj : warning NU1903: Package 'MessagePack' 3.1.4 has a known high severity vulnerability, https://github.com/advisories/GHSA-hv8m-jj95-wg3x
+    2 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:01.90
+EXIT=0
+---
+Duration: 2s
+End: 2026-06-19T09:33:32Z
