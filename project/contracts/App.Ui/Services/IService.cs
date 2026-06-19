@@ -4,7 +4,6 @@ using ServiceArchi.Contracts.Attributes;
 namespace FantaSim.App.Ui;
 
 [ServiceContract]
-[SelectionStrategy(SelectionMode.HighestPriority)]
 public interface IService
 {
     Task ShowAsync(string viewId, CancellationToken cancellationToken = default);

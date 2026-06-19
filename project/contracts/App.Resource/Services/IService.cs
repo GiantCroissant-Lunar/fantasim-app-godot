@@ -4,7 +4,6 @@ using ServiceArchi.Contracts.Attributes;
 namespace FantaSim.App.Resource;
 
 [ServiceContract]
-[SelectionStrategy(SelectionMode.HighestPriority)]
 public interface IService
 {
     event EventHandler? RuntimeChanged;

@@ -4,7 +4,6 @@ using ServiceArchi.Contracts.Attributes;
 namespace FantaSim.App.Command;
 
 [ServiceContract]
-[SelectionStrategy(SelectionMode.HighestPriority)]
 public interface IClient
 {
     Task<CommandHealth> HealthAsync(CancellationToken cancellationToken = default);

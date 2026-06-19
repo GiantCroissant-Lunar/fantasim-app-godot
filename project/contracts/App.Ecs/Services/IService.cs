@@ -4,7 +4,6 @@ using ServiceArchi.Contracts.Attributes;
 namespace FantaSim.App.Ecs;
 
 [ServiceContract]
-[SelectionStrategy(SelectionMode.HighestPriority)]
 public interface IService
 {
     EcsWorldInfo CreateWorld(EcsWorldSpec spec);

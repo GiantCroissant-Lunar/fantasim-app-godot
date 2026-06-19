@@ -4,7 +4,6 @@ using ServiceArchi.Contracts.Attributes;
 namespace FantaSim.App.Command;
 
 [ServiceContract]
-[SelectionStrategy(SelectionMode.HighestPriority)]
 public interface IService
 {
     void Register(CommandDescriptor descriptor, CommandHandler handler);

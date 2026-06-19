@@ -4,6 +4,7 @@ using ServiceArchi.Contracts.Attributes;
 namespace FantaSim.App.Ecs.Services.Proxy;
 
 [RealizeService(typeof(IService))]
+[SelectionStrategy(SelectionMode.HighestPriority)]
 public sealed partial class Service
 {
     private readonly IRegistry _registry;

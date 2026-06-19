@@ -5,7 +5,6 @@ using FantaSim.App.World.Dto;
 namespace FantaSim.App.World;
 
 [ServiceContract]
-[SelectionStrategy(SelectionMode.HighestPriority)]
 public interface IService
 {
     WorldOverview GetOverviewAsync();
