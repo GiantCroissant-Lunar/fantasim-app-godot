@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <!--
+      Catalog validation and DTO mapping tests exercise the real WorldRuntime
+      composition, which is only compiled when USE_PROJECT_REFERENCES is defined
+      (the local feed lacks FantaSim.World.* packages). The test project mirrors
+      the plugin's define so the real path is compiled here too.
+    -->
+    <DefineConstants Condition="'$(UseProjectReferences)' == 'true'">$(DefineConstants);USE_PROJECT_REFERENCES</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="GiantCroissant.ServiceArchi.Core" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\plugins\App.World\App.World.csproj" />
+    <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+  </ItemGroup>
+</Project>

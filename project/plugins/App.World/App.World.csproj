@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.World</RootNamespace>
+    <AssemblyName>FantaSim.App.World</AssemblyName>
+    <ServiceArchiTier>T3</ServiceArchiTier>
+  </PropertyGroup>
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+
+  <!-- App.World.Tests constructs WorldRuntime with explicit descriptors to prove the startup
+       catalog validation contract (duplicate FieldId throws). No other assembly gains access. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="App.World.Tests" />
+  </ItemGroup>
+
+  <!--
+    T3 world orchestrator. App-side T1 contracts are always referenced. Sibling
+    fantasim-world contracts/plugins are referenced ONLY via project references
+    rooted at $(YokanProjectsRoot) when UseProjectReferences=true. The local
+    lunar-horse feed does not carry FantaSim.World.* packages today, so the
+    default (UseProjectReferences=false) build compiles a stub service that does
+    not touch world-lib types; the full composition path is compiled under
+    USE_PROJECT_REFERENCES. See the plan's Task 5 deviation note in the DoneClaim.
+  -->
+  <PropertyGroup Condition="'$(UseProjectReferences)' == 'true'">
+    <DefineConstants>$(DefineConstants);USE_PROJECT_REFERENCES</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+    <ProjectReference Include="..\..\contracts\App.Ecs\App.Ecs.csproj" />
+  </ItemGroup>
+
+  <!--
+    Sibling fantasim-world project references. The World.Fields.Core plugin
+    transitively brings in World.Fields (+ TimeDete.Time.Primitives + RegistryArchi,
+    both present in the local feed). World.TruthStream.Core brings in
+    World.TruthStream (+ MessagePack + UnifySerialization.MessagePack.Runtime, also
+    in the local feed). World.Parameters has no external deps.
+  -->
+  <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Fields\World.Fields.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\World.Fields.Core\World.Fields.Core.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Parameters\World.Parameters.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.TruthStream\World.TruthStream.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\World.TruthStream.Core\World.TruthStream.Core.csproj" />
+  </ItemGroup>
+
+</Project>
