@@ -1,0 +1,12 @@
+{
+  "bundleId": "stage",
+  "displayName": "Stage",
+  "version": "0.1.0",
+  "entryScene": "res://bundles/stage/scenes/stage_entry.tscn",
+  "scenes": [
+    "res://bundles/stage/scenes/stage_entry.tscn"
+  ],
+  "metadata": {
+    "bundleType": "content-only"
+  }
+}

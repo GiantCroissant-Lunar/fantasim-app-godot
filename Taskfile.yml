@@ -1,12 +1,15 @@
 version: '3'
 
 vars:
+  ROOT_DIR:
+    sh: pwd
   GODOT: '{{.GODOT | default "/Users/apprenticegc/Work/lunar-horse/tools/Godot_mono.app/Contents/MacOS/Godot"}}'
+  SOLUTION: 'project/FantaSim.sln'
   GODOT_PROJECT: 'project/hosts/complete-app'
+  CONTENT_PROJECT: 'project/hosts/content-app'
   BUILD_DIR: 'build'
   ASSEMBLY: 'complete-app'
   UNIFY: 'dotnet tool run unify-build --'
-  # GitVersion via local tool; falls back to 0.1.0 when the repo has no commits yet.
   GITVERSION_MAJORMINORPATCH:
     sh: 'dotnet tool run dotnet-gitversion /output json 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get(\"MajorMinorPatch\",\"0.1.0\"))" 2>/dev/null || echo 0.1.0'
 
@@ -17,35 +20,35 @@ tasks:
       - task --list
 
   restore:
-    desc: Restore dotnet tools (unify-build, gitversion)
+    desc: Restore dotnet tools
     cmds:
       - dotnet tool restore
 
   build:
-    desc: Build the Godot .NET project (dotnet build)
-    dir: '{{.GODOT_PROJECT}}'
+    desc: Build the multi-project solution
+    deps: [restore]
     cmds:
-      - dotnet build
+      - dotnet build {{.SOLUTION}}
 
-  build:release:
-    desc: Build the Godot .NET project in Release configuration
-    dir: '{{.GODOT_PROJECT}}'
+  test:
+    desc: Run all xUnit tests
+    deps: [build]
     cmds:
-      - dotnet build -c Release
+      - dotnet test {{.SOLUTION}} --no-build
 
   format:
-    desc: Run dotnet format on the project
-    dir: '{{.GODOT_PROJECT}}'
+    desc: Run dotnet format on the solution
+    deps: [restore]
     cmds:
-      - dotnet format
+      - dotnet format {{.SOLUTION}}
 
   run:
-    desc: Run the Godot project (editor)
+    desc: Run the Godot complete-app project (editor)
     cmds:
       - '{{.GODOT}} --path {{.GODOT_PROJECT}}'
 
   run:headless:
-    desc: Run the Godot project headless (verification run)
+    desc: Run the Godot complete-app project headless
     cmds:
       - '{{.GODOT}} --headless --path {{.GODOT_PROJECT}}'
 
@@ -60,20 +63,33 @@ tasks:
       - dotnet tool run dotnet-gitversion /output json
 
   build:godot:
-    desc: Export the Godot app for all configured platforms via UnifyBuild (version from GitVersion)
-    deps: [restore]
+    desc: Export the Godot app for all configured platforms via UnifyBuild
+    deps: [restore, build]
     cmds:
       - '{{.UNIFY}} BuildGodot'
     env:
-      GITVERSION_MAJORMINORPATCH: "{{.GITVERSION_MAJORMINORPATCH}}"
+      GITVERSION_MAJORMINORPATCH: '{{.GITVERSION_MAJORMINORPATCH}}'
 
   build:godot:desktop:
     desc: Export the Godot app for desktop platforms only via UnifyBuild
-    deps: [restore]
+    deps: [restore, build]
     cmds:
       - '{{.UNIFY}} BuildGodotDesktop'
     env:
-      GITVERSION_MAJORMINORPATCH: "{{.GITVERSION_MAJORMINORPATCH}}"
+      GITVERSION_MAJORMINORPATCH: '{{.GITVERSION_MAJORMINORPATCH}}'
+
+  bundle:link:
+    desc: Link content-app/bundles -> project/bundles
+    cmds:
+      - rm -rf {{.CONTENT_PROJECT}}/bundles
+      - ln -s ../../bundles {{.CONTENT_PROJECT}}/bundles
+
+  bundle:stage:
+    desc: Export the stage content bundle PCK
+    deps: [bundle:link]
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles
+      - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "stage PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles/stage.pck'
 
   artifacts:
     desc: List exported artifacts under build/_artifacts/<version>/godot/
@@ -81,7 +97,7 @@ tasks:
       - ls -la {{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/
 
   changelog:
-    desc: Generate CHANGELOG.md from conventional commits (unreleased + tagged)
+    desc: Generate CHANGELOG.md from conventional commits
     cmds:
       - git-cliff -o CHANGELOG.md
 
@@ -90,32 +106,18 @@ tasks:
     cmds:
       - git-cliff --unreleased
 
-  changelog:tag:
-    desc: Generate changelog and create a version tag
-    cmds:
-      - git-cliff --tag {{.CLI_ARGS}}
-
   repomix:
-    desc: Pack the repo into a single file for LLM context (repomix-output.xml)
+    desc: Pack the repo into a single file for LLM context
     cmds:
       - repomix
 
-  repomix:md:
-    desc: Pack the repo as markdown
-    cmds:
-      - repomix --style markdown
-
-  export:debug:macos:
-    desc: Export a macOS debug build directly via Godot (bypasses UnifyBuild)
-    cmds:
-      - '{{.GODOT}} --headless --path {{.GODOT_PROJECT}} --export-debug "macOS" {{.BUILD_DIR}}/{{.ASSEMBLY}}.app'
-
   clean:
-    desc: Remove build artifacts and Godot mono temp files
+    desc: Remove build artifacts and Godot temp files
     cmds:
       - rm -rf {{.BUILD_DIR}}/_artifacts
-      - rm -rf {{.GODOT_PROJECT}}/.godot/mono
+      - rm -rf {{.GODOT_PROJECT}}/.godot/mono {{.CONTENT_PROJECT}}/.godot/mono
       - rm -rf {{.GODOT_PROJECT}}/bin {{.GODOT_PROJECT}}/obj
+      - rm -rf {{.CONTENT_PROJECT}}/bundles
 
   hooks:install:
     desc: Install pre-commit hooks into .git
@@ -128,9 +130,10 @@ tasks:
       - pre-commit run --all-files
 
   verify:
-    desc: Build .NET + headless run + Godot desktop export via UnifyBuild
+    desc: Build solution + run tests + export app + export stage bundle
     cmds:
       - task build
-      - task run:headless
+      - task test
       - task build:godot:desktop
+      - task bundle:stage
       - task artifacts
