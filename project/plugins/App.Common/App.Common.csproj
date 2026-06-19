@@ -15,8 +15,11 @@
     <PackageReference Include="GiantCroissant.CrosscutFoundation.Messaging.Contracts" />
     <PackageReference Include="GiantCroissant.CrosscutFoundation.Messaging.MessagePipe" />
     <PackageReference Include="GiantCroissant.CrosscutFoundation.Messaging.MessagePipe.ServiceArchi" />
+    <PackageReference Include="GiantCroissant.CrosscutFoundation.Logging.Contracts" />
+    <PackageReference Include="GiantCroissant.CrosscutFoundation.Logging.Core" />
     <PackageReference Include="GiantCroissant.CrosscutFoundation.Logging.Console" />
     <PackageReference Include="GiantCroissant.CrosscutFoundation.Logging.Console.ServiceArchi" />
+    <PackageReference Include="GiantCroissant.CrosscutFoundation.Logging.ServiceArchi" />
     <PackageReference Include="GiantCroissant.RegistryArchi.Core" />
     <PackageReference Include="GiantCroissant.RegistryArchi.Contracts" />
     <PackageReference Include="Akka" />

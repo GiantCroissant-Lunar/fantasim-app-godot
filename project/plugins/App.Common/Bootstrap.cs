@@ -2,10 +2,10 @@ using Akka;
 using Akka.Actor;
 using System.Runtime.CompilerServices;
 using System.Runtime.Loader;
+using CrosscutFoundation.Logging;
 using CrosscutFoundation.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using PluginArchi.Extensibility.Abstractions;
 using PluginArchi.Extensibility.Hosting;
 using ServiceArchi.Contracts;
@@ -23,11 +23,25 @@ public sealed class Bootstrap
     public Bootstrap(ILoggerFactory? loggerFactory = null)
     {
         _registry = new ServiceRegistry();
-        LoggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
 
-        _registry.Register(
+        // Structured console logging via crosscut-foundation: register the console configurator,
+        // compose the LoggingService (an ILoggerFactory) from all registered configurators, and alias
+        // it under ILoggerFactory so every ILogger — app code AND collectible bundles across the ALC
+        // boundary ("CrosscutFoundation." is a shared-resident prefix) — reaches the console.
+        if (loggerFactory is null)
+        {
+            _registry.RegisterConsoleLogging();
+            _registry.RegisterLoggingService();
+            LoggerFactory = (ILoggerFactory)_registry.Get<CrosscutFoundation.Logging.IService>();
+        }
+        else
+        {
+            LoggerFactory = loggerFactory;
+        }
+
+        _registry.Register<ILoggerFactory>(
             LoggerFactory,
-            new ServiceRegistration { Tags = new[] { "logging" }, Description = "Resident ILoggerFactory" });
+            new ServiceRegistration { Tags = new[] { "logging" }, Description = "ILoggerFactory (crosscut console LoggingService)" });
         _registry.RegisterMessagePipeMessageBus();
 
         _actorSystem = ActorSystem.Create("fantasim", @"
