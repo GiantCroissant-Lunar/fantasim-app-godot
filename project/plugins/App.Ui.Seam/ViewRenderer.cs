@@ -17,6 +17,7 @@ public sealed class ViewRenderer : IDisposable
 
     private IViewSource? _source;
     private Action? _onChanged;
+    private BoomHudGraphEditBinder? _graphBinder;
 
     public ViewRenderer(Control parent, Func<IViewSource?> resolve, Func<string, string?> resolveShellScenePath, ILogger logger)
     {
@@ -55,6 +56,9 @@ public sealed class ViewRenderer : IDisposable
 
     private void Unbind()
     {
+        _graphBinder?.Dispose();
+        _graphBinder = null;
+
         if (_source is not null && _onChanged is not null)
             _source.Changed -= _onChanged;
 
@@ -72,6 +76,10 @@ public sealed class ViewRenderer : IDisposable
 
         try
         {
+            // Drop the previous graph binder first: Mount frees the old tree (incl. any GraphEdit).
+            _graphBinder?.Dispose();
+            _graphBinder = null;
+
             var document = source.BuildDocument();
             var mounted = TryMountShell(source, document) ?? _renderer.Mount(_parent, document, clearExistingChildren: true);
             if (mounted is Control control)
@@ -80,6 +88,7 @@ public sealed class ViewRenderer : IDisposable
                 control.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
             }
 
+            BindGraphIfPresent(mounted, source);
             NormalizeLabels(mounted);
             SaveGeneratedScene(source.ViewId, mounted);
         }
@@ -87,6 +96,43 @@ public sealed class ViewRenderer : IDisposable
         {
             _logger.LogError(ex, "View render failed.");
         }
+    }
+
+    // nodeGraph seam hook: the BoomHud renderer mounts an empty GraphEdit for a `nodeGraph` component;
+    // the resident BoomHudGraphEditBinder populates it by reflecting over the source's Nodes/Wires
+    // (TryBind returns null for sources without them, so non-graph views no-op). MSAGL lays it out.
+    private void BindGraphIfPresent(Node? mounted, IViewSource source)
+    {
+        var graphEdit = FindGraphEdit(mounted);
+        if (graphEdit is null)
+            return;
+
+        graphEdit.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+        _graphBinder = BoomHudGraphEditBinder.TryBind(graphEdit, source);
+        if (_graphBinder is null)
+            return;
+
+        _logger.LogInformation("ViewRenderer: graph binder bound for view '{ViewId}'.", source.ViewId);
+        Callable.From(() =>
+        {
+            if (GodotObject.IsInstanceValid(graphEdit))
+            {
+                GraphNodeVisualEnhancer.TryApply(graphEdit, source, _logger);
+                MsaglGraphLayoutApplicator.TryApply(graphEdit, source, _logger);
+            }
+        }).CallDeferred();
+    }
+
+    private static GraphEdit? FindGraphEdit(Node? node)
+    {
+        if (node is null)
+            return null;
+        if (node is GraphEdit graphEdit)
+            return graphEdit;
+        foreach (var child in node.GetChildren())
+            if (FindGraphEdit(child) is { } found)
+                return found;
+        return null;
     }
 
     private Node? TryMountShell(IViewSource source, RuntimeSurfaceDocument document)

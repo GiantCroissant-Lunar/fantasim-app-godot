@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json.Nodes;
 using FantaSim.App.Common;
 using Godot;
 using Microsoft.Extensions.Logging;
@@ -32,11 +33,89 @@ public partial class Host : Node
 
         GD.Print("[Host] composed services: Resource, SceneFlow, Ecs, World, Command, Ui");
         GD.Print("[Host] composition activated.");
+        GD.Print($"[Host] iii bridge: IiiClient registered = {ClassDB.ClassExists("IiiClient")}");
 
         // Enter the root scene tier and KEEP it loaded (the correct flow — re-entry/teardown is a
         // test concern, not the running app). Deferred so _Ready stays non-blocking and the bundle's
         // entry scene mounts on the main thread after the tree is ready.
         Callable.From(EnterInitialScenes).CallDeferred();
+        Callable.From(PingIiiBridge).CallDeferred();
+        Callable.From(RunGraphTest).CallDeferred();
+        Callable.From(ShowIiiGraph).CallDeferred();
+    }
+
+    // Phase B (env-guarded): render the iii text->3D graph as a BoomHud nodeGraph (the visual editor).
+    // Mounts the iii-graph view directly via a ViewRenderer (resident render — the UI service's
+    // ShowAsync gates on collectible view bundles, which this resident demo skips).
+    private void ShowIiiGraph()
+    {
+        if (System.Environment.GetEnvironmentVariable("FANTASIM_SHOW_GRAPH") != "1") return;
+        var logger = _composition!.Bootstrap.LoggerFactory.CreateLogger("IiiGraph");
+
+        var bridge = new FantaSim.App.Iii.IiiBridge();
+        bridge.Name = "IiiBridgeGraphView";
+        AddChild(bridge);
+
+        var graph = FantaSim.App.Iii.TextTo3dGraph.Build(
+            System.Environment.GetEnvironmentVariable("FANTASIM_GRAPH_PROMPT") ?? "a small red toy cube");
+        var source = new FantaSim.App.Iii.IiiGraphViewSource(graph, () => new FantaSim.App.Iii.GraphExecutor(bridge));
+
+        var uiRoot = new Control { Name = "IiiGraphRoot" };
+        uiRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        GetTree().Root.AddChild(uiRoot);
+
+        var renderer = new FantaSim.App.Ui.Seam.ViewRenderer(uiRoot, () => source, _ => null, logger);
+        renderer.Bind();
+        GD.Print($"[graph] iii-graph view mounted: {source.Nodes.Count} nodes, {source.Wires.Count} wires.");
+    }
+
+    // App-side graph executor demo (env-guarded): runs the text->3D pipeline as a DATA graph through
+    // the gdext IiiClient bridge — the replacement for the Python pipeline-worker. Quits when done so
+    // the windowed verification run terminates.
+    private async void RunGraphTest()
+    {
+        if (System.Environment.GetEnvironmentVariable("FANTASIM_GRAPH_TEST") != "1") return;
+        var prompt = System.Environment.GetEnvironmentVariable("FANTASIM_GRAPH_PROMPT") ?? "a small red toy cube";
+        var jobId = Guid.NewGuid().ToString("N")[..8];
+        GD.Print($"[graph] executing text->3D graph via C# executor (prompt=\"{prompt}\", job={jobId})...");
+
+        var bridge = new FantaSim.App.Iii.IiiBridge();
+        bridge.Name = "IiiBridgeGraph";
+        AddChild(bridge); // _Ready instantiates the IiiClient child
+
+        try
+        {
+            var graph = FantaSim.App.Iii.TextTo3dGraph.Build(prompt);
+            var shared = new JsonObject { ["job_id"] = jobId };
+            var result = await new FantaSim.App.Iii.GraphExecutor(bridge).ExecuteAsync(graph, shared);
+            var glb = result["glb_path"]?.ToString() ?? "(none)";
+            var usd = result["usd_path"]?.ToString() ?? "(none)";
+            Callable.From(() => { GD.Print($"[graph] DONE — usd_path={usd}  glb_path={glb}"); GetTree().Quit(); }).CallDeferred();
+        }
+        catch (Exception ex)
+        {
+            var msg = ex.Message;
+            Callable.From(() => { GD.PushError($"[graph] execution failed: {msg}"); GetTree().Quit(); }).CallDeferred();
+        }
+    }
+
+    // Phase-1 bridge round-trip check (env-guarded): instantiate the gdext IiiClient node, fire a
+    // request at the iii engine, and log the response signal. Proves Godot/C# -> Rust -> engine ->
+    // worker -> response works. The IiiClient node must live in the tree so its process() drains the
+    // result channel on the main thread.
+    private void PingIiiBridge()
+    {
+        if (System.Environment.GetEnvironmentVariable("FANTASIM_III_PING") != "1") return;
+        if (!ClassDB.ClassExists("IiiClient")) { GD.PushError("[iii] IiiClient not registered"); return; }
+
+        var client = ClassDB.Instantiate("IiiClient").As<Node>();
+        client.Name = "IiiClient";
+        AddChild(client);
+        client.Call("set_url", "ws://127.0.0.1:49134");
+        client.Connect("response", Callable.From<string, string>((id, payload) =>
+            GD.Print($"[iii] response id={id} payload={payload}")));
+        client.Call("request", "ping", "test.echo", "{\"hello\":\"bridge\"}");
+        GD.Print("[iii] fired request test.echo — awaiting response signal...");
     }
 
     // Boot the real scene flow: enter the "stage" tier under app-root. SceneFlow finds no resident

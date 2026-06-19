@@ -129,6 +129,42 @@ tasks:
     cmds:
       - '"{{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/osx/{{.ASSEMBLY}}.app/Contents/MacOS/{{.ASSEMBLY}}"'
 
+  # --- Rust (cargo): iii gdext bridge ---------------------------------------
+  bridge:build:
+    desc: Build the gdext iii bridge (debug) and stage it into res://bin for the complete-app
+    cmds:
+      - cargo build --manifest-path project/Cargo.toml -p iii-bridge
+      - cp project/target/debug/libiii_bridge.dylib project/hosts/complete-app/bin/libiii_bridge.dylib
+
+  # --- iii workers (Python: ComfyUI + Blender text->3D pipeline) ------------
+  workers:setup:
+    desc: Create the Python iii-worker venv and install iii-sdk
+    cmds:
+      - python3 -m venv project/workers/.venv
+      - project/workers/.venv/bin/pip install -q -r project/workers/requirements.txt
+
+  iii:engine:
+    desc: Run the iii orchestration engine (workers connect on ws://127.0.0.1:49134)
+    cmds:
+      - iii --use-default-config --no-update-check
+
+  workers:run:
+    desc: 'Run the comfy + blender + pipeline iii workers (engine must be up; needs ComfyUI @ :8188 + Blender)'
+    vars:
+      PY: project/workers/.venv/bin/python
+    cmds:
+      - '{{.PY}} project/workers/comfy-worker/worker.py &'
+      - '{{.PY}} project/workers/blender-worker/worker.py &'
+      - '{{.PY}} project/workers/pipeline-worker/worker.py &'
+      - wait
+
+  pipeline:test:
+    desc: 'Fire the text->3D pipeline through iii (pass PROMPT=..., default a red cube)'
+    vars:
+      PROMPT: '{{.PROMPT | default "a small red toy cube"}}'
+    cmds:
+      - iii trigger pipeline.text_to_3d --json '{"prompt":"{{.PROMPT}}"}' --timeout-ms 300000
+
   artifacts:
     desc: List exported artifacts under build/_artifacts/<version>/godot/
     cmds:

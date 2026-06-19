@@ -13,6 +13,7 @@
   <ItemGroup>
     <PackageReference Include="BoomHud.Foundation" Version="0.1.18" />
     <PackageReference Include="BoomHud.Godot.Runtime" Version="0.1.18" />
+    <PackageReference Include="Microsoft.Msagl" Version="1.1.6" />
     <PackageReference Include="GiantCroissant.ServiceArchi.Contracts" Version="0.1.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
   </ItemGroup>

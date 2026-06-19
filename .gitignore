@@ -30,6 +30,16 @@ project/bundles/*/*.dll
 # Build-generated symlink (bundle:link): content-app/bundles -> ../../bundles
 project/hosts/content-app/bundles
 
+# Python iii-worker virtualenv + caches (workers themselves are tracked)
+project/workers/.venv/
+**/__pycache__/
+
+# Rust gdext bridge: cargo build output + the staged dylib (rebuilt by `task bridge:build`)
+project/target/
+project/hosts/complete-app/bin/*.dylib
+project/hosts/complete-app/bin/*.so
+project/hosts/complete-app/bin/*.dll
+
 # OS / editor cruft
 .DS_Store
 Thumbs.db
