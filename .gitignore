@@ -14,6 +14,9 @@ obj/
 *.nuget.props
 *.nuget.targets
 
+# dotnet test artifacts (xUnit/TRX drops per test project)
+**/TestResults/
+
 # Godot mono temp
 .godot/mono/
 .nuke/temp/
