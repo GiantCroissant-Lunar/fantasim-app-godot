@@ -1,6 +1,27 @@
 # Service tier architecture with Akka.NET (T1-T4)
 
-**Status:** PROPOSED. Distilled from the ref-projects `lunar-horse-002/ref-projects/fantasim-app-godot` architecture (confirmed 2026-06-10) combined with the Akka.NET integration discussion (2026-06-19). Supersedes the plain-class-only T3 model where actor benefits are warranted.
+**Status:** PROPOSED. Distilled from the ref-projects `lunar-horse-002/ref-projects/fantasim-app-godot` architecture (confirmed 2026-06-10) combined with the Akka.NET integration discussion (2026-06-19), and extended for the iii-graph runtime as a peer orchestration axis (2026-06-19). Supersedes the plain-class-only T3 model where actor benefits are warranted.
+
+## Three-layer model
+
+The app is understood as three orthogonal layers (see [node-graph-paradigm.md](node-graph-paradigm.md) for the full treatment):
+
+- **Paradigms** — general app-level UI/execution shapes any domain can populate: node graph (`App.NodeGraph`), timeline (`App.Timeline`).
+- **Orchestration axes** — where work actually runs: Akka axis (dormant: World/Ecs), iii axis (active: bridge + workers).
+- **UI seams** — the only place Godot types live (`*.Seam` projects).
+
+A concrete behavior sits at an intersection (e.g. "a node graph whose nodes are iii functions"). The paradigm doesn't know the axis; the axis doesn't know the paradigm; they meet at function-registration time.
+
+## Two orchestration axes
+
+The app has **two peer orchestration axes**, each covering what the other cannot. This replaces any earlier framing of a single "orchestration seat above Akka/ECS."
+
+| Axis | Covers | Backed by | Status |
+|------|--------|-----------|--------|
+| **Akka axis** | Internal actor supervision: concurrent stateful entities, ECS worlds, retry/supervision, in-process simulation | Akka.NET `ActorSystem` (resident) | Present, dormant (`App.World` / `App.Ecs`) |
+| **iii axis** | Orchestration crossing the process/agent boundary: dataflow DAGs over external capability workers, agent-driven commands, out-of-process pipelines | Rust gdext bridge + iii-sdk + Python capability workers | Active (`App.Iii`) |
+
+`App.Command.IService` is the **router** between the two axes — not a seat above either. Each axis plugin registers its own command family (`world.*` -> Akka, `pipeline.*`/`iii.*`/`graph.*` -> iii) via `IService.Register`; `ExecuteAsync` dispatches by command-id lookup. The per-axis seams (`IWorldOrchestration`, `IIiiOrchestration`) exist for subsystem identity + health, not as a competing dispatch path. See `iii-graph-runtime.md` for the full iii-axis design.
 
 ## Why tiers
 
@@ -133,6 +154,12 @@ T3 actor -> T4 actor mailbox -> T4 actor thread -> CallDeferred    (wrong: redun
 - Marshals Godot main-thread work via `Callable.From(...).CallDeferred()`.
 - Registered at composition (in `Host.cs`) by being constructed and handed to the T3 ctor -- NOT registered into the kernel `IRegistry` as a service.
 
+### T4 Node-backed seam (exception)
+
+`IiiBridge` (`App.Iii.Seam`) is the one place where "T4 is always a plain class, never a Node" breaks, and the break is justified. It extends `Godot.Node` because the gdext `IiiClient` child runs a tokio runtime off-thread and pushes results through an mpsc channel drained in its `_Process(float)` on the main thread (where it is safe to build `GString` and emit `response`). A plain class has no `_Process`; without the drain loop, results never return to the main thread.
+
+The hard constraint: `IiiBridge` exposes **only** `IIiiInvoker` (pure C#, in `FantaSim.App.Iii.Contracts`) upward. No Godot type crosses to T1 or T3. Collectible bundles reference `IIiiInvoker`, never `IiiBridge`. See `iii-graph-runtime.md` §4.
+
 ---
 
 ## When to use an actor for T3
@@ -154,8 +181,9 @@ The actor model earns its complexity cost when a service has one or more of:
 | App.Agent | Yes | Multiple concurrent LLM sessions, each with lifecycle, retry, streaming. |
 | App.Remote | Yes | Command dispatch, concurrent handlers, timeout/retry. |
 | App.Ecs | Yes | Multiple independent worlds, per-world isolation, parallel updates. See `akka-ecs-integration.md`. |
-| App.World | Maybe | World simulation could be an actor system (one actor per region/entity). |
+| App.World | Maybe | World simulation could be an actor system (one actor per region/entity). Currently dormant. |
 | App.Timeline | Maybe | Playback state machine, currently simple. |
+| App.Iii (`IiiOrchestrator`) | No | Dataflow DAG executor; pure async over external iii functions. Plain class + `ConcurrentDictionary` for in-flight jobs. Becomes an actor only if retry/supervision needs grow. |
 
 **Rule of thumb:** start with a plain class T3. Add an actor only when you hit a real concurrency, supervision, or distribution need. Forcing every service through a mailbox when a method call would do is premature complexity.
 
@@ -188,6 +216,26 @@ ComposeAgent(composition)
 
 The pattern is identical in structure. The only difference is whether T3 constructs a plain class or creates an actor in the `ActorSystem` and wraps it. Composition order matters: services that others depend on must be composed first.
 
+### ComposeIii (iii-axis composition)
+
+The iii axis self-registers its command family into the router. Ordered after `ComposeCommand` (the router must exist):
+
+```
+ComposeIii(composition)
+  |
+  +-- Create T4 seam IiiBridge (Node-backed; AddChild so _Process drains the bridge)
+  |     register IIiiInvoker into kernel IRegistry (as the pure contract, not the Node)
+  |
+  +-- Create T3 orchestrator (App.Iii.IiiOrchestrator wrapping IIiiInvoker + GraphExecutor)
+  |     constructor: (IIiiInvoker invoker, ILoggerFactory)
+  |
+  +-- Register IIiiOrchestration into kernel IRegistry
+  |
+  +-- orchestrator.Register(...) its command family (pipeline.*, iii.*, graph.*) into App.Command.IService
+```
+
+`ComposeWorld` stays composed but is dormant infrastructure (see `iii-graph-runtime.md` §10). The iii axis does not reference `App.World`'s outputs.
+
 ### Bootstrap and shared infrastructure
 
 `project/plugins/App.Common/Bootstrap.cs` sets up the kernel infrastructure *before* any service is composed:
@@ -203,6 +251,7 @@ The pattern is identical in structure. The only difference is whether T3 constru
 ## Naming conventions
 
 - **Assembly prefix:** `FantaSim.App.*`. Contract assemblies carry a `.Contracts` suffix; T3 orchestrators are the bare name; seams are `FantaSim.App.X.Seam`.
+- **Non-service contract assemblies** (shared DTOs + interfaces, no `IService`, no registry registration) follow the `Cross.Abstractions` precedent: e.g. `FantaSim.App.NodeGraph.Contracts` holds `GraphDocument`/`GraphNode`/`GraphWire`/`INodeFunctionProvider`/`IGraphSource`. `FantaSim.App.Iii.Contracts` (if needed) holds iii-specific shared types.
 - **Project directories** omit the `FantaSim` prefix AND the `.Contracts` suffix: `project/contracts/App.Ui/`, `project/plugins/App.Camera.Seam/`.
 - **Contract namespaces:** `FantaSim.App.X` for the service interface and root types; `FantaSim.App.X.Services.Proxy` for T2.
 - **Provider namespaces:** `FantaSim.App.X.Providers` for seam interfaces.

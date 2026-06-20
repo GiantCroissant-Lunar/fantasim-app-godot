@@ -45,6 +45,8 @@ Assemblies whose names start with any of these prefixes load into the resident (
 | `ReactiveUI` | Reactive extensions |
 | `DynamicData` | DynamicData collections |
 
+> **No new prefix for the iii axis.** `FantaSim.App.Iii.Contracts` (the graph data model + `IIiiInvoker`) is covered by the existing `FantaSim.App.` share prefix. The Rust cdylib is native, not managed -- see §3b.
+
 ### Collectible exclusions
 
 The `FantaSim.App.` prefix would also share any bundle implementation assembly whose name starts with that prefix. These must load into their own collectible ALCs:
@@ -78,6 +80,16 @@ Messages sent to actors (e.g. `ShowView`, `CreateWorld`, `AskRequest`) are inter
 
 A collectible bundle that calls `IService.ShowAsync(viewId)` goes through the T2 proxy -> T3 adapter -> actor mailbox. The bundle never sees `IActorRef`, `Props`, or actor messages. It sees only the method-based `IService` contract. The actor is an implementation detail of the resident T3.
 
+### 3b. Native gdextensions and ALC
+
+The iii Rust bridge (`project/native/iii-bridge/`) is a native gdextension (`cdylib`), engine-loaded via `.gdextension` at Godot startup. It is **invisible to the managed ALC graph** -- `SharedAssemblyPolicy` governs managed assemblies only, so the cdylib is never listed there.
+
+**Rules:**
+- The C# side reaches the bridge **only** through Godot `Variant` calls and signals (`ClassDB.Instantiate("IiiClient")`, `Call`, signal connection) -- never direct native interop, never a managed wrapper type that bundle code references.
+- The single resident `IiiBridge` node lives in the resident ALC for the process lifetime, composed once in `Host.cs`, and exposes the pure `IIiiInvoker` contract upward.
+- Collectible bundles reference `IIiiInvoker` (in `FantaSim.App.Iii.Contracts`, shared-resident via the `FantaSim.App.` prefix) -- **never** `IiiBridge` (the Node).
+- The cdylib itself **cannot hot-reload**. Updating the Rust bridge requires a Godot restart. Bundles that invoke pipelines hold only `IIiiInvoker`, so bundle hot-reload is unaffected (clean unload).
+
 ---
 
 ## 4. What may and may not cross the boundary
@@ -85,6 +97,7 @@ A collectible bundle that calls `IService.ShowAsync(viewId)` goes through the T2
 ### MAY cross (shared-resident)
 
 - Contract assemblies marked `[assembly: PluginSharedContract]` -- matched by the `FantaSim.App.` share prefix.
+- `FantaSim.App.Iii.Contracts` -- graph data model (`GraphDocument`/`GraphNode`/`GraphWire`) + `IIiiInvoker`. Pure C#, bundle-safe.
 - CrosscutFoundation (messaging, config, resilience, logging).
 - BoomHud runtime surface types.
 - Akka.NET runtime types (`Akka.dll`, `Newtonsoft.Json.dll`) -- shared-resident so all actor services see the same `ActorSystem` type identity.
@@ -96,6 +109,7 @@ A collectible bundle that calls `IService.ShowAsync(viewId)` goes through the T2
 - The bundle implementation assemblies themselves (e.g. `FantaSim.App.Ui.NodeGraph`).
 - Actor message types (`FantaSim.App.X.Actors.Messages.*`) -- these are T3-internal, resident-only.
 - `IActorRef` or any Akka handle type -- never exposed in T1 contracts.
+- `IiiBridge` (the Godot `Node`) -- bundles reference `IIiiInvoker` only. The Node-backed seam is resident-only.
 
 ---
 
@@ -145,6 +159,9 @@ Any claim that hot-reload works (ALC collects cleanly) must be verified in the w
 For actor-backed services, additionally verify:
 5. Actor `PostStop` log line appears (e.g. `"EcsWorldActor stopped for {WorldId}"`).
 6. `ActorSystem.WhenTerminated` has NOT been called (the shared system stays alive; only child actors stop).
+
+For iii-pipeline bundles, additionally verify:
+7. After a bundle hot-reload, an in-flight `pipeline.run` still resolves through the **resident** `IiiBridge` (the bridge is not re-created and the cdylib is not reloaded -- only the bundle ALC turns over).
 
 ---
 
