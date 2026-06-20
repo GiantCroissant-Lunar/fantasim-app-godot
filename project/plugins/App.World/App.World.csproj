@@ -17,13 +17,10 @@
   </ItemGroup>
 
   <!--
-    T3 world orchestrator. App-side T1 contracts are always referenced. Sibling
-    fantasim-world contracts/plugins are referenced ONLY via project references
-    rooted at $(YokanProjectsRoot) when UseProjectReferences=true. The local
-    lunar-horse feed does not carry FantaSim.World.* packages today, so the
-    default (UseProjectReferences=false) build compiles a stub service that does
-    not touch world-lib types; the full composition path is compiled under
-    USE_PROJECT_REFERENCES. See the plan's Task 5 deviation note in the DoneClaim.
+    T3 world orchestrator. App-side T1 contracts are always referenced. World-lib
+    packages are referenced only when UseProjectReferences=true, so the default
+    build compiles a stub service that does not touch world-lib types; the full
+    composition path is compiled under USE_PROJECT_REFERENCES.
   -->
   <PropertyGroup Condition="'$(UseProjectReferences)' == 'true'">
     <DefineConstants>$(DefineConstants);USE_PROJECT_REFERENCES</DefineConstants>
@@ -35,18 +32,14 @@
   </ItemGroup>
 
   <!--
-    Sibling fantasim-world project references. The World.Fields.Core plugin
-    transitively brings in World.Fields (+ TimeDete.Time.Primitives + RegistryArchi,
-    both present in the local feed). World.TruthStream.Core brings in
-    World.TruthStream (+ MessagePack + UnifySerialization.MessagePack.Runtime, also
-    in the local feed). World.Parameters has no external deps.
+    World-lib packages for the full runtime composition path.
   -->
   <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Fields\World.Fields.csproj" />
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\World.Fields.Core\World.Fields.Core.csproj" />
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Parameters\World.Parameters.csproj" />
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.TruthStream\World.TruthStream.csproj" />
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\World.TruthStream.Core\World.TruthStream.Core.csproj" />
+    <PackageReference Include="GiantCroissant.FantaSim.World.Fields.Contracts" />
+    <PackageReference Include="GiantCroissant.FantaSim.World.Fields.Core" />
+    <PackageReference Include="GiantCroissant.FantaSim.World.Parameters.Contracts" />
+    <PackageReference Include="GiantCroissant.FantaSim.World.TruthStream.Contracts" />
+    <PackageReference Include="GiantCroissant.FantaSim.World.TruthStream.Core" />
   </ItemGroup>
 
 </Project>

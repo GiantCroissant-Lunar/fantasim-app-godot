@@ -5,10 +5,8 @@
     <!--
       Field-reduction determinism and cross-path tests exercise the real ReduceFieldsSystem
       composition path, which is only compiled when USE_PROJECT_REFERENCES is defined
-      (the local lunar-horse feed lacks FantaSim.World.* packages). The test project mirrors
-      the plugin's define so the real path is compiled here too, and pulls in the sibling
-      World.Fields/World.Fields.Core + World.TruthStream/World.TruthStream.Core project refs
-      needed for the reducer/catalog and the truth-stream materialization comparison.
+      The test project mirrors the plugin's define so the real path is compiled here too,
+      and pulls the world-lib packages needed for reducer/catalog and truth-stream comparison.
     -->
     <DefineConstants Condition="'$(UseProjectReferences)' == 'true'">$(DefineConstants);USE_PROJECT_REFERENCES</DefineConstants>
   </PropertyGroup>
@@ -23,15 +21,12 @@
     <ProjectReference Include="..\..\contracts\App.Ecs\App.Ecs.csproj" />
   </ItemGroup>
   <!--
-    Sibling fantasim-world project refs for the field-reduction + cross-path determinism tests.
-    World.Fields.Core transitively brings in World.Fields (+ TimeDete.Time.Primitives +
-    RegistryArchi). World.TruthStream.Core brings in World.TruthStream (+ MessagePack +
-    UnifySerialization.MessagePack.Runtime). All present in the local lunar-horse feed.
+    World-lib packages for the field-reduction + cross-path determinism tests.
   -->
   <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Fields\World.Fields.csproj" />
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\World.Fields.Core\World.Fields.Core.csproj" />
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.TruthStream\World.TruthStream.csproj" />
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\World.TruthStream.Core\World.TruthStream.Core.csproj" />
+    <PackageReference Include="GiantCroissant.FantaSim.World.Fields.Contracts" />
+    <PackageReference Include="GiantCroissant.FantaSim.World.Fields.Core" />
+    <PackageReference Include="GiantCroissant.FantaSim.World.TruthStream.Contracts" />
+    <PackageReference Include="GiantCroissant.FantaSim.World.TruthStream.Core" />
   </ItemGroup>
 </Project>

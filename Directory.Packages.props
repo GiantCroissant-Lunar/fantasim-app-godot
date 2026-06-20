@@ -31,6 +31,11 @@
     <PackageVersion Include="BoomHud.Godot.Runtime" Version="0.1.18" />
     <PackageVersion Include="UnifyEcs.Core" Version="0.1.1" />
     <PackageVersion Include="UnifyEcs.Runtime.Arch" Version="0.1.1" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Contracts" Version="0.1.0" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Core" Version="0.1.0" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Parameters.Contracts" Version="0.1.0" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.TruthStream.Contracts" Version="0.1.0" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.TruthStream.Core" Version="0.1.0" />
   </ItemGroup>
 
   <ItemGroup>

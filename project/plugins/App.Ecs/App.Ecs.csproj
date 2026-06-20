@@ -10,12 +10,10 @@
   </ItemGroup>
 
   <!--
-    T3 ECS field-reduction path. The sibling fantasim-world field/catalog/reducer contracts
-    are referenced ONLY via project references rooted at $(YokanProjectsRoot) when
-    UseProjectReferences=true. The local lunar-horse feed does not carry FantaSim.World.*
-    packages today, so the default (UseProjectReferences=false) build compiles only the
-    Akka/ECS actor spine; the field components + ReduceFieldsSystem are compiled under
-    USE_PROJECT_REFERENCES. T1 contracts (App.Ecs.Contracts) never reference world-lib types.
+    T3 ECS field-reduction path. World-lib packages are referenced only when
+    UseProjectReferences=true, so the default build compiles only the Akka/ECS actor spine.
+    The field components + ReduceFieldsSystem are compiled under USE_PROJECT_REFERENCES.
+    T1 contracts (App.Ecs.Contracts) never reference world-lib types.
   -->
   <PropertyGroup Condition="'$(UseProjectReferences)' == 'true'">
     <DefineConstants>$(DefineConstants);USE_PROJECT_REFERENCES</DefineConstants>
@@ -44,13 +42,11 @@
   </ItemGroup>
 
   <!--
-    Sibling fantasim-world field contracts/plugins. World.Fields.Core transitively brings in
-    World.Fields (+ TimeDete.Time.Primitives + RegistryArchi, both present in the local feed).
-    TruthStream is NOT referenced here: ReduceFieldsSystem is reducer/catalog-only; the
-    cross-path determinism test lives in App.Ecs.Tests and pulls TruthStream in itself.
+    World-lib field contracts/plugins. TruthStream is not referenced here: ReduceFieldsSystem
+    is reducer/catalog-only; the cross-path determinism test pulls TruthStream itself.
   -->
   <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Fields\World.Fields.csproj" />
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\World.Fields.Core\World.Fields.Core.csproj" />
+    <PackageReference Include="GiantCroissant.FantaSim.World.Fields.Contracts" />
+    <PackageReference Include="GiantCroissant.FantaSim.World.Fields.Core" />
   </ItemGroup>
 </Project>
