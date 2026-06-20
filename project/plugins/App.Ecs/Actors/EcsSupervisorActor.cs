@@ -57,6 +57,27 @@ internal sealed class EcsSupervisorActor : ReceiveActor
                 _worldActors.Remove(id);
         });
 
+        Receive<RegisterSystem>(m =>
+        {
+            if (_worldActors.TryGetValue(m.WorldId, out var child))
+                child.Forward(m);
+            // Unknown world: no reply (RegisterSystem is fire-and-forget).
+        });
+
+        Receive<InitializeWorld>(m =>
+        {
+            if (_worldActors.TryGetValue(m.WorldId, out var child))
+            {
+                child.Forward(m);
+            }
+            else
+            {
+                // Sentinel reply so Service.Ask completes instead of hanging;
+                // Service sees WorldId mismatch and throws InvalidOperationException.
+                Sender.Tell(new WorldInitialized(string.Empty));
+            }
+        });
+
         Receive<UpdateWorld>(m =>
         {
             if (_worldActors.TryGetValue(m.WorldId, out var child))

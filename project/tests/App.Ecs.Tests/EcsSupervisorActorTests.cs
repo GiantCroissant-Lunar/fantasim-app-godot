@@ -68,12 +68,7 @@ public class EcsSupervisorActorTests : TestKit
             new CreateWorld(spec), TimeSpan.FromSeconds(3)).Result;
         Assert.False(first.Initialized);
 
-        // Initialize the world actor by sending InitializeWorld directly to the
-        // child via the supervisor's child lookup. The supervisor does not expose
-        // a public Initialize route, so we resolve the child and ask it.
-        var child = Sys.ActorSelection(sup.Path / "dup").ResolveOne(
-            TimeSpan.FromSeconds(3)).Result;
-        var initialized = child.Ask<WorldInitialized>(
+        var initialized = sup.Ask<WorldInitialized>(
             new InitializeWorld("dup"), TimeSpan.FromSeconds(3)).Result;
         Assert.Equal("dup", initialized.WorldId);
 
@@ -194,5 +189,98 @@ public class EcsSupervisorActorTests : TestKit
         Assert.Equal(2, snapB.EntityCount);
         Assert.Equal(2, sysA.Ticks);
         Assert.Equal(2, sysB.Ticks);
+    }
+
+    // ---------------------------------------------------------------------
+    // Behavior 6: InitializeWorld routed via the supervisor forwards to the
+    // child world actor, which replies WorldInitialized and flips its
+    // Initialized flag observable through GetWorldSnapshot.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public void InitializeWorld_forwards_to_child_and_replies_world_initialized()
+    {
+        // Given a supervisor with one created (uninitialized) world
+        var sup = SpawnSupervisor();
+        var spec = Spec("init-fwd");
+
+        sup.Ask<EcsWorldInfo>(new CreateWorld(spec), TimeSpan.FromSeconds(3)).Wait();
+        var before = sup.Ask<EcsWorldInfo>(
+            new GetWorldSnapshot("init-fwd"), TimeSpan.FromSeconds(3)).Result;
+        Assert.False(before.Initialized);
+
+        // When InitializeWorld is asked through the supervisor
+        var ack = sup.Ask<WorldInitialized>(
+            new InitializeWorld("init-fwd"), TimeSpan.FromSeconds(3)).Result;
+
+        // Then the child replies WorldInitialized with the world id
+        Assert.Equal("init-fwd", ack.WorldId);
+
+        // And the snapshot now reports initialized
+        var after = sup.Ask<EcsWorldInfo>(
+            new GetWorldSnapshot("init-fwd"), TimeSpan.FromSeconds(3)).Result;
+        Assert.True(after.Initialized);
+    }
+
+    // ---------------------------------------------------------------------
+    // Behavior 7: InitializeWorld for an unknown world id does not hang: the
+    // supervisor replies with a sentinel WorldInitialized whose WorldId
+    // differs from the requested id.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public void InitializeWorld_for_unknown_world_replies_with_sentinel_not_hang()
+    {
+        // Given a supervisor with no worlds
+        var sup = SpawnSupervisor();
+
+        // When InitializeWorld is asked for an unknown id
+        var ack = sup.Ask<WorldInitialized>(
+            new InitializeWorld("ghost-init"), TimeSpan.FromSeconds(3)).Result;
+
+        // Then the supervisor replies promptly with a sentinel (empty WorldId)
+        Assert.NotNull(ack);
+        Assert.NotEqual("ghost-init", ack.WorldId);
+    }
+
+    // ---------------------------------------------------------------------
+    // Behavior 8: RegisterSystem routed via the supervisor forwards to the
+    // child world actor, observable through the system being ticked after
+    // InitializeWorld + UpdateAll.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public void RegisterSystem_forwards_to_child_and_system_ticks_after_update()
+    {
+        // Given a supervisor with one created world
+        var sup = SpawnSupervisor();
+        var spec = Spec("reg-fwd");
+
+        sup.Ask<EcsWorldInfo>(new CreateWorld(spec), TimeSpan.FromSeconds(3)).Wait();
+
+        // When RegisterSystem is sent through the supervisor, then the world is initialized
+        var sys = new CountingEntitySystem();
+        sup.Tell(new RegisterSystem("reg-fwd", sys));
+        sup.Ask<WorldInitialized>(
+            new InitializeWorld("reg-fwd"), TimeSpan.FromSeconds(3)).Wait();
+
+        // And UpdateAll is sent with one tick
+        sup.Tell(new UpdateAll(0.016f));
+
+        // Then the registered system is ticked at least once
+        EcsWorldInfo WaitEntityCount(int expected)
+        {
+            var child = Sys.ActorSelection(sup.Path / "reg-fwd").ResolveOne(
+                TimeSpan.FromSeconds(3)).Result;
+            for (var i = 0; i < 40; i++)
+            {
+                var snap = child.Ask<EcsWorldInfo>(
+                    new GetWorldSnapshot(string.Empty), TimeSpan.FromSeconds(1)).Result;
+                if (snap.EntityCount == expected) return snap;
+            }
+            throw new Xunit.Sdk.XunitException(
+                $"entity count never reached {expected}");
+        }
+
+        var snap = WaitEntityCount(1);
+        Assert.Equal(1, snap.EntityCount);
+        Assert.Equal(1, sys.Ticks);
     }
 }

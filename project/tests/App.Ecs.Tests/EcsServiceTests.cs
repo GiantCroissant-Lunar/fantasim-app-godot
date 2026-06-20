@@ -134,11 +134,7 @@ public class EcsServiceTests : IDisposable
 
     // ---------------------------------------------------------------------
     // Behavior 6: ListWorlds returns every created world in creation order
-    // and reflects multiple worlds. (UpdateAll stability is covered at the
-    // actor level in EcsSupervisorActorTests because the public Service has
-    // no Initialize path; exercising UpdateAll through Service on
-    // uninitialized worlds would crash every child, which is not a
-    // supported public behavior today.)
+    // and reflects multiple worlds.
     // ---------------------------------------------------------------------
     [Fact]
     public void ListWorlds_returns_all_created_worlds()
@@ -156,5 +152,135 @@ public class EcsServiceTests : IDisposable
         Assert.Contains(list, w => w.WorldId == "svc-list-1");
         Assert.Contains(list, w => w.WorldId == "svc-list-2");
         Assert.Contains(list, w => w.WorldId == "svc-list-3");
+    }
+
+    // ---------------------------------------------------------------------
+    // Behavior 7: InitializeWorld flips the Initialized flag on an existing
+    // world and returns a snapshot reflecting the initialized state.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public void InitializeWorld_flips_initialized_flag_for_existing_world()
+    {
+        // Given a service with one created (uninitialized) world
+        _service.CreateWorld(Spec("svc-init"));
+        Assert.False(_service.GetWorld("svc-init").Initialized);
+
+        // When InitializeWorld is called
+        var info = _service.InitializeWorld("svc-init");
+
+        // Then the snapshot reports initialized
+        Assert.Equal("svc-init", info.WorldId);
+        Assert.True(info.Initialized);
+    }
+
+    // ---------------------------------------------------------------------
+    // Behavior 8: InitializeWorld is idempotent: calling it again on an
+    // already-initialized world returns a snapshot that still reports
+    // Initialized=true without throwing.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public void InitializeWorld_is_idempotent_for_already_initialized_world()
+    {
+        // Given a service with one initialized world
+        _service.CreateWorld(Spec("svc-init-idem"));
+        _service.InitializeWorld("svc-init-idem");
+
+        // When InitializeWorld is called again
+        var info = _service.InitializeWorld("svc-init-idem");
+
+        // Then the snapshot still reports initialized (no reset, no throw)
+        Assert.True(info.Initialized);
+        Assert.Equal("svc-init-idem", info.WorldId);
+    }
+
+    // ---------------------------------------------------------------------
+    // Behavior 9: InitializeWorld for an unknown id throws
+    // InvalidOperationException rather than hanging or silently succeeding.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public void InitializeWorld_throws_for_unknown_world_id()
+    {
+        // Given a service with no worlds
+        // When InitializeWorld is called for an unknown id
+        // Then it throws InvalidOperationException
+        Assert.Throws<InvalidOperationException>(
+            () => _service.InitializeWorld("svc-ghost-init"));
+    }
+
+    // ---------------------------------------------------------------------
+    // Behavior 10: RegisterSystem followed by InitializeWorld and UpdateAll
+    // ticks the registered CountingEntitySystem, observable through
+    // EntityCount growth and the system's tick counter.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public void RegisterSystem_then_InitializeWorld_then_UpdateAll_ticks_system()
+    {
+        // Given a service with a world, a registered counting system, then initialized
+        _service.CreateWorld(Spec("svc-reg"));
+        var sys = new CountingEntitySystem();
+        _service.RegisterSystem("svc-reg", sys);
+        _service.InitializeWorld("svc-reg");
+        Assert.Equal(0, sys.Ticks);
+
+        // When UpdateAll is sent with two ticks
+        _service.UpdateAll(0.016f);
+        _service.UpdateAll(0.016f);
+
+        // Then the system is ticked twice and EntityCount reaches 2
+        EcsWorldInfo WaitEntityCount(int expected)
+        {
+            for (var i = 0; i < 40; i++)
+            {
+                var s = _service.GetWorld("svc-reg");
+                if (s.EntityCount == expected) return s;
+            }
+            throw new Xunit.Sdk.XunitException(
+                $"entity count never reached {expected}");
+        }
+
+        var snap = WaitEntityCount(2);
+        Assert.Equal(2, snap.EntityCount);
+        Assert.Equal(2, sys.Ticks);
+    }
+
+    // ---------------------------------------------------------------------
+    // Behavior 11: UpdateAll on an initialized but empty world (no systems
+    // registered) is safe: EntityCount stays at zero and no exception is
+    // thrown.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public void UpdateAll_on_initialized_empty_world_is_safe()
+    {
+        // Given a service with an initialized world and no registered systems
+        _service.CreateWorld(Spec("svc-empty"));
+        _service.InitializeWorld("svc-empty");
+
+        // When UpdateAll is sent
+        _service.UpdateAll(0.016f);
+        _service.UpdateAll(0.016f);
+
+        // Then EntityCount stays zero and no exception propagated
+        var info = _service.GetWorld("svc-empty");
+        Assert.True(info.Initialized);
+        Assert.Equal(0, info.EntityCount);
+    }
+
+    // ---------------------------------------------------------------------
+    // Behavior 12: the host bootstrap sequence at the service boundary is
+    // safe for the default "main" world: create, initialize, then tick.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public void Create_main_initialize_main_update_all_is_safe()
+    {
+        _service.CreateWorld(Spec("main"));
+        var initialized = _service.InitializeWorld("main");
+
+        _service.UpdateAll(0.016f);
+        _service.UpdateAll(0.016f);
+
+        var info = _service.GetWorld("main");
+        Assert.True(initialized.Initialized);
+        Assert.True(info.Initialized);
+        Assert.Equal(0, info.EntityCount);
     }
 }

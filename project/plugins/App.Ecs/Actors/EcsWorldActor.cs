@@ -33,7 +33,12 @@ internal sealed class EcsWorldActor : ReceiveActor
 
         Receive<InitializeWorld>(_ =>
         {
-            if (_initialized) return;
+            if (_initialized)
+            {
+                // Idempotent: acknowledge without re-initializing.
+                Sender.Tell(new WorldInitialized(_spec.WorldId));
+                return;
+            }
             _runner.Initialize();
             _initialized = true;
             Sender.Tell(new WorldInitialized(_spec.WorldId));

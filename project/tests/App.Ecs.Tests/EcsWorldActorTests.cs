@@ -52,12 +52,11 @@ public class EcsWorldActorTests : TestKit
 
     // ---------------------------------------------------------------------
     // Behavior 2: InitializeWorld replies WorldInitialized and flips the
-    // snapshot's Initialized flag; a second InitializeWorld is a no-op
-    // (the actor guards with _initialized and does not reply, so we verify
-    // state via a snapshot instead of awaiting a second reply).
+    // snapshot's Initialized flag; a second InitializeWorld acknowledges
+    // idempotently without re-initializing or resetting state.
     // ---------------------------------------------------------------------
     [Fact]
-    public async Task InitializeWorld_flips_initialized_flag_and_second_call_is_noop()
+    public async Task InitializeWorld_flips_initialized_flag_and_second_call_acknowledges_idempotently()
     {
         // Given a freshly spawned world actor
         var spec = Spec("init");
@@ -73,10 +72,12 @@ public class EcsWorldActorTests : TestKit
             new GetWorldSnapshot(spec.WorldId), TimeSpan.FromSeconds(3));
         Assert.True(snapAfterFirst.Initialized);
 
-        // When InitializeWorld is sent again (fire-and-forget; actor no-ops)
-        world.Tell(new InitializeWorld(spec.WorldId));
+        // When InitializeWorld is asked again
+        var second = await world.Ask<WorldInitialized>(
+            new InitializeWorld(spec.WorldId), TimeSpan.FromSeconds(3));
 
-        // Then the snapshot still reports initialized (idempotent, no reset)
+        // Then it acknowledges and the snapshot still reports initialized
+        Assert.Equal("init", second.WorldId);
         var snapAfterSecond = await world.Ask<EcsWorldInfo>(
             new GetWorldSnapshot(spec.WorldId), TimeSpan.FromSeconds(3));
         Assert.True(snapAfterSecond.Initialized);
