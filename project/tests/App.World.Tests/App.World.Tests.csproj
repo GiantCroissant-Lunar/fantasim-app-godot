@@ -10,6 +10,10 @@
     -->
     <DefineConstants Condition="'$(UseProjectReferences)' == 'true'">$(DefineConstants);USE_PROJECT_REFERENCES</DefineConstants>
   </PropertyGroup>
+  <!-- NU1603: UnifyGeometry floor versions vs the 1.0.0 feed line; informational, non-fatal. -->
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);NU1603</NoWarn>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
@@ -19,5 +23,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\plugins\App.World\App.World.csproj" />
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+    <!-- The general graph executor (plugin) + its contracts: the crust recipe is run through the REAL
+         GraphExecutor with the WorldFunctionProvider, no Godot. -->
+    <ProjectReference Include="..\..\plugins\App.NodeGraph\App.NodeGraph.csproj" />
+    <ProjectReference Include="..\..\contracts\App.NodeGraph\App.NodeGraph.csproj" />
   </ItemGroup>
 </Project>

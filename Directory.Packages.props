@@ -31,11 +31,31 @@
     <PackageVersion Include="BoomHud.Godot.Runtime" Version="0.1.18" />
     <PackageVersion Include="UnifyEcs.Core" Version="0.1.1" />
     <PackageVersion Include="UnifyEcs.Runtime.Arch" Version="0.1.1" />
-    <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Contracts" Version="0.1.0" />
-    <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Core" Version="0.1.0" />
-    <PackageVersion Include="GiantCroissant.FantaSim.World.Parameters.Contracts" Version="0.1.0" />
-    <PackageVersion Include="GiantCroissant.FantaSim.World.TruthStream.Contracts" Version="0.1.0" />
-    <PackageVersion Include="GiantCroissant.FantaSim.World.TruthStream.Core" Version="0.1.0" />
+    <!-- FantaSim world-lib packages (local feed). Bumped 0.1.0 -> 0.1.1 to align with the crust
+         pipeline line; the crust packages and their world-lib deps are all published at 0.1.1. -->
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Contracts" Version="0.1.1" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Core" Version="0.1.1" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Parameters.Contracts" Version="0.1.1" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.TruthStream.Contracts" Version="0.1.1" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.TruthStream.Core" Version="0.1.1" />
+    <!-- Crust pipeline + the world-lib packages it depends on (all 0.1.1 in the local feed). -->
+    <PackageVersion Include="GiantCroissant.FantaSim.Geosphere.Crust" Version="0.1.1" />
+    <PackageVersion Include="GiantCroissant.FantaSim.Geosphere.Plate.Topology" Version="0.1.1" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Catalog" Version="0.1.1" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Stream" Version="0.1.1" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Export.Contracts" Version="0.1.1" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Generation.Contracts" Version="0.1.1" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Shared.Contracts" Version="0.1.1" />
+    <!-- Geometry / math / time / world-stage deps in the crust closure (local feed). Pinned so CPM
+         resolves them deterministically. -->
+    <PackageVersion Include="GiantCroissant.WorldStage" Version="0.1.0" />
+    <PackageVersion Include="UnifyCell.Core" Version="1.0.0" />
+    <PackageVersion Include="UnifyCell.Abstractions" Version="1.0.0" />
+    <PackageVersion Include="UnifyGeometry.Spherical" Version="1.0.0" />
+    <PackageVersion Include="UnifyGeometry.Kernel" Version="1.0.0" />
+    <PackageVersion Include="UnifyGeometry.Primitives" Version="1.0.0" />
+    <PackageVersion Include="UnifyMaths" Version="1.0.0" />
+    <PackageVersion Include="UnifyMaths.Numerics" Version="1.0.0" />
   </ItemGroup>
 
   <ItemGroup>

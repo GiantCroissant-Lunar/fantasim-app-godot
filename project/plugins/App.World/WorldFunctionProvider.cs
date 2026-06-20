@@ -1,0 +1,251 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text.Json.Nodes;
+using System.Threading;
+using System.Threading.Tasks;
+using FantaSim.App.NodeGraph;
+using FantaSim.Geosphere.Crust;
+using FantaSim.Geosphere.Plate.Topology;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using UnifyCell;
+using UnifyGeometry.Spherical;
+using UnifyMaths;
+using TopoPlate = global::FantaSim.Geosphere.Plate.Topology.Plate;
+
+namespace FantaSim.App.World;
+
+/// <summary>
+/// The World axis as a node-function provider: claims the world / geosphere / crust function families
+/// and runs them as pure C# over the FantaSim geosphere packages. This is how World plugs into the
+/// general node-graph paradigm — it contributes node functions (not a graph engine); the shared
+/// <see cref="GraphExecutor"/> resolves them by function id, exactly as
+/// <see cref="T:FantaSim.App.Iii.IiiFunctionProvider"/> does for the iii axis.
+///
+/// <para>v1 implements <c>crust.generate</c>: build the plate topology over a geodesic tessellation,
+/// run the crust evolution pipeline, and return a JSON summary (cell count, boundary types, feature
+/// counts, peak orogenic pressure). No Godot — this compiles and runs under plain <c>dotnet test</c>.</para>
+/// </summary>
+public sealed class WorldFunctionProvider : INodeFunctionProvider
+{
+    /// <summary>Function id for the crust-evolution pipeline run.</summary>
+    public const string CrustGenerate = "crust.generate";
+
+    // The proven 3-plate setup from fantasim-world's crust fixtures: three seeds 120 deg apart on the
+    // equator give three OPEN boundary arcs meeting at the poles, so plate 0's spin drives a NET
+    // convergence across the 0|1 boundary (no antipodal cancellation). Plates 0 and 1 continental ⇒
+    // that convergent boundary is continent-continent ⇒ orogeny ⇒ mountains.
+    private const int DefaultFrequency = 3;     // 20 * 3^2 = 1280 triangular cells
+    private const long DefaultTicks = 8;        // endTick; orogeny accumulates ~1/tick ⇒ peak ~8 > τ(5)
+    private const double DefaultSpinRate = 0.02; // rad / Ma about +Z
+
+    private readonly ILogger _logger;
+
+    public WorldFunctionProvider(ILoggerFactory? loggerFactory = null)
+    {
+        _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<WorldFunctionProvider>();
+    }
+
+    public bool Supports(string functionId)
+        => functionId.StartsWith("world.", StringComparison.Ordinal)
+           || functionId.StartsWith("geosphere.", StringComparison.Ordinal)
+           || functionId.StartsWith("crust.", StringComparison.Ordinal);
+
+    public async Task<JsonObject> InvokeAsync(
+        string functionId,
+        JsonObject payload,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+        _logger.LogInformation("world invoke {FunctionId}", functionId);
+
+        return functionId switch
+        {
+            CrustGenerate => await GenerateCrustAsync(payload, cancellationToken).ConfigureAwait(false),
+            _ => throw new InvalidOperationException(
+                $"WorldFunctionProvider has no handler for function '{functionId}'."),
+        };
+    }
+
+    // ---------------------------------------------------------------- crust.generate
+
+    private static async Task<JsonObject> GenerateCrustAsync(JsonObject payload, CancellationToken ct)
+    {
+        int frequency = ReadInt(payload, "frequency", DefaultFrequency);
+        long ticks = ReadLong(payload, "ticks", DefaultTicks);
+        double rate = ReadDouble(payload, "spinRate", DefaultSpinRate);
+
+        var tessellation = new GeodesicSphereTessellation(frequency);
+        var plates = ReadPlates(payload, rate);
+        var recipe = ReadRecipe(payload);
+
+        var topology = PlateTopologyBuilder.Build(tessellation, plates);
+
+        var result = await CrustPipeline.RunAsync(
+            tessellation,
+            plates,
+            recipe,
+            startTick: 0,
+            endTick: ticks,
+            snapshotTicks: new[] { ticks },
+            ct: ct).ConfigureAwait(false);
+
+        return Summarize(functionId: CrustGenerate, frequency, ticks, tessellation, topology, result, ticks);
+    }
+
+    private static JsonObject Summarize(
+        string functionId,
+        int frequency,
+        long ticks,
+        GeodesicSphereTessellation tessellation,
+        PlateTopology topology,
+        CrustEvolutionResult result,
+        long snapshotTick)
+    {
+        // Boundary type counts (how many inter-plate boundaries classified each way).
+        var boundaryTypes = new JsonObject();
+        foreach (var grp in topology.Boundaries.GroupBy(b => b.Type).OrderBy(g => g.Key.ToString(), StringComparer.Ordinal))
+            boundaryTypes[grp.Key.ToString()] = grp.Count();
+
+        bool activeBoundaries = topology.Boundaries.Any(
+            b => b.Type is BoundaryType.Convergent or BoundaryType.Divergent or BoundaryType.Transform);
+
+        var features = result.FeaturesByTick.TryGetValue(snapshotTick, out var f)
+            ? f
+            : new Dictionary<int, CrustFeature>();
+
+        // Feature counts by kind (mountains / volcanic arcs / trenches / ridges / faults).
+        var featureCounts = new JsonObject();
+        foreach (var grp in features.Values
+                     .GroupBy(x => x.Kind)
+                     .OrderBy(g => g.Key.ToString(), StringComparer.Ordinal))
+            featureCounts[grp.Key.ToString()] = grp.Count();
+
+        int mountainCount = features.Values.Count(x => x.Kind == CrustFeatureKind.Mountain);
+        int volcanoCount = features.Values.Count(x => x.Kind == CrustFeatureKind.VolcanicArc);
+
+        // Peak accumulated orogenic pressure at the snapshot tick.
+        double peakOrogenic = 0.0;
+        if (result.StateByTick.TryGetValue(snapshotTick, out var state) && state.Count > 0)
+            peakOrogenic = state.Values.Max(s => s.OrogenicPressure);
+
+        return new JsonObject
+        {
+            ["function"] = functionId,
+            ["frequency"] = frequency,
+            ["ticks"] = ticks,
+            ["cellCount"] = tessellation.CellCount,
+            ["plateCount"] = result.Plates.Count,
+            ["boundaryCount"] = topology.Boundaries.Count,
+            ["junctionCount"] = topology.Junctions.Count,
+            ["activeBoundaries"] = activeBoundaries,
+            ["boundaryTypes"] = boundaryTypes,
+            ["featureCount"] = features.Count,
+            ["featureCounts"] = featureCounts,
+            ["mountainCount"] = mountainCount,
+            ["volcanoCount"] = volcanoCount,
+            ["peakOrogenicPressure"] = peakOrogenic,
+        };
+    }
+
+    // ---------------------------------------------------------------- payload decoding
+
+    /// <summary>
+    /// Decode the plate set. Shape (all optional): <c>"plates": [{ "id":0, "lat":0, "lon":0,
+    /// "axis":[0,0,1], "rate":0.02 }, ...]</c>. When absent, the proven 3-plate default is used:
+    /// plate 0 spins about +Z at <paramref name="defaultRate"/>; plates 1 and 2 are still.
+    /// </summary>
+    private static IReadOnlyList<TopoPlate> ReadPlates(JsonObject payload, double defaultRate)
+    {
+        if (payload.TryGetPropertyValue("plates", out var node) && node is JsonArray arr && arr.Count > 0)
+        {
+            var plates = new List<TopoPlate>(arr.Count);
+            foreach (var item in arr)
+            {
+                if (item is not JsonObject po) continue;
+                int id = ReadInt(po, "id", plates.Count);
+                double lat = ReadDouble(po, "lat", 0.0);
+                double lon = ReadDouble(po, "lon", 0.0);
+                var axis = ReadAxis(po, "axis", new Vector3D(0, 0, 1));
+                double rate = ReadDouble(po, "rate", 0.0);
+                plates.Add(new TopoPlate(id, SphericalPoint.FromDegrees(lat, lon), new EulerPole(axis, rate)));
+            }
+
+            if (plates.Count > 0) return plates;
+        }
+
+        return DefaultThreePlates(defaultRate);
+    }
+
+    /// <summary>Three equatorial plates 120 deg apart; plate 0 spins eastward (0|1 converges, 0|2 diverges).</summary>
+    private static IReadOnlyList<TopoPlate> DefaultThreePlates(double rate) => new[]
+    {
+        new TopoPlate(0, SphericalPoint.FromDegrees(0, 0), new EulerPole(new Vector3D(0, 0, 1), +rate)),
+        new TopoPlate(1, SphericalPoint.FromDegrees(0, 120), new EulerPole(new Vector3D(0, 0, 1), 0.0)),
+        new TopoPlate(2, SphericalPoint.FromDegrees(0, -120), new EulerPole(new Vector3D(0, 0, 1), 0.0)),
+    };
+
+    /// <summary>
+    /// Decode the crust-init recipe. <c>"continentalPlates": [0, 1]</c> designates those plate ids
+    /// continental; the default makes plates 0 and 1 continental so the convergent 0|1 boundary is
+    /// continent-continent (orogeny).
+    /// </summary>
+    private static CrustInitRecipe ReadRecipe(JsonObject payload)
+    {
+        if (payload.TryGetPropertyValue("continentalPlates", out var node) && node is JsonArray arr)
+        {
+            var ids = new HashSet<int>();
+            foreach (var item in arr)
+                if (item is JsonValue v && v.TryGetValue<int>(out var id)) ids.Add(id);
+            return new CrustInitRecipe(ids);
+        }
+
+        return CrustInitRecipe.Continental(0, 1);
+    }
+
+    private static Vector3D ReadAxis(JsonObject po, string key, Vector3D fallback)
+    {
+        if (po.TryGetPropertyValue(key, out var node) && node is JsonArray arr && arr.Count == 3)
+        {
+            double x = ToDouble(arr[0], fallback.X);
+            double y = ToDouble(arr[1], fallback.Y);
+            double z = ToDouble(arr[2], fallback.Z);
+            return new Vector3D(x, y, z);
+        }
+
+        return fallback;
+    }
+
+    private static int ReadInt(JsonObject o, string key, int fallback)
+        => o.TryGetPropertyValue(key, out var n) && n is JsonValue v && v.TryGetValue<int>(out var i) ? i : fallback;
+
+    private static long ReadLong(JsonObject o, string key, long fallback)
+    {
+        if (o.TryGetPropertyValue(key, out var n) && n is JsonValue v)
+        {
+            if (v.TryGetValue<long>(out var l)) return l;
+            if (v.TryGetValue<int>(out var i)) return i;
+        }
+
+        return fallback;
+    }
+
+    private static double ReadDouble(JsonObject o, string key, double fallback)
+        => o.TryGetPropertyValue(key, out var n) ? ToDouble(n, fallback) : fallback;
+
+    private static double ToDouble(JsonNode? node, double fallback)
+    {
+        if (node is JsonValue v)
+        {
+            if (v.TryGetValue<double>(out var d)) return d;
+            if (v.TryGetValue<int>(out var i)) return i;
+            if (v.TryGetValue<long>(out var l)) return l;
+            if (v.TryGetValue<string>(out var s) &&
+                double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var ds)) return ds;
+        }
+
+        return fallback;
+    }
+}

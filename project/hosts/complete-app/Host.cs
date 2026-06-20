@@ -234,6 +234,15 @@ public partial class Host : Node
             projection,
             new ServiceRegistration { Tags = new[] { "world", "projection" }, Description = "Field projection service" });
         GD.Print("[Host] World detail: projection registered");
+
+        // Register the World axis as a node-function provider (mirrors how ComposeIii registers the iii
+        // provider). It claims the world/geosphere/crust function families; the general App.NodeGraph
+        // GraphExecutor resolves crust.generate to it. Pure C# (no Godot rendering yet).
+        var worldProvider = new FantaSim.App.World.WorldFunctionProvider(composition.Bootstrap.LoggerFactory);
+        composition.Bootstrap.Registry.Register<FantaSim.App.NodeGraph.INodeFunctionProvider>(
+            worldProvider,
+            new ServiceRegistration { Tags = new[] { "world", "nodegraph-provider" }, Description = "World node-function provider (crust pipeline)" });
+        GD.Print("[Host] World detail: crust function provider registered");
     }
 
     private void ComposeCommand(AppComposition composition)

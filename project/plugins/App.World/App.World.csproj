@@ -28,11 +28,29 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+    <ProjectReference Include="..\..\contracts\App.NodeGraph\App.NodeGraph.csproj" />
     <ProjectReference Include="..\..\contracts\App.Ecs\App.Ecs.csproj" />
   </ItemGroup>
 
   <!--
-    World-lib packages for the full runtime composition path.
+    Crust pipeline as a node-function provider (pure C#). Referenced ALWAYS — the
+    WorldFunctionProvider + CrustGenerationGraph recipe compile in the default headless
+    build and are exercised by App.World.Tests via `dotnet test` (no Godot, no UseProjectReferences).
+    The crust package pulls its full world-lib + geometry dependency closure transitively.
+    NU1603 (UnifyGeometry floor versions vs the 1.0.0 feed line) is informational and non-fatal.
+  -->
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);NU1603</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Crust" />
+    <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Plate.Topology" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <!--
+    World-lib packages for the full WorldRuntime composition path (only that path uses them
+    directly; the crust packages above already bring the field/stream stack transitively).
   -->
   <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
     <PackageReference Include="GiantCroissant.FantaSim.World.Fields.Contracts" />
