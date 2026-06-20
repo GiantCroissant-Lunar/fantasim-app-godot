@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.NodeGraph</RootNamespace>
+    <AssemblyName>FantaSim.App.NodeGraph</AssemblyName>
+    <ServiceArchiTier>T3</ServiceArchiTier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+
+  <!--
+    T3 general graph executor. Pure C#, no Godot, no domain handlers. Domains register
+    INodeFunctionProvider implementations; the executor resolves node function ids to providers.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\contracts\App.NodeGraph\App.NodeGraph.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.Ui.NodeGraph</RootNamespace>
+    <AssemblyName>FantaSim.App.Ui.NodeGraph</AssemblyName>
+    <ServiceArchiTier>T3</ServiceArchiTier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+
+  <!--
+    T3 general node-graph view plugin. Pure C# (BoomHud IViewSource + RuntimeSurfaceDocument,
+    no Godot). References the App.Ui contract (for IViewSource, which transitively brings in
+    BoomHud.Foundation) and the App.NodeGraph contract (for IGraphSource/GraphDocument). The Godot
+    rendering of the graph (GraphEdit binder/enhancer/layout) lives in App.Ui.Seam.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\contracts\App.Ui\App.Ui.csproj" />
+    <ProjectReference Include="..\..\contracts\App.NodeGraph\App.NodeGraph.csproj" />
+  </ItemGroup>
+
+</Project>

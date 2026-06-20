@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.NodeGraph</RootNamespace>
+    <AssemblyName>FantaSim.App.NodeGraph.Contracts</AssemblyName>
+    <ServiceArchiTier>T1</ServiceArchiTier>
+  </PropertyGroup>
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" />
+  </ItemGroup>
+</Project>
