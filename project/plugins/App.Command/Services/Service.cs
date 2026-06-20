@@ -34,7 +34,7 @@ public sealed class Service : IService, IDisposable
         _mainThread = mainThread ?? throw new ArgumentNullException(nameof(mainThread));
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<Service>();
-        _orchestration = orchestration ?? OrchestratorFactory.Create(registry, loggerFactory ?? NullLoggerFactory.Instance);
+        _orchestration = orchestration ?? new LocalOrchestrator(registry, loggerFactory ?? NullLoggerFactory.Instance);
         RegisterBuiltIns();
     }
 

@@ -3,15 +3,24 @@ using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using FantaSim.App.Iii;
 using Godot;
 
-namespace FantaSim.App.Iii;
+namespace FantaSim.App.Iii.Seam;
 
 /// <summary>
 /// Godot-side async wrapper over the gdext <c>IiiClient</c> node. Implements <see cref="IIiiInvoker"/>
-/// so the pure <see cref="GraphExecutor"/> can <c>await</c> iii calls. Correlates fire-and-forget
-/// <c>request</c> calls with the <c>response</c> signal via opaque ids and TaskCompletionSources.
+/// so the pure App.Iii T3 orchestration (IiiFunctionProvider, GraphExecutor) can <c>await</c> iii
+/// calls. Correlates fire-and-forget <c>request</c> calls with the <c>response</c> signal via
+/// opaque ids and TaskCompletionSources.
 /// </summary>
+/// <remarks>
+/// Node-backed T4 seam exception: this is the one place a seam is a <see cref="Node"/> rather than
+/// a plain class, because the gdext <c>IiiClient</c> child runs a tokio runtime off-thread and
+/// pushes results through an mpsc channel drained in its <c>_Process</c> on the main thread. A
+/// plain class has no <c>_Process</c>. Exposes ONLY <see cref="IIiiInvoker"/> upward -- no Godot
+/// type crosses to T1/T3, and collectible bundles never reference this Node.
+/// </remarks>
 public sealed partial class IiiBridge : Node, IIiiInvoker
 {
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonObject>> _pending = new();

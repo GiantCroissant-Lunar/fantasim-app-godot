@@ -176,36 +176,6 @@ public class LocalOrchestratorTests
     }
 }
 
-public class IiiBridgeOrchestratorTests
-{
-    // ---------------------------------------------------------------------
-    // Behavior 7: the deferred iii bridge stub throws a documented
-    // NotImplementedException naming the native bridge as not-built.
-    // ---------------------------------------------------------------------
-    [Fact]
-    public async Task TriggerAsync_throws_documented_NotImplementedException()
-    {
-        var orchestrator = new IiiBridgeOrchestrator(NullLoggerFactory.Instance);
-
-        var ex = await Assert.ThrowsAsync<NotImplementedException>(
-            () => orchestrator.TriggerAsync(new CommandRequest(Command: "world.generate")));
-
-        Assert.Contains("native iii bridge", ex.Message);
-        Assert.Contains("not built", ex.Message);
-    }
-
-    [Fact]
-    public async Task HealthAsync_throws_documented_NotImplementedException()
-    {
-        var orchestrator = new IiiBridgeOrchestrator(NullLoggerFactory.Instance);
-
-        var ex = await Assert.ThrowsAsync<NotImplementedException>(
-            () => orchestrator.HealthAsync());
-
-        Assert.Contains("native iii bridge", ex.Message);
-    }
-}
-
 public class CommandServiceTests
 {
     // ---------------------------------------------------------------------
@@ -323,6 +293,8 @@ internal sealed class FakeEcsService : EcsService
     public EcsWorldInfo GetWorld(string worldId)
         => new(worldId, EcsBackendKind.Arch, "fake", 0, 0, false);
     public IReadOnlyList<EcsWorldInfo> ListWorlds() => Array.Empty<EcsWorldInfo>();
+    public EcsWorldInfo InitializeWorld(string worldId)
+        => new(worldId, EcsBackendKind.Arch, "fake", 0, 0, true);
     public void UpdateWorld(string worldId, float deltaTime) { }
     public void UpdateAll(float deltaTime)
     {

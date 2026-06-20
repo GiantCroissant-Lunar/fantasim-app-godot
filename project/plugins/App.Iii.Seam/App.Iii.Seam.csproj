@@ -1,0 +1,17 @@
+<Project Sdk="Godot.NET.Sdk/4.6.3">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.Iii.Seam</RootNamespace>
+    <AssemblyName>FantaSim.App.Iii.Seam</AssemblyName>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <!--
+    T4 Node-backed seam exception. IiiBridge : Godot.Node implements IIiiInvoker so the pure T3
+    iii orchestration can await bridge calls. Must be a Node: the gdext IiiClient child needs
+    _Process to drain its result channel on the main thread. Exposes ONLY IIiiInvoker upward.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\App.Iii\App.Iii.csproj" />
+  </ItemGroup>
+</Project>

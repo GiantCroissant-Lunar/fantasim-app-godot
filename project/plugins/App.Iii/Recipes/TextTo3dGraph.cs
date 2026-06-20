@@ -1,11 +1,12 @@
 using System.Text.Json.Nodes;
+using FantaSim.App.NodeGraph;
 
-namespace FantaSim.App.Iii;
+namespace FantaSim.App.Iii.Recipes;
 
 /// <summary>
-/// The text→3D pipeline expressed as a data-driven graph — the replacement for the Python
-/// pipeline-worker's hard-coded DAG. Same chain: comfy.generate → blender.refine → asset.to_gltf,
-/// with job_id supplied as a shared param by the executor.
+/// The text->3D pipeline as a data-driven graph: comfy.generate -> blender.refine -> asset.to_gltf.
+/// A recipe is a named <see cref="GraphDocument"/> builder; this one ships with App.Iii. Bundles
+/// author their own recipes against FantaSim.App.NodeGraph directly.
 /// </summary>
 public static class TextTo3dGraph
 {
@@ -18,8 +19,8 @@ public static class TextTo3dGraph
         },
         Wires: new[]
         {
-            new GraphWire("comfy", "path", "refine", "source"),       // mesh .obj -> refine source
-            new GraphWire("refine", "usd_path", "gltf", "source"),    // refined USD -> gltf source
+            new GraphWire("comfy", "path", "refine", "source"),
+            new GraphWire("refine", "usd_path", "gltf", "source"),
         },
         SinkNodeId: "gltf");
 }
