@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using FantaSim.App.Common;
 using Godot;
@@ -29,9 +30,10 @@ public partial class Host : Node
         ComposeEcs(_composition);
         ComposeWorld(_composition);
         ComposeCommand(_composition);
+        ComposeIii(_composition);
         ComposeUi(_composition);
 
-        GD.Print("[Host] composed services: Resource, SceneFlow, Ecs, World, Command, Ui");
+        GD.Print("[Host] composed services: Resource, SceneFlow, Ecs, World, Command, Iii, Ui");
         GD.Print("[Host] composition activated.");
         GD.Print($"[Host] iii bridge: IiiClient registered = {ClassDB.ClassExists("IiiClient")}");
 
@@ -44,53 +46,60 @@ public partial class Host : Node
         Callable.From(ShowIiiGraph).CallDeferred();
     }
 
-    // Phase B (env-guarded): render the iii text->3D graph as a BoomHud nodeGraph (the visual editor).
-    // Mounts the iii-graph view directly via a ViewRenderer (resident render — the UI service's
-    // ShowAsync gates on collectible view bundles, which this resident demo skips).
+    // Mount the iii text->3D graph as a BoomHud nodeGraph (env-guarded demo). Uses the GENERAL
+    // App.Ui.NodeGraph view over a read-only graph source; RUN routes through App.Command like the
+    // other demos. No per-domain view-source duplication.
     private void ShowIiiGraph()
     {
         if (System.Environment.GetEnvironmentVariable("FANTASIM_SHOW_GRAPH") != "1") return;
         var logger = _composition!.Bootstrap.LoggerFactory.CreateLogger("IiiGraph");
+        var prompt = System.Environment.GetEnvironmentVariable("FANTASIM_GRAPH_PROMPT") ?? "a small red toy cube";
 
-        var bridge = new FantaSim.App.Iii.IiiBridge();
-        bridge.Name = "IiiBridgeGraphView";
-        AddChild(bridge);
+        var graph = FantaSim.App.Iii.Recipes.TextTo3dGraph.Build(prompt);
+        var graphSource = new FantaSim.App.NodeGraph.ReadOnlyGraphSource("iii-text-to-3d", graph);
 
-        var graph = FantaSim.App.Iii.TextTo3dGraph.Build(
-            System.Environment.GetEnvironmentVariable("FANTASIM_GRAPH_PROMPT") ?? "a small red toy cube");
-        var source = new FantaSim.App.Iii.IiiGraphViewSource(graph, () => new FantaSim.App.Iii.GraphExecutor(bridge));
+        var client = _composition.Bootstrap.Registry.Get<FantaSim.App.Command.IClient>();
+        var view = new FantaSim.App.Ui.NodeGraph.NodeGraphViewSource(
+            graphSource,
+            runAsync: async () =>
+            {
+                var result = await client.CommandAsync(new FantaSim.App.Command.CommandRequest(
+                    Command: "pipeline.run_text_to_3d",
+                    PayloadJson: $"{{\"prompt\":\"{prompt}\"}}"));
+                return JsonSerializer.SerializeToNode(result)?.AsObject() ?? new JsonObject();
+            },
+            title: "iii text to 3D graph");
 
         var uiRoot = new Control { Name = "IiiGraphRoot" };
         uiRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         GetTree().Root.AddChild(uiRoot);
 
-        var renderer = new FantaSim.App.Ui.Seam.ViewRenderer(uiRoot, () => source, _ => null, logger);
+        var renderer = new FantaSim.App.Ui.Seam.ViewRenderer(uiRoot, () => view, _ => null, logger);
         renderer.Bind();
-        GD.Print($"[graph] iii-graph view mounted: {source.Nodes.Count} nodes, {source.Wires.Count} wires.");
+        GD.Print($"[graph] iii-graph view mounted: {view.Nodes.Count} nodes, {view.Wires.Count} wires.");
     }
 
-    // App-side graph executor demo (env-guarded): runs the text->3D pipeline as a DATA graph through
-    // the gdext IiiClient bridge — the replacement for the Python pipeline-worker. Quits when done so
-    // the windowed verification run terminates.
+    // pipeline.run_text_to_3d via the composed iii axis (env-guarded demo). The graph is authored in
+    // App.Iii.Recipes and executed by the general App.NodeGraph.GraphExecutor through the iii function
+    // provider. Quits when done so the windowed verification run terminates.
     private async void RunGraphTest()
     {
         if (System.Environment.GetEnvironmentVariable("FANTASIM_GRAPH_TEST") != "1") return;
         var prompt = System.Environment.GetEnvironmentVariable("FANTASIM_GRAPH_PROMPT") ?? "a small red toy cube";
-        var jobId = Guid.NewGuid().ToString("N")[..8];
-        GD.Print($"[graph] executing text->3D graph via C# executor (prompt=\"{prompt}\", job={jobId})...");
+        GD.Print($"[graph] executing text->3D graph via iii axis (prompt=\"{prompt}\")...");
 
-        var bridge = new FantaSim.App.Iii.IiiBridge();
-        bridge.Name = "IiiBridgeGraph";
-        AddChild(bridge); // _Ready instantiates the IiiClient child
-
+        var client = _composition!.Bootstrap.Registry.Get<FantaSim.App.Command.IClient>();
         try
         {
-            var graph = FantaSim.App.Iii.TextTo3dGraph.Build(prompt);
-            var shared = new JsonObject { ["job_id"] = jobId };
-            var result = await new FantaSim.App.Iii.GraphExecutor(bridge).ExecuteAsync(graph, shared);
-            var glb = result["glb_path"]?.ToString() ?? "(none)";
-            var usd = result["usd_path"]?.ToString() ?? "(none)";
-            Callable.From(() => { GD.Print($"[graph] DONE — usd_path={usd}  glb_path={glb}"); GetTree().Quit(); }).CallDeferred();
+            var result = await client.CommandAsync(new FantaSim.App.Command.CommandRequest(
+                Command: "pipeline.run_text_to_3d",
+                PayloadJson: $"{{\"prompt\":\"{prompt}\"}}"));
+            Callable.From(() =>
+            {
+                if (result.Ok) GD.Print($"[graph] DONE — {result.ResultJson}");
+                else GD.PushError($"[graph] failed: {result.Error?.Message}");
+                GetTree().Quit();
+            }).CallDeferred();
         }
         catch (Exception ex)
         {
@@ -99,23 +108,19 @@ public partial class Host : Node
         }
     }
 
-    // Phase-1 bridge round-trip check (env-guarded): instantiate the gdext IiiClient node, fire a
-    // request at the iii engine, and log the response signal. Proves Godot/C# -> Rust -> engine ->
-    // worker -> response works. The IiiClient node must live in the tree so its process() drains the
-    // result channel on the main thread.
-    private void PingIiiBridge()
+    // iii.ping via the composed iii axis (env-guarded demo). Routes through App.Command so the
+    // round-trip exercises the real dispatch path (router -> IIiiOrchestration -> bridge), not an
+    // inline bridge instantiation.
+    private async void PingIiiBridge()
     {
         if (System.Environment.GetEnvironmentVariable("FANTASIM_III_PING") != "1") return;
         if (!ClassDB.ClassExists("IiiClient")) { GD.PushError("[iii] IiiClient not registered"); return; }
 
-        var client = ClassDB.Instantiate("IiiClient").As<Node>();
-        client.Name = "IiiClient";
-        AddChild(client);
-        client.Call("set_url", "ws://127.0.0.1:49134");
-        client.Connect("response", Callable.From<string, string>((id, payload) =>
-            GD.Print($"[iii] response id={id} payload={payload}")));
-        client.Call("request", "ping", "test.echo", "{\"hello\":\"bridge\"}");
-        GD.Print("[iii] fired request test.echo — awaiting response signal...");
+        var client = _composition!.Bootstrap.Registry.Get<FantaSim.App.Command.IClient>();
+        var result = await client.CommandAsync(new FantaSim.App.Command.CommandRequest(
+            Command: "iii.ping",
+            PayloadJson: "{\"hello\":\"bridge\"}"));
+        GD.Print($"[iii] ping result ok={result.Ok} payload={result.ResultJson}");
     }
 
     // Boot the real scene flow: enter the "stage" tier under app-root. SceneFlow finds no resident
@@ -254,6 +259,56 @@ public partial class Host : Node
 
         var health = orchestration.HealthAsync().GetAwaiter().GetResult();
         GD.Print($"[Host] registered: Command (orchestration {(health.Ok ? "healthy" : "degraded")}, {health.Commands} commands)");
+    }
+
+    private void ComposeIii(AppComposition composition)
+    {
+        var loggerFactory = composition.Bootstrap.LoggerFactory;
+        var registry = composition.Bootstrap.Registry;
+
+        var bridge = new FantaSim.App.Iii.Seam.IiiBridge();
+        bridge.Name = "IiiBridge";
+        AddChild(bridge);
+        registry.Register<FantaSim.App.Iii.IIiiInvoker>(
+            bridge,
+            new ServiceRegistration { Tags = new[] { "iii", "invoker" }, Description = "iii bridge invoker (gdext)" });
+
+        var provider = new FantaSim.App.Iii.IiiFunctionProvider(bridge, loggerFactory);
+        registry.Register<FantaSim.App.NodeGraph.INodeFunctionProvider>(
+            provider,
+            new ServiceRegistration { Tags = new[] { "iii", "nodegraph-provider" }, Description = "iii node-function provider" });
+
+        var orchestration = new FantaSim.App.Iii.IiiOrchestrator(
+            new[] { (FantaSim.App.NodeGraph.INodeFunctionProvider)provider },
+            bridge,
+            loggerFactory);
+        registry.Register<FantaSim.App.Command.Orchestration.IIiiOrchestration>(
+            orchestration,
+            new ServiceRegistration { Tags = new[] { "iii", "orchestration" }, Description = "iii orchestration seam" });
+
+        var commandService = registry.Get<FantaSim.App.Command.IService>();
+        commandService.Register(
+            new FantaSim.App.Command.CommandDescriptor(
+                Id: FantaSim.App.Iii.IiiOrchestrator.WellKnownCommands.RunTextTo3d,
+                Title: "Run text to 3D", Description: "Executes the text to 3D iii pipeline graph.", Category: "pipeline"),
+            async (payload, ct) =>
+            {
+                var r = await orchestration.TriggerAsync(new FantaSim.App.Command.CommandRequest(
+                    Command: FantaSim.App.Iii.IiiOrchestrator.WellKnownCommands.RunTextTo3d, PayloadJson: payload), ct);
+                return JsonSerializer.Serialize(r);
+            });
+        commandService.Register(
+            new FantaSim.App.Command.CommandDescriptor(
+                Id: FantaSim.App.Iii.IiiOrchestrator.WellKnownCommands.Ping,
+                Title: "Ping iii", Description: "Round-trips test.echo through the iii bridge.", Category: "iii"),
+            async (payload, ct) =>
+            {
+                var r = await orchestration.TriggerAsync(new FantaSim.App.Command.CommandRequest(
+                    Command: FantaSim.App.Iii.IiiOrchestrator.WellKnownCommands.Ping, PayloadJson: payload), ct);
+                return JsonSerializer.Serialize(r);
+            });
+
+        GD.Print("[Host] registered: Iii (bridge, function provider, orchestration, 2 commands)");
     }
 
     private void ComposeUi(AppComposition composition)

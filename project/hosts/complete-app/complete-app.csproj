@@ -17,5 +17,9 @@
     <ProjectReference Include="..\..\plugins\App.World.Projection\App.World.Projection.csproj" />
     <ProjectReference Include="..\..\plugins\App.Ui\App.Ui.csproj" />
     <ProjectReference Include="..\..\plugins\App.Ui.Seam\App.Ui.Seam.csproj" />
+    <ProjectReference Include="..\..\plugins\App.NodeGraph\App.NodeGraph.csproj" />
+    <ProjectReference Include="..\..\plugins\App.Ui.NodeGraph\App.Ui.NodeGraph.csproj" />
+    <ProjectReference Include="..\..\plugins\App.Iii\App.Iii.csproj" />
+    <ProjectReference Include="..\..\plugins\App.Iii.Seam\App.Iii.Seam.csproj" />
   </ItemGroup>
 </Project>
