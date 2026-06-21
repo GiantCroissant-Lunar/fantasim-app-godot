@@ -53,8 +53,9 @@ void fragment() {
 ";
 
     private readonly WorldGlobeSnapshot _snapshot;
+    private readonly Func<long, string> _formatTick;
     private ShaderMaterial? _material;
-    private double _tick;
+    private long _tick;
 
     // Verification utility (inert unless FANTASIM_GLOBE_CAPTURE=<png path>): after a few frames,
     // save the rendered viewport and quit. This is how the windowed render is confirmed; it is not
@@ -65,9 +66,10 @@ void fragment() {
     private Label? _label;
     private HSlider? _slider;
 
-    public GlobeView(WorldGlobeSnapshot snapshot)
+    public GlobeView(WorldGlobeSnapshot snapshot, Func<long, string>? formatTick = null)
     {
         _snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
+        _formatTick = formatTick ?? (t => t.ToString(System.Globalization.CultureInfo.InvariantCulture));
         Name = "GlobeView";
     }
 
@@ -92,9 +94,9 @@ void fragment() {
         camera.LookAt(Vector3.Zero, Vector3.Up); // after AddChild — LookAt needs the node in-tree
 
         BuildScrubber();
-        double initialMa = ParseEnvDouble("FANTASIM_GLOBE_TICK_MA", 0.0);
-        SetTickFromMegaAnnum(initialMa);
-        GD.Print($"[GlobeView] globe built: {_snapshot.CellCount} cells, {_snapshot.PlateCount} plates, t0={initialMa} Ma.");
+        long initialTick = ParseEnvLong("FANTASIM_GLOBE_TICK", 0);
+        SetTick(initialTick);
+        GD.Print($"[GlobeView] globe built: {_snapshot.CellCount} cells, {_snapshot.PlateCount} plates, t0={_formatTick(initialTick)}.");
     }
 
     public override void _Process(double delta)
@@ -121,53 +123,63 @@ void fragment() {
         GetTree().Quit();
     }
 
-    /// <summary>Set the canonical tick the globe is reconstructed at (drives the GPU rotation).</summary>
-    public void SetTick(double tick)
+    /// <summary>Set the canonical tick the globe is reconstructed at (drives the GPU rotation + label).</summary>
+    public void SetTick(long tick)
     {
         _tick = tick;
         _material?.SetShaderParameter("u_tick", (float)tick);
+        if (_label is not null) _label.Text = _formatTick(tick);
+        if (_slider is not null && (long)_slider.Value != tick) _slider.Value = tick;
     }
 
-    public double Tick => _tick;
+    public long Tick => _tick;
 
-    // --- Time scrubber (T0.5): an HSlider over 0..100 Ma drives SetTick (megaAnnum * ticks-per-Ma). ---
+    // --- Time scrubber: an HSlider over canonical TICKS (0..100 ka) drives SetTick; the label is
+    //     rendered through the OdometerLadder (CanonicalTimeLabel), never real-world Ma. ---
 
     private void BuildScrubber()
     {
         var layer = new CanvasLayer { Name = "ScrubberLayer" };
         AddChild(layer);
 
-        var margin = new MarginContainer();
-        margin.SetAnchorsPreset(Control.LayoutPreset.BottomWide);
-        margin.AddThemeConstantOverride("margin_left", 24);
-        margin.AddThemeConstantOverride("margin_right", 24);
-        margin.AddThemeConstantOverride("margin_bottom", 20);
-        layer.AddChild(margin);
+        // A fixed-height bar pinned to the bottom edge (explicit anchors + offsets so it always lays out).
+        var panel = new PanelContainer();
+        panel.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.BottomWide);
+        panel.OffsetTop = -60;
+        layer.AddChild(panel);
 
-        var vbox = new VBoxContainer();
-        margin.AddChild(vbox);
+        var hbox = new HBoxContainer();
+        hbox.AddThemeConstantOverride("separation", 16);
+        panel.AddChild(hbox);
 
-        _label = new Label { Text = "0 Ma" };
-        vbox.AddChild(_label);
+        _label = new Label
+        {
+            Text = _formatTick(0),
+            CustomMinimumSize = new Vector2(170, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        _label.AddThemeFontSizeOverride("font_size", 26);
+        hbox.AddChild(_label);
 
-        _slider = new HSlider { MinValue = 0, MaxValue = 100, Step = 0.5 };
+        // 0 .. 100 ka of canonical time (1 ka = TicksPerMegaAnnum ticks), stepped at half a ka.
+        _slider = new HSlider
+        {
+            MinValue = 0,
+            MaxValue = 100.0 * _snapshot.TicksPerMegaAnnum,
+            Step = _snapshot.TicksPerMegaAnnum / 2.0,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+        };
         _slider.ValueChanged += OnScrubberChanged;
-        vbox.AddChild(_slider);
+        hbox.AddChild(_slider);
     }
 
-    private void OnScrubberChanged(double megaAnnum) => SetTickFromMegaAnnum(megaAnnum);
+    private void OnScrubberChanged(double tick) => SetTick((long)tick);
 
-    private void SetTickFromMegaAnnum(double megaAnnum)
-    {
-        SetTick(megaAnnum * _snapshot.TicksPerMegaAnnum);
-        if (_label is not null) _label.Text = $"{megaAnnum:0.#} Ma";
-        if (_slider is not null && Math.Abs(_slider.Value - megaAnnum) > 1e-9) _slider.Value = megaAnnum;
-    }
-
-    private static double ParseEnvDouble(string name, double fallback)
+    private static long ParseEnvLong(string name, long fallback)
     {
         var raw = System.Environment.GetEnvironmentVariable(name);
-        return double.TryParse(raw, System.Globalization.NumberStyles.Float,
+        return long.TryParse(raw, System.Globalization.NumberStyles.Integer,
             System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : fallback;
     }
 

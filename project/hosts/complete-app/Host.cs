@@ -252,7 +252,9 @@ public partial class Host : Node
     private void ComposeWorldView(AppComposition composition)
     {
         var snapshot = new FantaSim.App.World.Globe.GlobeReconstructor().BuildGlobe();
-        var view = new FantaSim.App.World.Seam.GlobeView(snapshot);
+        var view = new FantaSim.App.World.Seam.GlobeView(
+            snapshot,
+            tick => FantaSim.App.World.Globe.CanonicalTimeLabel.ForTick(tick, snapshot.TicksPerMegaAnnum));
         GetTree().Root.CallDeferred("add_child", view);
         GD.Print($"[Host] World view: globe mounted ({snapshot.CellCount} cells, {snapshot.PlateCount} plates)");
     }
