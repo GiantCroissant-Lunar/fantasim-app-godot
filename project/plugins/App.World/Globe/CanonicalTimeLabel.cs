@@ -10,7 +10,8 @@ namespace FantaSim.App.World.Globe;
 public static class CanonicalTimeLabel
 {
     /// <param name="tick">Canonical tick.</param>
-    /// <param name="ticksPerAnchor">Ticks per the profile's anchor symbol (1 ka = 1 Ma = TicksPerMegaAnnum ticks).</param>
+    /// <param name="ticksPerAnchor">Ticks per the profile's anchor rung (the "ka" symbol). Sourced once
+    /// from the engine at the authoring boundary; everything here is tick-native.</param>
     public static string ForTick(long tick, long ticksPerAnchor)
     {
         double anchorAmount = ticksPerAnchor > 0 ? tick / (double)ticksPerAnchor : 0.0;

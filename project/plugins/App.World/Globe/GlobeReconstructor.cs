@@ -52,8 +52,11 @@ public sealed class GlobeReconstructor
         foreach (var plate in _plates)
             globePlates.Add(new GlobePlate(plate.PlateId, ToVec3(plate.Pole.Axis), plate.Pole.AngularRate));
 
+        // Authoring boundary: the engine still measures the anchor in real-world Ma, but past this
+        // point the app is tick-native — the snapshot carries ticks-per-anchor, never "Ma".
+        long ticksPerAnchor = UnitConverter.TicksPerMegaAnnum;
         return new WorldGlobeSnapshot(
-            _frequency, n, _plates.Count, UnitConverter.TicksPerMegaAnnum, cells, globePlates);
+            _frequency, n, _plates.Count, ticksPerAnchor, cells, globePlates);
     }
 
     /// <summary>

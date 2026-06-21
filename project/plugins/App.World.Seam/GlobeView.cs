@@ -169,8 +169,8 @@ void fragment() {
         _typeTexture.Update(_typeImage);
     }
 
-    // --- Time scrubber: an HSlider over canonical TICKS (0..100 ka) drives SetTick; the label is
-    //     rendered through the OdometerLadder (CanonicalTimeLabel), never real-world Ma. ---
+    // --- Time scrubber: an HSlider over canonical TICKS (0..100 ladder anchors) drives SetTick; the
+    //     label is rendered through the OdometerLadder (CanonicalTimeLabel), never real-world Ma. ---
 
     private void BuildScrubber()
     {
@@ -196,12 +196,13 @@ void fragment() {
         _label.AddThemeFontSizeOverride("font_size", 26);
         hbox.AddChild(_label);
 
-        // 0 .. 100 ka of canonical time (1 ka = TicksPerMegaAnnum ticks), stepped at half a ka.
+        // 0 .. 100 OdometerLadder anchors of canonical time (1 anchor = TicksPerAnchor ticks),
+        // stepped at half an anchor. The ladder renders the readable label; this stays in ticks.
         _slider = new HSlider
         {
             MinValue = 0,
-            MaxValue = 100.0 * _snapshot.TicksPerMegaAnnum,
-            Step = _snapshot.TicksPerMegaAnnum / 2.0,
+            MaxValue = 100.0 * _snapshot.TicksPerAnchor,
+            Step = _snapshot.TicksPerAnchor / 2.0,
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
             SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
         };

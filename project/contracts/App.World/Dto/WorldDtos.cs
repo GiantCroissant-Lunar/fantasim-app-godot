@@ -85,7 +85,10 @@ public record WorldGlobeSnapshot(
     int Frequency,
     int CellCount,
     int PlateCount,
-    long TicksPerMegaAnnum,
+    // Ticks per OdometerLadder anchor rung (the ladder's "ka" symbol). The app authors scrub ranges
+    // and renders the time label in these tick-native anchors; the engine's real-world Ma only crosses
+    // into ticks once, where this value is sourced. See CanonicalTimeLabel (ticksPerAnchor).
+    long TicksPerAnchor,
     IReadOnlyList<GlobeCell> Cells,
     IReadOnlyList<GlobePlate> Plates
 );

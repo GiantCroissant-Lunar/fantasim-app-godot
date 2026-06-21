@@ -256,8 +256,9 @@ public partial class Host : Node
 
         // Precompute crust features at evenly-spaced snapshots (one pipeline run); the scrubber snaps
         // to the nearest so dragging stays instant. Features accumulate, so a mountain grows in over ticks.
+        // Authored in OdometerLadder anchors (tick-native): every 5 anchors out to 100 anchors.
         var snapshotTicks = new System.Collections.Generic.List<long>();
-        for (long ka = 0; ka <= 100; ka += 5) snapshotTicks.Add(ka * snapshot.TicksPerMegaAnnum);
+        for (long anchor = 0; anchor <= 100; anchor += 5) snapshotTicks.Add(anchor * snapshot.TicksPerAnchor);
         var featuresByTick = model.RunCrustFeatures(snapshotTicks);
         System.Func<long, byte[]> featuresAt = tick =>
         {
@@ -269,7 +270,7 @@ public partial class Host : Node
 
         var view = new FantaSim.App.World.Seam.GlobeView(
             snapshot,
-            tick => FantaSim.App.World.Globe.CanonicalTimeLabel.ForTick(tick, snapshot.TicksPerMegaAnnum),
+            tick => FantaSim.App.World.Globe.CanonicalTimeLabel.ForTick(tick, snapshot.TicksPerAnchor),
             featuresAt);
         GetTree().Root.CallDeferred("add_child", view);
         GD.Print($"[Host] World view: globe mounted ({snapshot.CellCount} cells, {snapshot.PlateCount} plates, {snapshotTicks.Count} feature snapshots)");
