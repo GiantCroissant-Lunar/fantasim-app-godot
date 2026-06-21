@@ -21,5 +21,6 @@
     <ProjectReference Include="..\..\plugins\App.Ui.NodeGraph\App.Ui.NodeGraph.csproj" />
     <ProjectReference Include="..\..\plugins\App.Iii\App.Iii.csproj" />
     <ProjectReference Include="..\..\plugins\App.Iii.Seam\App.Iii.Seam.csproj" />
+    <ProjectReference Include="..\..\plugins\App.World.Seam\App.World.Seam.csproj" />
   </ItemGroup>
 </Project>

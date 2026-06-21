@@ -1,0 +1,14 @@
+<Project Sdk="Godot.NET.Sdk/4.6.3">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.World.Seam</RootNamespace>
+    <AssemblyName>FantaSim.App.World.Seam</AssemblyName>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <ServiceArchiTier>T4</ServiceArchiTier>
+  </PropertyGroup>
+  <!-- T4 seam: the only App.World tier that references Godot. Consumes the plain-float
+       WorldGlobeSnapshot DTO from the T1 contract; no engine or plugin types cross here. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+  </ItemGroup>
+</Project>

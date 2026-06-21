@@ -29,6 +29,7 @@ public partial class Host : Node
         ComposeSceneFlow(_composition);
         ComposeEcs(_composition);
         ComposeWorld(_composition);
+        ComposeWorldView(_composition);
         ComposeCommand(_composition);
         ComposeIii(_composition);
         ComposeUi(_composition);
@@ -243,6 +244,17 @@ public partial class Host : Node
             worldProvider,
             new ServiceRegistration { Tags = new[] { "world", "nodegraph-provider" }, Description = "World node-function provider (crust pipeline)" });
         GD.Print("[Host] World detail: crust function provider registered");
+    }
+
+    // World view (T4 seam): mount the geodesic plate globe as the real 3D world surface. The T3
+    // GlobeReconstructor builds the seeded snapshot (Godot-free); the GlobeView seam turns it into a
+    // GPU-rotated ArrayMesh. Always-on (not an env-guarded demo).
+    private void ComposeWorldView(AppComposition composition)
+    {
+        var snapshot = new FantaSim.App.World.Globe.GlobeReconstructor().BuildGlobe();
+        var view = new FantaSim.App.World.Seam.GlobeView(snapshot);
+        GetTree().Root.CallDeferred("add_child", view);
+        GD.Print($"[Host] World view: globe mounted ({snapshot.CellCount} cells, {snapshot.PlateCount} plates)");
     }
 
     private void ComposeCommand(AppComposition composition)
