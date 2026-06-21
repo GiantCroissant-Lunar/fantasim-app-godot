@@ -32,12 +32,14 @@ public partial class Host : Node
         ComposeSceneFlow(_composition);
         ComposeEcs(_composition);
         ComposeWorld(_composition);
-        ComposeWorldView(_composition);
         ComposeCellElevation(_composition);
         ComposeCommand(_composition);
         ComposeIii(_composition);
         ComposeGpu(_composition);
         ComposeGpuShader(_composition);
+        // World view (the T4 relief render) is composed AFTER the cell-elevation model and the GPU
+        // compute service so it can feed per-cell elevation through the compute displacement path.
+        ComposeWorldView(_composition);
         ComposeUi(_composition);
 
         GD.Print("[Host] composed services: Resource, SceneFlow, Ecs, World, Command, Iii, Gpu, GpuShader, Ui");
@@ -276,12 +278,28 @@ public partial class Host : Node
             return featuresByTick[best];
         };
 
+        // Per-cell elevation feed for the relief render (sub-project C.1): drive sub-project B's
+        // CellElevationModel to the tick and hand the seam a per-cell float[] (indexed by cell id). The
+        // seam pushes it through the GPU compute displacement path (or its vertex-shader fallback).
+        var elevationModel = _cellElevation;
+        System.Func<long, float[]>? elevationsAt = elevationModel is null ? null : tick =>
+        {
+            elevationModel.UpdateForTick(tick);
+            var e = elevationModel.GetElevations();
+            var f = new float[e.Length];
+            for (int i = 0; i < e.Length; i++) f[i] = (float)e[i];
+            return f;
+        };
+
         var view = new FantaSim.App.World.Seam.GlobeView(
             snapshot,
             tick => FantaSim.App.World.Globe.CanonicalTimeLabel.ForTick(tick, snapshot.TicksPerAnchor),
-            featuresAt);
+            featuresAt,
+            elevationsAt,
+            _gpuComputeService);
         GetTree().Root.CallDeferred("add_child", view);
-        GD.Print($"[Host] World view: globe mounted ({snapshot.CellCount} cells, {snapshot.PlateCount} plates, {snapshotTicks.Count} feature snapshots)");
+        GD.Print($"[Host] World view: globe mounted ({snapshot.CellCount} cells, {snapshot.PlateCount} plates, " +
+                 $"{snapshotTicks.Count} feature snapshots, elevationFeed={(elevationsAt is not null)}, gpuCompute={(_gpuComputeService is not null)})");
     }
 
     // Sub-project B (ECS cell model + elevation derivation): model each globe cell as an ECS entity

@@ -7,8 +7,11 @@
     <ServiceArchiTier>T4</ServiceArchiTier>
   </PropertyGroup>
   <!-- T4 seam: the only App.World tier that references Godot. Consumes the plain-float
-       WorldGlobeSnapshot DTO from the T1 contract; no engine or plugin types cross here. -->
+       WorldGlobeSnapshot DTO from the T1 contract; no engine or plugin types cross here.
+       Also consumes the engine-agnostic App.GpuCompute T1 contract (DTOs + IService) to push
+       per-cell relief displacement + normals through the resident compute seam (sub-project C.1). -->
   <ItemGroup>
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+    <ProjectReference Include="..\..\contracts\App.GpuCompute\App.GpuCompute.csproj" />
   </ItemGroup>
 </Project>
