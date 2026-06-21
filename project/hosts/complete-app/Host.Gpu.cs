@@ -13,7 +13,12 @@ public partial class Host : Node
     // loads it via ResourceLoader.Load<RDShaderFile>() inside the local RenderingDevice.
     private const string GpuSmokeShaderPath = "res://shaders/compute_double.glsl";
 
+    // res:// path of the gpu-demo spatial shader. Loaded directly as a Godot Shader resource; the
+    // resident App.GpuShader seam reports its mode (spatial) without compiling it for dispatch.
+    private const string GpuShaderSmokeShaderPath = "res://shaders/tint.gdshader";
+
     private FantaSim.App.GpuCompute.Services.Service? _gpuComputeService;
+    private FantaSim.App.GpuShader.Services.Service? _gpuShaderService;
 
     // Compose the reusable GPU compute service. The T3 service is engine-agnostic; the resident Godot
     // seam owns the local RenderingDevice and all shader/buffer RIDs. Shader assets may hot-reload
@@ -29,6 +34,23 @@ public partial class Host : Node
             _gpuComputeService,
             new ServiceRegistration { Tags = new[] { "gpu-compute", "gpu", "compute" }, Description = "GPU compute shader service" });
         GD.Print("[Host] registered: Gpu (compute service, resident RenderingDevice seam)");
+    }
+
+    // Compose the reusable GPU shader-graph authoring service (sub-project A.2). The T3 service is
+    // engine-agnostic: it edits/validates shader-graph DTOs and never touches Godot Shader types. The
+    // resident Godot seam loads Shader resources (incl. bundle PCK content) and reports DTO descriptions.
+    // It coexists as a registry service alongside ComposeGpu; it does NOT plug into a node-graph executor.
+    private void ComposeGpuShader(AppComposition composition)
+    {
+        var registry = composition.Bootstrap.Registry;
+        var loggerFactory = composition.Bootstrap.LoggerFactory;
+
+        var backend = new FantaSim.App.GpuShader.Seam.ShaderGraphBackend(loggerFactory);
+        _gpuShaderService = new FantaSim.App.GpuShader.Services.Service(backend, loggerFactory);
+        registry.Register<FantaSim.App.GpuShader.IService>(
+            _gpuShaderService,
+            new ServiceRegistration { Tags = new[] { "gpu-shader", "gpu", "shader" }, Description = "GPU shader-graph authoring service" });
+        GD.Print("[Host] registered: GpuShader (authoring service, resident Godot Shader seam)");
     }
 
     // GPU smoke (inert unless FANTASIM_GPU_SMOKE=1): dispatch compute_double.glsl over a small uint
@@ -100,6 +122,52 @@ public partial class Host : Node
         catch (Exception ex)
         {
             var msg = $"GPU-SMOKE FAIL: {ex.Message}";
+            Callable.From(() => { GD.PushError(msg); GD.Print(msg); GetTree().Quit(); }).CallDeferred();
+        }
+    }
+
+    // GpuShader smoke (inert unless FANTASIM_GPUSHADER_SMOKE=1): inspect res://shaders/tint.gdshader
+    // through the composed App.GpuShader service and assert the resident seam reports its mode as
+    // "spatial". Prints a clear GPUSHADER-SMOKE PASS/FAIL line, then quits. Proves the real Godot
+    // Shader-resource inspection path works in the windowed app. Mirrors RunGpuSmoke.
+    private async void RunGpuShaderSmoke()
+    {
+        if (System.Environment.GetEnvironmentVariable("FANTASIM_GPUSHADER_SMOKE") != "1") return;
+
+        try
+        {
+            var service = _gpuShaderService
+                ?? throw new InvalidOperationException("GPU shader service not composed.");
+
+            var inspection = await service.InspectShaderAsync(GpuShaderSmokeShaderPath);
+
+            string verdict;
+            if (!inspection.Found)
+            {
+                verdict = $"GPUSHADER-SMOKE FAIL: shader not found at {GpuShaderSmokeShaderPath}: {inspection.Error}";
+            }
+            else if (!string.Equals(inspection.ShaderKind, "spatial", StringComparison.Ordinal))
+            {
+                verdict = $"GPUSHADER-SMOKE FAIL: expected mode=spatial, got mode={inspection.ShaderKind} (len={inspection.SourceLength})";
+            }
+            else
+            {
+                verdict = $"GPUSHADER-SMOKE PASS: mode=spatial (len={inspection.SourceLength})";
+            }
+
+            Callable.From(() =>
+            {
+                if (verdict.StartsWith("GPUSHADER-SMOKE PASS", StringComparison.Ordinal))
+                    GD.Print(verdict);
+                else
+                    GD.PushError(verdict);
+                GD.Print(verdict); // ensure the verdict reaches stdout for log scraping even on the error path
+                GetTree().Quit();
+            }).CallDeferred();
+        }
+        catch (Exception ex)
+        {
+            var msg = $"GPUSHADER-SMOKE FAIL: {ex.Message}";
             Callable.From(() => { GD.PushError(msg); GD.Print(msg); GetTree().Quit(); }).CallDeferred();
         }
     }

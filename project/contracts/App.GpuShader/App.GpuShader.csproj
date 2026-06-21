@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.GpuShader</RootNamespace>
+    <AssemblyName>FantaSim.App.GpuShader.Contracts</AssemblyName>
+    <!-- ServiceArchi Tier 1: engine-agnostic shader-graph authoring/validation contracts + T2 proxy.
+         Godot Shader/ShaderMaterial resources and native RIDs stay in the resident T4 seam.
+         (Mirrors App.GpuCompute / App.World contracts.) -->
+    <ServiceArchiTier>T1</ServiceArchiTier>
+  </PropertyGroup>
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" />
+    <PackageReference Include="GiantCroissant.ServiceArchi.Contracts" />
+    <PackageReference Include="GiantCroissant.ServiceArchi.SourceGen" PrivateAssets="all" />
+  </ItemGroup>
+</Project>

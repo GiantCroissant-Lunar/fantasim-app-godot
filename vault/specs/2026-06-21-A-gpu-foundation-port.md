@@ -29,7 +29,7 @@ All under `…/fantasim-app-godot/project/`. Source = `ref-projects/`, target = 
 2. **CPM:** this app uses Central Package Management (`project/Directory.Packages.props`). Any package the ref plugins reference must be pinned there (add versions; no inline versions in csproj). Watch for engine-package overlap (already at 0.1.5).
 3. **Solution:** add all new projects to `project/FantaSim.sln` (mirror how `App.NodeGraph` is added).
 4. **Composition:** add a `ComposeGpu(composition)` to `project/hosts/complete-app/Host.cs` that registers the GpuCompute + GpuShader services into the registry (mirror `ComposeWorld`/`ComposeIii` pattern). Call it from `_Ready`.
-5. **Node-graph reconciliation:** the app ALREADY has `App.NodeGraph` (general graph executor, used by iii + crust). `App.GpuShader` must **compose with** it (register GPU nodes/provider into the existing executor) — not introduce a second, parallel graph engine. Confirm during port; adjust namespaces/providers accordingly.
+5. **Node-graph reconciliation — CORRECTED during A.2 (this premise was wrong).** `App.GpuShader` is NOT a GPU executor and does NOT plug into `App.NodeGraph`. Investigation found it is a **shader authoring/validation `IService`** with its OWN DTO vocabulary (`GpuShaderGraphView`/Node/Wire/Edit) that it edits + validates; its only Godot touch is the seam's `InspectShaderAsync` (load a `Shader`, report its mode). The ref has no `App.NodeGraph`. So the three are distinct: `App.NodeGraph` executes **function-pipelines** (iii/crust), `App.GpuShader` **describes shaders** (a graph rendered in GraphEdit, parsed-into by E, materialised by C), `App.GpuCompute` **runs compute**. A.2 composes `App.GpuShader` as a plain registry service that COEXISTS with `App.NodeGraph` (mirrors `ComposeGpu`); it drops the ref's `Ops/` + `App.Remote` dep (the app has neither). The "graph drives the material" wiring belongs to C (relief material) + E (VisualShader bridge), not here.
 6. **Shader resources:** `.glsl` compute shaders load via `RDShaderFile` from a `res://` path. Wire the gpu-demo shaders as a loadable resource/bundle so the seam can `ResourceLoader.Load<RDShaderFile>()` them in the exported app (respect the bundle-oriented resource model).
 7. **`UseProjectReferences`:** if the ref plugins depend on engine types, gate them the same hybrid way (`USE_PROJECT_REFERENCES`) as `App.World`/`App.Ecs`. Likely GPU plugins are engine-agnostic (pure Godot/DTO) — verify.
 
@@ -41,7 +41,7 @@ All under `…/fantasim-app-godot/project/`. Source = `ref-projects/`, target = 
 
 ## Staging (subagent execution)
 - **A.1 — Compute path:** contracts/plugin/seam/tests for `App.GpuCompute` + gpu-demo shader + `ComposeGpu` + smoke hook. Verify (1)(2)(3). Checkpoint.
-- **A.2 — Shader-graph path:** contracts/plugin/seam/tests for `App.GpuShader`, composed into `App.NodeGraph`. Verify (1)(3).
+- **A.2 — Shader-graph path:** contracts/plugin/seam/tests for `App.GpuShader` (authoring/validation service), composed as a registry service COEXISTING with `App.NodeGraph` (see corrected adjustment #5). Verify (1)(3) + an inspect smoke (load a real `.gdshader`, assert `mode=spatial`) instead of a graph→GPU smoke (this service has no dispatch path).
 - Shared files (`FantaSim.sln`, `Directory.Packages.props`, `Host.cs`) are edited within each stage sequentially (no parallel races).
 
 ## Risks / watch-items
