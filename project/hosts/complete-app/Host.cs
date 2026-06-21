@@ -32,9 +32,10 @@ public partial class Host : Node
         ComposeWorldView(_composition);
         ComposeCommand(_composition);
         ComposeIii(_composition);
+        ComposeGpu(_composition);
         ComposeUi(_composition);
 
-        GD.Print("[Host] composed services: Resource, SceneFlow, Ecs, World, Command, Iii, Ui");
+        GD.Print("[Host] composed services: Resource, SceneFlow, Ecs, World, Command, Iii, Gpu, Ui");
         GD.Print("[Host] composition activated.");
         GD.Print($"[Host] iii bridge: IiiClient registered = {ClassDB.ClassExists("IiiClient")}");
 
@@ -45,6 +46,7 @@ public partial class Host : Node
         Callable.From(PingIiiBridge).CallDeferred();
         Callable.From(RunGraphTest).CallDeferred();
         Callable.From(ShowIiiGraph).CallDeferred();
+        Callable.From(RunGpuSmoke).CallDeferred();
     }
 
     // Mount the iii text->3D graph as a BoomHud nodeGraph (env-guarded demo). Uses the GENERAL

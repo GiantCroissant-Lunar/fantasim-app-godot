@@ -22,5 +22,7 @@
     <ProjectReference Include="..\..\plugins\App.Iii\App.Iii.csproj" />
     <ProjectReference Include="..\..\plugins\App.Iii.Seam\App.Iii.Seam.csproj" />
     <ProjectReference Include="..\..\plugins\App.World.Seam\App.World.Seam.csproj" />
+    <ProjectReference Include="..\..\plugins\App.GpuCompute\App.GpuCompute.csproj" />
+    <ProjectReference Include="..\..\plugins\App.GpuCompute.Seam\App.GpuCompute.Seam.csproj" />
   </ItemGroup>
 </Project>

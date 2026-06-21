@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.GpuCompute</RootNamespace>
+    <AssemblyName>FantaSim.App.GpuCompute</AssemblyName>
+    <!-- ServiceArchi Tier 3: engine-agnostic compute orchestrator. Validates dispatch DTOs
+         and delegates Godot RenderingDevice work to the resident T4 seam. -->
+    <ServiceArchiTier>T3</ServiceArchiTier>
+  </PropertyGroup>
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\contracts\App.GpuCompute\App.GpuCompute.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+</Project>

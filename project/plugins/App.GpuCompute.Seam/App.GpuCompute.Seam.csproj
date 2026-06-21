@@ -1,0 +1,22 @@
+<Project Sdk="Godot.NET.Sdk/4.7.0">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.GpuCompute.Seam</RootNamespace>
+    <AssemblyName>FantaSim.App.GpuCompute.Seam</AssemblyName>
+    <ServiceArchiTier>T4</ServiceArchiTier>
+    <!-- The RESIDENT compute seam: owns the Godot RenderingDevice backend. It is not collectible;
+         compute shader assets may hot-reload through PCK/resource replacement instead. Seam tier
+         opts out of CPM (Godot SDK manages its package graph), mirroring the other App.*.Seam. -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\contracts\App.GpuCompute\App.GpuCompute.csproj" />
+    <ProjectReference Include="..\App.GpuCompute\App.GpuCompute.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+  </ItemGroup>
+</Project>
