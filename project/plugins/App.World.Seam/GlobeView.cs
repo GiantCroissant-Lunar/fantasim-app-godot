@@ -5,25 +5,26 @@ using Godot;
 namespace FantaSim.App.World.Seam;
 
 /// <summary>
-/// T4 seam: the ONLY App.World tier that touches Godot. Builds a globe <see cref="ArrayMesh"/> from
-/// a <see cref="WorldGlobeSnapshot"/> (per-cell base triangle corners + plate id) and rotates each
-/// vertex by its plate's Euler rotation on the GPU — a spatial shader driven by a single tick
-/// uniform. Scrubbing canonical time (<see cref="SetTick"/>) updates that uniform, so motion is
-/// shader-driven with no per-tick CPU mesh rebuild.
+/// T4 seam: the ONLY App.World tier that touches Godot. Builds a globe <see cref="ArrayMesh"/> from a
+/// <see cref="WorldGlobeSnapshot"/> and rotates each cell by its plate's Euler rotation on the GPU
+/// (tick uniform). Boundary cells are coloured by their type (convergent/divergent/transform),
+/// re-derived per tick on the CPU and pushed through a per-cell data texture the shader samples.
 /// </summary>
 public sealed partial class GlobeView : Node3D
 {
-    // Spatial shader: rotate each vertex about its plate's Euler axis by (rate * tick); colour by
-    // plate id (hue). Plate id rides in UV.x; per-plate (axis.xyz, rate.w) ride in a uniform array.
+    // Spatial shader: vertex rotates each cell about its plate's Euler axis by (rate*tick) and dims
+    // the plate hue; fragment overlays the per-cell boundary-type colour sampled from u_cell_types.
     private const string ShaderCode = @"
 shader_type spatial;
 render_mode unshaded, cull_disabled;
 
 uniform float u_tick = 0.0;
 uniform int u_plate_count = 1;
-uniform vec4 u_plate_axis_rate[16]; // xyz = unit axis, w = radians per canonical tick
+uniform vec4 u_plate_axis_rate[16];                 // xyz = unit axis, w = radians per canonical tick
+uniform sampler2D u_cell_types : filter_nearest;    // r = boundary type: 0 interior,1 conv,2 div,3 transform
 
-varying vec3 v_color;
+varying vec3 v_plate_color;
+varying float v_cell_u;
 
 vec3 rotate_axis(vec3 v, vec3 axis, float angle) {
     float c = cos(angle);
@@ -42,42 +43,55 @@ void vertex() {
     vec4 ar = u_plate_axis_rate[pid];
     float angle = ar.w * u_tick;
     VERTEX = rotate_axis(VERTEX, normalize(ar.xyz), angle);
-    VERTEX *= (1.0 - float(pid) * 0.004); // tiny per-plate shell offset: convergent overlaps render clean, not z-fighting
+    VERTEX *= (1.0 - float(pid) * 0.004); // per-plate shell offset: convergent overlaps render clean
     float denom = max(float(u_plate_count), 1.0);
-    v_color = hue(float(pid) / denom) * 0.85 + 0.12;
+    v_plate_color = hue(float(pid) / denom) * 0.55 + 0.10; // dimmed so boundary colours pop
+    v_cell_u = UV.y;
 }
 
 void fragment() {
-    ALBEDO = v_color;
+    int type = int(texture(u_cell_types, vec2(v_cell_u, 0.5)).r + 0.5);
+    vec3 col = v_plate_color;
+    if (type == 1) col = vec3(0.95, 0.27, 0.22);      // convergent  -> red
+    else if (type == 2) col = vec3(0.25, 0.85, 0.45); // divergent   -> green
+    else if (type == 3) col = vec3(0.96, 0.85, 0.30); // transform   -> yellow
+    ALBEDO = col;
 }
 ";
 
     private readonly WorldGlobeSnapshot _snapshot;
     private readonly Func<long, string> _formatTick;
+    private readonly Func<long, byte[]>? _classifyAt;
     private ShaderMaterial? _material;
+    private Image? _typeImage;
+    private ImageTexture? _typeTexture;
     private long _tick;
 
     // Verification utility (inert unless FANTASIM_GLOBE_CAPTURE=<png path>): after a few frames,
-    // save the rendered viewport and quit. This is how the windowed render is confirmed; it is not
-    // part of normal runtime.
+    // save the rendered viewport and quit. Not part of normal runtime.
     private int _frames;
     private readonly string? _capturePath = System.Environment.GetEnvironmentVariable("FANTASIM_GLOBE_CAPTURE");
 
     private Label? _label;
     private HSlider? _slider;
 
-    public GlobeView(WorldGlobeSnapshot snapshot, Func<long, string>? formatTick = null)
+    public GlobeView(
+        WorldGlobeSnapshot snapshot,
+        Func<long, string>? formatTick = null,
+        Func<long, byte[]>? classifyAt = null)
     {
         _snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
         _formatTick = formatTick ?? (t => t.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        _classifyAt = classifyAt;
         Name = "GlobeView";
     }
 
     public override void _Ready()
     {
         _material = BuildMaterial(_snapshot);
+        InitCellTypeTexture(_snapshot.CellCount);
 
-        AddChild(BuildMantle()); // base sphere under the plate shell: divergent gaps reveal mantle, not background
+        AddChild(BuildMantle()); // base sphere under the plate shell: divergent gaps reveal mantle
 
         var globe = new MeshInstance3D
         {
@@ -123,16 +137,35 @@ void fragment() {
         GetTree().Quit();
     }
 
-    /// <summary>Set the canonical tick the globe is reconstructed at (drives the GPU rotation + label).</summary>
+    /// <summary>Set the canonical tick: drives the GPU rotation, the ladder label, and re-derives the
+    /// per-cell boundary classification (boundary colours) for that tick.</summary>
     public void SetTick(long tick)
     {
         _tick = tick;
         _material?.SetShaderParameter("u_tick", (float)tick);
+        UpdateCellTypes(tick);
         if (_label is not null) _label.Text = _formatTick(tick);
         if (_slider is not null && (long)_slider.Value != tick) _slider.Value = tick;
     }
 
     public long Tick => _tick;
+
+    private void InitCellTypeTexture(int cellCount)
+    {
+        _typeImage = Image.CreateEmpty(Math.Max(cellCount, 1), 1, false, Image.Format.Rf);
+        _typeTexture = ImageTexture.CreateFromImage(_typeImage);
+        _material?.SetShaderParameter("u_cell_types", _typeTexture);
+    }
+
+    private void UpdateCellTypes(long tick)
+    {
+        if (_classifyAt is null || _typeImage is null || _typeTexture is null) return;
+        var types = _classifyAt(tick);
+        int count = Math.Min(types.Length, _typeImage.GetWidth());
+        for (int c = 0; c < count; c++)
+            _typeImage.SetPixel(c, 0, new Color(types[c], 0f, 0f));
+        _typeTexture.Update(_typeImage);
+    }
 
     // --- Time scrubber: an HSlider over canonical TICKS (0..100 ka) drives SetTick; the label is
     //     rendered through the OdometerLadder (CanonicalTimeLabel), never real-world Ma. ---
@@ -187,15 +220,17 @@ void fragment() {
     {
         int triCount = s.Cells.Count;
         var verts = new Vector3[triCount * 3];
-        var uvs = new Vector2[triCount * 3]; // uv.x = plate id
+        var uvs = new Vector2[triCount * 3]; // uv.x = plate id, uv.y = per-cell data-texture U coord
 
+        float cellCount = Math.Max(s.CellCount, 1);
         for (int i = 0; i < triCount; i++)
         {
             var cell = s.Cells[i];
+            float u = (cell.CellId + 0.5f) / cellCount;
             int b = i * 3;
-            verts[b + 0] = ToV3(cell.C0); uvs[b + 0] = new Vector2(cell.PlateId, 0f);
-            verts[b + 1] = ToV3(cell.C1); uvs[b + 1] = new Vector2(cell.PlateId, 0f);
-            verts[b + 2] = ToV3(cell.C2); uvs[b + 2] = new Vector2(cell.PlateId, 0f);
+            verts[b + 0] = ToV3(cell.C0); uvs[b + 0] = new Vector2(cell.PlateId, u);
+            verts[b + 1] = ToV3(cell.C1); uvs[b + 1] = new Vector2(cell.PlateId, u);
+            verts[b + 2] = ToV3(cell.C2); uvs[b + 2] = new Vector2(cell.PlateId, u);
         }
 
         var arrays = new Godot.Collections.Array();

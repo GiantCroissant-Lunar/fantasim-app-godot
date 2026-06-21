@@ -46,6 +46,28 @@ public sealed class GlobeReconstructorTests
         Assert.InRange(Math.Abs(spinners[0].RatePerTick), 1e-7, 1e-6);
     }
 
+    [Fact]
+    public void ClassifyCellsAt_seed_has_convergent_and_divergent_boundary_cells()
+    {
+        var model = new GlobeReconstructor(frequency: 3);
+
+        var types = model.ClassifyCellsAt(0);
+
+        Assert.Equal(model.BuildGlobe().CellCount, types.Length);
+        Assert.All(types, t => Assert.InRange(t, (byte)0, (byte)3));
+        Assert.Contains((byte)1, types); // convergent boundary cells (0|1)
+        Assert.Contains((byte)2, types); // divergent boundary cells (0|2)
+        // The vast majority are plate-interior (type 0).
+        Assert.True(System.Array.FindAll(types, t => t == 0).Length > types.Length / 2);
+    }
+
+    [Fact]
+    public void ClassifyCellsAt_is_deterministic()
+    {
+        var model = new GlobeReconstructor(frequency: 3);
+        Assert.Equal(model.ClassifyCellsAt(500_000), model.ClassifyCellsAt(500_000));
+    }
+
     private static void AssertUnitLength(GlobeVec3 v)
     {
         double len = Math.Sqrt((double)v.X * v.X + (double)v.Y * v.Y + (double)v.Z * v.Z);

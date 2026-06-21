@@ -251,10 +251,12 @@ public partial class Host : Node
     // GPU-rotated ArrayMesh. Always-on (not an env-guarded demo).
     private void ComposeWorldView(AppComposition composition)
     {
-        var snapshot = new FantaSim.App.World.Globe.GlobeReconstructor().BuildGlobe();
+        var model = new FantaSim.App.World.Globe.GlobeReconstructor();
+        var snapshot = model.BuildGlobe();
         var view = new FantaSim.App.World.Seam.GlobeView(
             snapshot,
-            tick => FantaSim.App.World.Globe.CanonicalTimeLabel.ForTick(tick, snapshot.TicksPerMegaAnnum));
+            tick => FantaSim.App.World.Globe.CanonicalTimeLabel.ForTick(tick, snapshot.TicksPerMegaAnnum),
+            tick => model.ClassifyCellsAt(tick));
         GetTree().Root.CallDeferred("add_child", view);
         GD.Print($"[Host] World view: globe mounted ({snapshot.CellCount} cells, {snapshot.PlateCount} plates)");
     }
