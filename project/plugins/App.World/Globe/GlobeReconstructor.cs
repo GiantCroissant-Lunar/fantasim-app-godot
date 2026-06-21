@@ -31,7 +31,7 @@ public sealed class GlobeReconstructor
         if (frequency < 0) throw new ArgumentOutOfRangeException(nameof(frequency));
         _frequency = frequency;
         _tessellation = new GeodesicSphereTessellation(frequency);
-        _plates = DefaultThreePlates();
+        _plates = DefaultPlates();
         _topology = PlateTopologyBuilder.Build(_tessellation, _plates);
     }
 
@@ -144,17 +144,29 @@ public sealed class GlobeReconstructor
     }
 
     /// <summary>
-    /// The proven 3-plate equatorial seed (mirrors the crust fixtures): three seeds 120 deg apart;
-    /// plate 0 spins eastward about +Z (0|1 converges, 0|2 diverges), plates 1 and 2 are still.
+    /// The default tectonic seed — a four-plate arrangement that exhibits the FULL boundary vocabulary
+    /// under the relative classifier (engine ≥ 0.1.5), so every crust feature kind appears at once:
+    /// <list type="bullet">
+    ///   <item>Plate 0 (continental) spins east about +Z into still continental plate 1 ⇒ the 0|1
+    ///   boundary is a continent–continent collision (Mountain); plate 0 also overrides the oceanic
+    ///   plates 2,3 ⇒ 0|2 / 0|3 subduct (Trench on the ocean side + volcanic Arc on the continent side).</item>
+    ///   <item>Plates 2,3 (oceanic) rotate oppositely about +Y ⇒ their shared 2|3 boundary spreads
+    ///   (mid-ocean Ridge), while their boundaries with plate 1 are boundary-parallel shear (Transform ⇒ Fault).</item>
+    /// </list>
+    /// The crust recipe <c>Continental(0,1)</c> (see <see cref="RunCrustFeatures"/>) makes plates 0,1
+    /// continental and 2,3 oceanic — the assignment these roles assume.
     /// </summary>
-    private static IReadOnlyList<Plate> DefaultThreePlates()
+    private static IReadOnlyList<Plate> DefaultPlates()
     {
-        double ratePerTick = UnitConverter.RadiansPerMegaAnnumToRadiansPerTick(SpinRatePerMegaAnnum);
+        double rate = UnitConverter.RadiansPerMegaAnnumToRadiansPerTick(SpinRatePerMegaAnnum);
+        var zAxis = new Vector3D(0, 0, 1);
+        var yAxis = new Vector3D(0, 1, 0);
         return new[]
         {
-            new Plate(0, SphericalPoint.FromDegrees(0, 0),    new EulerPole(new Vector3D(0, 0, 1), +ratePerTick)),
-            new Plate(1, SphericalPoint.FromDegrees(0, 120),  new EulerPole(new Vector3D(0, 0, 1), 0.0)),
-            new Plate(2, SphericalPoint.FromDegrees(0, -120), new EulerPole(new Vector3D(0, 0, 1), 0.0)),
+            new Plate(0, SphericalPoint.FromDegrees(0, 0),     new EulerPole(zAxis, +rate)), // continental, spins east
+            new Plate(1, SphericalPoint.FromDegrees(0, 90),    new EulerPole(zAxis, 0.0)),   // continental, still
+            new Plate(2, SphericalPoint.FromDegrees(40, 180),  new EulerPole(yAxis, +rate)), // oceanic
+            new Plate(3, SphericalPoint.FromDegrees(-40, 180), new EulerPole(yAxis, -rate)), // oceanic
         };
     }
 
