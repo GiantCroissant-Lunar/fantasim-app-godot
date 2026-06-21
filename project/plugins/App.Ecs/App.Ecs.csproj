@@ -42,11 +42,12 @@
   </ItemGroup>
 
   <!--
-    World-lib field contracts/plugins. TruthStream is not referenced here: ReduceFieldsSystem
+    World-lib field contracts/plugins (dev: project-refs to fantasim-world `main`; see
+    project/Directory.Build.props). TruthStream is not referenced here: ReduceFieldsSystem
     is reducer/catalog-only; the cross-path determinism test pulls TruthStream itself.
   -->
   <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
-    <PackageReference Include="GiantCroissant.FantaSim.World.Fields.Contracts" />
-    <PackageReference Include="GiantCroissant.FantaSim.World.Fields.Core" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Fields\World.Fields.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\World.Fields.Core\World.Fields.Core.csproj" />
   </ItemGroup>
 </Project>

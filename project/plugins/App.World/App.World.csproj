@@ -17,10 +17,11 @@
   </ItemGroup>
 
   <!--
-    T3 world orchestrator. App-side T1 contracts are always referenced. World-lib
-    packages are referenced only when UseProjectReferences=true, so the default
-    build compiles a stub service that does not touch world-lib types; the full
-    composition path is compiled under USE_PROJECT_REFERENCES.
+    T3 world orchestrator (zero Godot usings; the Godot work lives in the future App.World.Seam T4).
+    App-side T1 contracts are always referenced. The engine refs below switch package<->project by
+    UseProjectReferences (see project/Directory.Build.props): when false the StubWorldRuntime compiles
+    against published packages; when true the full composition path (USE_PROJECT_REFERENCES) compiles
+    against fantasim-world `main` projects. On the Phase 0 branch the default is true.
   -->
   <PropertyGroup Condition="'$(UseProjectReferences)' == 'true'">
     <DefineConstants>$(DefineConstants);USE_PROJECT_REFERENCES</DefineConstants>
@@ -32,33 +33,37 @@
     <ProjectReference Include="..\..\contracts\App.Ecs\App.Ecs.csproj" />
   </ItemGroup>
 
-  <!--
-    Crust pipeline as a node-function provider (pure C#). Referenced ALWAYS — the
-    WorldFunctionProvider + CrustGenerationGraph recipe compile in the default headless
-    build and are exercised by App.World.Tests via `dotnet test` (no Godot, no UseProjectReferences).
-    The crust package pulls its full world-lib + geometry dependency closure transitively.
-    NU1603 (UnifyGeometry floor versions vs the 1.0.0 feed line) is informational and non-fatal.
-  -->
   <PropertyGroup>
+    <!-- NU1603 (UnifyGeometry floor versions vs the 1.0.0 feed line) is informational, non-fatal. -->
     <NoWarn>$(NoWarn);NU1603</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Crust" />
-    <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Plate.Topology" />
-    <PackageReference Include="GiantCroissant.FantaSim.World.Shared.Contracts" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
   <!--
-    World-lib packages for the full WorldRuntime composition path (only that path uses them
-    directly; the crust packages above already bring the field/stream stack transitively).
+    Engine consumption — hybrid (see project/Directory.Build.props):
+      * UseProjectReferences=false (release): published packages from the local feed.
+      * UseProjectReferences=true  (dev): project references to fantasim-world `main`. Geosphere.Crust
+        project-refs its own deps (Topology/Fields/TruthStream), so the whole closure flows as `main`
+        projects — no package/project version mixing.
+    Crust + Topology + Shared back the always-compiled WorldFunctionProvider; Fields/Parameters/
+    TruthStream back the full WorldRuntime composition (compiled under USE_PROJECT_REFERENCES).
   -->
+  <ItemGroup Condition="'$(UseProjectReferences)' != 'true'">
+    <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Crust" />
+    <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Plate.Topology" />
+    <PackageReference Include="GiantCroissant.FantaSim.World.Shared.Contracts" />
+  </ItemGroup>
   <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
-    <PackageReference Include="GiantCroissant.FantaSim.World.Fields.Contracts" />
-    <PackageReference Include="GiantCroissant.FantaSim.World.Fields.Core" />
-    <PackageReference Include="GiantCroissant.FantaSim.World.Parameters.Contracts" />
-    <PackageReference Include="GiantCroissant.FantaSim.World.TruthStream.Contracts" />
-    <PackageReference Include="GiantCroissant.FantaSim.World.TruthStream.Core" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\Geosphere.Crust\Geosphere.Crust.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\Geosphere.Plate.Topology\Geosphere.Plate.Topology.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Shared\World.Shared.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Fields\World.Fields.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\World.Fields.Core\World.Fields.Core.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Parameters\World.Parameters.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.TruthStream\World.TruthStream.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\World.TruthStream.Core\World.TruthStream.Core.csproj" />
   </ItemGroup>
 
 </Project>

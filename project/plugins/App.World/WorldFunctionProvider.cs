@@ -197,8 +197,9 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
                 double lat = ReadDouble(po, "lat", 0.0);
                 double lon = ReadDouble(po, "lon", 0.0);
                 var axis = ReadAxis(po, "axis", new Vector3D(0, 0, 1));
-                double rate = ReadDouble(po, "rate", 0.0);
-                plates.Add(new TopoPlate(id, SphericalPoint.FromDegrees(lat, lon), new EulerPole(axis, rate)));
+                double ratePerMegaAnnum = ReadDouble(po, "rate", 0.0);
+                double ratePerTick = UnitConverter.RadiansPerMegaAnnumToRadiansPerTick(ratePerMegaAnnum);
+                plates.Add(new TopoPlate(id, SphericalPoint.FromDegrees(lat, lon), new EulerPole(axis, ratePerTick)));
             }
 
             if (plates.Count > 0) return plates;
@@ -207,13 +208,19 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         return DefaultThreePlates(defaultRate);
     }
 
-    /// <summary>Three equatorial plates 120 deg apart; plate 0 spins eastward (0|1 converges, 0|2 diverges).</summary>
-    private static IReadOnlyList<TopoPlate> DefaultThreePlates(double rate) => new[]
+    /// <summary>Three equatorial plates 120 deg apart; plate 0 spins eastward (0|1 converges, 0|2 diverges).
+    /// <paramref name="ratePerMegaAnnum"/> is the authored spin in rad/Ma; converted to the engine's
+    /// rad/tick <c>EulerPole.AngularRate</c> at this boundary (engine main is tick-native).</summary>
+    private static IReadOnlyList<TopoPlate> DefaultThreePlates(double ratePerMegaAnnum)
     {
-        new TopoPlate(0, SphericalPoint.FromDegrees(0, 0), new EulerPole(new Vector3D(0, 0, 1), +rate)),
-        new TopoPlate(1, SphericalPoint.FromDegrees(0, 120), new EulerPole(new Vector3D(0, 0, 1), 0.0)),
-        new TopoPlate(2, SphericalPoint.FromDegrees(0, -120), new EulerPole(new Vector3D(0, 0, 1), 0.0)),
-    };
+        double ratePerTick = UnitConverter.RadiansPerMegaAnnumToRadiansPerTick(ratePerMegaAnnum);
+        return new[]
+        {
+            new TopoPlate(0, SphericalPoint.FromDegrees(0, 0), new EulerPole(new Vector3D(0, 0, 1), +ratePerTick)),
+            new TopoPlate(1, SphericalPoint.FromDegrees(0, 120), new EulerPole(new Vector3D(0, 0, 1), 0.0)),
+            new TopoPlate(2, SphericalPoint.FromDegrees(0, -120), new EulerPole(new Vector3D(0, 0, 1), 0.0)),
+        };
+    }
 
     /// <summary>
     /// Decode the crust-init recipe. <c>"continentalPlates": [0, 1]</c> designates those plate ids

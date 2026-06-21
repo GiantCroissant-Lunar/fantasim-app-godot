@@ -24,9 +24,9 @@
     World-lib packages for the field-reduction + cross-path determinism tests.
   -->
   <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
-    <PackageReference Include="GiantCroissant.FantaSim.World.Fields.Contracts" />
-    <PackageReference Include="GiantCroissant.FantaSim.World.Fields.Core" />
-    <PackageReference Include="GiantCroissant.FantaSim.World.TruthStream.Contracts" />
-    <PackageReference Include="GiantCroissant.FantaSim.World.TruthStream.Core" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Fields\World.Fields.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\World.Fields.Core\World.Fields.Core.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.TruthStream\World.TruthStream.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\World.TruthStream.Core\World.TruthStream.Core.csproj" />
   </ItemGroup>
 </Project>

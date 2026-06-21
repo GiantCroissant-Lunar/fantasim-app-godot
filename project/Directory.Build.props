@@ -11,7 +11,11 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <UseProjectReferences Condition="'$(UseProjectReferences)' == ''">false</UseProjectReferences>
+    <!-- Phase 0 (feat/phase0-heartbeat): consume fantasim-world `main` via project references for
+         fast co-development, so the app compiles against the live engine (rad/tick neutralization,
+         the reconstruct-cells-at-tick entrypoint, etc.) without a repack on every engine change.
+         Revert to `false` and repack engine packages to 0.1.4 at the Phase 0 acceptance gate. -->
+    <UseProjectReferences Condition="'$(UseProjectReferences)' == ''">true</UseProjectReferences>
     <PlateProjectsRoot Condition="'$(PlateProjectsRoot)' == ''">/Users/apprenticegc/Work/lunar-horse/plate-projects</PlateProjectsRoot>
     <YokanProjectsRoot Condition="'$(YokanProjectsRoot)' == ''">/Users/apprenticegc/Work/lunar-horse/yokan-projects</YokanProjectsRoot>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
