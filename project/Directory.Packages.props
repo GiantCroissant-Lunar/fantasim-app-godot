@@ -33,19 +33,19 @@
     <PackageVersion Include="UnifyEcs.Runtime.Arch" Version="0.1.1" />
     <!-- FantaSim world-lib packages (local feed). 0.1.3 carries canonical-time snapshot folding,
          the truth-stream non-decreasing tick guard, and integrated ridge-age correction. -->
-    <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Contracts" Version="0.1.3" />
-    <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Core" Version="0.1.3" />
-    <PackageVersion Include="GiantCroissant.FantaSim.World.Parameters.Contracts" Version="0.1.3" />
-    <PackageVersion Include="GiantCroissant.FantaSim.World.TruthStream.Contracts" Version="0.1.3" />
-    <PackageVersion Include="GiantCroissant.FantaSim.World.TruthStream.Core" Version="0.1.3" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Contracts" Version="0.1.4" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Core" Version="0.1.4" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Parameters.Contracts" Version="0.1.4" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.TruthStream.Contracts" Version="0.1.4" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.TruthStream.Core" Version="0.1.4" />
     <!-- Crust pipeline + the world-lib packages it depends on (all 0.1.3 in the local feed). -->
-    <PackageVersion Include="GiantCroissant.FantaSim.Geosphere.Crust" Version="0.1.3" />
-    <PackageVersion Include="GiantCroissant.FantaSim.Geosphere.Plate.Topology" Version="0.1.3" />
-    <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Catalog" Version="0.1.3" />
-    <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Stream" Version="0.1.3" />
-    <PackageVersion Include="GiantCroissant.FantaSim.World.Export.Contracts" Version="0.1.3" />
-    <PackageVersion Include="GiantCroissant.FantaSim.World.Generation.Contracts" Version="0.1.3" />
-    <PackageVersion Include="GiantCroissant.FantaSim.World.Shared.Contracts" Version="0.1.3" />
+    <PackageVersion Include="GiantCroissant.FantaSim.Geosphere.Crust" Version="0.1.4" />
+    <PackageVersion Include="GiantCroissant.FantaSim.Geosphere.Plate.Topology" Version="0.1.4" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Catalog" Version="0.1.4" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Stream" Version="0.1.4" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Export.Contracts" Version="0.1.4" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Generation.Contracts" Version="0.1.4" />
+    <PackageVersion Include="GiantCroissant.FantaSim.World.Shared.Contracts" Version="0.1.4" />
     <!-- Geometry / math / time deps in the crust closure (local feed). Pinned so CPM
          resolves them deterministically. -->
     <PackageVersion Include="UnifyCell.Core" Version="1.0.0" />
