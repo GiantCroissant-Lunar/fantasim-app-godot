@@ -42,6 +42,7 @@ void vertex() {
     vec4 ar = u_plate_axis_rate[pid];
     float angle = ar.w * u_tick;
     VERTEX = rotate_axis(VERTEX, normalize(ar.xyz), angle);
+    VERTEX *= (1.0 - float(pid) * 0.004); // tiny per-plate shell offset: convergent overlaps render clean, not z-fighting
     float denom = max(float(u_plate_count), 1.0);
     v_color = hue(float(pid) / denom) * 0.85 + 0.12;
 }
@@ -61,6 +62,9 @@ void fragment() {
     private int _frames;
     private readonly string? _capturePath = System.Environment.GetEnvironmentVariable("FANTASIM_GLOBE_CAPTURE");
 
+    private Label? _label;
+    private HSlider? _slider;
+
     public GlobeView(WorldGlobeSnapshot snapshot)
     {
         _snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
@@ -70,6 +74,8 @@ void fragment() {
     public override void _Ready()
     {
         _material = BuildMaterial(_snapshot);
+
+        AddChild(BuildMantle()); // base sphere under the plate shell: divergent gaps reveal mantle, not background
 
         var globe = new MeshInstance3D
         {
@@ -85,8 +91,10 @@ void fragment() {
         AddChild(camera);
         camera.LookAt(Vector3.Zero, Vector3.Up); // after AddChild — LookAt needs the node in-tree
 
-        SetTick(0);
-        GD.Print($"[GlobeView] globe built: {_snapshot.CellCount} cells, {_snapshot.PlateCount} plates.");
+        BuildScrubber();
+        double initialMa = ParseEnvDouble("FANTASIM_GLOBE_TICK_MA", 0.0);
+        SetTickFromMegaAnnum(initialMa);
+        GD.Print($"[GlobeView] globe built: {_snapshot.CellCount} cells, {_snapshot.PlateCount} plates, t0={initialMa} Ma.");
     }
 
     public override void _Process(double delta)
@@ -121,6 +129,47 @@ void fragment() {
     }
 
     public double Tick => _tick;
+
+    // --- Time scrubber (T0.5): an HSlider over 0..100 Ma drives SetTick (megaAnnum * ticks-per-Ma). ---
+
+    private void BuildScrubber()
+    {
+        var layer = new CanvasLayer { Name = "ScrubberLayer" };
+        AddChild(layer);
+
+        var margin = new MarginContainer();
+        margin.SetAnchorsPreset(Control.LayoutPreset.BottomWide);
+        margin.AddThemeConstantOverride("margin_left", 24);
+        margin.AddThemeConstantOverride("margin_right", 24);
+        margin.AddThemeConstantOverride("margin_bottom", 20);
+        layer.AddChild(margin);
+
+        var vbox = new VBoxContainer();
+        margin.AddChild(vbox);
+
+        _label = new Label { Text = "0 Ma" };
+        vbox.AddChild(_label);
+
+        _slider = new HSlider { MinValue = 0, MaxValue = 100, Step = 0.5 };
+        _slider.ValueChanged += OnScrubberChanged;
+        vbox.AddChild(_slider);
+    }
+
+    private void OnScrubberChanged(double megaAnnum) => SetTickFromMegaAnnum(megaAnnum);
+
+    private void SetTickFromMegaAnnum(double megaAnnum)
+    {
+        SetTick(megaAnnum * _snapshot.TicksPerMegaAnnum);
+        if (_label is not null) _label.Text = $"{megaAnnum:0.#} Ma";
+        if (_slider is not null && Math.Abs(_slider.Value - megaAnnum) > 1e-9) _slider.Value = megaAnnum;
+    }
+
+    private static double ParseEnvDouble(string name, double fallback)
+    {
+        var raw = System.Environment.GetEnvironmentVariable(name);
+        return double.TryParse(raw, System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : fallback;
+    }
 
     private static ArrayMesh BuildMesh(WorldGlobeSnapshot s)
     {
@@ -162,6 +211,18 @@ void fragment() {
         mat.SetShaderParameter("u_tick", 0.0f);
         return mat;
     }
+
+    private static MeshInstance3D BuildMantle() => new()
+    {
+        Name = "Mantle",
+        Mesh = new SphereMesh { Radius = 0.965f, Height = 1.93f, RadialSegments = 48, Rings = 24 },
+        Scale = Vector3.One * 2.0f,
+        MaterialOverride = new StandardMaterial3D
+        {
+            AlbedoColor = new Color(0.16f, 0.15f, 0.19f),
+            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+        },
+    };
 
     private static Vector3 ToV3(GlobeVec3 v) => new Vector3(v.X, v.Y, v.Z);
 }

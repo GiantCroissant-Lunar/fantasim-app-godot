@@ -49,7 +49,8 @@ public sealed class GlobeReconstructor
         foreach (var plate in plates)
             globePlates.Add(new GlobePlate(plate.PlateId, ToVec3(plate.Pole.Axis), plate.Pole.AngularRate));
 
-        return new WorldGlobeSnapshot(_frequency, n, plates.Count, cells, globePlates);
+        return new WorldGlobeSnapshot(
+            _frequency, n, plates.Count, UnitConverter.TicksPerMegaAnnum, cells, globePlates);
     }
 
     /// <summary>

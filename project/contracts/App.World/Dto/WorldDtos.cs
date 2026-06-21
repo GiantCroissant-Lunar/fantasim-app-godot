@@ -85,6 +85,7 @@ public record WorldGlobeSnapshot(
     int Frequency,
     int CellCount,
     int PlateCount,
+    long TicksPerMegaAnnum,
     IReadOnlyList<GlobeCell> Cells,
     IReadOnlyList<GlobePlate> Plates
 );
