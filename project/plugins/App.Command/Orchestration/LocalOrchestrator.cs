@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using FantaSim.App.World.Dto;
 using Microsoft.Extensions.Logging;
@@ -114,9 +115,9 @@ public sealed class LocalOrchestrator : IWorldOrchestration
 
         try
         {
-            var delta = ExtractTickDelta(request);
-            ecs.UpdateAll(delta);
-            return Task.FromResult(new CommandResult(commandId, true, ResultJson: $"{{\"delta\":{delta}}}"));
+            var tick = ExtractTickRequest(request);
+            ecs.UpdateAll(tick.Delta);
+            return Task.FromResult(new CommandResult(commandId, true, ResultJson: SerializeTick(tick)));
         }
         catch (Exception ex)
         {
@@ -180,8 +181,64 @@ public sealed class LocalOrchestrator : IWorldOrchestration
     private static string? ExtractWorldId(CommandRequest request)
         => string.IsNullOrWhiteSpace(request.ActorId) ? null : request.ActorId;
 
-    private static float ExtractTickDelta(CommandRequest request)
-        => float.TryParse(request.PayloadJson, out var delta) ? delta : 0f;
+    private static TickRequest ExtractTickRequest(CommandRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.PayloadJson))
+            return new TickRequest(0f, null);
+
+        if (float.TryParse(
+                request.PayloadJson,
+                NumberStyles.Float,
+                CultureInfo.InvariantCulture,
+                out var legacyDelta))
+        {
+            return new TickRequest(legacyDelta, null);
+        }
+
+        using var doc = JsonDocument.Parse(request.PayloadJson);
+        var root = doc.RootElement;
+        if (root.ValueKind != JsonValueKind.Object)
+            throw new ArgumentException("Payload must be a numeric delta or a JSON object with 'tick', 'canonicalTick', or 'delta'.");
+
+        if (root.TryGetProperty("tick", out var tick))
+            return new TickRequest(0f, ReadCanonicalTick(tick, "tick"));
+        if (root.TryGetProperty("canonicalTick", out var canonicalTick))
+            return new TickRequest(0f, ReadCanonicalTick(canonicalTick, "canonicalTick"));
+        if (root.TryGetProperty("delta", out var delta))
+            return new TickRequest(ReadDelta(delta, "delta"), null);
+
+        throw new ArgumentException("Missing 'tick', 'canonicalTick', or 'delta'.");
+    }
+
+    private static long ReadCanonicalTick(JsonElement value, string fieldName)
+    {
+        long tick;
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out tick))
+            return NonNegativeTick(tick, fieldName);
+        if (value.ValueKind == JsonValueKind.String
+            && long.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out tick))
+            return NonNegativeTick(tick, fieldName);
+
+        throw new ArgumentException($"Invalid '{fieldName}' value; expected an integer canonical tick.");
+    }
+
+    private static long NonNegativeTick(long tick, string fieldName)
+    {
+        if (tick < 0)
+            throw new ArgumentOutOfRangeException(fieldName, "Canonical ticks must be non-negative.");
+        return tick;
+    }
+
+    private static float ReadDelta(JsonElement value, string fieldName)
+    {
+        if (value.ValueKind == JsonValueKind.Number)
+            return value.GetSingle();
+        if (value.ValueKind == JsonValueKind.String
+            && float.TryParse(value.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+            return parsed;
+
+        throw new ArgumentException($"Invalid '{fieldName}' value; expected a numeric delta.");
+    }
 
     private static string SerializeGeneration(WorldGenerationResult result)
         => $"{{\"success\":{(result.Success ? "true" : "false")},\"message\":\"{Escape(result.Message)}\",\"worldId\":\"{Escape(result.ResultWorldId)}\"}}";
@@ -189,6 +246,16 @@ public sealed class LocalOrchestrator : IWorldOrchestration
     private static string SerializeOverview(WorldOverview overview)
         => $"{{\"worldId\":\"{Escape(overview.WorldId)}\",\"name\":\"{Escape(overview.Name)}\",\"entityCount\":{overview.EntityCount},\"fieldCount\":{overview.FieldCount},\"isDirty\":{(overview.IsDirty ? "true" : "false")}}}";
 
+    private static string SerializeTick(TickRequest request)
+    {
+        var delta = request.Delta.ToString("R", CultureInfo.InvariantCulture);
+        return request.CanonicalTick is { } tick
+            ? $"{{\"tick\":{tick},\"canonicalTick\":{tick},\"delta\":{delta}}}"
+            : $"{{\"delta\":{delta}}}";
+    }
+
     private static string Escape(string value)
         => value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+
+    private readonly record struct TickRequest(float Delta, long? CanonicalTick);
 }

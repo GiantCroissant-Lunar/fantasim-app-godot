@@ -81,9 +81,9 @@ verified green before the next.
    nearest-seed plate assignment → boundaries + junctions → **divergent/convergent/transform**
    classification lifted from ref `RigidBoundaryVelocitySolver`, **15 tests**) and `Geosphere.Crust`
    (crust as accumulating JSON-schema fields `continental-fraction`/`orogenic-pressure`/
-   `volcanic-activity`/`crust-age`; `CrustEvolutionOperator` emits per-tick deltas → truth-stream →
+   `volcanic-activity`/`crust-age`; `CrustEvolutionOperator` emits per-tick or snapshot-integrated deltas → truth-stream →
    `CrustStateFolder` accumulates; feature derivation Mountain/VolcanicArc/Trench/Ridge/Fault; **22
-   tests**). Crust rides plates (Lagrangian); features GROW over time. Proven: orogenic pressure
+   tests at first, 24 after canonical-time follow-up**). Crust rides plates (Lagrangian); features GROW over time. Proven: orogenic pressure
    1→11→21→31→41; mountain emerges at threshold; 3-plate active (orogenic 528) vs 2-plate cancellation
    (0). Emitted `world-stage-proof/crust.json`; shown as the payoff time-scrubber (mountains form at
    the convergent boundary as plates move). Verified geodesic tessellation works on macOS **without
@@ -93,14 +93,18 @@ verified green before the next.
     (`world.*`/`geosphere.*`/`crust.*`) with `crust.generate` running `PlateTopologyBuilder →
     CrustPipeline`, + `CrustGenerationGraph` recipe, registered in `Host.ComposeWorld` (mirrors
     `ComposeIii`; zero collision with the iii agent's prefixes). Through the real `GraphExecutor`:
-    1280 cells, 3 boundaries, 48 mountains, peak orogenic 9.0. **3 App.World tests; the Godot host
-    builds headless (0 errors).** (Phase 2 = the Godot visual render — NOT done.)
+    1280 cells, 3 boundaries, mountains from the default 8 Ma run, and the summary now reports
+    `canonicalTick`, `durationMegaAnnum`, and `ticksPerMegaAnnum`. The world-lib crust pipeline
+    snapshot-folds Ma-scale canonical ranges instead of emitting one event per tick. **5 App.World
+    tests; app solution tests green.** Follow-up deep review added `world.tick` JSON canonical-tick
+    parsing in `App.Command` and fixed integrated divergent ridge-age cancellation in the world-lib
+    crust package. (Phase 2 = the Godot visual render — NOT done.)
 
 ## Artifacts
 - **New repos:** `world-stage`, `world-stage-proof`, `fantasim-cartography` (all under yokan-projects).
 - **Feed packages added:** `UnifyMaths*`/`UnifyGeometry.*`/`UnifyCell.*` @1.0.0 (managed geodesic
-  chain), `GiantCroissant.WorldStage 0.1.0`, all `GiantCroissant.FantaSim.*` re-packed @**0.1.1**
-  (22 packages — 0.1.0 was cache-poisoned, so bumped one patch).
+  chain), `GiantCroissant.WorldStage 0.1.0`, all current-slice `GiantCroissant.FantaSim.*` re-packed
+  through **0.1.3** (0.1.0 was cache-poisoned; 0.1.3 includes canonical-time follow-up fixes).
 - **Commits:** world-stage `3ca65dd`; world-stage-proof `243f085`,`754a255`; fantasim-cartography
   `6128970`; fantasim-world `1794982` (det ids), `f8fc580` (foundation+fields+reconstruction),
   `4979cd9` (topology+crust); fantasim-app-godot `6627d8b` (design doc). **Phase 1b app changes

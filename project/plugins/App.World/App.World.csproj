@@ -45,6 +45,7 @@
   <ItemGroup>
     <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Crust" />
     <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Plate.Topology" />
+    <PackageReference Include="GiantCroissant.FantaSim.World.Shared.Contracts" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 

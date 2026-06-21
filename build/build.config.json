@@ -1,0 +1,17 @@
+{
+  "$schema": "./build.config.schema.json",
+  "versionEnv": "GITVERSION_MAJORMINORPATCH",
+  "projectGroups": {},
+  "godotBuild": {
+    "projectRoot": "project/hosts/complete-app",
+    "executablePath": "/Users/apprenticegc/Work/lunar-horse/tools/Godot_mono.app/Contents/MacOS/Godot",
+    "assemblyName": "complete-app",
+    "platforms": [
+      {
+        "rid": "osx",
+        "presetName": "macOS",
+        "binaryName": "complete-app.zip"
+      }
+    ]
+  }
+}

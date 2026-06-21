@@ -22,7 +22,6 @@ obj/
 .nuke/temp/
 
 # Tool outputs
-build/
 repomix-output.*
 CHANGELOG.md
 
@@ -52,3 +51,5 @@ Thumbs.db
 # iii engine --use-default-config runtime data written to cwd; Godot csproj backups
 data/
 *.csproj.old
+
+.omo/

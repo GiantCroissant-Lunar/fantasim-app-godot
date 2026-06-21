@@ -21,12 +21,20 @@ public static class CrustGenerationGraph
     /// plates 0 and 1 continental — an active convergent 0|1 boundary that drives orogeny).
     /// </summary>
     /// <param name="frequency">Geodesic tessellation frequency (cells = 20*frequency^2 triangular faces).</param>
-    /// <param name="ticks">Number of evolution ticks (endTick); accumulated orogeny grows with this.</param>
-    public static GraphDocument Build(int? frequency = null, long? ticks = null)
+    /// <param name="durationMegaAnnum">Evolution duration in Ma; converted to canonical ticks by the provider.</param>
+    /// <param name="canonicalTick">Explicit target canonical tick. Takes precedence over <paramref name="ticks"/>.</param>
+    /// <param name="ticks">Legacy raw canonical tick value.</param>
+    public static GraphDocument Build(
+        int? frequency = null,
+        double? durationMegaAnnum = null,
+        long? canonicalTick = null,
+        long? ticks = null)
     {
         var generateParams = new JsonObject();
         if (frequency is not null) generateParams["frequency"] = frequency.Value;
-        if (ticks is not null) generateParams["ticks"] = ticks.Value;
+        if (durationMegaAnnum is not null) generateParams["durationMegaAnnum"] = durationMegaAnnum.Value;
+        if (canonicalTick is not null) generateParams["canonicalTick"] = canonicalTick.Value;
+        else if (ticks is not null) generateParams["ticks"] = ticks.Value;
 
         return new GraphDocument(
             Nodes: new[]

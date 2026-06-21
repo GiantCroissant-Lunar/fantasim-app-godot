@@ -8,6 +8,8 @@ using System.Threading.Tasks;
 using FantaSim.App.NodeGraph;
 using FantaSim.Geosphere.Crust;
 using FantaSim.Geosphere.Plate.Topology;
+using FantaSim.World.Contracts.Time;
+using FantaSim.World.Contracts.Units;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using UnifyCell;
@@ -38,8 +40,12 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
     // convergence across the 0|1 boundary (no antipodal cancellation). Plates 0 and 1 continental ⇒
     // that convergent boundary is continent-continent ⇒ orogeny ⇒ mountains.
     private const int DefaultFrequency = 3;     // 20 * 3^2 = 1280 triangular cells
-    private const long DefaultTicks = 8;        // endTick; orogeny accumulates ~1/tick ⇒ peak ~8 > τ(5)
-    private const double DefaultSpinRate = 0.02; // rad / Ma about +Z
+    private const double DefaultDurationMegaAnnum = 8.0;
+    private const double DefaultSpinRateRadiansPerMegaAnnum = 0.02; // about +Z
+    private const double DefaultOrogenicPerMegaAnnum = 1.0;
+    private const double DefaultArcVolcanismPerMegaAnnum = 0.6;
+    private const double DefaultIslandArcVolcanismPerMegaAnnum = 0.4;
+    private const double DefaultRidgeVolcanismPerMegaAnnum = 0.5;
 
     private readonly ILogger _logger;
 
@@ -74,8 +80,11 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
     private static async Task<JsonObject> GenerateCrustAsync(JsonObject payload, CancellationToken ct)
     {
         int frequency = ReadInt(payload, "frequency", DefaultFrequency);
-        long ticks = ReadLong(payload, "ticks", DefaultTicks);
-        double rate = ReadDouble(payload, "spinRate", DefaultSpinRate);
+        long targetTick = ReadTargetTick(payload);
+        double durationMegaAnnum = UnitConverter.TickDeltaToMegaAnnum(targetTick);
+        double rate = ReadDouble(payload, "spinRateRadiansPerMegaAnnum",
+            ReadDouble(payload, "spinRate", DefaultSpinRateRadiansPerMegaAnnum));
+        var rates = ReadRates(payload);
 
         var tessellation = new GeodesicSphereTessellation(frequency);
         var plates = ReadPlates(payload, rate);
@@ -88,17 +97,27 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
             plates,
             recipe,
             startTick: 0,
-            endTick: ticks,
-            snapshotTicks: new[] { ticks },
+            endTick: targetTick,
+            snapshotTicks: new[] { targetTick },
+            rates: rates,
             ct: ct).ConfigureAwait(false);
 
-        return Summarize(functionId: CrustGenerate, frequency, ticks, tessellation, topology, result, ticks);
+        return Summarize(
+            functionId: CrustGenerate,
+            frequency,
+            targetTick,
+            durationMegaAnnum,
+            tessellation,
+            topology,
+            result,
+            targetTick);
     }
 
     private static JsonObject Summarize(
         string functionId,
         int frequency,
-        long ticks,
+        long canonicalTick,
+        double durationMegaAnnum,
         GeodesicSphereTessellation tessellation,
         PlateTopology topology,
         CrustEvolutionResult result,
@@ -135,7 +154,16 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         {
             ["function"] = functionId,
             ["frequency"] = frequency,
-            ["ticks"] = ticks,
+            ["ticks"] = canonicalTick,
+            ["canonicalTick"] = canonicalTick,
+            ["durationMegaAnnum"] = durationMegaAnnum,
+            ["ticksPerMegaAnnum"] = UnitConverter.TicksPerMegaAnnum,
+            ["timeScale"] = new JsonObject
+            {
+                ["unit"] = "Ma",
+                ["tickScaleNumerator"] = UnitConverter.TicksPerMegaAnnum,
+                ["tickScaleDenominator"] = 1,
+            },
             ["cellCount"] = tessellation.CellCount,
             ["plateCount"] = result.Plates.Count,
             ["boundaryCount"] = topology.Boundaries.Count,
@@ -205,6 +233,44 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         return CrustInitRecipe.Continental(0, 1);
     }
 
+    private static long ReadTargetTick(JsonObject payload)
+    {
+        if (TryReadLong(payload, "canonicalTick", out var canonicalTick))
+            return NonNegativeTick(canonicalTick, "canonicalTick");
+        if (TryReadLong(payload, "targetTick", out var targetTick))
+            return NonNegativeTick(targetTick, "targetTick");
+        if (TryReadDouble(payload, "durationMegaAnnum", out var durationMegaAnnum))
+            return NonNegativeTick(GeologicTimeScale.FromMegaAnnumDelta(durationMegaAnnum), "durationMegaAnnum");
+        if (TryReadDouble(payload, "durationMa", out var durationMa))
+            return NonNegativeTick(GeologicTimeScale.FromMegaAnnumDelta(durationMa), "durationMa");
+        if (TryReadLong(payload, "ticks", out var legacyTicks))
+            return NonNegativeTick(legacyTicks, "ticks");
+
+        return GeologicTimeScale.FromMegaAnnumDelta(DefaultDurationMegaAnnum);
+    }
+
+    private static CrustEvolutionRates ReadRates(JsonObject payload) => new(
+        OrogenicPerTick: ReadRatePerTick(payload, "orogenicPerMegaAnnum", "orogenicPerTick", DefaultOrogenicPerMegaAnnum),
+        ArcVolcanismPerTick: ReadRatePerTick(payload, "arcVolcanismPerMegaAnnum", "arcVolcanismPerTick", DefaultArcVolcanismPerMegaAnnum),
+        IslandArcVolcanismPerTick: ReadRatePerTick(payload, "islandArcVolcanismPerMegaAnnum", "islandArcVolcanismPerTick", DefaultIslandArcVolcanismPerMegaAnnum),
+        RidgeVolcanismPerTick: ReadRatePerTick(payload, "ridgeVolcanismPerMegaAnnum", "ridgeVolcanismPerTick", DefaultRidgeVolcanismPerMegaAnnum));
+
+    private static double ReadRatePerTick(JsonObject payload, string perMegaAnnumKey, string perTickKey, double defaultPerMegaAnnum)
+    {
+        if (TryReadDouble(payload, perTickKey, out var perTick))
+            return perTick;
+
+        var perMegaAnnum = ReadDouble(payload, perMegaAnnumKey, defaultPerMegaAnnum);
+        return perMegaAnnum / UnitConverter.TicksPerMegaAnnum;
+    }
+
+    private static long NonNegativeTick(long tick, string fieldName)
+    {
+        if (tick < 0)
+            throw new ArgumentOutOfRangeException(fieldName, "Canonical ticks must be non-negative.");
+        return tick;
+    }
+
     private static Vector3D ReadAxis(JsonObject po, string key, Vector3D fallback)
     {
         if (po.TryGetPropertyValue(key, out var node) && node is JsonArray arr && arr.Count == 3)
@@ -221,19 +287,45 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
     private static int ReadInt(JsonObject o, string key, int fallback)
         => o.TryGetPropertyValue(key, out var n) && n is JsonValue v && v.TryGetValue<int>(out var i) ? i : fallback;
 
-    private static long ReadLong(JsonObject o, string key, long fallback)
+    private static bool TryReadLong(JsonObject o, string key, out long value)
     {
         if (o.TryGetPropertyValue(key, out var n) && n is JsonValue v)
         {
-            if (v.TryGetValue<long>(out var l)) return l;
-            if (v.TryGetValue<int>(out var i)) return i;
+            if (v.TryGetValue<long>(out value)) return true;
+            if (v.TryGetValue<int>(out var i))
+            {
+                value = i;
+                return true;
+            }
+            if (v.TryGetValue<string>(out var s) &&
+                long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out value)) return true;
         }
+
+        value = default;
+        return false;
+    }
+
+    private static long ReadLong(JsonObject o, string key, long fallback)
+    {
+        if (TryReadLong(o, key, out var value)) return value;
 
         return fallback;
     }
 
     private static double ReadDouble(JsonObject o, string key, double fallback)
         => o.TryGetPropertyValue(key, out var n) ? ToDouble(n, fallback) : fallback;
+
+    private static bool TryReadDouble(JsonObject o, string key, out double value)
+    {
+        if (o.TryGetPropertyValue(key, out var n) && n is JsonValue)
+        {
+            value = ToDouble(n, double.NaN);
+            return !double.IsNaN(value);
+        }
+
+        value = default;
+        return false;
+    }
 
     private static double ToDouble(JsonNode? node, double fallback)
     {

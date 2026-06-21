@@ -1,6 +1,0 @@
-Godot Engine v4.6.3.stable.mono.official.7d41c59c4 - https://godotengine.org
-
-[Host] composition root starting...
-[Host] composition activated.
-[Main] Host autoload should have composed all services.
-[INFO][06/19/2026 09:14:05.908Z][Thread 0001][CoordinatedShutdown (akka://fantasim)] CoordinatedShutdown invoked due to [Reason:Akka.Actor.CoordinatedShutdown+ActorSystemTerminateReason]. Exiting with [ExitCode:0].

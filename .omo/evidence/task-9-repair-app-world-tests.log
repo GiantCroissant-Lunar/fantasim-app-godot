@@ -1,8 +1,0 @@
-Test run for /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.World.Tests/bin/Debug/net8.0/App.World.Tests.dll (.NETCoreApp,Version=v8.0)
-VSTest version 17.14.1 (arm64)
-
-Starting test execution, please wait...
-A total of 1 test files matched the specified pattern.
-No test is available in /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/project/tests/App.World.Tests/bin/Debug/net8.0/App.World.Tests.dll. Make sure that test discoverer & executors are registered and platform & framework version settings are appropriate and try again.
-
-Additionally, path to test adapters can be specified using /TestAdapterPath command. Example  /TestAdapterPath:<pathToCustomAdapters>.

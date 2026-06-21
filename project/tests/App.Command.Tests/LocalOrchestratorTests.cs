@@ -82,6 +82,25 @@ public class LocalOrchestratorTests
         Assert.Contains("\"delta\":0.25", result.ResultJson);
     }
 
+    [Fact]
+    public async Task Tick_accepts_canonical_tick_json_payload_without_treating_it_as_delta()
+    {
+        var registry = NewRegistry();
+        var ecs = new FakeEcsService();
+        registry.Register<EcsService>(ecs, new ServiceRegistration { Tags = new[] { "ecs" } });
+        var orchestrator = new LocalOrchestrator(registry, NullLoggerFactory.Instance);
+
+        var result = await orchestrator.TriggerAsync(new CommandRequest(
+            Command: LocalOrchestrator.WellKnownCommands.Tick,
+            PayloadJson: "{\"tick\":123456}"));
+
+        Assert.True(result.Ok);
+        Assert.Equal(1, ecs.UpdateAllCalls);
+        Assert.Equal(0f, ecs.LastDelta);
+        Assert.Contains("\"tick\":123456", result.ResultJson);
+        Assert.Contains("\"canonicalTick\":123456", result.ResultJson);
+    }
+
     // ---------------------------------------------------------------------
     // Behavior 3: world.refresh returns the overview as JSON without
     // touching ECS.

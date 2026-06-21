@@ -17,11 +17,12 @@ tested). **Not done: the Godot visual render (Phase 2).**
 | cartography projection (curated) | yokan-projects/fantasim-cartography | committed `6128970`, 11 tests |
 | deterministic event ids | fantasim-world | committed `1794982`, 16 tests |
 | canonical foundation + field system + reconstruction | fantasim-world | committed `f8fc580`, 319-test suite |
-| plate topology + evolving crust | fantasim-world | committed `4979cd9` (Topology 15, Crust 22) |
+| plate topology + evolving crust | fantasim-world | committed `4979cd9` (Topology 15, Crust 24 locally after canonical-time fixes) |
 | world-gen→cartography design doc | fantasim-app-godot | committed `6627d8b` |
 | **WorldFunctionProvider + crust recipe (Phase 1)** | fantasim-app-godot | **see commit note below** |
 
-**Feed:** all `GiantCroissant.FantaSim.* @ 0.1.1` (22 pkgs); `GiantCroissant.WorldStage 0.1.0`;
+**Feed:** app now consumes `GiantCroissant.FantaSim.* @ 0.1.3` for the current crust/world-lib slice;
+`GiantCroissant.WorldStage 0.1.0`;
 managed `UnifyMaths*`/`UnifyGeometry.*`/`UnifyCell.* @ 1.0.0`.
 
 ## NEXT: Phase 2 — Godot visual render (the focusable crust layer)
@@ -47,8 +48,20 @@ the exact shape).
 - **Voronoi** cells (swap `GeodesicSphereTessellation` → `SphericalVoronoiTessellation` via the
   `ITessellation` seam; needs the native Geogram kernel — do the kernel spike on macOS then).
 - More spheres (atmosphere/hydrosphere/mythosphere) as field-catalog modules (catalogs already ported).
-- **Calibrated time**: the recon "tMa" in crust.json is a per-tick artifact chosen for visible motion;
-  wire to canonical `CanonicalTick`/`ka` properly.
+- **Calibrated time, Phase 2:** `crust.generate` now accepts `durationMegaAnnum`/`durationMa`
+  or explicit `canonicalTick`/`targetTick`, defaults to 8 Ma = 800,000 canonical ticks, and reports
+  the active tick scale (`100,000 ticks/Ma`). The world-lib crust pipeline snapshot-folds canonical
+  ranges, so Ma-scale app runs no longer emit one event per tick. Follow-up review fixed the integrated
+  divergent ridge reset, so ridge cells stay young at Ma-scale snapshots. Remaining work is the Godot
+  visual layer: scrub/render using the same canonical tick/profile instead of a local display-time artifact.
+- **Deep-review finding:** current app `world.tick` was still an ECS delta command and ignored JSON
+  `{"tick":...}` payloads; it now accepts `tick`/`canonicalTick` JSON without treating the value as a
+  frame delta. It is still not the full ref playback surface: there is no `App.Timeline`, stage presenter,
+  tick cache, or reconstructed globe seam in this current app checkout.
+- **Deep-review finding:** current `CrustPipeline` classifies topology once from the seed plates and
+  Euler rates. Canonical duration changes accumulated crust fields, but it does **not** reconstruct cell
+  positions/boundaries at each target tick. Ref-projects has the richer timeline/reconstruction stack;
+  restoring or re-integrating that is the next architectural fix for "plates look odd".
 
 ## Constraints / decisions to honor (don't relitigate)
 - Truth-stream 5-axis stream id + SHA-256 hash chain are authoritative & preserved. Resolution is NOT
@@ -64,8 +77,9 @@ the exact shape).
   Science-first, tunable toward fantasy/wuxia.
 
 ## Gotchas
-- **Feed versioning:** FantaSim packages are now **0.1.1** (0.1.0 was cache-poisoned). The app's
-  `Directory.Packages.props` was bumped to 0.1.1 + new pins added (Phase 1b). The unify packages
+- **Feed versioning:** FantaSim packages are now **0.1.3** for this current local-feed slice. The app's
+  `Directory.Packages.props` was bumped to 0.1.3 + new pins added (Phase 1b + canonical-time fixes).
+  The unify packages
   emit a benign **NU1603** (their source floors UnifyMaths 0.1.x but feed has 1.0.0) — suppressed via
   NoWarn on the touched csprojs; a proper fix is to repack the unify libs against the 1.0.0 line. The
   unify-cell/unify-geometry **source lock files** still pin 0.1.x (a locked restore there would fail

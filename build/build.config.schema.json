@@ -1,0 +1,400 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "./build.config.schema.json",
+  "title": "UnifyBuild build.config",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "versionEnv": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": "Version"
+    },
+    "artifactsVersion": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "solution": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "projectGroups": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "$ref": "#/$defs/projectGroup"
+      }
+    },
+    "compileProjects": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "publishProjects": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "packProjects": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "nuGetOutputDir": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "publishOutputDir": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "packProperties": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "packIncludeSymbols": {
+      "type": "boolean",
+      "default": false
+    },
+    "syncLocalNugetFeed": {
+      "type": "boolean",
+      "default": false
+    },
+    "localNugetFeedRoot": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "localNugetFeedFlatSubdir": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": "flat"
+    },
+    "localNugetFeedHierarchicalSubdir": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": "hierarchical"
+    },
+    "localNugetFeedBaseUrl": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "nativeBuild": {
+      "$ref": "#/$defs/nativeBuild"
+    },
+    "unityBuild": {
+      "$ref": "#/$defs/unityBuild"
+    },
+    "godotBuild": {
+      "$ref": "#/$defs/godotBuild"
+    }
+  },
+  "$defs": {
+    "nativeBuild": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "cmakeSourceDir": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": "native"
+        },
+        "cmakeBuildDir": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": "native/build"
+        },
+        "cmakePreset": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cmakeOptions": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "buildConfig": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": "Release"
+        },
+        "autoDetectVcpkg": {
+          "type": "boolean",
+          "default": true
+        },
+        "outputDir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "artifactPatterns": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "*.dll",
+            "*.so",
+            "*.dylib",
+            "*.lib",
+            "*.a"
+          ]
+        }
+      }
+    },
+    "projectGroup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceDir"
+      ],
+      "properties": {
+        "sourceDir": {
+          "type": "string"
+        },
+        "action": {
+          "type": "string",
+          "default": "compile",
+          "enum": [
+            "publish",
+            "pack",
+            "compile"
+          ]
+        },
+        "include": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "exclude": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "outputDir": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "properties": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "unityBuild": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "targetFramework": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": "netstandard2.1"
+        },
+        "unityProjectRoot": {
+          "type": "string",
+          "default": ""
+        },
+        "packages": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/unityPackageMapping"
+          }
+        }
+      }
+    },
+    "unityPackageMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageName": {
+          "type": "string",
+          "default": ""
+        },
+        "scopedIndex": {
+          "type": "string",
+          "default": ""
+        },
+        "sourceProjects": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "sourceProjectGlobs": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "dependencyDlls": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "godotBuild": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "projectRoot": {
+          "type": "string",
+          "default": ""
+        },
+        "executablePathEnv": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": "GODOT"
+        },
+        "executablePath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "assemblyName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "platforms": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/godotPlatform"
+          }
+        }
+      }
+    },
+    "godotPlatform": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "rid": {
+          "type": "string",
+          "default": ""
+        },
+        "presetName": {
+          "type": "string",
+          "default": ""
+        },
+        "binaryName": {
+          "type": "string",
+          "default": ""
+        }
+      }
+    }
+  }
+}
