@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FantaSim.App.World.Cells;
 using FantaSim.App.World.Dto;
 using FantaSim.Geosphere.Crust;
 using FantaSim.Geosphere.Plate.Topology;
@@ -131,6 +132,35 @@ public sealed class GlobeReconstructor
             byTick[tick] = cells;
         }
         return byTick;
+    }
+
+    /// <summary>
+    /// One crust-pipeline run over <paramref name="snapshotTicks"/> exposing the engine's accumulated
+    /// per-cell crust STATE at each snapshot — <c>StateByTick[tick][cellId] = CellCrustState</c> — plus
+    /// the (tick-0) unit-sphere center of every cell. This is the data <see cref="Cells.CellElevationModel"/>
+    /// folds into ECS cell entities to derive elevation; the same tessellation/plates/recipe/rates as
+    /// <see cref="RunCrustFeatures"/>, so "the run" stays one config. Cell centers are Lagrangian for the
+    /// app's purposes here (the seed geometry C uploads), matching how BuildGlobe authors the mesh.
+    /// </summary>
+    public CrustStateRun RunCrustEvolution(IReadOnlyList<long> snapshotTicks)
+    {
+        ArgumentNullException.ThrowIfNull(snapshotTicks);
+
+        long endTick = 0;
+        foreach (var t in snapshotTicks) if (t > endTick) endTick = t;
+
+        var result = CrustPipeline.RunAsync(
+            _tessellation, _plates, CrustInitRecipe.Continental(0, 1),
+            startTick: 0, endTick: endTick,
+            snapshotTicks: snapshotTicks,
+            rates: DefaultRates()).GetAwaiter().GetResult();
+
+        int n = _tessellation.CellCount;
+        var centers = new GlobeVec3[n];
+        for (int cell = 0; cell < n; cell++)
+            centers[cell] = ToVec3(_tessellation.GetCenter(new GeodesicCoord(cell, _frequency)));
+
+        return new CrustStateRun(n, result.StateByTick, centers);
     }
 
     private static CrustEvolutionRates DefaultRates()

@@ -31,6 +31,13 @@
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
     <ProjectReference Include="..\..\contracts\App.NodeGraph\App.NodeGraph.csproj" />
     <ProjectReference Include="..\..\contracts\App.Ecs\App.Ecs.csproj" />
+    <!--
+      App.Ecs PLUGIN (not just contracts): CellElevationModel owns an Arch ECS world built from the
+      app's primitive cell components (CellId/PlateId/CrustSample/CellUnit/Elevation) and runs
+      CellElevationSystem over it. Those types are always-compiled (no engine types); the plugin's
+      USE_PROJECT_REFERENCES-gated field-reduction path stays compiled-out in the package build.
+    -->
+    <ProjectReference Include="..\App.Ecs\App.Ecs.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -39,6 +46,10 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <!-- The ECS itself: CellElevationModel constructs an ArchSystemRunner directly (Godot-free,
+         unit-testable) — same UnifyEcs+Arch stack App.Ecs uses; no second ECS, no hand-rolled world. -->
+    <PackageReference Include="UnifyEcs.Core" />
+    <PackageReference Include="UnifyEcs.Runtime.Arch" />
   </ItemGroup>
 
   <!--

@@ -14,6 +14,9 @@ public partial class Host : Node
     private CollectibleBundles? _collectibleBundles;
     private FantaSim.App.Ecs.IService? _ecs;
     private bool _ecsWorldReady;
+    // Sub-project B: the Godot-free ECS cell model that derives per-cell elevation. Owned here so its
+    // lifetime matches the host; the relief render (sub-project C) reads GetElevations() off it.
+    private FantaSim.App.World.Cells.CellElevationModel? _cellElevation;
 
     public override void _Ready()
     {
@@ -30,6 +33,7 @@ public partial class Host : Node
         ComposeEcs(_composition);
         ComposeWorld(_composition);
         ComposeWorldView(_composition);
+        ComposeCellElevation(_composition);
         ComposeCommand(_composition);
         ComposeIii(_composition);
         ComposeGpu(_composition);
@@ -280,6 +284,42 @@ public partial class Host : Node
         GD.Print($"[Host] World view: globe mounted ({snapshot.CellCount} cells, {snapshot.PlateCount} plates, {snapshotTicks.Count} feature snapshots)");
     }
 
+    // Sub-project B (ECS cell model + elevation derivation): model each globe cell as an ECS entity
+    // carrying its crust fields and derive a per-cell elevation via CellElevationSystem. Godot-free,
+    // fully unit-testable; the relief render (sub-project C) consumes GetElevations() to upload to the
+    // GPU. No rendering here. CellElevationSystem is registered (via ArchSystemRunner.Register) into the
+    // model's own ECS world — the same mechanism EcsWorldActor uses for ReduceFieldsSystem — and that
+    // world is the load-bearing one C reads from. The actor "main" heartbeat world is left untouched
+    // (registering there would need IService surface it does not expose, and isn't what C consumes).
+    private void ComposeCellElevation(AppComposition composition)
+    {
+        try
+        {
+            var reconstructor = new FantaSim.App.World.Globe.GlobeReconstructor();
+            var snapshot = reconstructor.BuildGlobe();
+
+            // Same anchor cadence the world view uses, so the cell model and the feature scrubber
+            // sample the same crust run.
+            var snapshotTicks = new System.Collections.Generic.List<long>();
+            for (long anchor = 0; anchor <= 100; anchor += 5) snapshotTicks.Add(anchor * snapshot.TicksPerAnchor);
+
+            // Build populates one ECS entity per cell and registers CellElevationSystem into the model's
+            // ArchSystemRunner (mirrors how ReduceFieldsSystem registers into EcsWorldActor's runner).
+            _cellElevation = FantaSim.App.World.Cells.CellElevationModel.Build(reconstructor, snapshotTicks);
+
+            // Populate/derive for the initial tick and report the relief extent C will upload.
+            _cellElevation.UpdateForTick(snapshotTicks[0]);
+            var elevations = _cellElevation.GetElevations();
+            double min = double.MaxValue, max = double.MinValue;
+            foreach (var e in elevations) { if (e < min) min = e; if (e > max) max = e; }
+            GD.Print($"[Host] Cell elevation: {elevations.Length} cells derived (initial tick), range [{min:F1}, {max:F1}]");
+        }
+        catch (Exception ex)
+        {
+            GD.PushError($"[Host] Cell elevation model failed: {ex.Message}");
+        }
+    }
+
     private void ComposeCommand(AppComposition composition)
     {
         var loggerFactory = composition.Bootstrap.LoggerFactory;
@@ -390,6 +430,7 @@ public partial class Host : Node
     {
         if (what == NotificationWMCloseRequest || what == NotificationExitTree)
         {
+            _cellElevation?.Dispose();
             _composition?.Dispose();
         }
         base._Notification(what);
