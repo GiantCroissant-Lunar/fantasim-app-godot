@@ -40,6 +40,22 @@
     <ProjectReference Include="..\App.Ecs\App.Ecs.csproj" />
   </ItemGroup>
 
+  <!--
+    Cross-repo cartography consumption (dev-mode project references, mirroring the fantasim-world
+    engine refs above). GlobePlateSurfaces (T3, Godot-free) feeds the tessellation + per-cell heights
+    into the cartography GlobeSurfaceBuilder to produce WATERTIGHT per-plate caps. The cartography
+    projects carry their own Directory.Build/Packages.props (UnifyMaths.Numerics 1.0.0, same feed line),
+    so they compile self-consistently under a project reference — no CPM/TFM conflict (both net8.0).
+    NOT packed to the NuGet feed (publishing needs owner approval / out of scope). These refs are
+    UNGATED: unlike the engine refs there is no published cartography package to fall back to, and the
+    watertight surface is the app's geometry now, not an optional co-dev path.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-cartography\project\contracts\Cartography.Shared\Cartography.Shared.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-cartography\project\contracts\Cartography.Globe\Cartography.Globe.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-cartography\project\plugins\Cartography.Globe.Core\Cartography.Globe.Core.csproj" />
+  </ItemGroup>
+
   <PropertyGroup>
     <!-- NU1603 (UnifyGeometry floor versions vs the 1.0.0 feed line) is informational, non-fatal. -->
     <NoWarn>$(NoWarn);NU1603</NoWarn>

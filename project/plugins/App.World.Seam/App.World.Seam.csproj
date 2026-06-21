@@ -7,11 +7,15 @@
     <ServiceArchiTier>T4</ServiceArchiTier>
   </PropertyGroup>
   <!-- T4 seam: the only App.World tier that references Godot. Consumes the plain-float
-       WorldGlobeSnapshot DTO from the T1 contract; no engine or plugin types cross here.
-       Also consumes the engine-agnostic App.GpuCompute T1 contract (DTOs + IService) to push
-       per-cell relief displacement + normals through the resident compute seam (sub-project C.1). -->
+       WorldGlobeSnapshot DTO from the T1 contract for plate-rotation uniforms, and the T3 App.World
+       PLUGIN's GlobePlateSurfaces / PlateCap to receive ready-made WATERTIGHT per-plate caps (the
+       geometry is built Godot-free in T3 via cartography; the seam only turns each GlobeSurface into
+       an ArrayMesh). No geometry math, no engine types, cross here. The App.GpuCompute reference is
+       intentionally GONE: relief now arrives pre-displaced with flat normals from cartography, so the
+       seam no longer dispatches the GPU compute displacement (App.GpuCompute plugin stays in the app
+       for LOD later). -->
   <ItemGroup>
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
-    <ProjectReference Include="..\..\contracts\App.GpuCompute\App.GpuCompute.csproj" />
+    <ProjectReference Include="..\App.World\App.World.csproj" />
   </ItemGroup>
 </Project>

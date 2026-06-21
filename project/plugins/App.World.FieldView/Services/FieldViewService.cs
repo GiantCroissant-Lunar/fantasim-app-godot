@@ -1,10 +1,10 @@
 using System.Collections.ObjectModel;
 using FantaSim.App.World;
 using FantaSim.App.World.Dto;
-using FantaSim.App.World.Projection.ViewModels;
+using FantaSim.App.World.FieldView.ViewModels;
 using R3;
 
-namespace FantaSim.App.World.Projection.Services;
+namespace FantaSim.App.World.FieldView.Services;
 
 /// <summary>
 /// T3 field projection. Attaches to an <see cref="FantaSim.App.World.IService"/> app-world T1
@@ -18,7 +18,7 @@ namespace FantaSim.App.World.Projection.Services;
 /// app-side DTOs returned by the T1 contract. The projection owns the lifetime of its R3 subject
 /// and the binding between world changes and the collection; it never calls into world-lib.
 /// </remarks>
-public sealed class FieldProjectionService : IDisposable
+public sealed class FieldViewService : IDisposable
 {
     private readonly IService _worldService;
     private readonly IReadOnlyList<string> _fieldIds;
@@ -31,7 +31,7 @@ public sealed class FieldProjectionService : IDisposable
     /// Creates a projection over the given field ids. The projection seeds the collection from
     /// the current world state immediately, then refreshes on every generation change.
     /// </summary>
-    public FieldProjectionService(
+    public FieldViewService(
         IService worldService,
         IReadOnlyList<string> fieldIds,
         IReadOnlyList<string> scalarFieldIds)
@@ -48,7 +48,7 @@ public sealed class FieldProjectionService : IDisposable
         _worldService.SubscribeGenerationChanged(OnWorldGenerationChanged);
 
         // Seed the collection from the current world state so consumers bind to a non-empty view.
-        Refresh(projectionTick: 0);
+        Refresh(viewTick: 0);
     }
 
     /// <summary>Bindable collection of projected field view models.</summary>
@@ -65,10 +65,10 @@ public sealed class FieldProjectionService : IDisposable
         // an inconsistent state, so we let them propagate to the world service's caller
         // (the T3 service isolates subscriber faults already — see Service.cs).
         _generationChanged.OnNext(evt);
-        Refresh(projectionTick: 0);
+        Refresh(viewTick: 0);
     }
 
-    private void Refresh(long projectionTick)
+    private void Refresh(long viewTick)
     {
         // Pull the latest DTOs from the T1 contract and reconcile the observable collection.
         // We replace entries in-place by index to keep bound UI controls stable; unknown ids
@@ -90,7 +90,7 @@ public sealed class FieldProjectionService : IDisposable
                     continue;
                 }
 
-                Fields[i] = BuildViewModel(current.FieldId, fieldValues, scalarValues, projectionTick);
+                Fields[i] = BuildViewModel(current.FieldId, fieldValues, scalarValues, viewTick);
                 seen.Add(current.FieldId);
                 i++;
             }
@@ -98,7 +98,7 @@ public sealed class FieldProjectionService : IDisposable
             foreach (var id in _fieldIds)
             {
                 if (seen.Contains(id)) continue;
-                Fields.Add(BuildViewModel(id, fieldValues, scalarValues, projectionTick));
+                Fields.Add(BuildViewModel(id, fieldValues, scalarValues, viewTick));
             }
         }
     }
@@ -133,7 +133,7 @@ public sealed class FieldProjectionService : IDisposable
         string fieldId,
         WorldFieldValues fieldValues,
         WorldScalarFieldValues scalarValues,
-        long projectionTick)
+        long viewTick)
     {
         fieldValues.FieldValues.TryGetValue(fieldId, out var raw);
         float? scalar = null;
@@ -145,7 +145,7 @@ public sealed class FieldProjectionService : IDisposable
             FieldId = fieldId,
             Value = raw,
             Scalar = scalar,
-            ProjectedTick = projectionTick
+            RefreshedTick = viewTick
         };
     }
 

@@ -1,0 +1,259 @@
+using System;
+using System.Collections.Generic;
+using FantaSim.App.World.Dto;
+using FantaSim.Cartography.Globe;
+using FantaSim.Cartography.Globe.Core;
+using FantaSim.Cartography.Shared;
+
+namespace FantaSim.App.World.Globe;
+
+/// <summary>
+/// T3 (Godot-free) un-shattering step: turns a <see cref="WorldGlobeSnapshot"/> (tessellation cells
+/// with their owning plate and corner positions) plus a per-cell elevation field into ONE
+/// <b>watertight</b> <see cref="GlobeSurface"/> cap per plate, using the cartography
+/// <see cref="GlobeSurfaceBuilder"/>.
+///
+/// <para>
+/// The old globe mesh drew one triangle per cell with three UNSHARED corners, each pushed out by that
+/// cell's own elevation; neighbouring cells at different heights left gaps and the ball cracked. Here,
+/// within a plate, cells that meet at a corner SHARE that corner (one local vertex id), and the shared
+/// corner sits at a SINGLE height — the mean of the cells touching it
+/// (<see cref="GlobeSurfaceBuilder.GatherVertexHeights"/>) — so adjacent triangles meet exactly and the
+/// cap is watertight by construction.
+/// </para>
+///
+/// <para>
+/// <b>Topology is tick-invariant.</b> Cells never change plate and the tessellation is fixed, so the
+/// per-plate shared-vertex topology (unique corner positions + the local index buffer + the parallel
+/// cell-id list) is built ONCE in the constructor and cached. Only the per-vertex heights — and hence
+/// the displaced positions/normals — change per tick, recomputed in <see cref="BuildSurfaces"/>.
+/// </para>
+///
+/// <para>
+/// <b>Relief = envelope (sim truth) + seeded peaks (renderer).</b> The per-cell elevation field is the
+/// low-frequency tectonic ENVELOPE (continents/oceans); on its own every facet sits near its neighbours
+/// → a smooth ball. So a high-frequency seeded PEAKS layer (cartography <see cref="NoiseRelief"/>) is
+/// added per vertex to make the surface rugged/faceted. The peaks are sampled on each cap's BASE
+/// (tick-0) unit vertex positions and cached (metres), so they are tick-invariant, reproducible (never
+/// stored), ride the plate as it rotates, and — being a pure function of the shared base position — give
+/// two caps' coincident boundary vertices the SAME bump, keeping the surface watertight. Tune via
+/// <see cref="DefaultPeaks"/>. The peaks change ONLY the surface FORM; colour (per-cell elevation) is
+/// untouched.
+/// </para>
+///
+/// <para>
+/// <b>How shared vertices are obtained.</b> <c>UnifyCell.GeodesicSphereTessellation</c> builds a shared
+/// vertex/face index buffer internally but does NOT expose it publicly (only per-face corner POSITIONS
+/// via <c>GetBoundary</c>, which is what the snapshot carries as <see cref="GlobeCell.C0"/>/C1/C2). So
+/// this class recovers the shared topology by DEDUPING the per-face corner positions within a tight
+/// epsilon: corners that quantize to the same unit-sphere grid cell are the same icosphere vertex and
+/// get one shared local vertex id. At the tessellation frequencies used here distinct vertices are
+/// separated by far more than the epsilon, so the dedupe is exact.
+/// </para>
+/// </summary>
+public sealed class GlobePlateSurfaces
+{
+    // Quantization step for position dedupe. Corners are unit-length (|v| ~= 1) and come from a lat/lon
+    // round-trip, so the SAME icosphere vertex can differ by a few ulps between faces; distinct vertices
+    // (even at frequency 5: 20480 cells) are separated by >> this. 1e-5 collapses the jitter without ever
+    // merging two genuinely different corners.
+    private const double DedupeEpsilon = 1e-5;
+    private const double DedupeScale = 1.0 / DedupeEpsilon;
+
+    // ───────────────────────── seeded "peaks" relief (TUNE HERE) ──────────────────────────────────
+    //
+    // High-frequency noise added to each vertex's envelope height so every facet jumps to its own
+    // height → rugged, faceted (Astroneer-style) surface instead of a smooth ball. This is a RENDERER
+    // concern, never sim truth: it is a pure, deterministic function of the vertex's BASE (tick-0) unit
+    // position + seed (see NoiseRelief), so it is reproducible, never stored, rides the plate as it
+    // rotates, and gives two caps' coincident boundary vertices the SAME bump (watertight preserved).
+    //
+    // Units: Amplitude is in METRES, same as the envelope (continents +500 m / oceans −500 m). The final
+    // per-vertex height fed to the cartography builder is (envelope_m + noise_m) × exaggeration, where
+    // exaggeration (≈0.00012, in GlobeView) maps metres → unit-sphere radius.
+    //
+    //   Amplitude      ≈250–400 m makes adjacent cells clearly differ in height without pure static.
+    //                  300 m ≈ 0.6× the ±500 m envelope: every facet bumps, continents/oceans still read.
+    //   BaseFrequency  5–9 at freq-3 (1280 cells): bumps a few cells wide. 7 ≈ one bump per ~few cells.
+    //   Octaves        4: a base swell + three finer harmonics → natural, non-uniform ruggedness.
+    //
+    // The human tunes these by eye; they are the single knob and intentionally easy to find.
+    public static readonly NoiseParams DefaultPeaks = new(
+        Seed: 1337,
+        BaseFrequency: 16.0,
+        Octaves: 4,
+        Lacunarity: 2.0,
+        Gain: 0.5,
+        Amplitude: 1000.0,   // metres  [DIAGNOSTIC crank: was 300]
+        Ridged: false);
+
+    private readonly IGlobeSurfaceBuilder _builder;
+    private readonly IReadOnlyList<PlateTopology> _plates;
+    private readonly NoiseParams _peaks;
+
+    /// <summary>
+    /// Builds and caches the watertight per-plate topology from <paramref name="snapshot"/>. Plates with
+    /// no cells are omitted. Plate caps are returned in ascending <see cref="GlobeCell.PlateId"/> order.
+    /// </summary>
+    /// <param name="snapshot">The tessellation + per-cell plate ownership + corner positions.</param>
+    /// <param name="builder">Surface builder (defaults to the cartography <see cref="GlobeSurfaceBuilder"/>).</param>
+    /// <param name="noise">
+    /// Seeded peaks-relief parameters (defaults to <see cref="DefaultPeaks"/>). Pass
+    /// <c>new NoiseParams(Amplitude: 0)</c> to disable the relief (pure tectonic envelope).
+    /// </param>
+    public GlobePlateSurfaces(WorldGlobeSnapshot snapshot, IGlobeSurfaceBuilder? builder = null, NoiseParams? noise = null)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        _builder = builder ?? new GlobeSurfaceBuilder();
+        _peaks = noise ?? DefaultPeaks;
+        _plates = BuildPlateTopologies(snapshot, _peaks);
+    }
+
+    /// <summary>The plate ids that have at least one cell (ascending), in cap order.</summary>
+    public IReadOnlyList<int> PlateIds
+    {
+        get
+        {
+            var ids = new int[_plates.Count];
+            for (int i = 0; i < _plates.Count; i++) ids[i] = _plates[i].PlateId;
+            return ids;
+        }
+    }
+
+    /// <summary>
+    /// Per tick: build one watertight <see cref="GlobeSurface"/> cap per (non-empty) plate from the
+    /// per-cell <paramref name="elevationsByCell"/> (indexed by cell id) scaled by
+    /// <paramref name="exaggeration"/>. For each plate the face heights are gathered to per-vertex means
+    /// and fed to the cartography builder at unit radius (1.0); the height passed in is
+    /// <c>elevation * exaggeration</c>, matching the displacement magnitude the old relief used.
+    /// </summary>
+    /// <param name="elevationsByCell">Per-cell elevation (metres), indexed by cell id.</param>
+    /// <param name="exaggeration">Displacement exaggeration; height = elevation * exaggeration.</param>
+    public IReadOnlyList<PlateCap> BuildSurfaces(IReadOnlyList<double> elevationsByCell, double exaggeration)
+    {
+        ArgumentNullException.ThrowIfNull(elevationsByCell);
+
+        var caps = new PlateCap[_plates.Count];
+        for (int p = 0; p < _plates.Count; p++)
+        {
+            var plate = _plates[p];
+            int faceCount = plate.CellIds.Length;
+
+            // Per-face heights for THIS plate's faces, in the plate's local face order.
+            var perFaceHeights = new double[faceCount];
+            for (int f = 0; f < faceCount; f++)
+            {
+                int cellId = plate.CellIds[f];
+                double elev = (cellId >= 0 && cellId < elevationsByCell.Count) ? elevationsByCell[cellId] : 0.0;
+                perFaceHeights[f] = elev * exaggeration;
+            }
+
+            // Face heights -> per-vertex mean heights (the tectonic ENVELOPE, already × exaggeration).
+            var perVertexHeights = GlobeSurfaceBuilder.GatherVertexHeights(
+                plate.LocalVertices.Length, plate.LocalTriangles, perFaceHeights);
+
+            // Add the seeded PEAKS on top: cached per-vertex noise is in METRES (tick-invariant; sampled
+            // once on the base unit positions), so scale it by the same exaggeration as the envelope and
+            // sum. Final height[v] = (envelope_m + noise_m) × exaggeration. Because the noise rides the
+            // shared BASE position, coincident boundary corners stay equal → the cap remains watertight.
+            for (int v = 0; v < perVertexHeights.Length; v++)
+            {
+                perVertexHeights[v] += plate.VertexNoiseMetres[v] * exaggeration;
+            }
+
+            var surface = _builder.Build(
+                plate.LocalVertices, plate.LocalTriangles, perVertexHeights, GlobeSurfaceBuilder.DefaultRadius);
+
+            caps[p] = new PlateCap(plate.PlateId, plate.CellIds, surface);
+        }
+        return caps;
+    }
+
+    // --- cached per-plate topology (built once) ----------------------------------------------------
+
+    private static IReadOnlyList<PlateTopology> BuildPlateTopologies(WorldGlobeSnapshot snapshot, NoiseParams peaks)
+    {
+        // Group faces by plate, preserving cell-id order within each plate (deterministic, tick-stable).
+        var byPlate = new SortedDictionary<int, List<GlobeCell>>();
+        foreach (var cell in snapshot.Cells)
+        {
+            if (!byPlate.TryGetValue(cell.PlateId, out var list))
+            {
+                list = new List<GlobeCell>();
+                byPlate[cell.PlateId] = list;
+            }
+            list.Add(cell);
+        }
+
+        var result = new List<PlateTopology>(byPlate.Count);
+        foreach (var kvp in byPlate)
+            result.Add(BuildOnePlate(kvp.Key, kvp.Value, peaks));
+        return result;
+    }
+
+    private static PlateTopology BuildOnePlate(int plateId, List<GlobeCell> cells, NoiseParams peaks)
+    {
+        // Dedupe the three corners of every face within the plate into shared local vertex ids.
+        var vertexIndex = new Dictionary<(long, long, long), int>();
+        var localVertices = new List<CartesianPoint3>();
+        var localTriangles = new int[cells.Count * 3];
+        var cellIds = new int[cells.Count];
+
+        for (int f = 0; f < cells.Count; f++)
+        {
+            var cell = cells[f];
+            cellIds[f] = cell.CellId;
+            localTriangles[(f * 3) + 0] = GetOrAddVertex(cell.C0, vertexIndex, localVertices);
+            localTriangles[(f * 3) + 1] = GetOrAddVertex(cell.C1, vertexIndex, localVertices);
+            localTriangles[(f * 3) + 2] = GetOrAddVertex(cell.C2, vertexIndex, localVertices);
+        }
+
+        var vertices = localVertices.ToArray();
+
+        // Tick-invariant seeded peaks: sample the noise ONCE per shared vertex on its BASE (tick-0) unit
+        // position and cache it (metres). This is what makes the bumps reproducible, ride the plate, and
+        // stay watertight — a corner shared with another plate has the same base position → same noise.
+        var vertexNoiseMetres = new double[vertices.Length];
+        for (int v = 0; v < vertices.Length; v++)
+            vertexNoiseMetres[v] = NoiseRelief.Sample(vertices[v], peaks);
+
+        return new PlateTopology(plateId, vertices, localTriangles, cellIds, vertexNoiseMetres);
+    }
+
+    private static int GetOrAddVertex(
+        GlobeVec3 corner,
+        Dictionary<(long, long, long), int> vertexIndex,
+        List<CartesianPoint3> localVertices)
+    {
+        var key = Quantize(corner);
+        if (vertexIndex.TryGetValue(key, out var existing)) return existing;
+
+        int id = localVertices.Count;
+        localVertices.Add(new CartesianPoint3(corner.X, corner.Y, corner.Z));
+        vertexIndex[key] = id;
+        return id;
+    }
+
+    // Quantize a unit-sphere corner to an integer grid so corners that are the same icosphere vertex
+    // (bar a few ulps from the lat/lon round-trip) map to the same key. Math.Round to avoid the −0.0
+    // vs +0.0 and truncation-toward-zero asymmetry a plain cast would introduce near axis planes.
+    private static (long, long, long) Quantize(GlobeVec3 v) => (
+        (long)Math.Round(v.X * DedupeScale),
+        (long)Math.Round(v.Y * DedupeScale),
+        (long)Math.Round(v.Z * DedupeScale));
+
+    /// <summary>Cached, tick-invariant shared-vertex topology of one plate's cap.</summary>
+    private sealed record PlateTopology(
+        int PlateId,
+        CartesianPoint3[] LocalVertices,  // unique corners (shared-vertex array)
+        int[] LocalTriangles,             // 3 indices per face, into LocalVertices
+        int[] CellIds,                    // parallel to faces: the source cell id of each face
+        double[] VertexNoiseMetres);      // parallel to LocalVertices: seeded peaks (metres), tick-invariant
+}
+
+/// <summary>
+/// One plate's watertight cap for a tick: the cartography <see cref="GlobeSurface"/> plus the parallel
+/// per-face <see cref="CellIds"/> (face <c>t</c> came from cell <c>CellIds[t]</c>) so the render seam can
+/// tag each face with its cell (tectonic-type texture U, per-cell elevation for the biome ramp).
+/// </summary>
+public sealed record PlateCap(int PlateId, int[] CellIds, GlobeSurface Surface);

@@ -49,11 +49,11 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App.World", "contracts\App.
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App.World", "plugins\App.World\App.World.csproj", "{1B4CB93E-48F9-486D-B1F5-A8D69E55B0FF}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App.World.Projection", "plugins\App.World.Projection\App.World.Projection.csproj", "{E77B9F2D-AA84-4DB8-BC1F-4DA762FC144C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App.World.FieldView", "plugins\App.World.FieldView\App.World.FieldView.csproj", "{E77B9F2D-AA84-4DB8-BC1F-4DA762FC144C}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App.World.Tests", "tests\App.World.Tests\App.World.Tests.csproj", "{2052631E-26AF-4DFF-A707-BAC248ACA36A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App.World.Projection.Tests", "tests\App.World.Projection.Tests\App.World.Projection.Tests.csproj", "{4A142199-78C6-40BC-9730-F17A8FE68AC1}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App.World.FieldView.Tests", "tests\App.World.FieldView.Tests\App.World.FieldView.Tests.csproj", "{4A142199-78C6-40BC-9730-F17A8FE68AC1}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App.Command", "plugins\App.Command\App.Command.csproj", "{62190CC1-16B7-4EB9-850F-A88380B11D90}"
 EndProject

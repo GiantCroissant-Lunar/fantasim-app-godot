@@ -237,13 +237,13 @@ public partial class Host : Node
             new ServiceRegistration { Tags = new[] { "world" }, Description = "World service" });
         GD.Print("[Host] registered: World");
 
-        var projection = new FantaSim.App.World.Projection.Services.FieldProjectionService(
+        var projection = new FantaSim.App.World.FieldView.Services.FieldViewService(
             world,
             new[] { "app.elevation-m" },
             new[] { "app.elevation-m" });
-        composition.Bootstrap.Registry.Register<FantaSim.App.World.Projection.Services.FieldProjectionService>(
+        composition.Bootstrap.Registry.Register<FantaSim.App.World.FieldView.Services.FieldViewService>(
             projection,
-            new ServiceRegistration { Tags = new[] { "world", "projection" }, Description = "Field projection service" });
+            new ServiceRegistration { Tags = new[] { "world", "projection" }, Description = "Field view service" });
         GD.Print("[Host] World detail: projection registered");
 
         // Register the World axis as a node-function provider (mirrors how ComposeIii registers the iii
@@ -278,28 +278,30 @@ public partial class Host : Node
             return featuresByTick[best];
         };
 
-        // Per-cell elevation feed for the relief render (sub-project C.1): drive sub-project B's
-        // CellElevationModel to the tick and hand the seam a per-cell float[] (indexed by cell id). The
-        // seam pushes it through the GPU compute displacement path (or its vertex-shader fallback).
+        // Per-cell elevation feed for the watertight caps: drive sub-project B's CellElevationModel to
+        // the tick and hand the seam a per-cell double[] (indexed by cell id). The seam folds it into the
+        // T3 GlobePlateSurfaces, which builds one WATERTIGHT per-plate cap per tick via cartography.
         var elevationModel = _cellElevation;
-        System.Func<long, float[]>? elevationsAt = elevationModel is null ? null : tick =>
+        System.Func<long, double[]>? elevationsAt = elevationModel is null ? null : tick =>
         {
             elevationModel.UpdateForTick(tick);
-            var e = elevationModel.GetElevations();
-            var f = new float[e.Length];
-            for (int i = 0; i < e.Length; i++) f[i] = (float)e[i];
-            return f;
+            return elevationModel.GetElevations();
         };
+
+        // T3 (Godot-free) un-shattering: cache the per-plate watertight topology once from the snapshot;
+        // the seam rebuilds heights per tick. Replaces the old loose-tile (1 tri/cell, unshared corners)
+        // mesh + GPU-compute relief displacement.
+        var plateSurfaces = new FantaSim.App.World.Globe.GlobePlateSurfaces(snapshot);
 
         var view = new FantaSim.App.World.Seam.GlobeView(
             snapshot,
+            plateSurfaces,
             tick => FantaSim.App.World.Globe.CanonicalTimeLabel.ForTick(tick, snapshot.TicksPerAnchor),
             featuresAt,
-            elevationsAt,
-            _gpuComputeService);
+            elevationsAt);
         GetTree().Root.CallDeferred("add_child", view);
         GD.Print($"[Host] World view: globe mounted ({snapshot.CellCount} cells, {snapshot.PlateCount} plates, " +
-                 $"{snapshotTicks.Count} feature snapshots, elevationFeed={(elevationsAt is not null)}, gpuCompute={(_gpuComputeService is not null)})");
+                 $"{snapshotTicks.Count} feature snapshots, elevationFeed={(elevationsAt is not null)}, watertight caps)");
     }
 
     // Sub-project B (ECS cell model + elevation derivation): model each globe cell as an ECS entity

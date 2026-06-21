@@ -1,12 +1,12 @@
 using System.Collections.ObjectModel;
 using FantaSim.App.World;
 using FantaSim.App.World.Dto;
-using FantaSim.App.World.Projection.Services;
-using FantaSim.App.World.Projection.ViewModels;
+using FantaSim.App.World.FieldView.Services;
+using FantaSim.App.World.FieldView.ViewModels;
 using R3;
 using Xunit;
 
-namespace FantaSim.App.World.Projection.Tests;
+namespace FantaSim.App.World.FieldView.Tests;
 
 /// <summary>
 /// A minimal in-memory <see cref="IService"/> used by the projection tests. It records the
@@ -55,7 +55,7 @@ internal sealed class FakeWorldService : IService
         => _callback?.Invoke(evt);
 }
 
-public class FieldProjectionServiceTests
+public class FieldViewServiceTests
 {
     // ---------------------------------------------------------------------
     // Behavior 1: After construction, the observable collection count matches
@@ -78,7 +78,7 @@ public class FieldProjectionServiceTests
             });
 
         // When a projection is created over both field ids
-        using var projection = new FieldProjectionService(
+        using var projection = new FieldViewService(
             world,
             fieldIds: new[] { "app.elevation-m", "app.temperature-k" },
             scalarFieldIds: new[] { "app.elevation-m" });
@@ -105,7 +105,7 @@ public class FieldProjectionServiceTests
         world.Seed(
             fieldValues: new Dictionary<string, object> { ["app.elevation-m"] = new { unit = "m" } },
             scalarValues: new Dictionary<string, float> { ["app.elevation-m"] = 0f });
-        using var projection = new FieldProjectionService(
+        using var projection = new FieldViewService(
             world,
             fieldIds: new[] { "app.elevation-m" },
             scalarFieldIds: new[] { "app.elevation-m" });
@@ -144,7 +144,7 @@ public class FieldProjectionServiceTests
         world.Seed(
             fieldValues: new Dictionary<string, object> { ["app.elevation-m"] = new { unit = "m" } },
             scalarValues: new Dictionary<string, float> { ["app.elevation-m"] = 1.0f });
-        using var projection = new FieldProjectionService(
+        using var projection = new FieldViewService(
             world,
             fieldIds: new[] { "app.elevation-m" },
             scalarFieldIds: new[] { "app.elevation-m" });
@@ -186,7 +186,7 @@ public class FieldProjectionServiceTests
                 ["app.elevation-m"] = 10f,
                 ["app.temperature-k"] = 300f,
             });
-        using var projection = new FieldProjectionService(
+        using var projection = new FieldViewService(
             world,
             fieldIds: new[] { "app.elevation-m", "app.temperature-k" },
             scalarFieldIds: new[] { "app.elevation-m", "app.temperature-k" });

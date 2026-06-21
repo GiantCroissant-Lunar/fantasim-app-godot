@@ -9,7 +9,7 @@
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\plugins\App.World.Projection\App.World.Projection.csproj" />
+    <ProjectReference Include="..\..\plugins\App.World.FieldView\App.World.FieldView.csproj" />
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
   </ItemGroup>
 </Project>

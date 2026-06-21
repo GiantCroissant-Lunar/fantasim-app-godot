@@ -1,49 +1,50 @@
 using System;
-using System.Threading.Tasks;
-using FantaSim.App.GpuCompute;
+using System.Collections.Generic;
 using FantaSim.App.World.Dto;
+using FantaSim.App.World.Globe;
+using FantaSim.Cartography.Globe;
+using FantaSim.Cartography.Shared;
 using Godot;
-// Disambiguate: both FantaSim.App.World (the World service contract) and FantaSim.App.GpuCompute expose
-// an IService; the relief render uses the GPU compute one.
-using GpuComputeService = FantaSim.App.GpuCompute.IService;
 
 namespace FantaSim.App.World.Seam;
 
 /// <summary>
-/// T4 seam: the ONLY App.World tier that touches Godot. Builds a globe <see cref="ArrayMesh"/> from a
-/// <see cref="WorldGlobeSnapshot"/>, displaces it into 3D RELIEF by per-cell elevation, lights it, and
-/// colours it by an elevation/biome ramp (tectonic feature-colours kept as a toggle). Each cell still
-/// rotates by its plate's Euler rotation on the GPU (tick uniform — the motion spine).
+/// T4 seam: the ONLY App.World tier that touches Godot. Turns the T3 <see cref="GlobePlateSurfaces"/>'
+/// WATERTIGHT per-plate caps into Godot <see cref="ArrayMesh"/>es — one <see cref="MeshInstance3D"/> per
+/// plate — lights them, colours them by an elevation/biome ramp (tectonic feature-colours as a toggle),
+/// and rotates each cap rigidly by its plate's Euler pole × tick on the GPU (the motion spine).
 ///
-/// <para>Sub-project C.1 (relief render): the per-cell elevation (sub-project B's
-/// <c>CellElevationModel.GetElevations()</c>) is fed in via <paramref name="elevationsAt"/>. On every
-/// tick change the seam dispatches a GLSL COMPUTE shader (<c>relief_displace.glsl</c>) through the
-/// resident <see cref="IService">App.GpuCompute</see> service: it pushes each vertex radially out/in by
-/// <c>elevation * exaggeration</c> and emits an outward flat face normal per cell. The readback updates
-/// the mesh (positions + normals); the spatial shader then rotates BOTH the displaced position and the
-/// normal per plate and a <see cref="Godot.DirectionalLight3D"/> sun lights the relief. If the compute
-/// service is absent/unavailable, the seam falls back to a VERTEX-shader radial displacement of an
-/// elevation data texture with <c>dFdx</c>/<c>dFdy</c> flat normals — still visibly lit relief.</para>
+/// <para><b>Un-shattering (this is the fix).</b> The old globe drew one triangle per cell with three
+/// UNSHARED corners, each pushed out by that cell's own elevation; neighbours at different heights left
+/// gaps and the ball cracked. Now the geometry arrives pre-built and watertight from cartography
+/// (<see cref="GlobeSurface"/>): within a plate, corners are SHARED and each shared corner sits at ONE
+/// height (the mean of the cells touching it). For a BLOCKY (flat-shaded) look the seam still triples a
+/// triangle's vertices and assigns the triangle's single <see cref="GlobeSurface.FlatNormals"/> to all
+/// three — but the POSITIONS come from the watertight shared-vertex <see cref="GlobeSurface.Positions"/>,
+/// so adjacent triangles meet EXACTLY at shared corners: faceted yet crack-free.</para>
+///
+/// <para><b>Pre-displaced, no GPU compute.</b> Because cartography already displaced the surface and
+/// supplied flat normals, the seam no longer dispatches the relief GPU-compute shader nor the
+/// elevation-texture vertex fallback — that path is removed (the App.GpuCompute plugin stays in the app
+/// for LOD later). The shader keeps: per-plate rotate(pos+normal), the biome/tectonic colouring, the
+/// half-Lambert <c>light()</c>, the sun, the mantle, and the scrubber. Boundaries BETWEEN plates may
+/// gap/overlap as plates drift — expected for motion-model A; ridge/trench boundary fill is a later task.</para>
 /// </summary>
 public sealed partial class GlobeView : Node3D
 {
-    // Radius/elevation coupling: cell corners live on the unit sphere (|v|≈1); the MeshInstance is
-    // scaled ×2. Elevation (sub-project B) ranges roughly −1500 (old abyssal ocean) .. +2500 (continent
-    // collision), 0 at sea level. This exaggeration maps a collision (+2500) to ≈+0.3 radius and a
-    // trench (−1500) to ≈−0.18 radius — relief that reads unmistakably as 3D without self-intersecting
-    // the mantle shell (radius 0.965). Tunable; intentionally generous for the "visible payoff".
+    // Radius/elevation coupling (unchanged from the loose-tile relief): cap corners live on the unit
+    // sphere (|v|≈1) displaced to 1 + elevation*exaggeration by cartography; the MeshInstance is scaled
+    // ×2. Crust is the focused layer — this exaggeration is intentionally generous for the visible payoff.
     private const float DisplacementExaggeration = 0.00012f;
 
     // Elevation normalisation for the biome ramp: divide metres by this to land most terrain in [-1,1].
     private const float ElevationColorScale = 2000.0f;
 
-    private const string ReliefShaderPath = "res://shaders/relief_displace.glsl";
-
-    // Spatial shader (LIT): vertex rotates each cell's displaced position AND normal about its plate's
-    // Euler axis by (rate*tick); fragment colours by an elevation/biome ramp (u_color_mode 0) or the
-    // per-cell tectonic feature texture (u_color_mode 1). NORMAL is written into the mesh by the compute
-    // pass (or derived via dFdx/dFdy in the vertex-fallback build). No render_mode unshaded — a
-    // DirectionalLight3D sun lights it via standard Lambert.
+    // Spatial shader (LIT): vertex rotates each cap's (already-displaced) position AND its flat normal
+    // about its plate's Euler axis by (rate*tick); fragment colours by an elevation/biome ramp
+    // (u_color_mode 0) or the per-cell tectonic feature texture (u_color_mode 1). NORMAL arrives in the
+    // mesh (the flat per-triangle normal cartography supplied). A DirectionalLight3D sun lights it via
+    // the half-Lambert light() below — no render_mode unshaded.
     private const string ShaderCode = @"
 shader_type spatial;
 render_mode cull_disabled;
@@ -52,16 +53,12 @@ uniform float u_tick = 0.0;
 uniform int u_plate_count = 1;
 uniform int u_color_mode = 0;                       // 0 = biome (elevation ramp), 1 = tectonic features
 uniform float u_elev_scale = 2000.0;                // metres -> [-1,1]-ish for the ramp
-uniform bool u_vertex_displace = false;             // fallback: displace in-shader from u_cell_elev
-uniform float u_exaggeration = 0.00005;
 uniform vec4 u_plate_axis_rate[16];                 // xyz = unit axis, w = radians per canonical tick
 uniform sampler2D u_cell_types : filter_nearest;    // r = feature kind: 0 none,1 mtn,2 arc,3 trench,4 ridge,5 fault
-uniform sampler2D u_cell_elev : filter_nearest;     // r = per-cell elevation (metres); used in the fallback path
 
 varying vec3 v_plate_color;
 varying float v_cell_u;
-varying float v_elev;          // per-vertex elevation in metres (biome ramp input)
-varying vec3 v_world_pos;      // for dFdx/dFdy flat normals in the fallback path
+varying float v_elev;          // per-vertex elevation in metres (biome ramp input), packed in UV2.x
 
 vec3 rotate_axis(vec3 v, vec3 axis, float angle) {
     float c = cos(angle);
@@ -99,12 +96,7 @@ void vertex() {
     float angle = ar.w * u_tick;
     vec3 axis = normalize(ar.xyz);
 
-    float elev = UV2.x; // metres, packed per vertex by the seam (compute path) or sampled below
-    if (u_vertex_displace) {
-        elev = texture(u_cell_elev, vec2(UV.y, 0.5)).r;     // fallback: per-cell elevation texture
-        VERTEX += normalize(VERTEX) * (elev * u_exaggeration);
-    }
-    v_elev = elev;
+    v_elev = UV2.x; // metres, packed per vertex by the seam (per-cell elevation for the ramp)
 
     VERTEX = rotate_axis(VERTEX, axis, angle);
     NORMAL = rotate_axis(NORMAL, axis, angle);
@@ -113,17 +105,9 @@ void vertex() {
     float denom = max(float(u_plate_count), 1.0);
     v_plate_color = hue(float(pid) / denom) * 0.55 + 0.10;
     v_cell_u = UV.y;
-    v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
 void fragment() {
-    // Fallback flat normal from screen-space derivatives of world position (used when the mesh carries
-    // no compute normals). Robust regardless of the compute path; cheap for a faceted mesh.
-    if (u_vertex_displace) {
-        vec3 n = normalize(cross(dFdx(v_world_pos), dFdy(v_world_pos)));
-        NORMAL = (VIEW_MATRIX * vec4(n, 0.0)).xyz; // fragment NORMAL is view-space
-    }
-
     vec3 col;
     if (u_color_mode == 1) {
         int kind = int(texture(u_cell_types, vec2(v_cell_u, 0.5)).r + 0.5);
@@ -152,29 +136,20 @@ void light() {
 ";
 
     private readonly WorldGlobeSnapshot _snapshot;
+    private readonly GlobePlateSurfaces _surfaces;
     private readonly Func<long, string> _formatTick;
     private readonly Func<long, byte[]>? _classifyAt;
-    private readonly Func<long, float[]>? _elevationsAt;
-    private readonly GpuComputeService? _gpuCompute;
+    private readonly Func<long, double[]>? _elevationsAt;
 
     private ShaderMaterial? _material;
     private Image? _typeImage;
     private ImageTexture? _typeTexture;
-    private Image? _elevImage;
-    private ImageTexture? _elevTexture;
-    private ArrayMesh? _mesh;
     private long _tick;
 
-    // Base (undisplaced) per-vertex unit-sphere positions + the matching UV (uv.x = plateId,
-    // uv.y = per-cell data-texture U). Compute reads the base positions; the readback rebuilds the
-    // surface with displaced positions + normals (uv2.x carries per-vertex elevation for the ramp).
-    private Vector3[] _basePos = Array.Empty<Vector3>();
-    private Vector2[] _uvs = Array.Empty<Vector2>();
-    private int _triCount;
-    // True once a compute dispatch succeeds: the GPU path owns displacement+normals. Until then (or if
-    // it fails) the seam uses the vertex-shader fallback so relief is never silently skipped.
-    private bool _computePathActive;
-    private bool _fallbackAnnounced;
+    // Per-plate cap nodes, rebuilt (positions/normals) per tick from the watertight GlobeSurfaces. The
+    // shared per-cell data-texture U (uv.y) is identical to the old loose-tile UV: (cellId+0.5)/cellCount.
+    private Node3D? _capRoot;
+    private readonly List<MeshInstance3D> _capInstances = new();
 
     // Verification utility (inert unless FANTASIM_GLOBE_CAPTURE=<png path>): after a few frames,
     // save the rendered viewport and quit. Not part of normal runtime.
@@ -186,16 +161,16 @@ void light() {
 
     public GlobeView(
         WorldGlobeSnapshot snapshot,
+        GlobePlateSurfaces surfaces,
         Func<long, string>? formatTick = null,
         Func<long, byte[]>? classifyAt = null,
-        Func<long, float[]>? elevationsAt = null,
-        GpuComputeService? gpuCompute = null)
+        Func<long, double[]>? elevationsAt = null)
     {
         _snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
+        _surfaces = surfaces ?? throw new ArgumentNullException(nameof(surfaces));
         _formatTick = formatTick ?? (t => t.ToString(System.Globalization.CultureInfo.InvariantCulture));
         _classifyAt = classifyAt;
         _elevationsAt = elevationsAt;
-        _gpuCompute = gpuCompute;
         Name = "GlobeView";
     }
 
@@ -203,27 +178,17 @@ void light() {
     {
         _material = BuildMaterial(_snapshot);
         InitCellTypeTexture(_snapshot.CellCount);
-        InitCellElevTexture(_snapshot.CellCount);
 
         AddChild(BuildMantle()); // base sphere under the plate shell: divergent gaps reveal mantle
 
-        _mesh = BuildMesh(_snapshot, out _basePos, out _uvs);
-        _triCount = _snapshot.Cells.Count;
-
-        var globe = new MeshInstance3D
-        {
-            Name = "Globe",
-            Mesh = _mesh,
-            MaterialOverride = _material,
-            Scale = Vector3.One * 2.0f,
-        };
-        AddChild(globe);
+        // Root holding one MeshInstance3D per plate cap; scaled ×2 like the old single globe instance.
+        _capRoot = new Node3D { Name = "Globe", Scale = Vector3.One * 2.0f };
+        AddChild(_capRoot);
 
         // The sun: a directional light so the displaced relief reads as 3D (Lambert from the per-cell
-        // face normals the compute pass writes / the fallback derives). Replaces the old unshaded look.
-        // Aimed from front-upper-right TOWARD the globe so the camera-facing hemisphere (the +Z face the
-        // camera looks at) is lit and the terminator does not eat the visible disc; the grazing angle
-        // throws relief shadows that make mountains/trenches read as 3D.
+        // flat face normals cartography supplied). Aimed from front-upper-right TOWARD the globe so the
+        // camera-facing hemisphere is lit and the terminator does not eat the visible disc; the grazing
+        // angle throws relief shadows that make mountains/trenches read as 3D.
         var sun = new DirectionalLight3D
         {
             Name = "Sun",
@@ -231,9 +196,6 @@ void light() {
             ShadowEnabled = false,
         };
         AddChild(sun);
-        // Near-frontal (close to the camera axis at +Z, slight up/right offset) so almost the whole
-        // visible hemisphere is lit while the offset still rakes relief shadows across mountains/valleys.
-        // A more grazing sun pushed the terminator through the disc centre and lost half the payoff.
         sun.Position = new Vector3(1.1f, 1.9f, 7.5f);
         sun.LookAt(Vector3.Zero, Vector3.Up);
 
@@ -251,7 +213,8 @@ void light() {
         SetColorMode((int)ParseEnvLong("FANTASIM_GLOBE_COLORMODE", 0));
         long initialTick = ParseEnvLong("FANTASIM_GLOBE_TICK", 0);
         SetTick(initialTick);
-        GD.Print($"[GlobeView] globe built: {_snapshot.CellCount} cells, {_snapshot.PlateCount} plates, t0={_formatTick(initialTick)}.");
+        GD.Print($"[GlobeView] globe built: {_snapshot.CellCount} cells, {_snapshot.PlateCount} plates, " +
+                 $"{_capInstances.Count} watertight caps, t0={_formatTick(initialTick)}.");
     }
 
     public override void _Process(double delta)
@@ -278,15 +241,15 @@ void light() {
         GetTree().Quit();
     }
 
-    /// <summary>Set the canonical tick: re-derives per-cell elevation (B), recomputes the relief
-    /// displacement (GPU compute, or the vertex fallback), updates the mesh + feature texture + ladder
+    /// <summary>Set the canonical tick: re-derives per-cell elevation (B), rebuilds the WATERTIGHT cap
+    /// meshes (cached topology, fresh heights, via cartography), updates the feature texture + ladder
     /// label + scrubber, and drives the GPU rotation uniform (the motion spine).</summary>
     public void SetTick(long tick)
     {
         _tick = tick;
         _material?.SetShaderParameter("u_tick", (float)tick);
         UpdateCellTypes(tick);
-        UpdateRelief(tick);
+        UpdateCaps(tick);
         if (_label is not null) _label.Text = _formatTick(tick);
         if (_slider is not null && (long)_slider.Value != tick) _slider.Value = tick;
     }
@@ -296,170 +259,123 @@ void light() {
     /// <summary>Colour view: 0 = elevation/biome ramp (default), 1 = tectonic feature colours.</summary>
     public void SetColorMode(int mode) => _material?.SetShaderParameter("u_color_mode", mode == 1 ? 1 : 0);
 
-    /// <summary>True once a GPU-compute displacement has succeeded (else the vertex-shader fallback is live).</summary>
-    public bool ComputePathActive => _computePathActive;
+    /// <summary>Number of plate caps currently mounted (one watertight cap per non-empty plate).</summary>
+    public int CapCount => _capInstances.Count;
 
-    // --- Relief: per-cell elevation -> displaced positions + normals -------------------------------
+    // --- Watertight per-plate caps: build blocky (flat-shaded) ArrayMeshes from the GlobeSurfaces -----
 
-    private void UpdateRelief(long tick)
+    private void UpdateCaps(long tick)
     {
-        if (_elevationsAt is null || _mesh is null) return;
+        if (_capRoot is null) return;
 
-        float[] elevByCell;
-        try { elevByCell = _elevationsAt(tick); }
-        catch (Exception ex) { GD.PushWarning($"[GlobeView] elevation fetch failed: {ex.Message}"); return; }
-
-        // Always refresh the per-cell elevation texture (fallback displacement source + a stable record).
-        UpdateCellElevTexture(elevByCell);
-
-        // Expand per-cell elevation to per-vertex (3 verts/cell), for the biome ramp + the compute input.
-        int vertCount = _triCount * 3;
-        var elevPerVert = new float[vertCount];
-        for (int i = 0; i < _triCount; i++)
+        double[] elevByCell;
+        if (_elevationsAt is not null)
         {
-            int cellId = _snapshot.Cells[i].CellId;
-            float e = (cellId >= 0 && cellId < elevByCell.Length) ? elevByCell[cellId] : 0f;
-            int b = i * 3;
-            elevPerVert[b + 0] = e;
-            elevPerVert[b + 1] = e;
-            elevPerVert[b + 2] = e;
+            try { elevByCell = _elevationsAt(tick); }
+            catch (Exception ex)
+            {
+                GD.PushWarning($"[GlobeView] elevation fetch failed: {ex.Message}");
+                elevByCell = Array.Empty<double>();
+            }
         }
+        else
+        {
+            elevByCell = Array.Empty<double>();
+        }
+
+        // Always refresh the per-cell elevation texture record for the (now flat-shaded) caps' UV map.
+        var caps = _surfaces.BuildSurfaces(elevByCell, DisplacementExaggeration);
 
         // Capture-mode diagnostic: report the relief extent so the displacement exaggeration can be
         // calibrated against the actual elevation range at the captured tick.
-        if (!string.IsNullOrEmpty(_capturePath))
+        if (!string.IsNullOrEmpty(_capturePath) && elevByCell.Length > 0)
         {
-            float emin = float.MaxValue, emax = float.MinValue;
+            double emin = double.MaxValue, emax = double.MinValue;
             foreach (var e in elevByCell) { if (e < emin) emin = e; if (e > emax) emax = e; }
             GD.Print($"[GlobeView] relief extent @tick {tick}: elevation [{emin:F1}, {emax:F1}] m -> radial displace " +
                      $"[{emin * DisplacementExaggeration:F4}, {emax * DisplacementExaggeration:F4}] (×2 scale -> world ×2).");
         }
 
-        if (TryComputeRelief(elevPerVert, out var displaced, out var normals))
+        EnsureCapInstances(caps.Count);
+
+        float cellCount = Math.Max(_snapshot.CellCount, 1);
+        for (int i = 0; i < caps.Count; i++)
         {
-            RebuildSurface(displaced, normals, elevPerVert);
-            if (!_computePathActive)
-            {
-                _computePathActive = true;
-                _material?.SetShaderParameter("u_vertex_displace", false);
-                GD.Print("[GlobeView] relief: GPU compute path active (displaced positions + face normals).");
-            }
-        }
-        else
-        {
-            // Fallback: the vertex shader displaces from u_cell_elev and derives flat normals via dFdx/dFdy.
-            // Keep the mesh at base positions but carry per-vertex elevation in uv2 for the ramp.
-            RebuildSurfaceBaseWithElev(elevPerVert);
-            _material?.SetShaderParameter("u_vertex_displace", true);
-            if (!_fallbackAnnounced)
-            {
-                _fallbackAnnounced = true;
-                GD.Print("[GlobeView] relief: GPU compute unavailable — using vertex-shader displacement fallback (dFdx/dFdy normals).");
-            }
+            var mesh = BuildCapMesh(caps[i], elevByCell, cellCount);
+            var inst = _capInstances[i];
+            inst.Mesh = mesh;
+            inst.Name = $"PlateCap{caps[i].PlateId}";
         }
     }
 
-    // Dispatch relief_displace.glsl over the base positions + per-vertex elevation; read back displaced
-    // positions and normals. Returns false (caller falls back) if no service, no device, or any failure.
-    private bool TryComputeRelief(float[] elevPerVert, out Vector3[] displaced, out Vector3[] normals)
+    // Grow/shrink the pool of cap MeshInstance3D nodes to match the plate count (built once; topology is
+    // tick-invariant so the count never actually changes after the first tick).
+    private void EnsureCapInstances(int count)
     {
-        displaced = Array.Empty<Vector3>();
-        normals = Array.Empty<Vector3>();
-        if (_gpuCompute is null) return false;
-        if (!_gpuCompute.Capabilities.IsAvailable) return false;
-
-        int vertCount = _triCount * 3;
-
-        // base positions -> vec4 (xyz, 0) std430
-        var baseData = new byte[vertCount * 16];
-        for (int v = 0; v < vertCount; v++)
-            WriteVec4(baseData, v * 16, _basePos[v].X, _basePos[v].Y, _basePos[v].Z, 0f);
-
-        // per-vertex elevation -> float std430
-        var elevData = new byte[vertCount * 4];
-        Buffer.BlockCopy(elevPerVert, 0, elevData, 0, elevData.Length);
-
-        // output buffers (zero-init); read back fully
-        var outPosData = new byte[vertCount * 16];
-        var outNrmData = new byte[vertCount * 16];
-
-        // params: uint triCount, float exaggeration
-        var paramData = new byte[8];
-        Buffer.BlockCopy(new uint[] { (uint)_triCount }, 0, paramData, 0, 4);
-        Buffer.BlockCopy(new float[] { DisplacementExaggeration }, 0, paramData, 4, 4);
-
-        var request = new ComputeDispatchRequest(
-            new ComputeShaderReference("world.relief.displace", ReliefShaderPath),
-            new ComputeDispatchSize((uint)((_triCount + 63) / 64), 1, 1), // local_size_x = 64 over triangles
-            new[]
-            {
-                new ComputeBufferBinding(0, 0, baseData),
-                new ComputeBufferBinding(0, 1, elevData),
-                new ComputeBufferBinding(0, 2, outPosData, (uint)outPosData.Length, "pos"),
-                new ComputeBufferBinding(0, 3, outNrmData, (uint)outNrmData.Length, "nrm"),
-                new ComputeBufferBinding(0, 4, paramData),
-            });
-
-        try
+        if (_capRoot is null) return;
+        while (_capInstances.Count < count)
         {
-            // The compute service is async but the resident backend runs Submit()+Sync() synchronously
-            // on the calling thread; this is invoked from the main thread on a tick change, so blocking
-            // for the (sub-millisecond) readback keeps the mesh update atomic with the tick.
-            var result = _gpuCompute.DispatchAsync(request).GetAwaiter().GetResult();
-            if (!result.Succeeded ||
-                !result.ReadbackBuffers.TryGetValue("pos", out var posBytes) ||
-                !result.ReadbackBuffers.TryGetValue("nrm", out var nrmBytes))
-            {
-                if (!_computePathActive && !string.IsNullOrEmpty(result.ErrorMessage))
-                    GD.PushWarning($"[GlobeView] relief compute dispatch failed: {result.ErrorMessage}");
-                return false;
-            }
-
-            displaced = ReadVec3FromVec4(posBytes, vertCount);
-            normals = ReadVec3FromVec4(nrmBytes, vertCount);
-            return true;
+            var inst = new MeshInstance3D { MaterialOverride = _material };
+            _capRoot.AddChild(inst);
+            _capInstances.Add(inst);
         }
-        catch (Exception ex)
+        for (int i = _capInstances.Count - 1; i >= count; i--)
         {
-            if (!_computePathActive) GD.PushWarning($"[GlobeView] relief compute threw: {ex.Message}");
-            return false;
+            _capInstances[i].QueueFree();
+            _capInstances.RemoveAt(i);
         }
     }
 
-    private void RebuildSurface(Vector3[] verts, Vector3[] normals, float[] elevPerVert)
+    // Turn one watertight GlobeSurface cap into a BLOCKY (flat-shaded) ArrayMesh: for each triangle emit
+    // 3 vertices at its (shared, watertight) corner POSITIONS, each carrying the triangle's single FLAT
+    // normal. Positions come from the shared-vertex Positions (one averaged height per corner) so even
+    // though verts are tripled for flat shading, adjacent triangles meet EXACTLY -> no cracks.
+    //   uv.x  = plateId            (drives per-plate rotation in the shader)
+    //   uv.y  = (cellId+0.5)/cells (tectonic-type texture lookup for this face's cell)
+    //   uv2.x = per-cell elevation (biome ramp — crisp per-cell colour)
+    private static ArrayMesh BuildCapMesh(PlateCap cap, double[] elevByCell, float cellCount)
     {
-        var uv2 = new Vector2[verts.Length];
-        for (int i = 0; i < verts.Length; i++) uv2[i] = new Vector2(elevPerVert[i], 0f);
+        var surface = cap.Surface;
+        int triCount = surface.TriangleCount;
+        int vertCount = triCount * 3;
+
+        var verts = new Vector3[vertCount];
+        var normals = new Vector3[vertCount];
+        var uv = new Vector2[vertCount];
+        var uv2 = new Vector2[vertCount];
+
+        float plateId = cap.PlateId;
+        for (int t = 0; t < triCount; t++)
+        {
+            int i0 = surface.Triangles[(t * 3) + 0];
+            int i1 = surface.Triangles[(t * 3) + 1];
+            int i2 = surface.Triangles[(t * 3) + 2];
+
+            var flat = ToV3(surface.FlatNormals[t]);
+
+            int cellId = cap.CellIds[t];
+            float u = (cellId + 0.5f) / cellCount;
+            float elev = (cellId >= 0 && cellId < elevByCell.Length) ? (float)elevByCell[cellId] : 0f;
+
+            int b = t * 3;
+            verts[b + 0] = ToV3(surface.Positions[i0]);
+            verts[b + 1] = ToV3(surface.Positions[i1]);
+            verts[b + 2] = ToV3(surface.Positions[i2]);
+            normals[b + 0] = flat; normals[b + 1] = flat; normals[b + 2] = flat;
+            uv[b + 0] = new Vector2(plateId, u); uv[b + 1] = new Vector2(plateId, u); uv[b + 2] = new Vector2(plateId, u);
+            uv2[b + 0] = new Vector2(elev, 0f); uv2[b + 1] = new Vector2(elev, 0f); uv2[b + 2] = new Vector2(elev, 0f);
+        }
 
         var arrays = new Godot.Collections.Array();
         arrays.Resize((int)Mesh.ArrayType.Max);
         arrays[(int)Mesh.ArrayType.Vertex] = verts;
         arrays[(int)Mesh.ArrayType.Normal] = normals;
-        arrays[(int)Mesh.ArrayType.TexUV] = _uvs;
+        arrays[(int)Mesh.ArrayType.TexUV] = uv;
         arrays[(int)Mesh.ArrayType.TexUV2] = uv2;
-        ReplaceSurface(arrays);
-    }
 
-    // Fallback surface: keep BASE positions (the vertex shader does the radial displacement), carry the
-    // per-vertex elevation in uv2 for the ramp, and let the fragment derive normals via dFdx/dFdy.
-    private void RebuildSurfaceBaseWithElev(float[] elevPerVert)
-    {
-        var uv2 = new Vector2[_basePos.Length];
-        for (int i = 0; i < _basePos.Length; i++) uv2[i] = new Vector2(elevPerVert[i], 0f);
-
-        var arrays = new Godot.Collections.Array();
-        arrays.Resize((int)Mesh.ArrayType.Max);
-        arrays[(int)Mesh.ArrayType.Vertex] = _basePos;
-        arrays[(int)Mesh.ArrayType.TexUV] = _uvs;
-        arrays[(int)Mesh.ArrayType.TexUV2] = uv2;
-        ReplaceSurface(arrays);
-    }
-
-    private void ReplaceSurface(Godot.Collections.Array arrays)
-    {
-        if (_mesh is null) return;
-        if (_mesh.GetSurfaceCount() > 0) _mesh.ClearSurfaces();
-        _mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+        var mesh = new ArrayMesh();
+        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+        return mesh;
     }
 
     private void InitCellTypeTexture(int cellCount)
@@ -467,13 +383,6 @@ void light() {
         _typeImage = Image.CreateEmpty(Math.Max(cellCount, 1), 1, false, Image.Format.Rf);
         _typeTexture = ImageTexture.CreateFromImage(_typeImage);
         _material?.SetShaderParameter("u_cell_types", _typeTexture);
-    }
-
-    private void InitCellElevTexture(int cellCount)
-    {
-        _elevImage = Image.CreateEmpty(Math.Max(cellCount, 1), 1, false, Image.Format.Rf);
-        _elevTexture = ImageTexture.CreateFromImage(_elevImage);
-        _material?.SetShaderParameter("u_cell_elev", _elevTexture);
     }
 
     private void UpdateCellTypes(long tick)
@@ -484,15 +393,6 @@ void light() {
         for (int c = 0; c < count; c++)
             _typeImage.SetPixel(c, 0, new Color(types[c], 0f, 0f));
         _typeTexture.Update(_typeImage);
-    }
-
-    private void UpdateCellElevTexture(float[] elevByCell)
-    {
-        if (_elevImage is null || _elevTexture is null) return;
-        int count = Math.Min(elevByCell.Length, _elevImage.GetWidth());
-        for (int c = 0; c < count; c++)
-            _elevImage.SetPixel(c, 0, new Color(elevByCell[c], 0f, 0f));
-        _elevTexture.Update(_elevImage);
     }
 
     // --- Time scrubber (unchanged) -----------------------------------------------------------------
@@ -541,38 +441,6 @@ void light() {
             System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : fallback;
     }
 
-    // Build the base mesh: 3 verts/cell. Also returns the base positions + uvs so the relief compute
-    // pass can read them and the per-tick surface rebuild can reuse the uvs.
-    private static ArrayMesh BuildMesh(WorldGlobeSnapshot s, out Vector3[] basePos, out Vector2[] uvs)
-    {
-        int triCount = s.Cells.Count;
-        var verts = new Vector3[triCount * 3];
-        var uv = new Vector2[triCount * 3]; // uv.x = plate id, uv.y = per-cell data-texture U coord
-
-        float cellCount = Math.Max(s.CellCount, 1);
-        for (int i = 0; i < triCount; i++)
-        {
-            var cell = s.Cells[i];
-            float u = (cell.CellId + 0.5f) / cellCount;
-            int b = i * 3;
-            verts[b + 0] = ToV3(cell.C0); uv[b + 0] = new Vector2(cell.PlateId, u);
-            verts[b + 1] = ToV3(cell.C1); uv[b + 1] = new Vector2(cell.PlateId, u);
-            verts[b + 2] = ToV3(cell.C2); uv[b + 2] = new Vector2(cell.PlateId, u);
-        }
-
-        var arrays = new Godot.Collections.Array();
-        arrays.Resize((int)Mesh.ArrayType.Max);
-        arrays[(int)Mesh.ArrayType.Vertex] = verts;
-        arrays[(int)Mesh.ArrayType.TexUV] = uv;
-
-        var mesh = new ArrayMesh();
-        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-
-        basePos = verts;
-        uvs = uv;
-        return mesh;
-    }
-
     private static ShaderMaterial BuildMaterial(WorldGlobeSnapshot s)
     {
         var mat = new ShaderMaterial { Shader = new Shader { Code = ShaderCode } };
@@ -588,8 +456,6 @@ void light() {
         mat.SetShaderParameter("u_tick", 0.0f);
         mat.SetShaderParameter("u_color_mode", 0);           // default: elevation/biome ramp
         mat.SetShaderParameter("u_elev_scale", ElevationColorScale);
-        mat.SetShaderParameter("u_exaggeration", DisplacementExaggeration);
-        mat.SetShaderParameter("u_vertex_displace", false);
         return mat;
     }
 
@@ -622,27 +488,5 @@ void light() {
         },
     };
 
-    private static void WriteVec4(byte[] dst, int offset, float x, float y, float z, float w)
-    {
-        BitConverter.TryWriteBytes(dst.AsSpan(offset + 0, 4), x);
-        BitConverter.TryWriteBytes(dst.AsSpan(offset + 4, 4), y);
-        BitConverter.TryWriteBytes(dst.AsSpan(offset + 8, 4), z);
-        BitConverter.TryWriteBytes(dst.AsSpan(offset + 12, 4), w);
-    }
-
-    private static Vector3[] ReadVec3FromVec4(byte[] src, int count)
-    {
-        var result = new Vector3[count];
-        for (int i = 0; i < count; i++)
-        {
-            int o = i * 16;
-            result[i] = new Vector3(
-                BitConverter.ToSingle(src, o + 0),
-                BitConverter.ToSingle(src, o + 4),
-                BitConverter.ToSingle(src, o + 8));
-        }
-        return result;
-    }
-
-    private static Vector3 ToV3(GlobeVec3 v) => new Vector3(v.X, v.Y, v.Z);
+    private static Vector3 ToV3(CartesianPoint3 p) => new Vector3((float)p.X, (float)p.Y, (float)p.Z);
 }

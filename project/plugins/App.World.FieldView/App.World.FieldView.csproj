@@ -2,8 +2,8 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <RootNamespace>FantaSim.App.World.Projection</RootNamespace>
-    <AssemblyName>FantaSim.App.World.Projection</AssemblyName>
+    <RootNamespace>FantaSim.App.World.FieldView</RootNamespace>
+    <AssemblyName>FantaSim.App.World.FieldView</AssemblyName>
     <ServiceArchiTier>T3</ServiceArchiTier>
   </PropertyGroup>
 
