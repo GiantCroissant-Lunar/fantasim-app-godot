@@ -68,6 +68,19 @@ public sealed class GlobeReconstructorTests
         Assert.Equal(model.ClassifyCellsAt(500_000), model.ClassifyCellsAt(500_000));
     }
 
+    [Fact]
+    public void RunCrustFeatures_grows_a_mountain_by_eight_mega_annum()
+    {
+        var model = new GlobeReconstructor(frequency: 3);
+        const long eightMa = 8 * 100_000; // 1 ka = 1 Ma = 100_000 ticks
+
+        var byTick = model.RunCrustFeatures(new long[] { 0L, eightMa });
+
+        Assert.DoesNotContain((byte)1, byTick[0L]);   // no Mountain at genesis (no accumulation yet)
+        Assert.Contains((byte)1, byTick[eightMa]);    // a Mountain (kind 1) has emerged by 8 Ma
+        Assert.All(byTick[eightMa], k => Assert.InRange(k, (byte)0, (byte)5));
+    }
+
     private static void AssertUnitLength(GlobeVec3 v)
     {
         double len = Math.Sqrt((double)v.X * v.X + (double)v.Y * v.Y + (double)v.Z * v.Z);

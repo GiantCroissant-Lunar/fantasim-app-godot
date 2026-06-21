@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using FantaSim.App.World.Dto;
+using FantaSim.Geosphere.Crust;
 using FantaSim.Geosphere.Plate.Topology;
 using FantaSim.World.Contracts.Units;
 using TimeDete.Time.Primitives;
@@ -95,6 +96,49 @@ public sealed class GlobeReconstructor
         BoundaryType.Transform => 3,
         _ => 0, // Inactive / interior
     };
+
+    /// <summary>
+    /// One crust-pipeline run over <paramref name="snapshotTicks"/> (continental recipe 0,1) → per
+    /// snapshot, the per-cell feature kind (0 None, 1 Mountain, 2 VolcanicArc, 3 Trench, 4 Ridge,
+    /// 5 Fault). Fields accumulate from genesis, so a feature emerges at the tick its magnitude crosses
+    /// threshold (a mountain "grows in" as orogenic-pressure passes τ).
+    /// </summary>
+    public IReadOnlyDictionary<long, byte[]> RunCrustFeatures(IReadOnlyList<long> snapshotTicks)
+    {
+        ArgumentNullException.ThrowIfNull(snapshotTicks);
+
+        long endTick = 0;
+        foreach (var t in snapshotTicks) if (t > endTick) endTick = t;
+
+        var result = CrustPipeline.RunAsync(
+            _tessellation, _plates, CrustInitRecipe.Continental(0, 1),
+            startTick: 0, endTick: endTick,
+            snapshotTicks: snapshotTicks,
+            rates: DefaultRates()).GetAwaiter().GetResult();
+
+        int n = _tessellation.CellCount;
+        var byTick = new Dictionary<long, byte[]>(snapshotTicks.Count);
+        foreach (var tick in snapshotTicks)
+        {
+            var cells = new byte[n];
+            if (result.FeaturesByTick.TryGetValue(tick, out var features))
+                foreach (var kv in features)
+                    if (kv.Key >= 0 && kv.Key < n)
+                        cells[kv.Key] = (byte)kv.Value.Kind;
+            byTick[tick] = cells;
+        }
+        return byTick;
+    }
+
+    private static CrustEvolutionRates DefaultRates()
+    {
+        static double PerTick(double perMa) => perMa / UnitConverter.TicksPerMegaAnnum;
+        return new CrustEvolutionRates(
+            OrogenicPerTick: PerTick(1.0),
+            ArcVolcanismPerTick: PerTick(0.6),
+            IslandArcVolcanismPerTick: PerTick(0.4),
+            RidgeVolcanismPerTick: PerTick(0.5));
+    }
 
     /// <summary>
     /// The proven 3-plate equatorial seed (mirrors the crust fixtures): three seeds 120 deg apart;

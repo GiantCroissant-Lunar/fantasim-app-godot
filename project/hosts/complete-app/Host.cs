@@ -253,12 +253,26 @@ public partial class Host : Node
     {
         var model = new FantaSim.App.World.Globe.GlobeReconstructor();
         var snapshot = model.BuildGlobe();
+
+        // Precompute crust features at evenly-spaced snapshots (one pipeline run); the scrubber snaps
+        // to the nearest so dragging stays instant. Features accumulate, so a mountain grows in over ticks.
+        var snapshotTicks = new System.Collections.Generic.List<long>();
+        for (long ka = 0; ka <= 100; ka += 5) snapshotTicks.Add(ka * snapshot.TicksPerMegaAnnum);
+        var featuresByTick = model.RunCrustFeatures(snapshotTicks);
+        System.Func<long, byte[]> featuresAt = tick =>
+        {
+            long best = snapshotTicks[0];
+            foreach (var s in snapshotTicks)
+                if (System.Math.Abs(s - tick) < System.Math.Abs(best - tick)) best = s;
+            return featuresByTick[best];
+        };
+
         var view = new FantaSim.App.World.Seam.GlobeView(
             snapshot,
             tick => FantaSim.App.World.Globe.CanonicalTimeLabel.ForTick(tick, snapshot.TicksPerMegaAnnum),
-            tick => model.ClassifyCellsAt(tick));
+            featuresAt);
         GetTree().Root.CallDeferred("add_child", view);
-        GD.Print($"[Host] World view: globe mounted ({snapshot.CellCount} cells, {snapshot.PlateCount} plates)");
+        GD.Print($"[Host] World view: globe mounted ({snapshot.CellCount} cells, {snapshot.PlateCount} plates, {snapshotTicks.Count} feature snapshots)");
     }
 
     private void ComposeCommand(AppComposition composition)

@@ -50,11 +50,13 @@ void vertex() {
 }
 
 void fragment() {
-    int type = int(texture(u_cell_types, vec2(v_cell_u, 0.5)).r + 0.5);
+    int kind = int(texture(u_cell_types, vec2(v_cell_u, 0.5)).r + 0.5); // 0 none,1 mtn,2 arc,3 trench,4 ridge,5 fault
     vec3 col = v_plate_color;
-    if (type == 1) col = vec3(0.95, 0.27, 0.22);      // convergent  -> red
-    else if (type == 2) col = vec3(0.25, 0.85, 0.45); // divergent   -> green
-    else if (type == 3) col = vec3(0.96, 0.85, 0.30); // transform   -> yellow
+    if (kind == 1) col = vec3(0.62, 0.43, 0.27);      // Mountain     -> brown
+    else if (kind == 2) col = vec3(0.97, 0.52, 0.16); // VolcanicArc  -> orange
+    else if (kind == 3) col = vec3(0.10, 0.18, 0.46); // Trench       -> deep blue
+    else if (kind == 4) col = vec3(0.34, 0.82, 0.88); // Ridge        -> cyan
+    else if (kind == 5) col = vec3(0.80, 0.76, 0.72); // Fault        -> light gray
     ALBEDO = col;
 }
 ";
