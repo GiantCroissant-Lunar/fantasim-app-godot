@@ -331,10 +331,6 @@ public partial class Host : Node
         view.SetMaxTick(maxTransportTick);
         GetTree().Root.CallDeferred("add_child", view);
 
-        // Mount the regime-timeline transport next to GlobeView. The transport owns the
-        // AnimationPlayer + AnimationTree state machine and drives SetTick + SetRegime on the view.
-        var transport = new RegimeTimelineTransport(view, schedule, maxTransportTick);
-        GetTree().Root.CallDeferred("add_child", transport);
 
         // Build the atmosphere schedule (same onset tick) so the timeline HUD can show both spheres.
         var atmosphereSchedule = SphereRegimeScheduleDefaults.AtmosphereFor(onsetTick);
@@ -342,8 +338,7 @@ public partial class Host : Node
         // Register the resident ITimelineController adapter. Must happen here (sync, before any
         // deferred EnterAsync calls) so the timeline bundle can resolve it during ActivateAsync.
         var controller = new FantaSim.App.World.Seam.TimelineController(
-            transport, view, schedule, atmosphereSchedule, maxTransportTick);
-        transport.TickObserver = _ => controller.PumpTick();
+            view, schedule, atmosphereSchedule, maxTransportTick);
         composition.Bootstrap.Registry.Register<FantaSim.App.World.Composition.ITimelineController>(controller);
 
         // Seed the initial regime so GlobeView starts in the correct state before the first tick fires.

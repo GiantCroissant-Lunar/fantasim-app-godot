@@ -168,8 +168,6 @@ void light() {
     private int _frames;
     private readonly string? _capturePath = System.Environment.GetEnvironmentVariable("FANTASIM_GLOBE_CAPTURE");
 
-    private Label? _label;
-    private HSlider? _slider;
     private long _maxTick;
 
     public GlobeView(
@@ -222,7 +220,6 @@ void light() {
         AddChild(camera);
         camera.LookAt(Vector3.Zero, Vector3.Up); // after AddChild — LookAt needs the node in-tree
 
-        BuildScrubber();
         // Colour view: default biome (0); FANTASIM_GLOBE_COLORMODE=1 selects the tectonic feature view.
         SetColorMode((int)ParseEnvLong("FANTASIM_GLOBE_COLORMODE", 0));
         long initialTick = ParseEnvLong("FANTASIM_GLOBE_TICK", 0);
@@ -280,8 +277,6 @@ void light() {
         _material?.SetShaderParameter("u_tick", (float)tick);
         UpdateCellTypes(tick);
         UpdateCaps(tick);
-        if (_label is not null) _label.Text = _formatTick(tick);
-        if (_slider is not null && (long)_slider.Value != tick) _slider.Value = tick;
     }
 
     public long Tick => _tick;
@@ -295,8 +290,6 @@ void light() {
     public void SetMaxTick(long maxTick)
     {
         _maxTick = maxTick > 0 ? maxTick : throw new ArgumentOutOfRangeException(nameof(maxTick));
-        // If the slider was already built (hot-reload / unexpected ordering), keep it in sync.
-        if (_slider is not null) _slider.MaxValue = (double)_maxTick;
     }
 
     /// <summary>Colour view: 0 = elevation/biome ramp (default), 1 = tectonic feature colours.</summary>
@@ -493,44 +486,6 @@ void light() {
         _typeTexture.Update(_typeImage);
     }
 
-    // --- Time scrubber (unchanged) -----------------------------------------------------------------
-
-    private void BuildScrubber()
-    {
-        var layer = new CanvasLayer { Name = "ScrubberLayer" };
-        AddChild(layer);
-
-        var panel = new PanelContainer();
-        panel.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.BottomWide);
-        panel.OffsetTop = -60;
-        layer.AddChild(panel);
-
-        var hbox = new HBoxContainer();
-        hbox.AddThemeConstantOverride("separation", 16);
-        panel.AddChild(hbox);
-
-        _label = new Label
-        {
-            Text = _formatTick(0),
-            CustomMinimumSize = new Vector2(170, 0),
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        _label.AddThemeFontSizeOverride("font_size", 26);
-        hbox.AddChild(_label);
-
-        _slider = new HSlider
-        {
-            MinValue = 0,
-            MaxValue = (double)_maxTick,
-            Step = _snapshot.TicksPerAnchor / 2.0,
-            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
-            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
-        };
-        _slider.ValueChanged += OnScrubberChanged;
-        hbox.AddChild(_slider);
-    }
-
-    private void OnScrubberChanged(double tick) => SetTick((long)tick);
 
     private static long ParseEnvLong(string name, long fallback)
     {
