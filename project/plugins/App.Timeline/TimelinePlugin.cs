@@ -30,6 +30,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
 {
     private IDisposable? _activatorRegistration;
     private IDisposable? _viewSourceRegistration;
+    private TimelineViewSource? _viewSource;
 
     public ValueTask InitializeAsync(IPluginContext context, CancellationToken ct = default)
     {
@@ -48,7 +49,8 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             return ValueTask.CompletedTask;
 
         // Build and register the view source into the shared registry.
-        var viewSource = new TimelineViewSource(controller);
+        _viewSource = new TimelineViewSource(controller);
+        var viewSource = _viewSource;
         _viewSourceRegistration = registry.RegisterOwned<FantaSim.App.Ui.IViewSource>(
             viewSource,
             new ServiceRegistration { Tags = new[] { "ui", "timeline" }, Description = "timeline view source (bundle)" });
@@ -70,6 +72,8 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
 
     public ValueTask ShutdownAsync(CancellationToken ct = default)
     {
+        _viewSource?.Dispose();
+        _viewSource = null;
         _viewSourceRegistration?.Dispose();
         _viewSourceRegistration = null;
         _activatorRegistration?.Dispose();

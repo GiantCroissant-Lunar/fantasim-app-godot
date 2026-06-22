@@ -8,9 +8,10 @@ using FantaSim.App.World.Composition;
 
 namespace FantaSim.App.Timeline;
 
-public sealed class TimelineViewSource : IViewSource
+public sealed class TimelineViewSource : IViewSource, IDisposable
 {
     private readonly ITimelineController _ctl;
+    private readonly Action<long> _onTick;   // keep delegate identity for unsubscribe
     private string? _lastGeoRegimeId;
     private const double TrackWidth = 760.0;  // px the band row spans
     private const double MinBand = 6.0;        // floor so a tiny regime (magma ~0.8%) stays visible
@@ -18,16 +19,21 @@ public sealed class TimelineViewSource : IViewSource
     public TimelineViewSource(ITimelineController controller)
     {
         _ctl = controller ?? throw new ArgumentNullException(nameof(controller));
-        _ctl.TickChanged += tick =>
-        {
-            var rid = _ctl.GeosphereSchedule.RegimeAt(tick)?.RegimeId;
-            if (rid != _lastGeoRegimeId)
-            {
-                _lastGeoRegimeId = rid;
-                Changed?.Invoke();
-            }
-        };
+        _onTick = OnTick;
+        _ctl.TickChanged += _onTick;
     }
+
+    private void OnTick(long tick)
+    {
+        var rid = _ctl.GeosphereSchedule.RegimeAt(tick)?.RegimeId;
+        if (rid != _lastGeoRegimeId)
+        {
+            _lastGeoRegimeId = rid;
+            Changed?.Invoke();
+        }
+    }
+
+    public void Dispose() => _ctl.TickChanged -= _onTick;
 
     public string ViewId => "timeline";
     public event Action? Changed;
