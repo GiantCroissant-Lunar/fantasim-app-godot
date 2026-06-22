@@ -165,6 +165,7 @@ void light() {
 
     private Label? _label;
     private HSlider? _slider;
+    private long _maxTick;
 
     public GlobeView(
         WorldGlobeSnapshot snapshot,
@@ -178,6 +179,7 @@ void light() {
         _formatTick = formatTick ?? (t => t.ToString(System.Globalization.CultureInfo.InvariantCulture));
         _classifyAt = classifyAt;
         _elevationsAt = elevationsAt;
+        _maxTick = 100L * snapshot.TicksPerAnchor; // conservative default; Host calls SetMaxTick with the real range
         Name = "GlobeView";
     }
 
@@ -278,6 +280,19 @@ void light() {
     }
 
     public long Tick => _tick;
+
+    /// <summary>
+    /// Set the scrubber's maximum reachable tick. Must be called BEFORE <see cref="_Ready"/> fires
+    /// (i.e. before the node is added to the scene tree) so <see cref="BuildScrubber"/> picks it up.
+    /// Called by <c>Host.ComposeWorldView</c> with the same <c>maxTransportTick</c> the transport uses,
+    /// ensuring the slider covers the full playback range.
+    /// </summary>
+    public void SetMaxTick(long maxTick)
+    {
+        _maxTick = maxTick > 0 ? maxTick : throw new ArgumentOutOfRangeException(nameof(maxTick));
+        // If the slider was already built (hot-reload / unexpected ordering), keep it in sync.
+        if (_slider is not null) _slider.MaxValue = (double)_maxTick;
+    }
 
     /// <summary>Colour view: 0 = elevation/biome ramp (default), 1 = tectonic feature colours.</summary>
     public void SetColorMode(int mode) => _material?.SetShaderParameter("u_color_mode", mode == 1 ? 1 : 0);
@@ -493,7 +508,7 @@ void light() {
         _slider = new HSlider
         {
             MinValue = 0,
-            MaxValue = 100.0 * _snapshot.TicksPerAnchor,
+            MaxValue = (double)_maxTick,
             Step = _snapshot.TicksPerAnchor / 2.0,
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
             SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,

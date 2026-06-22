@@ -320,6 +320,8 @@ public partial class Host : Node
             tick => FantaSim.App.World.Globe.CanonicalTimeLabel.ForTick(tick, snapshot.TicksPerAnchor),
             featuresAt,
             elevationsAt);
+        // Extend the scrubber to cover the full transport range so the user can drag to onset and beyond.
+        view.SetMaxTick(maxTransportTick);
         GetTree().Root.CallDeferred("add_child", view);
 
         // Mount the regime-timeline transport next to GlobeView. The transport owns the
