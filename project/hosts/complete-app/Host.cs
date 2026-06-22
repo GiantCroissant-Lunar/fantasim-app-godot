@@ -498,6 +498,13 @@ public partial class Host : Node
             runtimeSource,
             new ServiceRegistration { Tags = new[] { "ui", "runtime-status" }, Description = "Runtime status view source" });
 
+        // Register IViewHost so bundle plugins (e.g. TimelinePlugin) can resolve it and call
+        // Mount() directly without going through IService.ShowAsync — which would re-enter the
+        // BundleHost gate and deadlock when called from within a plugin's InitializeAsync.
+        composition.Bootstrap.Registry.Register<FantaSim.App.Ui.Providers.IViewHost>(
+            viewHost,
+            new ServiceRegistration { Tags = new[] { "ui" }, Description = "UI view host" });
+
         var ui = new FantaSim.App.Ui.Services.Service(
             viewHost,
             composition.Bootstrap.Registry.Get<FantaSim.App.Resource.IService>(),
@@ -506,7 +513,7 @@ public partial class Host : Node
         composition.Bootstrap.Registry.Register<FantaSim.App.Ui.IService>(
             ui,
             new ServiceRegistration { Tags = new[] { "ui" }, Description = "UI view service" });
-        GD.Print("[Host] registered: Ui");
+        GD.Print("[Host] registered: Ui (IViewHost + IService)");
     }
 
     public override void _Notification(int what)
