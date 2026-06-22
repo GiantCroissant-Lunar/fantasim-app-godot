@@ -59,6 +59,10 @@ public sealed partial class RegimeTimelineTransport : Node
     private double _tickAccum;     // sub-tick accumulator for smooth advance
     private bool _running = true;  // set to false in _ExitTree so _Process stops during teardown
 
+    /// <summary>Optional callback invoked in <see cref="AdvanceTo"/> after each tick advance.
+    /// Set by <c>ComposeWorldView</c> to drive <c>TimelineController.PumpTick</c>.</summary>
+    public Action<long>? TickObserver;
+
     /// <summary>
     /// Construct the transport.
     /// </summary>
@@ -186,6 +190,8 @@ public sealed partial class RegimeTimelineTransport : Node
             // Tick outside all regime windows: default to mobile-plate behaviour.
             _globeView.SetRegime("mobile-plate", true, null);
         }
+
+        TickObserver?.Invoke(tick);
     }
 
     // ---- AnimationPlayer / AnimationTree rig -------------------------------------------------
