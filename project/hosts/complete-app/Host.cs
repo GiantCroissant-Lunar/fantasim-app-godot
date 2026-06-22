@@ -2,6 +2,9 @@ using System;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FantaSim.App.Common;
+using FantaSim.App.World.Composition;
+using FantaSim.App.World.Globe;
+using FantaSim.App.World.Seam;
 using Godot;
 using Microsoft.Extensions.Logging;
 using ServiceArchi.Contracts;
@@ -257,18 +260,36 @@ public partial class Host : Node
     }
 
     // World view (T4 seam): mount the geodesic plate globe as the real 3D world surface. The T3
-    // GlobeReconstructor builds the seeded snapshot (Godot-free); the GlobeView seam turns it into a
-    // GPU-rotated ArrayMesh. Always-on (not an env-guarded demo).
+    // GlobeReconstructor (onset-aware, via FromOnsetRoster) builds the seeded snapshot (Godot-free);
+    // the GlobeView seam turns it into GPU-rotated ArrayMeshes. The RegimeTimelineTransport drives
+    // tick playback + regime threading (SetTick + SetRegime on GlobeView). Always-on (not env-guarded).
+    //
+    // World seed + tessellation frequency: no per-world config exists yet; using fixed defaults that
+    // produce a stable, deterministic globe. Seed 2024, frequency 3 (1280 cells, ~6 plates at onset).
+    // These match the values used by ComposeCellElevation (both share one OnsetRoster build).
+    private const int WorldSeed = 2024;
+    private const int TessellationFrequency = 3;
+
     private void ComposeWorldView(AppComposition composition)
     {
-        var model = new FantaSim.App.World.Globe.GlobeReconstructor();
-        var snapshot = model.BuildGlobe();
+        // PLAN4-TASK4: onset-aware path — replaces new GlobeReconstructor() (parameterless legacy).
+        long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        var roster = OnsetRoster.Build(WorldSeed, onsetTick, TessellationFrequency);
+        var schedule = SphereRegimeScheduleDefaults.GeosphereDefault;
+        var model = GlobeReconstructor.FromOnsetRoster(roster, onsetTick, schedule, TessellationFrequency);
+
+        // Build the base snapshot at onset (full N-plate globe used for topology caching).
+        // GlobePlateSurfaces caches watertight topology from this snapshot — since plate count/cell
+        // assignment is fixed, one topology build covers all ticks (including pre-onset lid ticks
+        // where caps are hidden by SetRegime(showsPlateFeatures=false)).
+        var snapshot = model.BuildGlobeAt(onsetTick);
 
         // Precompute crust features at evenly-spaced snapshots (one pipeline run); the scrubber snaps
         // to the nearest so dragging stays instant. Features accumulate, so a mountain grows in over ticks.
-        // Authored in OdometerLadder anchors (tick-native): every 5 anchors out to 100 anchors.
+        // Range: [0, 120 anchors] at every 5 anchors — covers pre-onset (all-zero, gated) + mobile-plate.
+        long maxTransportTick = onsetTick + 20_000_000L; // ~20 Ma past onset (well into mobile-plate)
         var snapshotTicks = new System.Collections.Generic.List<long>();
-        for (long anchor = 0; anchor <= 100; anchor += 5) snapshotTicks.Add(anchor * snapshot.TicksPerAnchor);
+        for (long anchor = 0; anchor <= 120; anchor += 5) snapshotTicks.Add(anchor * snapshot.TicksPerAnchor);
         var featuresByTick = model.RunCrustFeatures(snapshotTicks);
         System.Func<long, byte[]> featuresAt = tick =>
         {
@@ -300,8 +321,20 @@ public partial class Host : Node
             featuresAt,
             elevationsAt);
         GetTree().Root.CallDeferred("add_child", view);
+
+        // Mount the regime-timeline transport next to GlobeView. The transport owns the
+        // AnimationPlayer + AnimationTree state machine and drives SetTick + SetRegime on the view.
+        var transport = new RegimeTimelineTransport(view, schedule, maxTransportTick);
+        GetTree().Root.CallDeferred("add_child", transport);
+
+        // Seed the initial regime so GlobeView starts in the correct state before the first tick fires.
+        var initialRegime = schedule.RegimeAt(0);
+        if (initialRegime is not null)
+            view.SetRegime(initialRegime.RegimeId, initialRegime.ShowsPlateFeatures, initialRegime.DefaultColorByField);
+
         GD.Print($"[Host] World view: globe mounted ({snapshot.CellCount} cells, {snapshot.PlateCount} plates, " +
-                 $"{snapshotTicks.Count} feature snapshots, elevationFeed={(elevationsAt is not null)}, watertight caps)");
+                 $"{snapshotTicks.Count} feature snapshots, elevationFeed={(elevationsAt is not null)}, watertight caps, " +
+                 $"onset={onsetTick:N0}, seed={WorldSeed}, freq={TessellationFrequency})");
     }
 
     // Sub-project B (ECS cell model + elevation derivation): model each globe cell as an ECS entity
@@ -311,28 +344,39 @@ public partial class Host : Node
     // model's own ECS world — the same mechanism EcsWorldActor uses for ReduceFieldsSystem — and that
     // world is the load-bearing one C reads from. The actor "main" heartbeat world is left untouched
     // (registering there would need IService surface it does not expose, and isn't what C consumes).
+    //
+    // PLAN4-TASK4: onset-aware path — replaces new GlobeReconstructor() (parameterless legacy).
+    // Uses the same WorldSeed + TessellationFrequency constants as ComposeWorldView so both share
+    // the same deterministic plate geometry.
     private void ComposeCellElevation(AppComposition composition)
     {
         try
         {
-            var reconstructor = new FantaSim.App.World.Globe.GlobeReconstructor();
-            var snapshot = reconstructor.BuildGlobe();
+            long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+            var roster = OnsetRoster.Build(WorldSeed, onsetTick, TessellationFrequency);
+            var schedule = SphereRegimeScheduleDefaults.GeosphereDefault;
+            var reconstructor = GlobeReconstructor.FromOnsetRoster(roster, onsetTick, schedule, TessellationFrequency);
 
-            // Same anchor cadence the world view uses, so the cell model and the feature scrubber
-            // sample the same crust run.
+            // Build snapshot at onset (the full N-plate mesh) to get TicksPerAnchor for the cadence.
+            var snapshot = reconstructor.BuildGlobeAt(onsetTick);
+
+            // Same anchor cadence the world view uses (120 anchors, every 5), so the cell model and
+            // the feature scrubber sample the same crust run. Pre-onset ticks get empty states (gated
+            // by ShowsPlateFeatures — RunCrustEvolution short-circuits them).
             var snapshotTicks = new System.Collections.Generic.List<long>();
-            for (long anchor = 0; anchor <= 100; anchor += 5) snapshotTicks.Add(anchor * snapshot.TicksPerAnchor);
+            for (long anchor = 0; anchor <= 120; anchor += 5) snapshotTicks.Add(anchor * snapshot.TicksPerAnchor);
 
             // Build populates one ECS entity per cell and registers CellElevationSystem into the model's
             // ArchSystemRunner (mirrors how ReduceFieldsSystem registers into EcsWorldActor's runner).
             _cellElevation = FantaSim.App.World.Cells.CellElevationModel.Build(reconstructor, snapshotTicks);
 
-            // Populate/derive for the initial tick and report the relief extent C will upload.
-            _cellElevation.UpdateForTick(snapshotTicks[0]);
+            // Populate/derive for the onset tick (first active tick — pre-onset would be empty)
+            // and report the relief extent C will upload.
+            _cellElevation.UpdateForTick(onsetTick);
             var elevations = _cellElevation.GetElevations();
             double min = double.MaxValue, max = double.MinValue;
             foreach (var e in elevations) { if (e < min) min = e; if (e > max) max = e; }
-            GD.Print($"[Host] Cell elevation: {elevations.Length} cells derived (initial tick), range [{min:F1}, {max:F1}]");
+            GD.Print($"[Host] Cell elevation: {elevations.Length} cells derived (onset tick={onsetTick:N0}), range [{min:F1}, {max:F1}]");
         }
         catch (Exception ex)
         {

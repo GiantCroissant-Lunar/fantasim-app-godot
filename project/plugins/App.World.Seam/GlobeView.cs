@@ -146,6 +146,13 @@ void light() {
     private ImageTexture? _typeTexture;
     private long _tick;
 
+    // Regime state — set by RegimeTimelineTransport (or SetTick callers) via SetRegime.
+    // When _showsPlateFeatures = false (magma-ocean / stagnant-lid), cap geometry is hidden and
+    // the colour-mode shows the regime's field (surface-temperature or heat-flow).
+    private string _currentRegimeId = "mobile-plate";
+    private bool _showsPlateFeatures = true;
+    private bool _capVisibilityDirty;
+
     // Per-plate cap nodes, rebuilt (positions/normals) per tick from the watertight GlobeSurfaces. The
     // shared per-cell data-texture U (uv.y) is identical to the old loose-tile UV: (cellId+0.5)/cellCount.
     private Node3D? _capRoot;
@@ -219,6 +226,13 @@ void light() {
 
     public override void _Process(double delta)
     {
+        // Flush pending cap-visibility refresh (e.g. SetRegime changed _showsPlateFeatures).
+        if (_capVisibilityDirty)
+        {
+            _capVisibilityDirty = false;
+            ApplyCapVisibility();
+        }
+
         if (string.IsNullOrEmpty(_capturePath)) return;
         if (++_frames != 15) return;
         try
@@ -241,6 +255,15 @@ void light() {
         GetTree().Quit();
     }
 
+    // Show or hide all plate-cap instances based on the current regime's ShowsPlateFeatures flag.
+    // When _showsPlateFeatures = false (magma-ocean/stagnant-lid), caps are invisible — only the
+    // mantle sphere shows, giving the pre-plate globe the right look (molten / cool lid).
+    private void ApplyCapVisibility()
+    {
+        foreach (var inst in _capInstances)
+            inst.Visible = _showsPlateFeatures;
+    }
+
     /// <summary>Set the canonical tick: re-derives per-cell elevation (B), rebuilds the WATERTIGHT cap
     /// meshes (cached topology, fresh heights, via cartography), updates the feature texture + ladder
     /// label + scrubber, and drives the GPU rotation uniform (the motion spine).</summary>
@@ -258,6 +281,53 @@ void light() {
 
     /// <summary>Colour view: 0 = elevation/biome ramp (default), 1 = tectonic feature colours.</summary>
     public void SetColorMode(int mode) => _material?.SetShaderParameter("u_color_mode", mode == 1 ? 1 : 0);
+
+    /// <summary>
+    /// Regime threading: called by <see cref="RegimeTimelineTransport"/> (or any scrubber caller)
+    /// each tick so the globe colour and cap visibility track the current regime.
+    /// <list type="bullet">
+    ///   <item><paramref name="regimeId"/> — e.g. "magma-ocean", "stagnant-lid", "mobile-plate".</item>
+    ///   <item><paramref name="showsPlateFeatures"/> — false in pre-plate regimes; hides cap mesh instances.</item>
+    ///   <item><paramref name="colorByField"/> — optional override: "surface-temperature-k" (magma-ocean),
+    ///     "heat-flow-mw-m2" (stagnant-lid); null = keep current (mobile-plate uses plate/biome coloring).</item>
+    /// </list>
+    /// When <paramref name="showsPlateFeatures"/> changes, cap visibility is refreshed immediately.
+    /// </summary>
+    public void SetRegime(string regimeId, bool showsPlateFeatures, string? colorByField)
+    {
+        _currentRegimeId = regimeId;
+
+        bool visibilityChanged = showsPlateFeatures != _showsPlateFeatures;
+        _showsPlateFeatures = showsPlateFeatures;
+
+        // Apply colour-by-field override: map well-known field ids to shader colour modes.
+        // "surface-temperature-k" and "heat-flow-mw-m2" both use the elevation ramp for now
+        // (mode 0 = biome ramp); in a future task a dedicated thermal/flux ramp can be added.
+        // Mobile-plate (null) leaves the user's current color-mode choice intact.
+        if (colorByField is not null)
+        {
+            // Pre-plate regimes: always use biome ramp (mode 0) — the elevation field is flat
+            // (no tectonic features yet), giving a uniform-tinted globe that reads as "molten"
+            // or "cool lid". A dedicated thermal shader colour can be added in Plan 5.
+            SetColorMode(0);
+        }
+
+        if (visibilityChanged)
+            QueueCapVisibilityRefresh();
+    }
+
+    /// <summary>Schedules a cap-visibility refresh on the next available frame (deferred so it
+    /// runs after cap instances are built, even when called from <see cref="_Ready"/>).</summary>
+    public void QueueCapVisibilityRefresh()
+    {
+        _capVisibilityDirty = true;
+    }
+
+    /// <summary>
+    /// The current regime id (set by the transport each tick). Read-only from outside;
+    /// <see cref="SetRegime"/> is the write path.
+    /// </summary>
+    public string CurrentRegimeId => _currentRegimeId;
 
     /// <summary>Number of plate caps currently mounted (one watertight cap per non-empty plate).</summary>
     public int CapCount => _capInstances.Count;
