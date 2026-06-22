@@ -12,5 +12,9 @@ public interface ITimelineController
     void Play();
     void Pause();
     void SeekTo(long tick);
-    event Action<long>? TickChanged;   // fired when Tick advances (per frame while playing, or on seek)
+    event Action<long>? TickChanged;
+
+    void PushTick(long tick);
+    void RegisterPlayback(Action onPlay, Action onPause, Action<long> onSeek, Func<bool> checkPlaying);
+    void UnregisterPlayback();
 }
