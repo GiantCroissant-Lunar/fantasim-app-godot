@@ -82,6 +82,10 @@ public partial class TimelineFace : Control
         {
             _playPauseButton.Pressed -= OnPlayPausePressed;
         }
+        if (_lanesContainer is not null)
+        {
+            _lanesContainer.GuiInput -= OnLanesGuiInput;
+        }
         Resized -= OnLanesResized;
     }
 

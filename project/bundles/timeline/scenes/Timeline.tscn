@@ -23,7 +23,7 @@ text = "Play"
 
 [node name="StatusLabel" type="Label" parent="VBoxContainer/Header"]
 layout_mode = 2
-text = "paused : magma-ocean : 0 ka"
+text = "paused : magma-ocean : 0 jv"
 
 [node name="LanesContainer" type="Control" parent="VBoxContainer"]
 layout_mode = 2
