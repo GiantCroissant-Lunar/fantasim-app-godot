@@ -7,6 +7,8 @@ using FantaSim.Geosphere.Plate.Topology.Materializer;
 using FantaSim.World.TruthStream;
 using TimeDete.Time.Primitives;
 using UnifyCell;
+using UnifyGeometry.Spherical;
+using UnifyMaths;
 
 namespace FantaSim.App.World.Composition;
 
@@ -23,15 +25,29 @@ namespace FantaSim.App.World.Composition;
 /// </remarks>
 public sealed class OnsetRoster
 {
+    /// <summary>
+    /// The TruthStream identity used by LidFractureAtOnset / PlateTopologyEmitter when producing
+    /// the onset roster. These values MUST match the engine's plate-topology stream config
+    /// (TruthStreamIdentity used in fantasim-world's PlateTopologyEmitter.EmitRoster call path).
+    /// If the engine config changes, update all five parts here in lockstep.
+    /// </summary>
+    private static readonly TruthStreamIdentity PlateTopologyStreamIdentity =
+        new("default", "main", 2, "geo.plates.topology", "M0");
+
     private static readonly PlateTopologyState EmptyState = new();
 
     private readonly long _onsetTick;
     private readonly PlateTopologyState _stateAtOnset;
 
-    private OnsetRoster(long onsetTick, PlateTopologyState stateAtOnset)
+    // Geometry plates (same object as LidFractureAtOnset's seed list, upwelling order → IDs 0..N-1).
+    // Null before onset is observed; populated by Build from the fracture step.
+    private readonly IReadOnlyList<Plate> _seedPlates;
+
+    private OnsetRoster(long onsetTick, PlateTopologyState stateAtOnset, IReadOnlyList<Plate> seedPlates)
     {
         _onsetTick = onsetTick;
         _stateAtOnset = stateAtOnset;
+        _seedPlates = seedPlates;
     }
 
     /// <summary>
@@ -48,12 +64,22 @@ public sealed class OnsetRoster
     {
         var field = new ConvectionFieldGenerator(new ConvectionFieldConfig { Seed = worldSeed });
         var tess = new GeodesicSphereTessellation(tessellationFrequency);
-        var stream = new TruthStreamIdentity("default", "main", 2, "geo.plates.topology", "M0");
 
-        IReadOnlyList<ITruthEventDraft> drafts = LidFractureAtOnset.Fracture(tess, field, onsetTick, stream);
+        // Build the geometry seeds by mirroring LidFractureAtOnset's seed loop EXACTLY
+        // (upwelling order → plate IDs 0..N-1 match PlateTopologyState integer keys).
+        var structure = field.GetStructure(onsetTick);
+        var seedPlates = new List<Plate>(structure.Upwellings.Count);
+        for (int i = 0; i < structure.Upwellings.Count; i++)
+        {
+            var axis = NormalizeOrZero(structure.Upwellings[i].Position);
+            seedPlates.Add(new Plate(i, ToSpherical(axis), new EulerPole(axis, 0.0)));
+        }
+
+        IReadOnlyList<ITruthEventDraft> drafts = LidFractureAtOnset.Fracture(
+            tess, field, onsetTick, PlateTopologyStreamIdentity);
 
         var state = FoldToState(drafts);
-        return new OnsetRoster(onsetTick, state);
+        return new OnsetRoster(onsetTick, state, seedPlates);
     }
 
     /// <summary>
@@ -63,6 +89,33 @@ public sealed class OnsetRoster
     /// </summary>
     public PlateTopologyState PlatesAt(long tick) =>
         tick < _onsetTick ? EmptyState : _stateAtOnset;
+
+    /// <summary>
+    /// Returns the geometry <see cref="Plate"/> seed list at <paramref name="tick"/>:
+    /// an empty list before the onset tick; at/after onset, the N plates produced by
+    /// mirroring <c>LidFractureAtOnset</c>'s upwelling-seed loop exactly — same
+    /// upwelling order → same integer IDs 0..N-1 as <see cref="PlatesAt"/>'s plate keys.
+    /// These plates carry placeholder poles (<c>EulerPole(axis, 0.0)</c>); convection-driven
+    /// drift is roadmap §9.2.
+    /// </summary>
+    public IReadOnlyList<Plate> SeedPlatesAt(long tick) =>
+        tick < _onsetTick ? Array.Empty<Plate>() : _seedPlates;
+
+    // ---------------------------------------------------------------- seed-geometry helpers
+    // Mirrors LidFractureAtOnset's use of SphereMath (engine-internal) via public UnifyGeometry /
+    // UnifyMaths equivalents so the plate seeds are identical to what the engine produces.
+
+    /// <summary>Unit-length copy, or zero vector if near-zero. Mirrors SphereMath.NormalizeOrZero.</summary>
+    private static Vector3D NormalizeOrZero(Vector3D v)
+    {
+        double len = Math.Sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z);
+        return len < 1e-15 ? new Vector3D(0, 0, 0) : new Vector3D(v.X / len, v.Y / len, v.Z / len);
+    }
+
+    /// <summary>Spherical point for a cartesian unit vector. Mirrors SphereMath.ToSpherical
+    /// (which delegates to SphericalVectorInterop.ToSphericalPoint → SphericalOps.ToSphericalPoint).</summary>
+    private static SphericalPoint ToSpherical(Vector3D v)
+        => SphericalVectorInterop.ToSphericalPoint(v);
 
     // ---------------------------------------------------------------- fold adapter
 
