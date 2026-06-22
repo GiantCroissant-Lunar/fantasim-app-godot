@@ -9,8 +9,10 @@ assembly-versioning-scheme: MajorMinorPatch
 assembly-file-versioning-scheme: MajorMinorPatch
 tag-prefix: "[vV]"
 version-in-branch-pattern: "releases?(?:/|\\-)?(?<version>\\d+(?:\\.\\d+){0,3})"
-major-version-bump-message: "^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(?:\\([^n]+\\))?(?:!)?:"
-minor-version-bump-message: "^feat(?:\\([^)]+\\))?:"
+# Pre-1.0: pinned to 0.1.x from the v0.1.0 baseline tag; commits bump PATCH only.
+# Re-enable minor/major auto-bumps (or just tag v1.0.0) when ready to leave 0.1.
+# major-version-bump-message: "^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(?:\\([^)]+\\))?!:"
+# minor-version-bump-message: "^feat(?:\\([^)]+\\))?:"
 patch-version-bump-message: "^fix(?:\\([^)]+\\))?:"
 no-bump-message: "\\+semver:\\s*(none|skip)"
 commit-date-format: "yyyy-MM-dd"
