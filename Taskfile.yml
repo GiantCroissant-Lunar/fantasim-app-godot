@@ -111,10 +111,11 @@ tasks:
       - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "assist PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles/assist.pck'
 
   bundle:timeline:build:
-    desc: Build the App.Timeline hud-view assembly and stage its DLL into the bundle source dir
+    desc: Build the App.Timeline scene-tier assembly and stage its DLL into the bundle source dir
     cmds:
       - dotnet build project/plugins/App.Timeline/App.Timeline.csproj -c Debug -v q -nologo
-      - cp project/plugins/App.Timeline/bin/Debug/net8.0/FantaSim.App.Timeline.dll project/bundles/timeline/FantaSim.App.Timeline.dll
+      # App.Timeline is a Godot.NET.Sdk project: its DLL lands in .godot/mono/temp/bin (not bin/Debug/net8.0).
+      - cp project/plugins/App.Timeline/.godot/mono/temp/bin/Debug/FantaSim.App.Timeline.dll project/bundles/timeline/FantaSim.App.Timeline.dll
 
   bundle:timeline:
     desc: Build the timeline hud-view DLL + export the collectible timeline bundle PCK (manifest + dll, no scene)
