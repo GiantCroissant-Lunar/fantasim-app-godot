@@ -11,13 +11,22 @@ namespace FantaSim.App.Timeline;
 public sealed class TimelineViewSource : IViewSource
 {
     private readonly ITimelineController _ctl;
+    private string? _lastGeoRegimeId;
     private const double TrackWidth = 760.0;  // px the band row spans
     private const double MinBand = 6.0;        // floor so a tiny regime (magma ~0.8%) stays visible
 
     public TimelineViewSource(ITimelineController controller)
     {
         _ctl = controller ?? throw new ArgumentNullException(nameof(controller));
-        _ctl.TickChanged += _ => Changed?.Invoke();   // re-render on tick advance
+        _ctl.TickChanged += tick =>
+        {
+            var rid = _ctl.GeosphereSchedule.RegimeAt(tick)?.RegimeId;
+            if (rid != _lastGeoRegimeId)
+            {
+                _lastGeoRegimeId = rid;
+                Changed?.Invoke();
+            }
+        };
     }
 
     public string ViewId => "timeline";
@@ -54,7 +63,7 @@ public sealed class TimelineViewSource : IViewSource
             Children = new[]
             {
                 Button("btn-playpause", _ctl.IsPlaying ? "⏸ Pause" : "▶ Play", _ctl.IsPlaying ? "timeline.pause" : "timeline.play"),
-                Label("lbl-tick", $"tick {tick:N0}  ·  {geo}"),
+                Label("lbl-tick", $"{(_ctl.IsPlaying ? "▶ playing" : "Ⅱ paused")} · {geo}"),
             },
         };
     }
@@ -105,8 +114,8 @@ public sealed class TimelineViewSource : IViewSource
 
     public void Dispatch(string action, string? componentId)
     {
-        if (action == "timeline.play") _ctl.Play();
-        else if (action == "timeline.pause") _ctl.Pause();
+        if (action == "timeline.play") { _ctl.Play(); Changed?.Invoke(); }
+        else if (action == "timeline.pause") { _ctl.Pause(); Changed?.Invoke(); }
         else if (action.StartsWith("timeline.seek:", StringComparison.Ordinal)
                  && long.TryParse(action["timeline.seek:".Length..], out var t)) _ctl.SeekTo(t);
     }
