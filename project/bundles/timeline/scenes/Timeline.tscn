@@ -1,0 +1,76 @@
+[gd_scene format=3]
+
+[node name="Timeline" type="PanelContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = 44.0
+offset_right = -12.0
+offset_bottom = -12.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="."]
+layout_mode = 2
+
+[node name="Header" type="HBoxContainer" parent="VBoxContainer"]
+layout_mode = 2
+
+[node name="PlayPauseButton" type="Button" parent="VBoxContainer/Header"]
+layout_mode = 2
+text = "Play"
+
+[node name="StatusLabel" type="Label" parent="VBoxContainer/Header"]
+layout_mode = 2
+text = "paused : magma-ocean : 0 ka"
+
+[node name="LanesContainer" type="Control" parent="VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="LanesList" type="VBoxContainer" parent="VBoxContainer/LanesContainer"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="GeosphereLane" type="VBoxContainer" parent="VBoxContainer/LanesContainer/LanesList"]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="VBoxContainer/LanesContainer/LanesList/GeosphereLane"]
+layout_mode = 2
+text = "Geosphere"
+
+[node name="GeosphereRegimes" type="Control" parent="VBoxContainer/LanesContainer/LanesList/GeosphereLane"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+
+[node name="GeosphereTracks" type="VBoxContainer" parent="VBoxContainer/LanesContainer/LanesList/GeosphereLane"]
+layout_mode = 2
+
+[node name="AtmosphereLane" type="VBoxContainer" parent="VBoxContainer/LanesContainer/LanesList"]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="VBoxContainer/LanesContainer/LanesList/AtmosphereLane"]
+layout_mode = 2
+text = "Atmosphere"
+
+[node name="AtmosphereRegimes" type="Control" parent="VBoxContainer/LanesContainer/LanesList/AtmosphereLane"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+
+[node name="AtmosphereTracks" type="VBoxContainer" parent="VBoxContainer/LanesContainer/LanesList/AtmosphereLane"]
+layout_mode = 2
+
+[node name="PlayheadLine" type="ColorRect" parent="VBoxContainer/LanesContainer"]
+layout_mode = 0
+offset_right = 2.0
+color = Color(1, 1, 1, 1)
+
+[node name="AnimationPlayer" type="AnimationPlayer" parent="."]
+
+[node name="AnimationTree" type="AnimationTree" parent="."]
+anim_player = NodePath("../AnimationPlayer")
