@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>FantaSim.App.World.Composition</RootNamespace>
+    <ServiceArchiTier>T3</ServiceArchiTier>
+  </PropertyGroup>
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+  </ItemGroup>
+
+  <!--
+    Atmosphere layer files use FantaSim.Atmosphere.Genesis.Core / FantaSim.Atmosphere.Contracts.
+    SphereRegimeScheduleDefaults also uses them. These engine refs mirror the hybrid dev/package
+    approach from App.World (UseProjectReferences gate).
+  -->
+  <ItemGroup Condition="'$(UseProjectReferences)' != 'true'">
+    <PackageReference Include="GiantCroissant.FantaSim.Atmosphere.Genesis.Core" />
+    <PackageReference Include="GiantCroissant.FantaSim.Atmosphere.Contracts" />
+    <PackageReference Include="GiantCroissant.FantaSim.World.Shared.Contracts" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\Atmosphere.Genesis.Core\Atmosphere.Genesis.Core.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\Atmosphere\Atmosphere.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Shared\World.Shared.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <!-- NU1603: UnifyGeometry floor versions vs the 1.0.0 feed line; informational, non-fatal. -->
+    <NoWarn>$(NoWarn);NU1603</NoWarn>
+  </PropertyGroup>
+</Project>
