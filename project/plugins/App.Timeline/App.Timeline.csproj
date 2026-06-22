@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.Timeline</RootNamespace>
+    <AssemblyName>FantaSim.App.Timeline</AssemblyName>
+    <!--
+      Minimal csproj for Task 1 (TimelineModel). PluginArchi/ServiceArchi refs are added in Task 4
+      when the full plugin quartet (Activator/Activation/Bootstrap) is implemented.
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+  </ItemGroup>
+
+</Project>
