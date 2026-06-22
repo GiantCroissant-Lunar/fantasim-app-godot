@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection; // ServiceProvider
 
 namespace FantaSim.App.Timeline;
 
-/// <summary>The App.Timeline hud-view tier's live activation: owns its child scope; disposing tears it down.</summary>
+/// <summary>The App.Timeline scene-tier bundle's live activation: owns its child scope; disposing tears it down.</summary>
 internal sealed class TimelineActivation : ISceneActivation
 {
     private readonly ServiceProvider _provider;

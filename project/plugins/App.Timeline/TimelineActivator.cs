@@ -9,7 +9,7 @@ using ServiceArchi.Contracts;                   // IRegistry
 namespace FantaSim.App.Timeline;
 
 /// <summary>
-/// Activates the App.Timeline hud-view tier. It is scene-less (no tscn), forwarding the shared
+/// Activates the App.Timeline scene-tier bundle, forwarding the shared
 /// kernel (registry + logger factory) from the parent into a plain child ServiceCollection,
 /// registering <see cref="Bootstrap"/>, building the provider, and running Bootstrap.
 /// Mirrors <c>AssistActivator</c> exactly (scene-id "timeline" instead of "assist").

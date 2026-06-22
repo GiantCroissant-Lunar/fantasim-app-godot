@@ -27,7 +27,7 @@ public sealed class Bootstrap
     public Task RunAsync(CancellationToken cancellationToken = default)
     {
         _log.LogInformation(
-            "Timeline hud-view tier active — sharing the app kernel registry #{Kernel}.",
+            "Timeline scene-tier active — sharing the app kernel registry #{Kernel}.",
             RuntimeHelpers.GetHashCode(_kernel));
         return Task.CompletedTask;
     }
