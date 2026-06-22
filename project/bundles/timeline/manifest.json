@@ -1,0 +1,9 @@
+{
+  "bundleId": "timeline",
+  "displayName": "Timeline",
+  "version": "0.1.0",
+  "pluginAssembly": "FantaSim.App.Timeline.dll",
+  "metadata": {
+    "bundleType": "hud-view"
+  }
+}

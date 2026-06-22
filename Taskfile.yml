@@ -110,9 +110,22 @@ tasks:
       - mkdir -p {{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles
       - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "assist PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles/assist.pck'
 
+  bundle:timeline:build:
+    desc: Build the App.Timeline hud-view assembly and stage its DLL into the bundle source dir
+    cmds:
+      - dotnet build project/plugins/App.Timeline/App.Timeline.csproj -c Debug -v q -nologo
+      - cp project/plugins/App.Timeline/bin/Debug/net8.0/FantaSim.App.Timeline.dll project/bundles/timeline/FantaSim.App.Timeline.dll
+
+  bundle:timeline:
+    desc: Build the timeline hud-view DLL + export the collectible timeline bundle PCK (manifest + dll, no scene)
+    deps: [bundle:link, bundle:timeline:build]
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles
+      - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "timeline PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles/timeline.pck'
+
   bundles:
-    desc: Export all collectible bundle PCKs (stage + assist)
-    deps: [bundle:stage, bundle:assist]
+    desc: Export all collectible bundle PCKs (stage + assist + timeline)
+    deps: [bundle:stage, bundle:assist, bundle:timeline]
 
   bundle:install:
     desc: Copy exported bundle PCKs next to the exported app exe so the windowed app resolves them
@@ -123,6 +136,7 @@ tasks:
       - mkdir -p "{{.MACOS}}/bundles"
       - cp "{{.PCKS}}/stage.pck" "{{.MACOS}}/bundles/stage.pck"
       - cp "{{.PCKS}}/assist.pck" "{{.MACOS}}/bundles/assist.pck"
+      - cp "{{.PCKS}}/timeline.pck" "{{.MACOS}}/bundles/timeline.pck"
 
   run:exported:
     desc: Launch the exported WINDOWED app (with console) so bundle load is observable; never headless

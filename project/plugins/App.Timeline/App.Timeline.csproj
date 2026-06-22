@@ -5,18 +5,27 @@
     <RootNamespace>FantaSim.App.Timeline</RootNamespace>
     <AssemblyName>FantaSim.App.Timeline</AssemblyName>
     <!--
-      Minimal csproj for Task 1 (TimelineModel). PluginArchi/ServiceArchi refs are added in Task 4
-      when the full plugin quartet (Activator/Activation/Bootstrap) is implemented.
+      Scene-less collectible plugin bundle (hud-view tier), mirrors App.Assist.
+      The host does NOT reference this project; collectible-bundles.json excludes
+      FantaSim.App.Timeline from the shared policy so it loads into its own
+      collectible ALC. Talks to the resident app only via shared-kernel contracts
+      (IRegistry, IViewSource, ITimelineController, BoomHud.*, FantaSim.App.*).
     -->
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="BoomHud.Foundation" />
+    <ProjectReference Include="..\..\contracts\App.SceneFlow\App.SceneFlow.csproj" />
+    <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+    <ProjectReference Include="..\..\contracts\App.Ui\App.Ui.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
-    <ProjectReference Include="..\..\contracts\App.Ui\App.Ui.csproj" />
+    <PackageReference Include="BoomHud.Foundation" />
+    <PackageReference Include="GiantCroissant.ServiceArchi.Contracts" />
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" />
+    <PackageReference Include="GiantCroissant.PluginArchi.SourceGenerators" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
 </Project>

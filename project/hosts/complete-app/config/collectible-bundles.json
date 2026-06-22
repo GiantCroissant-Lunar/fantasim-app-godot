@@ -8,6 +8,10 @@
     {
       "bundleId": "assist",
       "pluginAssembly": "FantaSim.App.Assist.dll"
+    },
+    {
+      "bundleId": "timeline",
+      "pluginAssembly": "FantaSim.App.Timeline.dll"
     }
   ]
 }
