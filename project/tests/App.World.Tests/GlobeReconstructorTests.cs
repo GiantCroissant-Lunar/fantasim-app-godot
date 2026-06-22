@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using FantaSim.App.World.Composition;
 using FantaSim.App.World.Dto;
 using FantaSim.App.World.Globe;
 using Xunit;
@@ -101,6 +102,83 @@ public sealed class GlobeReconstructorTests
         Assert.Contains((byte)3, features); // Trench       — subduction down-going side
         Assert.Contains((byte)4, features); // Ridge        — mid-ocean spreading (2|3)
         Assert.Contains((byte)5, features); // Fault        — transform (1|2, 1|3)
+    }
+
+    // ── Onset-aware gating tests ──────────────────────────────────────────────────────────────────
+
+    private static GlobeReconstructor BuildOnsetReconstructor(out long onsetTick)
+    {
+        onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick; // 1e8 ticks
+        var roster = OnsetRoster.Build(worldSeed: 2024, onsetTick: onsetTick, tessellationFrequency: 3);
+        var schedule = SphereRegimeScheduleDefaults.GeosphereFor(onsetTick);
+        return GlobeReconstructor.FromOnsetRoster(roster, onsetTick, schedule, frequency: 3);
+    }
+
+    [Fact]
+    public void BuildGlobe_throws_on_onset_aware_instance()
+    {
+        var model = BuildOnsetReconstructor(out _);
+        Assert.Throws<InvalidOperationException>(() => model.BuildGlobe());
+    }
+
+    [Fact]
+    public void BuildGlobeAt_returns_lid_globe_before_onset()
+    {
+        var model = BuildOnsetReconstructor(out long onsetTick);
+        var snapshot = model.BuildGlobeAt(onsetTick - 1);
+
+        // Lid globe: no plates, all cells unassigned (plateId == -1).
+        Assert.Equal(0, snapshot.PlateCount);
+        Assert.All(snapshot.Cells, c => Assert.Equal(-1, c.PlateId));
+    }
+
+    [Fact]
+    public void BuildGlobeAt_returns_plate_globe_at_onset()
+    {
+        var model = BuildOnsetReconstructor(out long onsetTick);
+        var snapshot = model.BuildGlobeAt(onsetTick);
+
+        Assert.True(snapshot.PlateCount >= 3,
+            $"Expected >= 3 plates at onset; got {snapshot.PlateCount}");
+    }
+
+    [Fact]
+    public void RunCrustEvolution_returns_empty_state_before_onset_and_real_state_after()
+    {
+        var model = BuildOnsetReconstructor(out long onsetTick);
+        // One pre-onset tick + one post-onset tick well into the mobile-plate regime.
+        long preTick  = onsetTick - 1;
+        long postTick = onsetTick + 8 * 100_000; // 8 Ma after onset
+
+        var run = model.RunCrustEvolution(new long[] { preTick, postTick });
+
+        // Cell centers are always populated (pure geometry).
+        Assert.NotEmpty(run.CellCenters);
+        Assert.Equal(run.CellCount, run.CellCenters.Count);
+
+        // Pre-onset tick: state dict present but empty (no crust activity before plates exist).
+        Assert.True(run.StateByTick.ContainsKey(preTick),
+            "StateByTick must include the pre-onset key");
+        Assert.Empty(run.StateByTick[preTick]);
+
+        // Post-onset tick: state dict present and non-empty (crust pipeline ran for active ticks).
+        Assert.True(run.StateByTick.ContainsKey(postTick),
+            "StateByTick must include the post-onset key");
+        Assert.NotEmpty(run.StateByTick[postTick]);
+    }
+
+    [Fact]
+    public void RunCrustEvolution_legacy_path_returns_nonempty_state_at_tick_zero()
+    {
+        // The parameterless (legacy) constructor has no gating — pipeline always runs.
+        var model = new GlobeReconstructor(frequency: 3);
+        long eightMa = 8 * 100_000;
+
+        var run = model.RunCrustEvolution(new long[] { 0L, eightMa });
+
+        Assert.Equal(2, run.StateByTick.Count);
+        // Even at tick 0 the legacy path runs the pipeline (no gating).
+        Assert.True(run.StateByTick.ContainsKey(0L));
     }
 
     private static void AssertUnitLength(GlobeVec3 v)

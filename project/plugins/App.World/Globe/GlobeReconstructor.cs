@@ -163,10 +163,28 @@ public sealed class GlobeReconstructor
     /// <summary>
     /// Static base geometry snapshot: tessellation cells + plates. Plate IDs are assigned from
     /// the geometry topology; plate poles are included for the GPU rotation shader.
+    /// This is the <b>legacy / non-onset path</b> only — valid when <c>_regimeSchedule == null</c>
+    /// (constructed via the parameterless constructor). On onset-aware instances constructed via
+    /// <see cref="FromOnsetRoster"/>, calling this method throws <see cref="InvalidOperationException"/>:
+    /// use <see cref="BuildGlobeAt"/> instead so onset/regime gating is applied.
     /// This overload ignores regime/onset gating (base geometry is always the full N-plate mesh).
     /// Use <see cref="ClassifyCellsAt"/> to get tick-gated boundary feature output.
     /// </summary>
     public WorldGlobeSnapshot BuildGlobe()
+    {
+        if (_regimeSchedule is not null)
+            throw new InvalidOperationException(
+                "BuildGlobe() is the legacy/non-onset path and must not be called on an onset-aware " +
+                "GlobeReconstructor (one constructed via FromOnsetRoster). " +
+                "Call BuildGlobeAt(tick) instead so onset/regime gating is applied.");
+
+        return BuildGlobeCore();
+    }
+
+    // Shared plate-globe build logic: builds the full N-cap WorldGlobeSnapshot from
+    // the current _tessellation, _plates, and _topology. Called by BuildGlobe() (legacy
+    // path, after the onset guard) and by BuildGlobeAt() (onset path, when ShowsPlateFeatures = true).
+    private WorldGlobeSnapshot BuildGlobeCore()
     {
         int n = _tessellation.CellCount;
         var cells = new List<GlobeCell>(n);
@@ -218,7 +236,7 @@ public sealed class GlobeReconstructor
             return new WorldGlobeSnapshot(
                 _frequency, n, 0, ticksPerAnchor, cells, new List<GlobePlate>());
         }
-        return BuildGlobe();
+        return BuildGlobeCore();
     }
 
     /// <summary>
@@ -323,21 +341,44 @@ public sealed class GlobeReconstructor
     {
         ArgumentNullException.ThrowIfNull(snapshotTicks);
 
-        long endTick = 0;
-        foreach (var t in snapshotTicks) if (t > endTick) endTick = t;
-
-        var result = CrustPipeline.RunAsync(
-            _tessellation, _plates, CrustInitRecipe.Continental(0, 1),
-            startTick: 0, endTick: endTick,
-            snapshotTicks: snapshotTicks,
-            rates: DefaultRates()).GetAwaiter().GetResult();
-
         int n = _tessellation.CellCount;
         var centers = new GlobeVec3[n];
         for (int cell = 0; cell < n; cell++)
             centers[cell] = ToVec3(_tessellation.GetCenter(new GeodesicCoord(cell, _frequency)));
 
-        return new CrustStateRun(n, result.StateByTick, centers);
+        // Ticks that are gated out (pre-onset or non-plate regime) get an empty state dict — same
+        // gating contract as RunCrustFeatures. Only active ticks are passed to the pipeline.
+        var byTick = new Dictionary<long, IReadOnlyDictionary<int, CellCrustState>>(snapshotTicks.Count);
+        var activeTicks = new List<long>();
+        var emptyState = (IReadOnlyDictionary<int, CellCrustState>)new Dictionary<int, CellCrustState>();
+        foreach (var tick in snapshotTicks)
+        {
+            if (!ShowsPlateFeatures(tick))
+                byTick[tick] = emptyState;
+            else
+                activeTicks.Add(tick);
+        }
+
+        if (activeTicks.Count == 0)
+            return new CrustStateRun(n, byTick, centers);
+
+        long endTick = 0;
+        foreach (var t in activeTicks) if (t > endTick) endTick = t;
+
+        var result = CrustPipeline.RunAsync(
+            _tessellation, _plates, CrustInitRecipe.Continental(0, 1),
+            startTick: 0, endTick: endTick,
+            snapshotTicks: activeTicks,
+            rates: DefaultRates()).GetAwaiter().GetResult();
+
+        foreach (var tick in activeTicks)
+        {
+            byTick[tick] = result.StateByTick.TryGetValue(tick, out var state)
+                ? state
+                : emptyState;
+        }
+
+        return new CrustStateRun(n, byTick, centers);
     }
 
     private static CrustEvolutionRates DefaultRates()

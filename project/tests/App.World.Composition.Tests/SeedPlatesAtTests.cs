@@ -46,7 +46,7 @@ public class SeedPlatesAtTests
         var roster = OnsetRoster.Build(worldSeed: 2024, onsetTick: onset, tessellationFrequency: 3);
 
         var at = roster.SeedPlatesAt(onset);
-        var after = roster.SeedPlatesAt(onset + 50_000_000);
+        var after = roster.SeedPlatesAt(onset + 50_000_000); // well into mobile-plate regime, far after onset
 
         // SeedPlatesAt is time-stable — same list at and after onset.
         Assert.Equal(at.Count, after.Count);
