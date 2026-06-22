@@ -11,10 +11,9 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <!-- Default consumption mode. false = published packages from the local feed (reproducible,
-         release/CI). Set true for project references to fantasim-world `main` during active engine
-         co-development. Phase 0 gated to 0.1.4 packages (rad/tick); set true again for Phase 1+ co-dev. -->
-    <UseProjectReferences Condition="'$(UseProjectReferences)' == ''">false</UseProjectReferences>
+    <!-- Default consumption mode. true = project references to fantasim-world `main` (codev, feat/app-regimes-onset-timeline).
+         Set false for published packages (release/CI reproducible path; package-mode bump recorded in Directory.Packages.props). -->
+    <UseProjectReferences Condition="'$(UseProjectReferences)' == ''">true</UseProjectReferences>
     <PlateProjectsRoot Condition="'$(PlateProjectsRoot)' == ''">/Users/apprenticegc/Work/lunar-horse/plate-projects</PlateProjectsRoot>
     <YokanProjectsRoot Condition="'$(YokanProjectsRoot)' == ''">/Users/apprenticegc/Work/lunar-horse/yokan-projects</YokanProjectsRoot>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>

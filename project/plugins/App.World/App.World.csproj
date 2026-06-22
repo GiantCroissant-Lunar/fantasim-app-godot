@@ -79,12 +79,26 @@
   -->
   <ItemGroup Condition="'$(UseProjectReferences)' != 'true'">
     <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Crust" />
-    <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Plate.Topology" />
+    <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Plate.Topology.Generation" />
+    <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Plate.Topology.Contracts" />
+    <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Asthenosphere.Convection" />
+    <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Asthenosphere" />
+    <PackageReference Include="GiantCroissant.FantaSim.Atmosphere.Genesis.Core" />
+    <PackageReference Include="GiantCroissant.FantaSim.Atmosphere.Contracts" />
+    <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Plate.Topology.Materializer" />
     <PackageReference Include="GiantCroissant.FantaSim.World.Shared.Contracts" />
   </ItemGroup>
+  <!-- engine: post-Plan-1-3 + atmosphere (codev) -->
   <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
     <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\Geosphere.Crust\Geosphere.Crust.csproj" />
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\Geosphere.Plate.Topology\Geosphere.Plate.Topology.csproj" />
+    <!-- Renamed: Geosphere.Plate.Topology -> Geosphere.Plate.Topology.Generation (Plan 1-3) -->
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\Geosphere.Plate.Topology.Generation\Geosphere.Plate.Topology.Generation.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\Geosphere.Plate.Topology\Geosphere.Plate.Topology.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\Geosphere.Plate.Topology.Materializer\Geosphere.Plate.Topology.Materializer.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\Geosphere.Asthenosphere.Convection\Geosphere.Asthenosphere.Convection.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\Geosphere.Asthenosphere\Geosphere.Asthenosphere.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\Atmosphere.Genesis.Core\Atmosphere.Genesis.Core.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\Atmosphere\Atmosphere.csproj" />
     <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Shared\World.Shared.csproj" />
     <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Fields\World.Fields.csproj" />
     <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\World.Fields.Core\World.Fields.Core.csproj" />
