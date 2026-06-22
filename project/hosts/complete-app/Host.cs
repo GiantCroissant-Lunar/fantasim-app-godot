@@ -155,6 +155,13 @@ public partial class Host : Node
             // through stage's child provider, across two collectible ALCs (same kernel hash in the log).
             var assist = await sceneFlow.EnterAsync(new FantaSim.App.SceneFlow.SceneRequest("assist", "stage"));
             GD.Print($"[Host] entered scene '{assist.SceneId}' under '{assist.ParentSceneId}'; bundleLoaded={resource.IsLoaded("assist")}; activeScenes={sceneFlow.ActiveScenes.Count}");
+
+            // Enter the timeline bundle under stage. ITimelineController is already registered
+            // (ComposeWorldView ran sync in _Ready before this deferred call). SceneFlowProvider
+            // loads the PCK first, then calls ActivateAsync — so IsLoaded("timeline") is true
+            // by the time TimelinePlugin.InitializeAsync resolves the controller and mounts the view.
+            var timeline = await sceneFlow.EnterAsync(new FantaSim.App.SceneFlow.SceneRequest("timeline", "stage"));
+            GD.Print($"[Host] entered scene '{timeline.SceneId}' under '{timeline.ParentSceneId}'; bundleLoaded={resource.IsLoaded("timeline")}; activeScenes={sceneFlow.ActiveScenes.Count}");
         }
         catch (Exception ex)
         {
@@ -329,6 +336,16 @@ public partial class Host : Node
         var transport = new RegimeTimelineTransport(view, schedule, maxTransportTick);
         GetTree().Root.CallDeferred("add_child", transport);
 
+        // Build the atmosphere schedule (same onset tick) so the timeline HUD can show both spheres.
+        var atmosphereSchedule = SphereRegimeScheduleDefaults.AtmosphereFor(onsetTick);
+
+        // Register the resident ITimelineController adapter. Must happen here (sync, before any
+        // deferred EnterAsync calls) so the timeline bundle can resolve it during ActivateAsync.
+        var controller = new FantaSim.App.World.Seam.TimelineController(
+            transport, view, schedule, atmosphereSchedule, maxTransportTick);
+        transport.TickObserver = _ => controller.PumpTick();
+        composition.Bootstrap.Registry.Register<FantaSim.App.World.Composition.ITimelineController>(controller);
+
         // Seed the initial regime so GlobeView starts in the correct state before the first tick fires.
         var initialRegime = schedule.RegimeAt(0);
         if (initialRegime is not null)
@@ -336,7 +353,7 @@ public partial class Host : Node
 
         GD.Print($"[Host] World view: globe mounted ({snapshot.CellCount} cells, {snapshot.PlateCount} plates, " +
                  $"{snapshotTicks.Count} feature snapshots, elevationFeed={(elevationsAt is not null)}, watertight caps, " +
-                 $"onset={onsetTick:N0}, seed={WorldSeed}, freq={TessellationFrequency})");
+                 $"onset={onsetTick:N0}, seed={WorldSeed}, freq={TessellationFrequency}); ITimelineController registered");
     }
 
     // Sub-project B (ECS cell model + elevation derivation): model each globe cell as an ECS entity
