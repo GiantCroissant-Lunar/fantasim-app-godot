@@ -2,8 +2,18 @@
   "bundleId": "timeline",
   "displayName": "Timeline",
   "version": "0.1.0",
+  "entryScene": "scenes/Timeline.tscn",
   "pluginAssembly": "FantaSim.App.Timeline.dll",
+  "scenes": [
+    "scenes/Timeline.tscn"
+  ],
   "metadata": {
-    "bundleType": "hud-view"
-  }
+    "bundleType": "scene-tier"
+  },
+  "residentScripts": [
+    {
+      "nodePath": ".",
+      "residentType": "FantaSim.App.Timeline.TimelineFace"
+    }
+  ]
 }
