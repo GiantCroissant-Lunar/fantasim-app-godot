@@ -182,17 +182,10 @@ public sealed class BundleHost
 
         try
         {
-            var entryScene = manifest?.EntryScene;
-            if (!string.IsNullOrWhiteSpace(entryScene))
-            {
-                var scene = _sceneHost.InstantiateScene(bundleResPath.PathJoin(entryScene), manifest);
-                if (scene is not null)
-                {
-                    _sceneHost.RegisterScene(bundleId, scene);
-                    sceneRegistered = true;
-                }
-            }
-
+            // Load the bundle's managed plugin assembly into its collectible ALC BEFORE instantiating
+            // the entry scene. The scene's resident-script bindings (manifest residentScripts) resolve a
+            // bundle-local type (e.g. FantaSim.App.Timeline.TimelineFace), which is only discoverable once
+            // its assembly is loaded -- so the assembly must come first or the binding silently no-ops.
             if (!string.IsNullOrWhiteSpace(pluginAssembly))
             {
                 var tempPath = _extractor.ExtractAllToTemp(bundleResPath, pluginAssembly);
@@ -204,6 +197,17 @@ public sealed class BundleHost
                         await _pluginHost.AddGroupAsync(bundleId, manifest?.DisplayName ?? bundleId, pluginTempDir).ConfigureAwait(false);
                         pluginGroupAdded = true;
                     }
+                }
+            }
+
+            var entryScene = manifest?.EntryScene;
+            if (!string.IsNullOrWhiteSpace(entryScene))
+            {
+                var scene = _sceneHost.InstantiateScene(bundleResPath.PathJoin(entryScene), manifest);
+                if (scene is not null)
+                {
+                    _sceneHost.RegisterScene(bundleId, scene);
+                    sceneRegistered = true;
                 }
             }
 
