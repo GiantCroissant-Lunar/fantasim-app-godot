@@ -147,6 +147,13 @@ public sealed class GlobeReconstructor
     }
 
     /// <summary>
+    /// The first mobile-plate tick: plate features (boundary lines, crust evolution) are emitted
+    /// at/after this tick. Legacy instances (parameterless constructor) return <c>0</c> — they
+    /// have no onset gating and treat all ticks as post-onset.
+    /// </summary>
+    public long OnsetTick => _onsetTick;
+
+    /// <summary>
     /// True when plate features (boundary lines, crust features) should be emitted at
     /// <paramref name="tick"/>. False before onset or in pre-plate regimes (magma-ocean,
     /// stagnant-lid). When false, <c>ClassifyCellsAt</c> returns all-zero (interior) and

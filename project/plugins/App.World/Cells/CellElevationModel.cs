@@ -164,7 +164,7 @@ public sealed class CellElevationModel : IDisposable
         ArgumentNullException.ThrowIfNull(reconstructor);
         ArgumentNullException.ThrowIfNull(snapshotTicks);
 
-        var globe = reconstructor.BuildGlobe();
+        var globe = reconstructor.BuildGlobeAt(reconstructor.OnsetTick);
         var plateIdByCell = new int[globe.CellCount];
         foreach (var c in globe.Cells)
             if (c.CellId >= 0 && c.CellId < plateIdByCell.Length)

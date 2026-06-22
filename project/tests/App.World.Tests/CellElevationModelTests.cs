@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using FantaSim.App.World.Cells;
+using FantaSim.App.World.Composition;
 using FantaSim.App.World.Dto;
 using FantaSim.App.World.Globe;
 using FantaSim.Geosphere.Crust;
@@ -100,5 +101,46 @@ public sealed class CellElevationModelTests
         Assert.True(elevations.Max() > 0, $"expected uplifted land, max={elevations.Max()}");
         Assert.True(elevations.Min() < 0, $"expected ocean below sea level, min={elevations.Min()}");
         Assert.True(elevations.Max() - elevations.Min() > 1.0, "expected a non-trivial relief range");
+    }
+
+    // ── Regression: Build must not call BuildGlobe() on an onset-aware reconstructor (PLAN4-TASK4) ──
+    // Before Fix 2 (BuildGlobeAt), CellElevationModel.Build called reconstructor.BuildGlobe() which
+    // throws InvalidOperationException on onset-aware instances (constructed via FromOnsetRoster).
+    // This test fails without Fix 2 and passes after.
+
+    [Fact]
+    public void Build_with_onset_reconstructor_does_not_throw_and_yields_cells()
+    {
+        // Mirror the exact construction used by Host.ComposeCellElevation.
+        long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        var roster = OnsetRoster.Build(worldSeed: 2024, onsetTick: onsetTick, tessellationFrequency: 3);
+        var schedule = SphereRegimeScheduleDefaults.GeosphereDefault;
+        var reconstructor = GlobeReconstructor.FromOnsetRoster(roster, onsetTick, schedule, frequency: 3);
+
+        // Verify the new OnsetTick accessor (Fix 1).
+        Assert.Equal(onsetTick, reconstructor.OnsetTick);
+
+        // A few post-onset snapshot ticks (8 Ma + 16 Ma past onset).
+        long ma8  = onsetTick + 8  * 100_000L;
+        long ma16 = onsetTick + 16 * 100_000L;
+        var snapshotTicks = new List<long> { ma8, ma16 };
+
+        // Fix 2: Build now calls BuildGlobeAt(reconstructor.OnsetTick) instead of BuildGlobe(),
+        // so this must NOT throw InvalidOperationException.
+        CellElevationModel? model = null;
+        var ex = Record.Exception(() => model = CellElevationModel.Build(reconstructor, snapshotTicks));
+        Assert.Null(ex);
+        Assert.NotNull(model);
+
+        using (model)
+        {
+            // Must have at least one cell (the N-plate globe was built correctly at onset).
+            Assert.True(model!.CellCount > 0, $"Expected cells > 0, got {model.CellCount}");
+
+            // Elevation read-out must not throw; array length must match cell count.
+            model.UpdateForTick(ma16);
+            var elevations = model.GetElevations();
+            Assert.Equal(model.CellCount, elevations.Length);
+        }
     }
 }

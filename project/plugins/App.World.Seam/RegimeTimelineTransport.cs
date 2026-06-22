@@ -186,10 +186,12 @@ public sealed partial class RegimeTimelineTransport : Node
 
         var library = new AnimationLibrary();
 
-        // A 0.5 s looping scale-pulse on the transport node itself (subtle breathing effect).
-        library.AddAnimation(AnimIdle,    BuildPulseAnimation(length: 0.8f, loop: true,  scaleA: Vector3.One, scaleB: Vector3.One));
-        library.AddAnimation(AnimPlaying, BuildPulseAnimation(length: 0.6f, loop: true,  scaleA: Vector3.One, scaleB: new Vector3(1.008f, 1.008f, 1.008f)));
-        library.AddAnimation(AnimScrub,   BuildPulseAnimation(length: 0.3f, loop: false, scaleA: new Vector3(1.02f, 1.02f, 1.02f), scaleB: Vector3.One));
+        // Trackless placeholder animations (idle/playing/scrub): the transport root is a Node,
+        // not a Node3D, so Scale3D tracks on "." would fail at runtime with AnimationMixer errors.
+        // The state machine + crossfade logic still works — only the track contents are omitted.
+        library.AddAnimation(AnimIdle,    BuildEmptyAnimation(length: 0.8f, loop: true));
+        library.AddAnimation(AnimPlaying, BuildEmptyAnimation(length: 0.6f, loop: true));
+        library.AddAnimation(AnimScrub,   BuildEmptyAnimation(length: 0.3f, loop: false));
 
         _animationPlayer.AddAnimationLibrary(new StringName(string.Empty), library);
 
@@ -237,21 +239,18 @@ public sealed partial class RegimeTimelineTransport : Node
             _playback.Travel(state, reset);
     }
 
-    /// <summary>Simple scale-pulse animation on the transport node (subtle, not intrusive).</summary>
-    private static Animation BuildPulseAnimation(float length, bool loop, Vector3 scaleA, Vector3 scaleB)
+    /// <summary>
+    /// Empty (trackless) animation used for the Idle/Playing/Scrub states. The transport root
+    /// is a <see cref="Node"/>, not a <see cref="Node3D"/>, so Scale3D / transform tracks
+    /// targeting <c>"."</c> would produce <c>AnimationMixer: track does not point to Node3D</c>
+    /// errors at runtime. The state machine + crossfade timing still work without any tracks.
+    /// </summary>
+    private static Animation BuildEmptyAnimation(float length, bool loop)
     {
-        var anim = new Animation
+        return new Animation
         {
             Length = length,
             LoopMode = loop ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None,
         };
-
-        int track = anim.AddTrack(Animation.TrackType.Scale3D);
-        anim.TrackSetPath(track, new NodePath("."));
-        anim.TrackSetInterpolationType(track, Animation.InterpolationType.Cubic);
-        anim.ScaleTrackInsertKey(track, 0.0, scaleA);
-        anim.ScaleTrackInsertKey(track, length * 0.5, scaleB);
-        anim.ScaleTrackInsertKey(track, length, scaleA);
-        return anim;
     }
 }
