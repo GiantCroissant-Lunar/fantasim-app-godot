@@ -17,6 +17,32 @@ namespace FantaSim.App.World.Globe;
 /// <see cref="BuildGlobe"/> (static base geometry for the mesh) and <see cref="ClassifyCellsAt"/>
 /// (per-cell boundary classification re-derived at a tick — the Phase 1 reclassify step). No Godot, no IO.
 /// </summary>
+// PLAN4-TASK3: Step 5 integration — plates born at onset, not Genesis.
+//
+// WHAT NEEDS WIRING:
+//   1. OnsetRoster.Build(worldSeed, onsetTick, tessellationFrequency) produces the
+//      PlateTopologyState (event-fold result) — use PlatesAt(tick) to get the N-plate state
+//      at/after onset and an empty state before it.
+//
+//   2. GlobeReconstructor currently pulls plates from DefaultPlates() (a hardcoded 4-plate
+//      Genesis arrangement). It needs to instead receive the geometry Plate[] from
+//      LidFractureAtOnset — NOT from PlateTopologyState.Plates (those are PlateRecord IDs only,
+//      no SphericalPoint/EulerPole).
+//
+//      Recommended approach: expose a second static Build overload on OnsetRoster that returns
+//      both the PlateTopologyState AND the geometry IReadOnlyList<Plate> from the fracture step
+//      (before the emit/fold). GlobeReconstructor would accept those geometry plates in place of
+//      DefaultPlates(), then call PlatesAt(tick) for the event-fold state.
+//
+//   3. Regime gating: feed RegimeAt(currentTick).ShowsPlateFeatures to BuildGlobe /
+//      ClassifyCellsAt — return empty byte[] (all interior) when ShowsPlateFeatures=false.
+//
+//   4. GlobePlateSurfaces / Cartography.Globe watertight-surface path also reads _plates;
+//      that path must use the same onset-derived geometry plates once wired.
+//
+// Until this wiring lands, GlobeReconstructor continues to use DefaultPlates() (Genesis-time
+// hardcoded arrangement). Task 5 (windowed-app verify) is the integration checkpoint.
+
 public sealed class GlobeReconstructor
 {
     // Authored spin in rad/Ma; converted to the engine's rad/tick AngularRate at the boundary.
