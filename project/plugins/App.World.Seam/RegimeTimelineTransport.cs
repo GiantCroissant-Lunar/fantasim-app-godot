@@ -57,6 +57,7 @@ public sealed partial class RegimeTimelineTransport : Node
 
     private bool _isPlaying;
     private double _tickAccum;     // sub-tick accumulator for smooth advance
+    private bool _running = true;  // set to false in _ExitTree so _Process stops during teardown
 
     /// <summary>
     /// Construct the transport.
@@ -117,8 +118,19 @@ public sealed partial class RegimeTimelineTransport : Node
                  $"onsetTick={SphereRegimeScheduleDefaults.PlateOnsetTick:N0}");
     }
 
+    public override void _ExitTree()
+    {
+        // Stop driving globe updates once this node is leaving the tree (e.g. CoordinatedShutdown
+        // disposes the ECS world before Godot has finished tearing down all nodes). Setting
+        // _running = false here means _Process will early-return on any remaining frames rather
+        // than calling SetTick against a disposed ArchSystemRunner.
+        _running = false;
+        SetProcess(false);
+    }
+
     public override void _Process(double delta)
     {
+        if (!_running) return;
         if (!_isPlaying) return;
 
         // Advance tick accumulator.

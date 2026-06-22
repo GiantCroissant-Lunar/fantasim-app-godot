@@ -146,6 +146,11 @@ void light() {
     private ImageTexture? _typeTexture;
     private long _tick;
 
+    // Set permanently to true the first time the elevation source throws ObjectDisposedException
+    // (i.e. the ECS world was disposed during shutdown). Once set, UpdateCaps skips the fetch
+    // silently — no further PushWarning spam for a condition that is expected at teardown.
+    private bool _elevationSourceUnavailable;
+
     // Regime state — set by RegimeTimelineTransport (or SetTick callers) via SetRegime.
     // When _showsPlateFeatures = false (magma-ocean / stagnant-lid), cap geometry is hidden and
     // the colour-mode shows the regime's field (surface-temperature or heat-flow).
@@ -354,9 +359,17 @@ void light() {
         if (_capRoot is null) return;
 
         double[] elevByCell;
-        if (_elevationsAt is not null)
+        if (_elevationsAt is not null && !_elevationSourceUnavailable)
         {
             try { elevByCell = _elevationsAt(tick); }
+            catch (ObjectDisposedException)
+            {
+                // The ECS world (ArchSystemRunner) was disposed before Godot finished tearing down
+                // this node — expected during CoordinatedShutdown. Suppress all further fetches and
+                // warnings for this condition; the globe is being destroyed anyway.
+                _elevationSourceUnavailable = true;
+                return;
+            }
             catch (Exception ex)
             {
                 GD.PushWarning($"[GlobeView] elevation fetch failed: {ex.Message}");
