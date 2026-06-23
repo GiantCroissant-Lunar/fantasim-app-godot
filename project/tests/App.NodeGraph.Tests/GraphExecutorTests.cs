@@ -195,3 +195,115 @@ public class ReadOnlyGraphSourceTests
             () => source.ApplyEditAsync(new GraphEdit.RemoveNode("n")));
     }
 }
+
+public class EditableGraphSourceTests
+{
+    private static GraphNode Node(string id, string fn, params (string Key, JsonNode? Value)[] p)
+    {
+        var obj = new JsonObject();
+        foreach (var (k, v) in p)
+            obj[k] = v?.DeepClone();
+        return new GraphNode(id, fn, obj);
+    }
+
+    private static GraphDocument BaseDocument() => new(
+        Nodes: new[] { Node("source", "source.fn"), Node("sink", "sink.fn") },
+        Wires: new[] { new GraphWire("source", "out", "sink", "input") },
+        SinkNodeId: "sink");
+
+    [Fact]
+    public async Task ApplyEditAsync_mutates_document_and_raises_changed_after_successful_edits()
+    {
+        var source = new EditableGraphSource("world", BaseDocument());
+        var changes = 0;
+        source.Changed += () => changes++;
+
+        await source.ApplyEditAsync(new GraphEdit.AddNode(Node("middle", "middle.fn", ("seed", 12))));
+        await source.ApplyEditAsync(new GraphEdit.RemoveWire("source", "out", "sink", "input"));
+        await source.ApplyEditAsync(new GraphEdit.AddWire(new GraphWire("source", "out", "middle", "input")));
+        await source.ApplyEditAsync(new GraphEdit.AddWire(new GraphWire("middle", "out", "sink", "input")));
+        await source.ApplyEditAsync(new GraphEdit.SetParam("middle", "seed", 99));
+
+        Assert.Equal(5, changes);
+        Assert.Equal(3, source.Document.Nodes.Count);
+        Assert.Equal(2, source.Document.Wires.Count);
+        var middle = source.Document.Nodes.Single(node => node.Id == "middle");
+        Assert.Equal(99, middle.Params["seed"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task RemoveNode_removes_incident_wires()
+    {
+        var source = new EditableGraphSource("world", BaseDocument());
+
+        await source.ApplyEditAsync(new GraphEdit.AddNode(Node("middle", "middle.fn")));
+        await source.ApplyEditAsync(new GraphEdit.RemoveWire("source", "out", "sink", "input"));
+        await source.ApplyEditAsync(new GraphEdit.AddWire(new GraphWire("source", "out", "middle", "input")));
+        await source.ApplyEditAsync(new GraphEdit.AddWire(new GraphWire("middle", "out", "sink", "input")));
+        await source.ApplyEditAsync(new GraphEdit.RemoveNode("middle"));
+
+        Assert.DoesNotContain(source.Document.Nodes, node => node.Id == "middle");
+        Assert.Empty(source.Document.Wires);
+    }
+
+    [Fact]
+    public async Task ApplyEditAsync_rejects_removing_sink_without_raising_changed()
+    {
+        var source = new EditableGraphSource("world", BaseDocument());
+        var changes = 0;
+        source.Changed += () => changes++;
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            source.ApplyEditAsync(new GraphEdit.RemoveNode("sink")));
+
+        Assert.Equal(0, changes);
+        Assert.Equal("sink", source.Document.SinkNodeId);
+        Assert.Contains(source.Document.Nodes, node => node.Id == "sink");
+    }
+
+    [Fact]
+    public async Task ApplyEditAsync_rejects_second_data_wire_to_same_input()
+    {
+        var source = new EditableGraphSource("world", BaseDocument());
+        await source.ApplyEditAsync(new GraphEdit.AddNode(Node("other", "other.fn")));
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            source.ApplyEditAsync(new GraphEdit.AddWire(new GraphWire("other", "out", "sink", "input"))));
+
+        Assert.Single(source.Document.Wires);
+    }
+
+    [Fact]
+    public async Task ApplyEditAsync_rejects_cycle()
+    {
+        var source = new EditableGraphSource("world", BaseDocument());
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            source.ApplyEditAsync(new GraphEdit.AddWire(new GraphWire("sink", "out", "source", "input"))));
+
+        Assert.Single(source.Document.Wires);
+    }
+
+    [Fact]
+    public async Task ApplyEditAsync_clones_param_values()
+    {
+        var source = new EditableGraphSource("world", BaseDocument());
+        var value = new JsonObject { ["name"] = "before" };
+
+        await source.ApplyEditAsync(new GraphEdit.SetParam("source", "config", value));
+        value["name"] = "after";
+
+        Assert.Equal("before", source.Document.Nodes[0].Params["config"]!["name"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void Constructor_rejects_invalid_documents()
+    {
+        var graph = new GraphDocument(
+            Nodes: new[] { Node("n", "fn"), Node("n", "fn") },
+            Wires: Array.Empty<GraphWire>(),
+            SinkNodeId: "n");
+
+        Assert.Throws<ArgumentException>(() => new EditableGraphSource("bad", graph));
+    }
+}
