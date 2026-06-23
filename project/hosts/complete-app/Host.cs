@@ -26,6 +26,7 @@ public partial class Host : Node
     // Sub-project B: the Godot-free ECS cell model that derives per-cell elevation. Owned here so its
     // lifetime matches the host; the relief render (sub-project C) reads GetElevations() off it.
     private FantaSim.App.World.Cells.CellElevationModel? _cellElevation;
+    private WorldGenerationRenderOptions? _worldRenderOptions;
     private WorldGenerationTimelineGraphBindingSlot? _worldGraphTimelineBinding;
     private FantaSim.App.Ui.Seam.ViewRenderer? _worldGraphRenderer;
     private FantaSim.App.Ui.NodeGraph.NodeGraphViewSource? _worldGraphView;
@@ -441,19 +442,14 @@ public partial class Host : Node
     // the GlobeView seam turns it into GPU-rotated ArrayMeshes. The RegimeTimelineTransport drives
     // tick playback + regime threading (SetTick + SetRegime on GlobeView). Always-on (not env-guarded).
     //
-    // World seed + tessellation frequency: no per-world config exists yet; using fixed defaults that
-    // produce a stable, deterministic globe. Seed 2024, frequency 3 (1280 cells, ~6 plates at onset).
-    // These match the values used by ComposeCellElevation (both share one OnsetRoster build).
-    private const int WorldSeed = 2024;
-    private const int TessellationFrequency = 3;
-
     private void ComposeWorldView(AppComposition composition)
     {
         // PLAN4-TASK4: onset-aware path — replaces new GlobeReconstructor() (parameterless legacy).
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
-        var roster = OnsetRoster.Build(WorldSeed, onsetTick, TessellationFrequency);
+        var renderOptions = GetWorldRenderOptions();
+        var roster = OnsetRoster.Build(renderOptions.Seed, onsetTick, renderOptions.TessellationFrequency);
         var schedule = SphereRegimeScheduleDefaults.GeosphereDefault;
-        var model = GlobeReconstructor.FromOnsetRoster(roster, onsetTick, schedule, TessellationFrequency);
+        var model = GlobeReconstructor.FromOnsetRoster(roster, onsetTick, schedule, renderOptions.TessellationFrequency);
 
         // Build the base snapshot at onset (full N-plate globe used for topology caching).
         // GlobePlateSurfaces caches watertight topology from this snapshot — since plate count/cell
@@ -524,7 +520,23 @@ public partial class Host : Node
 
         GD.Print($"[Host] World view: globe mounted ({snapshot.CellCount} cells, {snapshot.PlateCount} plates, " +
                  $"{snapshotTicks.Count} feature snapshots, elevationFeed={(elevationsAt is not null)}, watertight caps, " +
-                 $"onset={onsetTick:N0}, seed={WorldSeed}, freq={TessellationFrequency}); ITimelineController registered");
+                 $"onset={onsetTick:N0}, seed={renderOptions.Seed}, freq={renderOptions.TessellationFrequency}); ITimelineController registered");
+    }
+
+    private WorldGenerationRenderOptions GetWorldRenderOptions()
+        => _worldRenderOptions ??= ResolveWorldRenderOptions();
+
+    private static WorldGenerationRenderOptions ResolveWorldRenderOptions()
+    {
+        var source = WorldGenerationGraphFamilySource.ForRegime(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildFamily(),
+            WorldRegimeScheduleKinds.Sphere,
+            "mobile-plate",
+            SphereRegimeScheduleDefaults.PlateOnsetTick,
+            WorldGenerationGraphDefaults.GeosphereSphereId);
+
+        return WorldGenerationRenderOptions.Resolve(source.Graph);
     }
 
     private static SphereHandoff? TryBuildDefaultSphereHandoff(AppComposition composition)
@@ -569,16 +581,17 @@ public partial class Host : Node
     // (registering there would need IService surface it does not expose, and isn't what C consumes).
     //
     // PLAN4-TASK4: onset-aware path — replaces new GlobeReconstructor() (parameterless legacy).
-    // Uses the same WorldSeed + TessellationFrequency constants as ComposeWorldView so both share
-    // the same deterministic plate geometry.
+    // Uses the same graph-resolved render options as ComposeWorldView so both share the same
+    // deterministic plate geometry.
     private void ComposeCellElevation(AppComposition composition)
     {
         try
         {
             long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
-            var roster = OnsetRoster.Build(WorldSeed, onsetTick, TessellationFrequency);
+            var renderOptions = GetWorldRenderOptions();
+            var roster = OnsetRoster.Build(renderOptions.Seed, onsetTick, renderOptions.TessellationFrequency);
             var schedule = SphereRegimeScheduleDefaults.GeosphereDefault;
-            var reconstructor = GlobeReconstructor.FromOnsetRoster(roster, onsetTick, schedule, TessellationFrequency);
+            var reconstructor = GlobeReconstructor.FromOnsetRoster(roster, onsetTick, schedule, renderOptions.TessellationFrequency);
 
             // Build snapshot at onset (the full N-plate mesh) to get TicksPerAnchor for the cadence.
             var snapshot = reconstructor.BuildGlobeAt(onsetTick);
