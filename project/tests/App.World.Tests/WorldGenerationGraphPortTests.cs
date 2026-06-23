@@ -1041,6 +1041,44 @@ public sealed class WorldGenerationGraphPortTests
             OutputNodeIds: new[] { "crust" });
     }
 
+    [Fact]
+    public async Task WorldGenerationGraphRunner_WhenProductAddressIsNotString_SkipsProduct()
+    {
+        var node = new GraphNode("node1", "test.product", new JsonObject());
+        var graph = new GraphDocument(new[] { node }, Array.Empty<GraphWire>(), "node1");
+
+        var provider = new FakeProductProvider(new JsonObject { ["foo"] = "bar" }); // an object instead of string
+        var runner = new WorldGenerationGraphRunner(new[] { provider });
+        var run = await runner.RunAsync(graph);
+
+        Assert.Empty(run.Products);
+    }
+
+    private sealed class FakeProductProvider : INodeFunctionProvider
+    {
+        private readonly JsonNode? _productAddressValue;
+
+        public FakeProductProvider(JsonNode? productAddressValue)
+        {
+            _productAddressValue = productAddressValue;
+        }
+
+        public bool Supports(string functionId) => functionId == "test.product";
+
+        public Task<JsonObject> InvokeAsync(string functionId, JsonObject payload, CancellationToken cancellationToken = default)
+        {
+            var res = new JsonObject
+            {
+                ["function"] = "test.product"
+            };
+            if (_productAddressValue is not null)
+            {
+                res["productAddress"] = _productAddressValue.DeepClone();
+            }
+            return Task.FromResult(res);
+        }
+    }
+
     private sealed class FakeTimelineController : ITimelineController
     {
         public FakeTimelineController(

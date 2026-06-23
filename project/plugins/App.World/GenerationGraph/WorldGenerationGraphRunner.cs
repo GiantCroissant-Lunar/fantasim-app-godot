@@ -247,10 +247,14 @@ public sealed class WorldGenerationGraphRunner
 
     private static string? TryReadProductAddress(JsonObject result)
     {
-        if (!result.TryGetPropertyValue("productAddress", out var node) || node is null)
+        if (!result.TryGetPropertyValue("productAddress", out var node) || node is not JsonValue value)
             return null;
 
-        var value = node.GetValue<string>();
-        return string.IsNullOrWhiteSpace(value) ? null : value;
+        if (value.TryGetValue<string>(out var text))
+        {
+            return string.IsNullOrWhiteSpace(text) ? null : text;
+        }
+
+        return null;
     }
 }
