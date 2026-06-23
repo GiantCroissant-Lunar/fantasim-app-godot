@@ -135,8 +135,7 @@ public sealed record WorldGenerationRunResult(
 public sealed record WorldGenerationProductsView(
     int GraphRevision,
     IReadOnlyList<string> Products,
-    long ReferenceTick,
-    IReadOnlyList<long> CachedTicks);
+    long ReferenceTick);
 
 /// <summary>
 /// Optional per-node preview payload: raw RGBA8 image bytes, row-major, no padding.

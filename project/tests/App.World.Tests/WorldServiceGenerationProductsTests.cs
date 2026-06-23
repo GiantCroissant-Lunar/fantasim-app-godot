@@ -31,7 +31,6 @@ public sealed class WorldServiceGenerationProductsTests
         Assert.Equal(7, products.GraphRevision);
         Assert.Equal(1_234L, products.ReferenceTick);
         Assert.Equal(new[] { productAddress }, products.Products);
-        Assert.Empty(products.CachedTicks);
     }
 
     [Fact]
@@ -59,7 +58,6 @@ public sealed class WorldServiceGenerationProductsTests
         Assert.Equal(7, products.GraphRevision);
         Assert.Equal(1_234L, products.ReferenceTick);
         Assert.Equal(new[] { productAddress }, products.Products);
-        Assert.Empty(products.CachedTicks);
     }
 
     [Fact]

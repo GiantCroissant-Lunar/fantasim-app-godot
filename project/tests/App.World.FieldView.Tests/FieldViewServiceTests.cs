@@ -34,7 +34,7 @@ internal sealed class FakeWorldService : IService
         => new(FrameIndex: 0, Entities: Array.Empty<RenderEntityDto>());
 
     public WorldGenerationProductsView GetGenerationProductsAsync()
-        => new(0, Array.Empty<string>(), 0L, Array.Empty<long>());
+        => new(0, Array.Empty<string>(), 0L);
 
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
     {

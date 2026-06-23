@@ -133,8 +133,7 @@ public class LocalOrchestratorTests
             ProductsView = new WorldGenerationProductsView(
                 7,
                 new[] { "/base/main/formation/body-set@1234" },
-                1_234L,
-                Array.Empty<long>()),
+                1_234L),
         };
         registry.Register<WorldService>(world, new ServiceRegistration { Tags = new[] { "world" } });
         var orchestrator = new LocalOrchestrator(registry, NullLoggerFactory.Instance);
@@ -300,7 +299,7 @@ internal sealed class FakeWorldService : WorldService
     public int GenerateCalls;
     public int OverviewCalls;
     public int ProductsCalls;
-    public WorldGenerationProductsView ProductsView = new(0, Array.Empty<string>(), 0L, Array.Empty<long>());
+    public WorldGenerationProductsView ProductsView = new(0, Array.Empty<string>(), 0L);
 
     public WorldOverview GetOverviewAsync()
     {

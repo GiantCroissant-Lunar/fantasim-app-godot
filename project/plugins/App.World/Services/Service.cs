@@ -27,7 +27,7 @@ public sealed class Service : IService, IDisposable
     private readonly object _subscribersGate = new();
     private readonly object _generationProductsGate = new();
     private WorldGenerationProductsView _generationProducts =
-        new(0, Array.Empty<string>(), 0L, Array.Empty<long>());
+        new(0, Array.Empty<string>(), 0L);
     private bool _disposed;
 
     public Service(IRegistry registry)
@@ -104,9 +104,10 @@ public sealed class Service : IService, IDisposable
             parameters,
             "canonicalTick",
             ReadLong(parameters, "tick", 0L));
-        var cachedTicks = ReadLongArray(parameters, "cachedTicks");
+        // TODO(cache): repopulate when a cache-tick source exists
+        // var cachedTicks = ReadLongArray(parameters, "cachedTicks");
 
-        return new WorldGenerationProductsView(graphRevision, products, referenceTick, cachedTicks);
+        return new WorldGenerationProductsView(graphRevision, products, referenceTick);
     }
 
     private static bool IsGenerationGraphRequest(WorldGenerationRequest request)
