@@ -148,6 +148,46 @@ public sealed class WorldGenerationGraphPortTests
     }
 
     [Fact]
+    public void Compiler_RejectsCyclicGraph()
+    {
+        var nodeA = new WorldGenerationGraphNode(
+            NodeId: "nodeA",
+            TypeId: "test.func",
+            Label: "Node A",
+            Category: "test",
+            IsSideEffect: false,
+            IsExpensive: false,
+            Inputs: new[] { new WorldGenerationGraphPort("inA", "Input A", "typeA", Required: false) },
+            Outputs: new[] { new WorldGenerationGraphPort("outA", "Output A", "typeB", Required: false) });
+
+        var nodeB = new WorldGenerationGraphNode(
+            NodeId: "nodeB",
+            TypeId: "test.func",
+            Label: "Node B",
+            Category: "test",
+            IsSideEffect: false,
+            IsExpensive: false,
+            Inputs: new[] { new WorldGenerationGraphPort("inB", "Input B", "typeB", Required: false) },
+            Outputs: new[] { new WorldGenerationGraphPort("outB", "Output B", "typeA", Required: false) });
+
+        var graph = new WorldGenerationGraphView(
+            GraphId: "cyclic.graph",
+            Label: "Cyclic Graph",
+            Description: "A cyclic graph",
+            Nodes: new[] { nodeA, nodeB },
+            Wires: new[]
+            {
+                new WorldGenerationGraphWire("nodeA", "outA", "nodeB", "inB", "typeB"),
+                new WorldGenerationGraphWire("nodeB", "outB", "nodeA", "inA", "typeA")
+            },
+            Annotations: Array.Empty<WorldGenerationGraphAnnotation>(),
+            OutputNodeIds: new[] { "nodeB" });
+
+        var ex = Assert.Throws<ArgumentException>(() => WorldGenerationGraphCompiler.Compile(graph));
+        Assert.Contains("cycle", ex.Message);
+    }
+
+    [Fact]
     public void Composer_ResolvesRegimeGraph_AndAppliesTickScopedSetParamOverride()
     {
         var baseGraph = MakeView("world.base", "Base");

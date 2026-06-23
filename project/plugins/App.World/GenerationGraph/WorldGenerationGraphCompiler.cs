@@ -29,6 +29,7 @@ public static class WorldGenerationGraphCompiler
 
         var byId = ValidateNodes(graph);
         ValidateWires(graph, byId);
+        ValidateCycles(graph);
         if (validateRequiredInputs)
             ValidateRequiredInputs(graph);
 
@@ -258,6 +259,70 @@ public static class WorldGenerationGraphCompiler
            || string.Equals(kindHint, "control-flow", StringComparison.OrdinalIgnoreCase)
             ? WireKind.Control
             : WireKind.Data;
+
+    private static void ValidateCycles(WorldGenerationGraphView graph)
+    {
+        var adj = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var node in graph.Nodes)
+        {
+            adj[node.NodeId] = new List<string>();
+        }
+
+        foreach (var wire in graph.Wires)
+        {
+            if (adj.ContainsKey(wire.FromNodeId) && adj.ContainsKey(wire.ToNodeId))
+            {
+                adj[wire.FromNodeId].Add(wire.ToNodeId);
+            }
+        }
+
+        var state = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var node in graph.Nodes)
+        {
+            state[node.NodeId] = 0; // unvisited
+        }
+
+        bool HasCycle(string u, List<string> cyclePath)
+        {
+            state[u] = 1; // visiting
+            cyclePath.Add(u);
+
+            var targets = adj[u].OrderBy(x => x, StringComparer.Ordinal).ToList();
+            foreach (var v in targets)
+            {
+                if (state[v] == 1)
+                {
+                    cyclePath.Add(v);
+                    return true;
+                }
+                else if (state[v] == 0)
+                {
+                    if (HasCycle(v, cyclePath))
+                        return true;
+                }
+            }
+
+            cyclePath.RemoveAt(cyclePath.Count - 1);
+            state[u] = 2; // visited
+            return false;
+        }
+
+        var orderedNodes = graph.Nodes.Select(n => n.NodeId).OrderBy(id => id, StringComparer.Ordinal).ToList();
+        foreach (var nodeId in orderedNodes)
+        {
+            if (state[nodeId] == 0)
+            {
+                var cyclePath = new List<string>();
+                if (HasCycle(nodeId, cyclePath))
+                {
+                    var cycleStartIdx = cyclePath.IndexOf(cyclePath[^1]);
+                    var cycleSubPath = cyclePath.Skip(cycleStartIdx).ToList();
+                    var cycleStr = string.Join(" -> ", cycleSubPath);
+                    throw new ArgumentException($"Graph contains a cycle: {cycleStr}.");
+                }
+            }
+        }
+    }
 
     private static void RequireNonEmpty(string value, string parameterName)
     {
