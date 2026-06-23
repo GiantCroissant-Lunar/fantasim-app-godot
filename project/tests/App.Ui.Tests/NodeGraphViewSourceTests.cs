@@ -67,6 +67,35 @@ public sealed class NodeGraphViewSourceTests
     }
 
     [Fact]
+    public async Task Dispatch_run_drives_real_compile_and_runner_pipeline()
+    {
+        var graph = WorldGenerationGraphDefaults.BuildBodyFormationGraph();
+        var source = new WorldGenerationGraphSource("world-generation", graph);
+        var provider = new WorldFunctionProvider();
+        var runner = new WorldGenerationGraphRunner(new[] { provider });
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var view = new NodeGraphViewSource(source, runAsync: async () =>
+        {
+            var compiled = source.CompileForExecution();
+            var output = await runner.RunAsync(compiled.Document);
+            return WorldGenerationGraphRunner.ToCommandResult(output);
+        });
+        view.Changed += () =>
+        {
+            var json = JsonSerializer.SerializeToNode(view.BuildDocument())?.ToJsonString();
+            if (json?.Contains("done: 1 product @ tick 0", StringComparison.Ordinal) == true)
+                done.TrySetResult();
+        };
+
+        view.Dispatch("run", "btn-run");
+        await done.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var documentJson = JsonSerializer.SerializeToNode(view.BuildDocument())?.ToJsonString();
+
+        Assert.Contains("done: 1 product @ tick 0", documentJson);
+    }
+
+    [Fact]
     public void BuildDocument_projects_graph_annotations()
     {
         var graph = new GraphDocument(
