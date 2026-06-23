@@ -240,6 +240,46 @@ public sealed class WorldGenerationGraphPortTests
     }
 
     [Fact]
+    public void Composer_ResolveRegimeGraph_PrefersMostSpecificSphereBinding()
+    {
+        var baseGraph = MakeView("world.base", "Base");
+        var wildGraph = MakeView("world.wildcard", "Wildcard");
+        var specificGraph = MakeView("world.geosphere", "Geosphere Specific");
+
+        var family = new WorldGenerationGraphFamilyDocument(
+            DocumentId: "world-generation.family",
+            SchemaVersion: 1,
+            Revision: 2,
+            BaseGraph: baseGraph,
+            Graphs: new[] { wildGraph, specificGraph },
+            RegimeGraphBindings: new[]
+            {
+                new WorldRegimeGraphBinding("sphere-kind", "regime-1", wildGraph.GraphId, SphereId: null),
+                new WorldRegimeGraphBinding("sphere-kind", "regime-1", specificGraph.GraphId, SphereId: "geosphere"),
+            },
+            GraphOverrides: Array.Empty<WorldGenerationGraphScopedOverride>(),
+            LegacyOverrides: Array.Empty<WorldGenerationGraphOverride>(),
+            RunHistory: Array.Empty<WorldGenerationRunHistoryEntry>(),
+            UpdatedUtc: DateTimeOffset.UtcNow);
+
+        var resolved = WorldGenerationGraphFamilyComposer.ResolveRegimeGraph(
+            family,
+            "sphere-kind",
+            "regime-1",
+            sphereId: "geosphere");
+
+        Assert.Equal(specificGraph.GraphId, resolved.GraphId);
+
+        var resolvedFallback = WorldGenerationGraphFamilyComposer.ResolveRegimeGraph(
+            family,
+            "sphere-kind",
+            "regime-1",
+            sphereId: "atmosphere");
+
+        Assert.Equal(wildGraph.GraphId, resolvedFallback.GraphId);
+    }
+
+    [Fact]
     public void Composer_RemoveNodeOverridePrunesAnnotationAttachments()
     {
         var baseGraph = MakeView("world.base", "Base");

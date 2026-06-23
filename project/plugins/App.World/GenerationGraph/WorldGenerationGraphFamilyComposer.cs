@@ -24,12 +24,22 @@ public static class WorldGenerationGraphFamilyComposer
         RequireNonEmpty(scheduleKind, nameof(scheduleKind));
         RequireNonEmpty(regimeId, nameof(regimeId));
 
-        var binding = family.RegimeGraphBindings.FirstOrDefault(candidate =>
-            string.Equals(candidate.ScheduleKind, scheduleKind, StringComparison.Ordinal)
-            && string.Equals(candidate.RegimeId, regimeId, StringComparison.Ordinal)
-            && (sphereId is null
-                || candidate.SphereId is null
-                || string.Equals(candidate.SphereId, sphereId, StringComparison.Ordinal)));
+        WorldRegimeGraphBinding? binding = null;
+        if (sphereId is not null)
+        {
+            binding = family.RegimeGraphBindings.FirstOrDefault(candidate =>
+                string.Equals(candidate.ScheduleKind, scheduleKind, StringComparison.Ordinal)
+                && string.Equals(candidate.RegimeId, regimeId, StringComparison.Ordinal)
+                && string.Equals(candidate.SphereId, sphereId, StringComparison.Ordinal));
+        }
+
+        if (binding is null)
+        {
+            binding = family.RegimeGraphBindings.FirstOrDefault(candidate =>
+                string.Equals(candidate.ScheduleKind, scheduleKind, StringComparison.Ordinal)
+                && string.Equals(candidate.RegimeId, regimeId, StringComparison.Ordinal)
+                && candidate.SphereId is null);
+        }
 
         if (binding is null)
             throw new ArgumentException($"No graph binding exists for regime '{scheduleKind}:{regimeId}'.");
