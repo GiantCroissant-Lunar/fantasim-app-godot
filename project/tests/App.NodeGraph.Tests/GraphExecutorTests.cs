@@ -56,6 +56,49 @@ public class GraphExecutorTests
     }
 
     [Fact]
+    public async Task Execute_runs_diamond_in_topological_order_with_declaration_tie_break()
+    {
+        var provider = new FakeProvider(new()
+        {
+            ["a"] = new() { ["out"] = "A" },
+            ["b"] = new() { ["out"] = "B" },
+            ["c"] = new() { ["out"] = "C" },
+            ["d"] = new() { ["result"] = "D" },
+        });
+
+        // Nodes and wires are deliberately listed out of dependency order.
+        // b is declared before c, so the deterministic tie-break should run b before c.
+        var graph = new GraphDocument(
+            Nodes: new[] { Node("b", "b"), Node("c", "c"), Node("a", "a"), Node("d", "d") },
+            Wires: new[]
+            {
+                new GraphWire("c", "out", "d", "c"),
+                new GraphWire("a", "out", "b", "in"),
+                new GraphWire("b", "out", "d", "b"),
+                new GraphWire("a", "out", "c", "in"),
+            },
+            SinkNodeId: "d");
+
+        var sink = await new GraphExecutor(new[] { provider }).ExecuteAsync(graph);
+
+        Assert.Equal("D", sink["result"]?.ToString());
+        var order = provider.Invocations.Select(i => i.FunctionId).ToList();
+        var aIdx = order.IndexOf("a");
+        var bIdx = order.IndexOf("b");
+        var cIdx = order.IndexOf("c");
+        var dIdx = order.IndexOf("d");
+        Assert.True(aIdx < bIdx, "a must run before b");
+        Assert.True(aIdx < cIdx, "a must run before c");
+        Assert.True(bIdx < dIdx, "b must run before d");
+        Assert.True(cIdx < dIdx, "c must run before d");
+        Assert.True(bIdx < cIdx, "declaration-order tie-break must run b before c");
+
+        var dPayload = provider.Invocations.Single(i => i.FunctionId == "d").Payload;
+        Assert.Equal("B", dPayload["b"]?.ToString());
+        Assert.Equal("C", dPayload["c"]?.ToString());
+    }
+
+    [Fact]
     public async Task Execute_merges_shared_and_static_params()
     {
         var provider = new FakeProvider(new() { ["fn"] = new() { ["doubled"] = "x" } });
