@@ -18,7 +18,7 @@ public static class WorldGenerationGraphDefaults
     public const string GeosphereCrustLayerGraphId = "geosphere.crust.layer";
     public const string GeosphereSphereId = "geosphere";
 
-    public static WorldGenerationGraphFamilyDocument BuildFamily()
+    public static WorldGenerationGraphFamilyDocument BuildFamily(DateTimeOffset? updatedUtc = null)
     {
         var baseGraph = BuildCrustGraph(BaseGraphId, "World Creation");
         var formationGraph = BuildBodyFormationGraph();
@@ -89,7 +89,7 @@ public static class WorldGenerationGraphDefaults
             GraphOverrides: Array.Empty<WorldGenerationGraphScopedOverride>(),
             LegacyOverrides: Array.Empty<WorldGenerationGraphOverride>(),
             RunHistory: Array.Empty<WorldGenerationRunHistoryEntry>(),
-            UpdatedUtc: DateTimeOffset.UtcNow,
+            UpdatedUtc: updatedUtc ?? DateTimeOffset.UnixEpoch,
             SubgraphBindings: new[]
             {
                 new WorldGenerationSubgraphBinding(BaseGraphId, "crust", GeosphereGraphId),
