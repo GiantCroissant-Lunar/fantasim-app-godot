@@ -30,6 +30,29 @@ public static class WorldGenerationNodeCatalog
             }),
 
         new WorldGenerationNodeSchema(
+            TypeId: WorldFunctionProvider.BodyFormation,
+            Label: "Body Formation",
+            Category: "formation",
+            IsSideEffect: false,
+            IsExpensive: false,
+            Inputs: Array.Empty<WorldGenerationGraphPort>(),
+            Outputs: new[]
+            {
+                new WorldGenerationGraphPort("bodySet", "Body Set", "world/body_set", Required: false),
+                new WorldGenerationGraphPort("sphereHandoff", "Sphere Handoff", "world/sphere_handoff", Required: false),
+            },
+            Summary: "Packages pre-sphere body-formation products and the handoff inputs consumed by later sphere regimes.",
+            Parameters: new[]
+            {
+                new WorldGenerationGraphParameter("seed", "Seed", "7", "int"),
+                new WorldGenerationGraphParameter("canonicalTick", "Canonical Tick", "0", "long"),
+                new WorldGenerationGraphParameter("regimeId", "Regime", "planetesimal-swarm", "string"),
+                new WorldGenerationGraphParameter("totalMassKg", "Total Mass Kg", "5.972e24", "double"),
+                new WorldGenerationGraphParameter("specificAccretionHeatJPerKg", "Accretion Heat J/Kg", "1.0e7", "double"),
+                new WorldGenerationGraphParameter("volatileMassFraction", "Volatile Mass Fraction", "0.02", "double"),
+            }),
+
+        new WorldGenerationNodeSchema(
             TypeId: WorldFunctionProvider.LayerScope,
             Label: "Layer Scope",
             Category: "source",

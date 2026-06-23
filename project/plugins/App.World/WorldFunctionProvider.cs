@@ -35,6 +35,9 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
     /// <summary>Function id for a source node that packages authored world-generation options.</summary>
     public const string WorldOptions = "world.options";
 
+    /// <summary>Function id for a source node that packages pre-sphere body-formation products.</summary>
+    public const string BodyFormation = "world.body-formation";
+
     /// <summary>Function id for a source node that packages regime/layer graph metadata.</summary>
     public const string LayerScope = "world.layer-scope";
 
@@ -52,6 +55,9 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
     private const double DefaultArcVolcanismPerMegaAnnum = 0.6;
     private const double DefaultIslandArcVolcanismPerMegaAnnum = 0.4;
     private const double DefaultRidgeVolcanismPerMegaAnnum = 0.5;
+    private const double DefaultFormationTotalMassKg = 5.972e24;
+    private const double DefaultFormationSpecificHeatJPerKg = 1.0e7;
+    private const double DefaultFormationVolatileMassFraction = 0.02;
 
     private readonly ILogger _logger;
 
@@ -76,6 +82,7 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         return functionId switch
         {
             WorldOptions => PackageWorldOptions(payload),
+            BodyFormation => PackageBodyFormation(payload),
             LayerScope => PackageLayerScope(payload),
             CrustGenerate => await GenerateCrustAsync(payload, cancellationToken).ConfigureAwait(false),
             _ => throw new InvalidOperationException(
@@ -87,6 +94,85 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         => new()
         {
             ["options"] = payload.DeepClone(),
+        };
+
+    private static JsonObject PackageBodyFormation(JsonObject payload)
+    {
+        var regimeId = ReadString(payload, "regimeId", "planetesimal-swarm");
+        var tick = ReadLong(payload, "canonicalTick", ReadLong(payload, "tick", 0));
+        var seed = ReadInt(payload, "seed", 7);
+        var totalMassKg = ReadDouble(payload, "totalMassKg", DefaultFormationTotalMassKg);
+        var heatPerKg = ReadDouble(payload, "specificAccretionHeatJPerKg", DefaultFormationSpecificHeatJPerKg);
+        var retainedHeatJ = ReadDouble(payload, "retainedHeatJ", totalMassKg * heatPerKg);
+        var volatileMassFraction = ReadDouble(payload, "volatileMassFraction", DefaultFormationVolatileMassFraction);
+        var retainedVolatileMassKg = ReadDouble(payload, "retainedVolatileMassKg", totalMassKg * volatileMassFraction);
+        var shapeState = FormationShapeState(regimeId);
+        var bodyCount = string.Equals(shapeState, "hydrostatic-spheroid", StringComparison.Ordinal) ? 1 : 10;
+        var handoff = BuildSphereHandoffJson(
+            tick,
+            totalMassKg,
+            retainedHeatJ,
+            retainedVolatileMassKg,
+            seed);
+
+        // Right-sized body-formation bridge: mirror the ref constants that magma-ocean already inlines,
+        // while deferring material-cell/body-scene contracts until the current app has that product model.
+        // Sources: ref-projects/fantasim-app-godot/vault/architecture/body-formation-regime-graphs.md
+        //          ref-projects/fantasim-app-godot/project/plugins/App.World/Composition/BodyFormationProducer.cs
+        return new JsonObject
+        {
+            ["function"] = BodyFormation,
+            ["tick"] = tick,
+            ["phaseStartTick"] = 0,
+            ["handoffTick"] = tick,
+            ["scheduleKind"] = WorldRegimeScheduleKinds.BodyFormation,
+            ["regimeId"] = regimeId,
+            ["shapeState"] = shapeState,
+            ["canonicalTick"] = tick,
+            ["seed"] = seed,
+            ["specificAccretionHeatJPerKg"] = heatPerKg,
+            ["productAddress"] = new WorldGenerationProductAddress(
+                Variant: "base",
+                Branch: "main",
+                Domain: "formation",
+                Product: "body-set",
+                Tick: tick).ToPath(),
+            ["bodySet"] = new JsonObject
+            {
+                ["tick"] = tick,
+                ["bodyCount"] = bodyCount,
+                ["totalMassKg"] = totalMassKg,
+                ["shapeState"] = shapeState,
+            },
+            ["handoff"] = handoff.DeepClone(),
+            ["sphereHandoff"] = handoff,
+        };
+    }
+
+    private static JsonObject BuildSphereHandoffJson(
+        long tick,
+        double totalMassKg,
+        double retainedHeatJ,
+        double retainedVolatileMassKg,
+        int seed)
+        => new()
+        {
+            ["tick"] = tick,
+            ["sourceBodyId"] = "protoplanet",
+            ["totalMassKg"] = totalMassKg,
+            ["bulkCompositionFractions"] = new JsonArray
+            {
+                new JsonObject { ["componentId"] = "silicate", ["fraction"] = 0.68 },
+                new JsonObject { ["componentId"] = "iron", ["fraction"] = 0.30 },
+                new JsonObject { ["componentId"] = "volatile", ["fraction"] = 0.02 },
+            },
+            ["retainedHeatJ"] = retainedHeatJ,
+            ["retainedVolatileMassKg"] = retainedVolatileMassKg,
+            ["angularMomentum"] = new JsonArray(
+                JsonValue.Create(0.0),
+                JsonValue.Create(0.0),
+                JsonValue.Create(0.0)),
+            ["latentSubstrateSeed"] = $"geosphere/seed-{seed}",
         };
 
     private static JsonObject PackageLayerScope(JsonObject payload)
@@ -360,6 +446,11 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         return fallback;
     }
 
+    private static string ReadString(JsonObject o, string key, string fallback)
+        => o.TryGetPropertyValue(key, out var node) && node is JsonValue value && value.TryGetValue<string>(out var text)
+            ? text
+            : fallback;
+
     private static double ReadDouble(JsonObject o, string key, double fallback)
         => o.TryGetPropertyValue(key, out var n) ? ToDouble(n, fallback) : fallback;
 
@@ -388,4 +479,14 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
 
         return fallback;
     }
+
+    private static string FormationShapeState(string regimeId) => regimeId switch
+    {
+        "dispersed-material" => "dispersed-material",
+        "planetesimal-swarm" => "planetesimal-swarm",
+        "multi-body-accretion" => "multi-body-accretion",
+        "single-irregular-protobody" => "single-irregular-protobody",
+        "hydrostatic-spheroid" => "hydrostatic-spheroid",
+        _ => "planetesimal-swarm",
+    };
 }

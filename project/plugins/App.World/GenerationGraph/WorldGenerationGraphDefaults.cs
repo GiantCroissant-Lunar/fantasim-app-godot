@@ -21,7 +21,7 @@ public static class WorldGenerationGraphDefaults
     public static WorldGenerationGraphFamilyDocument BuildFamily()
     {
         var baseGraph = BuildCrustGraph(BaseGraphId, "World Creation");
-        var formationGraph = BuildCrustGraph(FormationGraphId, "Planetesimal Swarm");
+        var formationGraph = BuildBodyFormationGraph();
         var geosphereGraph = BuildCrustGraph(GeosphereGraphId, "Mobile Plate Geosphere");
         var magmaOceanGraph = BuildLayerScopeGraph(
             GeosphereMagmaOceanGraphId,
@@ -97,6 +97,30 @@ public static class WorldGenerationGraphDefaults
                 new WorldGenerationSubgraphBinding(MobilePlateLayerGraphId, "plate_layer", GeospherePlateLayerGraphId),
                 new WorldGenerationSubgraphBinding(MobilePlateLayerGraphId, "crust_layer", GeosphereCrustLayerGraphId),
             });
+    }
+
+    public static WorldGenerationGraphView BuildBodyFormationGraph()
+    {
+        var bodyFormation = NodeFromSchema("body_formation", WorldFunctionProvider.BodyFormation);
+
+        return new WorldGenerationGraphView(
+            GraphId: FormationGraphId,
+            Label: "Planetesimal Swarm",
+            Description: "Pre-sphere body-formation graph: packages body-set and sphere-handoff products before geosphere regimes exist.",
+            Nodes: new[] { bodyFormation },
+            Wires: Array.Empty<WorldGenerationGraphWire>(),
+            Annotations: new[]
+            {
+                new WorldGenerationGraphAnnotation(
+                    AnnotationId: "comment_body_formation",
+                    Kind: WorldGenerationGraphAnnotationKinds.CommentBoundary,
+                    Label: "Body formation",
+                    Bounds: new WorldGenerationGraphBounds(-80, -80, 560, 240),
+                    NodeIds: new[] { "body_formation" },
+                    Text: "This graph represents the parent formation lifecycle before a sphere/geosphere exists. It emits a body set and sphere handoff instead of running crust generation.",
+                    Color: "#d99a4e"),
+            },
+            OutputNodeIds: new[] { "body_formation" });
     }
 
     public static WorldGenerationGraphView BuildCrustGraph(

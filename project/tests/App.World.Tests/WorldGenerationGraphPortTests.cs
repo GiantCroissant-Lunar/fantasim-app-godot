@@ -475,6 +475,39 @@ public sealed class WorldGenerationGraphPortTests
     }
 
     [Fact]
+    public async Task BodyFormationRegimeGraph_RunsThroughGenericExecutor()
+    {
+        var source = WorldGenerationGraphFamilySource.ForRegime(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildFamily(),
+            WorldRegimeScheduleKinds.BodyFormation,
+            "planetesimal-swarm",
+            tick: 0);
+
+        var compiled = source.CompileForExecution();
+        var result = await new GraphExecutor(new[] { new WorldFunctionProvider() }).ExecuteAsync(compiled.Document);
+        var bodySet = Assert.IsType<JsonObject>(result["bodySet"]);
+        var handoff = Assert.IsType<JsonObject>(result["sphereHandoff"]);
+        var handoffAlias = Assert.IsType<JsonObject>(result["handoff"]);
+        var composition = Assert.IsType<JsonArray>(handoff["bulkCompositionFractions"]);
+
+        Assert.Equal(WorldGenerationGraphDefaults.FormationGraphId, source.Graph.GraphId);
+        Assert.DoesNotContain(source.Graph.Nodes, node => node.TypeId == WorldFunctionProvider.CrustGenerate);
+        Assert.Equal(WorldFunctionProvider.BodyFormation, compiled.Document.Nodes.Single().FunctionId);
+        Assert.DoesNotContain(compiled.Document.Nodes, node => node.FunctionId == WorldFunctionProvider.CrustGenerate);
+        Assert.Equal(WorldFunctionProvider.BodyFormation, result["function"]?.GetValue<string>());
+        Assert.Equal(WorldRegimeScheduleKinds.BodyFormation, result["scheduleKind"]?.GetValue<string>());
+        Assert.Equal("planetesimal-swarm", result["regimeId"]?.GetValue<string>());
+        Assert.Equal("planetesimal-swarm", bodySet["shapeState"]!.GetValue<string>());
+        Assert.Equal(10, bodySet["bodyCount"]!.GetValue<int>());
+        Assert.InRange(handoff["retainedHeatJ"]!.GetValue<double>(), 5.971e31, 5.973e31);
+        Assert.Equal("geosphere/seed-7", handoff["latentSubstrateSeed"]!.GetValue<string>());
+        Assert.Equal(handoff["retainedHeatJ"]!.GetValue<double>(), handoffAlias["retainedHeatJ"]!.GetValue<double>());
+        Assert.Equal(3, composition.Count);
+        Assert.Equal("/base/main/formation/body-set@0", result["productAddress"]!.GetValue<string>());
+    }
+
+    [Fact]
     public void ScopeKeyAndProductAddress_KeepCacheIdentitySeparateFromProductPath()
     {
         var key = new WorldGenerationGraphExecutionScopeKey(
@@ -505,13 +538,16 @@ public sealed class WorldGenerationGraphPortTests
     public void NodeCatalog_ContainsCurrentExecutableWorldGraphNodes()
     {
         var options = WorldGenerationNodeCatalog.Find(WorldFunctionProvider.WorldOptions);
+        var bodyFormation = WorldGenerationNodeCatalog.Find(WorldFunctionProvider.BodyFormation);
         var layerScope = WorldGenerationNodeCatalog.Find(WorldFunctionProvider.LayerScope);
         var crust = WorldGenerationNodeCatalog.Find(WorldFunctionProvider.CrustGenerate);
 
         Assert.NotNull(options);
+        Assert.NotNull(bodyFormation);
         Assert.NotNull(layerScope);
         Assert.NotNull(crust);
         Assert.Equal("options", options!.Outputs[0].PortId);
+        Assert.Equal("bodySet", bodyFormation!.Outputs[0].PortId);
         Assert.Equal("layer", layerScope!.Outputs[0].PortId);
         Assert.Equal("options", crust!.Inputs[0].PortId);
         Assert.True(crust.IsExpensive);
