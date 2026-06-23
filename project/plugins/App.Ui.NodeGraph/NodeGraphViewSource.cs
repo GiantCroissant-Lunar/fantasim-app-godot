@@ -53,6 +53,7 @@ public class NodeGraphViewSource : IViewSource, IDisposable
     // MVVM surface reflected by the resident binder (by property name: "Nodes" / "Wires").
     public ObservableCollection<NodeItem> Nodes { get; } = new();
     public ObservableCollection<WireItem> Wires { get; } = new();
+    public ObservableCollection<AnnotationItem> Annotations { get; } = new();
 
     public RuntimeSurfaceDocument BuildDocument()
     {
@@ -102,6 +103,25 @@ public class NodeGraphViewSource : IViewSource, IDisposable
                         ["id"] = "graph",
                         ["type"] = "nodeGraph",
                         ["layout"] = new JsonObject { ["minHeight"] = 480 },
+                        ["properties"] = new JsonObject
+                        {
+                            ["items"] = new JsonObject
+                            {
+                                ["binding"] = new JsonObject
+                                {
+                                    ["path"] = "/graph/nodes",
+                                    ["fallback"] = new JsonArray(),
+                                },
+                            },
+                            ["wires"] = new JsonObject
+                            {
+                                ["binding"] = new JsonObject
+                                {
+                                    ["path"] = "/graph/wires",
+                                    ["fallback"] = new JsonArray(),
+                                },
+                            },
+                        },
                     },
                 },
             },
@@ -164,6 +184,7 @@ public class NodeGraphViewSource : IViewSource, IDisposable
     {
         Nodes.Clear();
         Wires.Clear();
+        Annotations.Clear();
         var doc = _source.Document;
 
         var inPorts = doc.Nodes.ToDictionary(n => n.Id, _ => new List<string>(), StringComparer.Ordinal);
@@ -197,6 +218,25 @@ public class NodeGraphViewSource : IViewSource, IDisposable
                 w.FromNode, outPorts[w.FromNode].IndexOf(w.FromPort),
                 w.ToNode, inPorts[w.ToNode].IndexOf(w.ToPort),
                 w.FromPort, w.ToPort, "data"));
+        }
+
+        if (_source is IGraphAnnotationSource annotationSource)
+        {
+            foreach (var annotation in annotationSource.Annotations)
+            {
+                Annotations.Add(new AnnotationItem(
+                    annotation.AnnotationId,
+                    annotation.Kind,
+                    annotation.Label,
+                    new AnnotationBoundsItem(
+                        annotation.Bounds.X,
+                        annotation.Bounds.Y,
+                        annotation.Bounds.Width,
+                        annotation.Bounds.Height),
+                    annotation.NodeIds,
+                    annotation.Text,
+                    annotation.Color));
+            }
         }
     }
 
@@ -247,6 +287,27 @@ public class NodeGraphViewSource : IViewSource, IDisposable
             });
         }
 
+        var annotations = new JsonArray();
+        foreach (var annotation in Annotations)
+        {
+            annotations.Add(new JsonObject
+            {
+                ["annotationId"] = annotation.AnnotationId,
+                ["kind"] = annotation.Kind,
+                ["label"] = annotation.Label,
+                ["bounds"] = new JsonObject
+                {
+                    ["x"] = annotation.Bounds.X,
+                    ["y"] = annotation.Bounds.Y,
+                    ["width"] = annotation.Bounds.Width,
+                    ["height"] = annotation.Bounds.Height,
+                },
+                ["nodeIds"] = BuildStringArray(annotation.NodeIds),
+                ["text"] = annotation.Text,
+                ["color"] = annotation.Color,
+            });
+        }
+
         return new JsonObject
         {
             ["graph"] = new JsonObject
@@ -256,6 +317,7 @@ public class NodeGraphViewSource : IViewSource, IDisposable
                 ["revision"] = _revision,
                 ["nodes"] = nodes,
                 ["wires"] = wires,
+                ["annotations"] = annotations,
             },
         };
     }

@@ -29,6 +29,19 @@ public sealed record GraphWire(
 /// whose result is returned by the executor.</summary>
 public sealed record GraphDocument(IReadOnlyList<GraphNode> Nodes, IReadOnlyList<GraphWire> Wires, string SinkNodeId);
 
+/// <summary>Canvas-space bounds for non-executable graph annotations such as comments or groups.</summary>
+public sealed record GraphAnnotationBounds(float X, float Y, float Width, float Height);
+
+/// <summary>Domain-neutral annotation projected beside nodes and wires for graph authoring UIs.</summary>
+public sealed record GraphAnnotation(
+    string AnnotationId,
+    string Kind,
+    string Label,
+    GraphAnnotationBounds Bounds,
+    IReadOnlyList<string> NodeIds,
+    string? Text = null,
+    string? Color = null);
+
 /// <summary>Discriminated edit applied to an <see cref="IGraphSource"/>. Kept structural so every
 /// domain's graph source accepts the same edit vocabulary.</summary>
 public abstract record GraphEdit

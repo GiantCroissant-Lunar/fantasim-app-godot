@@ -13,7 +13,7 @@ namespace FantaSim.App.World.GenerationGraph;
 /// Editable world-generation graph source backed by the typed world authoring model and projected
 /// into the generic node-graph document expected by the shared UI/executor.
 /// </summary>
-public sealed class WorldGenerationGraphSource : IGraphSource
+public sealed class WorldGenerationGraphSource : IGraphSource, IGraphAnnotationSource
 {
     private readonly object _gate = new();
 
@@ -24,6 +24,7 @@ public sealed class WorldGenerationGraphSource : IGraphSource
             : sourceId;
         Graph = graph ?? throw new ArgumentNullException(nameof(graph));
         Document = CompileForAuthoring(Graph);
+        Annotations = MapAnnotations(Graph);
     }
 
     public string SourceId { get; }
@@ -31,6 +32,8 @@ public sealed class WorldGenerationGraphSource : IGraphSource
     public WorldGenerationGraphView Graph { get; private set; }
 
     public GraphDocument Document { get; private set; }
+
+    public IReadOnlyList<GraphAnnotation> Annotations { get; private set; }
 
     public event Action? Changed;
 
@@ -45,6 +48,7 @@ public sealed class WorldGenerationGraphSource : IGraphSource
 
             Graph = next;
             Document = CompileForAuthoring(next);
+            Annotations = MapAnnotations(next);
         }
 
         Changed?.Invoke();
@@ -73,6 +77,27 @@ public sealed class WorldGenerationGraphSource : IGraphSource
 
     private static GraphDocument CompileForAuthoring(WorldGenerationGraphView graph)
         => WorldGenerationGraphCompiler.Compile(graph, validateRequiredInputs: false).Document;
+
+    private static IReadOnlyList<GraphAnnotation> MapAnnotations(WorldGenerationGraphView graph)
+    {
+        if (graph.Annotations is null)
+            return Array.Empty<GraphAnnotation>();
+
+        return graph.Annotations
+            .Select(annotation => new GraphAnnotation(
+                annotation.AnnotationId,
+                annotation.Kind,
+                annotation.Label,
+                new GraphAnnotationBounds(
+                    annotation.Bounds.X,
+                    annotation.Bounds.Y,
+                    annotation.Bounds.Width,
+                    annotation.Bounds.Height),
+                annotation.NodeIds,
+                annotation.Text,
+                annotation.Color))
+            .ToList();
+    }
 
     private static WorldGenerationGraphView AddNode(WorldGenerationGraphView graph, GraphNode node)
     {

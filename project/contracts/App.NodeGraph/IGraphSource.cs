@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -14,4 +15,10 @@ public interface IGraphSource
     GraphDocument Document { get; }
     event Action? Changed;
     Task ApplyEditAsync(GraphEdit edit, CancellationToken cancellationToken = default);
+}
+
+/// <summary>Optional extension for sources that can expose non-executable graph annotations.</summary>
+public interface IGraphAnnotationSource
+{
+    IReadOnlyList<GraphAnnotation> Annotations { get; }
 }

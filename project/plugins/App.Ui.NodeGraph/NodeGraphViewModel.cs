@@ -37,3 +37,14 @@ public sealed record WireItem(
     string FromPortId,
     string ToPortId,
     string KindHint);
+
+public sealed record AnnotationBoundsItem(float X, float Y, float Width, float Height);
+
+public sealed record AnnotationItem(
+    string AnnotationId,
+    string Kind,
+    string Label,
+    AnnotationBoundsItem Bounds,
+    IReadOnlyList<string> NodeIds,
+    string? Text = null,
+    string? Color = null);

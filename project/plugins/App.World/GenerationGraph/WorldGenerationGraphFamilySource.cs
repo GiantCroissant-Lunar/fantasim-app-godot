@@ -12,7 +12,7 @@ namespace FantaSim.App.World.GenerationGraph;
 /// The generic UI sees the effective graph for the active tick; edits are applied to the
 /// authored graph, then the effective graph is recomposed.
 /// </summary>
-public sealed class WorldGenerationGraphFamilySource : IGraphSource
+public sealed class WorldGenerationGraphFamilySource : IGraphSource, IGraphAnnotationSource
 {
     private readonly object _gate = new();
     private WorldGenerationGraphSource _activeSource = null!;
@@ -48,6 +48,8 @@ public sealed class WorldGenerationGraphFamilySource : IGraphSource
     public WorldGenerationGraphView Graph => _activeSource.Graph;
 
     public GraphDocument Document => _activeSource.Document;
+
+    public IReadOnlyList<GraphAnnotation> Annotations => _activeSource.Annotations;
 
     public event Action? Changed;
 
