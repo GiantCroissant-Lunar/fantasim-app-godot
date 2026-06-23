@@ -653,6 +653,20 @@ public sealed class WorldGenerationGraphPortTests
         Assert.Single(products);
         Assert.Equal("/base/main/formation/body-set@0", products[0]!["productAddress"]!.GetValue<string>());
         Assert.Equal(scopeKey.ToCacheKey(), products[0]!["executionScopeKey"]!.GetValue<string>());
+
+        var generationRequest = WorldGenerationGraphRunner.ToGenerationRequest(run, worldId: "graph-world");
+
+        Assert.Equal("graph-world", generationRequest.WorldId);
+        Assert.Equal(scopeKey.ToCacheKey(), generationRequest.GenerationSpec);
+        Assert.Equal("world-generation.graph", generationRequest.Parameters["source"]);
+        Assert.Equal(1, generationRequest.Parameters["productCount"]);
+        Assert.Equal(
+            new[] { "/base/main/formation/body-set@0" },
+            Assert.IsType<string[]>(generationRequest.Parameters["productAddresses"]));
+        Assert.Equal(scopeKey.ToCacheKey(), generationRequest.Parameters["executionScopeKey"]);
+        Assert.Equal(WorldRegimeScheduleKinds.BodyFormation, generationRequest.Parameters["lifecycleKind"]);
+        Assert.Equal(WorldGenerationGraphDefaults.FormationGraphId, generationRequest.Parameters["graphId"]);
+        Assert.Equal("geosphere/seed-7", generationRequest.Parameters["sphereHandoffLatentSubstrateSeed"]);
     }
 
     [Fact]

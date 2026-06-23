@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using FantaSim.App.NodeGraph;
 using FantaSim.App.World.Composition;
+using FantaSim.App.World.Dto;
 
 namespace FantaSim.App.World.GenerationGraph;
 
@@ -180,6 +181,45 @@ public sealed class WorldGenerationGraphRunner
         }
 
         return result;
+    }
+
+    public static WorldGenerationRequest ToGenerationRequest(
+        WorldGenerationGraphRunOutput run,
+        string worldId = "default")
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        if (string.IsNullOrWhiteSpace(worldId))
+            throw new ArgumentException("World id must be non-empty.", nameof(worldId));
+
+        var parameters = new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            ["source"] = "world-generation.graph",
+            ["productCount"] = run.Products.Count,
+            ["productAddresses"] = run.Products.Select(product => product.ProductAddress).ToArray(),
+        };
+
+        if (run.ExecutionScopeKey is { } scope)
+        {
+            parameters["executionScopeKey"] = scope.ToCacheKey();
+            parameters["lifecycleKind"] = scope.LifecycleKind;
+            parameters["regimeId"] = scope.RegimeId;
+            parameters["graphId"] = scope.GraphId;
+            parameters["graphRevision"] = scope.GraphRevision;
+            parameters["scheduleRevision"] = scope.ScheduleRevision;
+            parameters["variant"] = scope.Variant;
+            parameters["branch"] = scope.Branch;
+        }
+
+        if (run.SphereHandoff is { } handoff)
+        {
+            parameters["sphereHandoffTick"] = handoff.Tick;
+            parameters["sphereHandoffSourceBodyId"] = handoff.SourceBodyId;
+            parameters["sphereHandoffRetainedHeatJ"] = handoff.RetainedHeatJ;
+            parameters["sphereHandoffLatentSubstrateSeed"] = handoff.LatentSubstrateSeed;
+        }
+
+        var generationSpec = run.ExecutionScopeKey?.ToCacheKey() ?? "world-generation.graph";
+        return new WorldGenerationRequest(worldId, generationSpec, parameters);
     }
 
     private static string? TryReadProductAddress(JsonObject result)

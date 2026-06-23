@@ -635,11 +635,30 @@ public partial class Host : Node
                 var providers = registry.GetAll<FantaSim.App.NodeGraph.INodeFunctionProvider>().ToArray();
                 var runner = new WorldGenerationGraphRunner(providers);
                 var run = await runner.RunAsync(request.Graph, request.SharedParams, request.ExecutionScopeKey, ct);
-                return WorldGenerationGraphRunner.ToCommandResult(run).ToJsonString();
+                var result = WorldGenerationGraphRunner.ToCommandResult(run);
+                var generation = PublishWorldGenerationGraphRun(registry, run);
+                if (generation is not null)
+                    result["generation"] = JsonSerializer.SerializeToNode(generation);
+                return result.ToJsonString();
             });
 
         var health = orchestration.HealthAsync().GetAwaiter().GetResult();
         GD.Print($"[Host] registered: Command (orchestration {(health.Ok ? "healthy" : "degraded")}, {health.Commands} commands)");
+    }
+
+    private static FantaSim.App.World.Dto.WorldGenerationResult? PublishWorldGenerationGraphRun(
+        IRegistry registry,
+        WorldGenerationGraphRunOutput run)
+    {
+        var world = registry.TryGet<FantaSim.App.World.IService>();
+        if (world is null)
+            return null;
+
+        var generation = world.RunGenerationAsync(WorldGenerationGraphRunner.ToGenerationRequest(run));
+        if (generation.Success)
+            registry.TryGet<FantaSim.App.Ecs.IService>()?.UpdateAll(0f);
+
+        return generation;
     }
 
     private void ComposeIii(AppComposition composition)
