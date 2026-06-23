@@ -523,8 +523,15 @@ void light() {
 
     private static Color MagmaAlbedoForTemperature(double temperatureK)
     {
+        // Ramp endpoints MUST mirror GeosphereMagmaOceanLayer's actual temperature span so the
+        // default world reaches full lava at genesis: coolK = that layer's AmbientK (solidus floor,
+        // 1300 K) and hotK = its GenesisSurfaceK (fully-molten ceiling, 2000 K). The default world's
+        // genesis temperature peaks at exactly GenesisSurfaceK (heatRatio == 1), so a higher hotK
+        // (was 2700 K) capped the tint at t≈0.5 and starved the ember→lava band — the globe never
+        // glowed lava despite the design's "magma glows like orange lava at 0 ka" (vault/architecture/
+        // sphere-regimes.md). Keep these two literals in sync if the layer's constants change.
         const double coolK = 1300.0;
-        const double hotK = 2700.0;
+        const double hotK = 2000.0;
         var t = (float)Math.Clamp((temperatureK - coolK) / (hotK - coolK), 0.0, 1.0);
 
         var basalt = new Color(0.22f, 0.10f, 0.08f);
