@@ -16,6 +16,7 @@ public sealed class WorldGenerationGraphFamilySource : IGraphSource, IGraphAnnot
 {
     private readonly object _gate = new();
     private WorldGenerationGraphSource _activeSource = null!;
+    private string _lastComposedOverrideSignature = string.Empty;
 
     public WorldGenerationGraphFamilySource(
         string sourceId,
@@ -107,7 +108,12 @@ public sealed class WorldGenerationGraphFamilySource : IGraphSource, IGraphAnnot
             if (ActiveTick == tick)
                 return;
 
+            // The effective graph only changes at an override-range boundary crossing.
+            var newSignature = ComputeActiveOverrideSignature(tick);
             ActiveTick = tick;
+            if (string.Equals(newSignature, _lastComposedOverrideSignature, StringComparison.Ordinal))
+                return;
+
             RecomposeLocked();
         }
 
@@ -167,6 +173,30 @@ public sealed class WorldGenerationGraphFamilySource : IGraphSource, IGraphAnnot
         CompositionWarnings = composition.Warnings;
         ActiveSubgraphs = WorldGenerationGraphFamilyComposer.ListSubgraphs(Family, ActiveGraphId);
         Subgraphs = MapSubgraphs(Family, ActiveSubgraphs);
+        _lastComposedOverrideSignature = ComputeActiveOverrideSignature(ActiveTick);
+    }
+
+    private string ComputeActiveOverrideSignature(long tick)
+    {
+        var overrides = Family.GraphOverrides;
+        if (overrides.Count == 0)
+            return string.Empty;
+
+        var ids = new List<string>(overrides.Count);
+        foreach (var layer in overrides)
+        {
+            if (string.Equals(layer.GraphId, ActiveGraphId, StringComparison.Ordinal)
+                && layer.Range.Contains(tick))
+            {
+                ids.Add(layer.OverrideId);
+            }
+        }
+
+        if (ids.Count == 0)
+            return string.Empty;
+
+        ids.Sort(StringComparer.Ordinal);
+        return string.Join("|", ids);
     }
 
     private static IReadOnlyList<GraphSubgraph> MapSubgraphs(
