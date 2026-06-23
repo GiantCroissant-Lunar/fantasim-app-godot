@@ -59,3 +59,9 @@ data/
 .agents/
 .claude/
 CLAUDE.md
+# codegraph local index (added 2026-06-23)
+.codegraph/
+
+# agent-session scratch (delegation logs + staged dispatch prompts) - not source
+.agent/logs/
+.agent/run/
