@@ -100,7 +100,7 @@ public partial class TimelineFace : Control, ITimelineFace
         BuildLanes();
         SetupAnimationSystem();
 
-        ResidentProxy?.Connect(this);
+        ResidentProxy?.BindCrossTarget(this);
 
         SeekTo(_ctl.Tick);
         UpdateLayout();

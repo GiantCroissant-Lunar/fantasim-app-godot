@@ -25,6 +25,7 @@
     <ProjectReference Include="..\..\contracts\App.SceneFlow\App.SceneFlow.csproj" />
     <!-- World shared contracts: UnitConverter + CanonicalDisplayFormatter used by the model. -->
     <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Shared\World.Shared.csproj" />
+    <ProjectReference Include="..\..\contracts\Cross.Abstractions\Cross.Abstractions.csproj" />
   </ItemGroup>
 
   <ItemGroup>

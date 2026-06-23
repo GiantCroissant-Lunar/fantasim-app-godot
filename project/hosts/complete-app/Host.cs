@@ -775,7 +775,7 @@ public partial class Host : Node
         }
 
         // Build the deferred face proxy and set the resident statics the T4 face reads in _Ready.
-        var deferredFace = new FantaSim.App.Timeline.Seam.DeferredTimelineFace(controller);
+        var deferredFace = new FantaSim.App.Timeline.Seam.DeferredTimelineFace();
         FantaSim.App.Timeline.Seam.TimelineFace.ResidentController = controller;
         FantaSim.App.Timeline.Seam.TimelineFace.ResidentProxy = deferredFace;
 

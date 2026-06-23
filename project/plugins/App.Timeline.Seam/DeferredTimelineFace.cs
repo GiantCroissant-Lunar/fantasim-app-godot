@@ -1,51 +1,23 @@
-using System;
-using FantaSim.App.Timeline;
+using FantaSim.Cross;
 using FantaSim.App.Timeline.Providers;
 using FantaSim.App.World.Composition;
 
 namespace FantaSim.App.Timeline.Seam;
 
 /// <summary>
-/// A deferred-binding ITimelineFace proxy. Constructed by Host.cs BEFORE the timeline bundle
-/// scene instantiates the real TimelineFace. Buffers Play/Pause/Seek/ApplyView calls (no-op
-/// until Connect is called), then forwards to the real face. The real face calls Connect(this)
-/// in its _Ready, at which point the proxy swaps to live forwarding.
+/// Resident-to-collectible-ALC binder for ITimelineFace. The source generator emits
+/// BindCrossTarget / UnbindCrossTarget / IsCrossBound + forwarding methods for Play,
+/// Pause, SeekTo, ApplyView (the [CrossDelegate]-marked surface). When the timeline
+/// bundle hot-reloads, Host.cs calls UnbindCrossTarget() before the old ALC unloads,
+/// then BindCrossTarget(newFace) after the new scene instantiates.
+///
+/// The T3 Service holds a reference to this binder (as ITimelineFace). When no target
+/// is bound, the generated forwarding methods return default/no-op -- the T3 Service
+/// already has its own ITimelineController reference for the fallback path.
 /// </summary>
-public sealed class DeferredTimelineFace : ITimelineFace
+[CrossService(typeof(ITimelineFace))]
+public sealed partial class DeferredTimelineFace : ITimelineFace
 {
-    private readonly ITimelineController _controller;
-    private ITimelineFace? _target;
-
-    public DeferredTimelineFace(ITimelineController controller)
-    {
-        _controller = controller ?? throw new ArgumentNullException(nameof(controller));
-    }
-
-    public void Connect(ITimelineFace target)
-    {
-        _target = target ?? throw new ArgumentNullException(nameof(target));
-    }
-
-    public void Play()
-    {
-        if (_target is not null) _target.Play();
-        else _controller.Play();
-    }
-
-    public void Pause()
-    {
-        if (_target is not null) _target.Pause();
-        else _controller.Pause();
-    }
-
-    public void SeekTo(long tick)
-    {
-        if (_target is not null) _target.SeekTo(tick);
-        else _controller.SeekTo(tick);
-    }
-
-    public void ApplyView(TimelineViewSnapshot snapshot)
-    {
-        _target?.ApplyView(snapshot);
-    }
+    // The source generator emits all forwarding members. This hand-written part is
+    // intentionally empty -- the binder is a pure forwarder with no custom state.
 }

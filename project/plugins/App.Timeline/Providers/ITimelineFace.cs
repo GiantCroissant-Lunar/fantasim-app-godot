@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using FantaSim.Cross;
 
 namespace FantaSim.App.Timeline.Providers;
 
@@ -15,12 +16,14 @@ public interface ITimelineFace
     /// Start the animation playback (transitions the AnimationTree to the "playing" state).
     /// Called on the main thread by the T3 (which may receive the request off-thread).
     /// </summary>
+    [CrossDelegate]
     void Play();
 
     /// <summary>
     /// Pause the animation playback (transitions the AnimationTree to the "idle" state).
     /// Called on the main thread by the T3.
     /// </summary>
+    [CrossDelegate]
     void Pause();
 
     /// <summary>
@@ -28,6 +31,7 @@ public interface ITimelineFace
     /// thread by the T3. The face must NOT call back into the service during this method
     /// (the service already knows the tick - it called Seek).
     /// </summary>
+    [CrossDelegate]
     void SeekTo(long tick);
 
     /// <summary>
@@ -35,5 +39,6 @@ public interface ITimelineFace
     /// highlighting, ruler). Called after every tick or state change. The face may marshal
     /// this onto the main thread if called off-thread.
     /// </summary>
+    [CrossDelegate]
     void ApplyView(TimelineViewSnapshot snapshot);
 }
