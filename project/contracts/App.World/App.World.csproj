@@ -12,5 +12,6 @@
     <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" />
     <PackageReference Include="GiantCroissant.ServiceArchi.Contracts" />
     <PackageReference Include="GiantCroissant.ServiceArchi.SourceGen" PrivateAssets="all" />
+    <PackageReference Include="UnifyMaths" />
   </ItemGroup>
 </Project>

@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using FantaSim.App.World;
 using FantaSim.App.World.Composition;
+using UnifyMaths;
 using Xunit;
 
 namespace App.World.Composition.Tests;
@@ -77,7 +78,7 @@ public class FieldHandoffContextTests
             },
             RetainedHeatJ: retainedHeatJ,
             RetainedVolatileMassKg: 1.1944e23,
-            AngularMomentum: new Vector3d(0, 0, 0),
+            AngularMomentum: new Vector3D(0, 0, 0),
             LatentSubstrateSeed: "geosphere/seed-7");
 
     private static double ScalarAt(WorldFieldValues values, FieldId field, int cellIndex)

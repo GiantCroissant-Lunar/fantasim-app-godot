@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Nodes;
+using UnifyMaths;
 
 using FantaSim.App.World;   // WorldGlobeGeometry
 
@@ -32,9 +33,6 @@ public interface IFieldComputeContext
     void SetScalar(FieldId field, IReadOnlyList<double> perCell);
 }
 
-/// <summary>Plain 3-vector for app contracts. No Godot vector, ECS handle, or OpenUSD type.</summary>
-public sealed record Vector3d(double X, double Y, double Z);
-
 /// <summary>Mass fraction of one material component carried through formation and sphere handoff.</summary>
 public sealed record MaterialCompositionFraction(string ComponentId, double Fraction);
 
@@ -52,7 +50,7 @@ public sealed record SphereHandoff(
     IReadOnlyList<MaterialCompositionFraction> BulkCompositionFractions,
     double RetainedHeatJ,
     double RetainedVolatileMassKg,
-    Vector3d AngularMomentum,
+    Vector3D AngularMomentum,
     string LatentSubstrateSeed)
 {
     public static SphereHandoff FromJson(JsonObject value)
@@ -97,12 +95,12 @@ public sealed record SphereHandoff(
         return result;
     }
 
-    private static Vector3d ReadVector(JsonObject value, string key)
+    private static Vector3D ReadVector(JsonObject value, string key)
     {
         if (!value.TryGetPropertyValue(key, out var node) || node is not JsonArray array || array.Count != 3)
             throw new ArgumentException($"Sphere handoff JSON '{key}' must contain three numbers.", nameof(value));
 
-        return new Vector3d(
+        return new Vector3D(
             array[0]!.GetValue<double>(),
             array[1]!.GetValue<double>(),
             array[2]!.GetValue<double>());
