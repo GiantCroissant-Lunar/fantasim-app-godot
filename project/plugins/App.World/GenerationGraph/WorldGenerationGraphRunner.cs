@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -21,6 +22,60 @@ public sealed record WorldGenerationGraphRunOutput(
     JsonObject Sink,
     IReadOnlyList<WorldGenerationGraphProduct> Products,
     SphereHandoff? SphereHandoff);
+
+/// <summary>
+/// Command payload for executing a graph with run-scoped parameters such as the active canonical tick.
+/// Legacy callers may still send a raw <see cref="GraphDocument"/>.
+/// </summary>
+public sealed record WorldGenerationGraphExecutionPayload(
+    GraphDocument Graph,
+    JsonObject? SharedParams = null)
+{
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
+    public static string Serialize(GraphDocument graph, JsonObject? sharedParams = null)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+
+        var payload = new JsonObject
+        {
+            ["graph"] = JsonSerializer.SerializeToNode(graph, JsonOptions),
+        };
+        if (sharedParams is not null)
+            payload["sharedParams"] = sharedParams.DeepClone();
+
+        return payload.ToJsonString();
+    }
+
+    public static WorldGenerationGraphExecutionPayload Deserialize(string payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+            throw new ArgumentException("World generation graph payload is required.", nameof(payloadJson));
+
+        var node = JsonNode.Parse(payloadJson)
+            ?? throw new InvalidOperationException("World generation graph payload could not be parsed.");
+
+        if (node is JsonObject wrapper
+            && wrapper.TryGetPropertyValue("graph", out var graphNode)
+            && graphNode is not null)
+        {
+            var graph = graphNode.Deserialize<GraphDocument>(JsonOptions)
+                ?? throw new InvalidOperationException("World generation graph payload could not be deserialized.");
+            var sharedParams = wrapper.TryGetPropertyValue("sharedParams", out var sharedNode)
+                && sharedNode is JsonObject sharedObject
+                    ? sharedObject.DeepClone().AsObject()
+                    : null;
+            return new WorldGenerationGraphExecutionPayload(graph, sharedParams);
+        }
+
+        var legacyGraph = node.Deserialize<GraphDocument>(JsonOptions)
+            ?? throw new InvalidOperationException("World generation graph payload could not be deserialized.");
+        return new WorldGenerationGraphExecutionPayload(legacyGraph);
+    }
+}
 
 /// <summary>
 /// Runs compiled world-generation graphs and captures world product metadata from node outputs.

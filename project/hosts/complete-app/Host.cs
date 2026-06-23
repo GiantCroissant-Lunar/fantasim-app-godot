@@ -126,7 +126,9 @@ public partial class Host : Node
             runAsync: async () =>
             {
                 var compiled = graphSource.CompileForExecution();
-                var payload = JsonSerializer.Serialize(compiled.Document);
+                var payload = WorldGenerationGraphExecutionPayload.Serialize(
+                    compiled.Document,
+                    WorldGraphSharedParams(graphSource.ActiveTick));
                 var result = await client.CommandAsync(new FantaSim.App.Command.CommandRequest(
                     Command: RunWorldGenerationGraphCommand,
                     PayloadJson: payload));
@@ -188,6 +190,13 @@ public partial class Host : Node
         return 0;
     }
 
+    private static JsonObject WorldGraphSharedParams(long tick)
+        => new()
+        {
+            ["canonicalTick"] = tick,
+            ["tick"] = tick,
+        };
+
     // pipeline.run_text_to_3d via the composed iii axis (env-guarded demo). The graph is authored in
     // App.Iii.Recipes and executed by the general App.NodeGraph.GraphExecutor through the iii function
     // provider. Quits when done so the windowed verification run terminates.
@@ -233,7 +242,9 @@ public partial class Host : Node
             if (graphSource.CompositionWarnings.Count > 0)
                 GD.PushWarning($"[graph] world-generation graph warnings: {string.Join("; ", graphSource.CompositionWarnings)}");
             var compiled = graphSource.CompileForExecution();
-            var payload = JsonSerializer.Serialize(compiled.Document);
+            var payload = WorldGenerationGraphExecutionPayload.Serialize(
+                compiled.Document,
+                WorldGraphSharedParams(graphSource.ActiveTick));
             var result = await client.CommandAsync(new FantaSim.App.Command.CommandRequest(
                 Command: RunWorldGenerationGraphCommand,
                 PayloadJson: payload));
@@ -595,17 +606,11 @@ public partial class Host : Node
                 Category: "world"),
             async (payloadJson, ct) =>
             {
-                if (string.IsNullOrWhiteSpace(payloadJson))
-                    throw new ArgumentException("World generation graph payload is required.", nameof(payloadJson));
-
-                var graph = JsonSerializer.Deserialize<FantaSim.App.NodeGraph.GraphDocument>(
-                    payloadJson,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-                    ?? throw new InvalidOperationException("World generation graph payload could not be deserialized.");
+                var request = WorldGenerationGraphExecutionPayload.Deserialize(payloadJson ?? string.Empty);
 
                 var providers = registry.GetAll<FantaSim.App.NodeGraph.INodeFunctionProvider>().ToArray();
                 var runner = new WorldGenerationGraphRunner(providers);
-                var run = await runner.RunAsync(graph, cancellationToken: ct);
+                var run = await runner.RunAsync(request.Graph, request.SharedParams, ct);
                 return WorldGenerationGraphRunner.ToCommandResult(run).ToJsonString();
             });
 

@@ -463,16 +463,25 @@ public sealed class WorldGenerationGraphPortTests
             WorldGenerationGraphDefaults.BuildFamily(),
             WorldRegimeScheduleKinds.Sphere,
             "magma-ocean",
-            tick: 0,
+            tick: 1_234,
             sphereId: WorldGenerationGraphDefaults.GeosphereSphereId);
 
         var compiled = source.CompileForExecution();
-        var result = await new GraphExecutor(new[] { new WorldFunctionProvider() }).ExecuteAsync(compiled.Document);
+        var run = await new WorldGenerationGraphRunner(new[] { new WorldFunctionProvider() })
+            .RunAsync(compiled.Document, new JsonObject { ["canonicalTick"] = source.ActiveTick });
+        var result = run.Sink;
         var layer = Assert.IsType<JsonObject>(result["layer"]);
 
         Assert.Equal(WorldFunctionProvider.LayerScope, result["function"]?.GetValue<string>());
+        Assert.Equal(WorldRegimeScheduleKinds.Sphere, result["scheduleKind"]?.GetValue<string>());
+        Assert.Equal(WorldGenerationGraphDefaults.GeosphereSphereId, result["sphereId"]?.GetValue<string>());
         Assert.Equal("geosphere.magma-ocean", layer["layerId"]?.GetValue<string>());
         Assert.Equal("magma-ocean", layer["regimeId"]?.GetValue<string>());
+        Assert.Equal(1_234, result["canonicalTick"]?.GetValue<long>());
+        Assert.Single(run.Products);
+        Assert.Equal("layer_scope", run.Products[0].NodeId);
+        Assert.Equal(WorldFunctionProvider.LayerScope, run.Products[0].FunctionId);
+        Assert.Equal("/base/main/geosphere/magma-ocean.geosphere.magma-ocean@1234", run.Products[0].ProductAddress);
     }
 
     [Fact]
@@ -539,6 +548,31 @@ public sealed class WorldGenerationGraphPortTests
         Assert.InRange(run.SphereHandoff!.RetainedHeatJ, 5.971e31, 5.973e31);
         Assert.Single(products);
         Assert.Equal("/base/main/formation/body-set@0", products[0]!["productAddress"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void ExecutionPayload_RoundTripsSharedParams_AndAcceptsLegacyGraphPayload()
+    {
+        var graph = WorldGenerationGraphFamilySource.ForRegime(
+                "world-generation",
+                WorldGenerationGraphDefaults.BuildFamily(),
+                WorldRegimeScheduleKinds.Sphere,
+                "magma-ocean",
+                tick: 0,
+                sphereId: WorldGenerationGraphDefaults.GeosphereSphereId)
+            .CompileForExecution()
+            .Document;
+
+        var payloadJson = WorldGenerationGraphExecutionPayload.Serialize(
+            graph,
+            new JsonObject { ["canonicalTick"] = 1_234 });
+        var payload = WorldGenerationGraphExecutionPayload.Deserialize(payloadJson);
+        var legacy = WorldGenerationGraphExecutionPayload.Deserialize(JsonSerializer.Serialize(graph));
+
+        Assert.Equal(graph.SinkNodeId, payload.Graph.SinkNodeId);
+        Assert.Equal(1_234, payload.SharedParams!["canonicalTick"]!.GetValue<int>());
+        Assert.Equal(graph.SinkNodeId, legacy.Graph.SinkNodeId);
+        Assert.Null(legacy.SharedParams);
     }
 
     [Fact]

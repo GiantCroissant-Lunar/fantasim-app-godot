@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using FantaSim.App.NodeGraph;
+using FantaSim.App.World.GenerationGraph;
 using FantaSim.Geosphere.Crust;
 using FantaSim.Geosphere.Plate.Topology;
 using FantaSim.World.Contracts.Time;
@@ -176,11 +177,39 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         };
 
     private static JsonObject PackageLayerScope(JsonObject payload)
-        => new()
+    {
+        var sphereId = ReadString(payload, "sphereId", WorldGenerationGraphDefaults.GeosphereSphereId);
+        var regimeId = ReadString(payload, "regimeId", "mobile-plate");
+        var layerId = ReadString(payload, "layerId", "geosphere.crust");
+        var role = ReadString(payload, "role", "layer");
+        var tick = ReadLong(payload, "canonicalTick", ReadLong(payload, "tick", 0));
+        var layer = new JsonObject
+        {
+            ["sphereId"] = sphereId,
+            ["regimeId"] = regimeId,
+            ["layerId"] = layerId,
+            ["role"] = role,
+            ["canonicalTick"] = tick,
+        };
+
+        return new JsonObject
         {
             ["function"] = LayerScope,
-            ["layer"] = payload.DeepClone(),
+            ["scheduleKind"] = WorldRegimeScheduleKinds.Sphere,
+            ["sphereId"] = sphereId,
+            ["regimeId"] = regimeId,
+            ["layerId"] = layerId,
+            ["role"] = role,
+            ["canonicalTick"] = tick,
+            ["productAddress"] = new WorldGenerationProductAddress(
+                Variant: "base",
+                Branch: "main",
+                Domain: sphereId,
+                Product: $"{regimeId}.{layerId}",
+                Tick: tick).ToPath(),
+            ["layer"] = layer,
         };
+    }
 
     // ---------------------------------------------------------------- crust.generate
 
