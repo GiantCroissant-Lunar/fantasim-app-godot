@@ -78,4 +78,11 @@
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
 
+  <!-- Source generators (Roslyn): the app-internal Cross.SourceGenerators forwarding generator
+       builds against these; netstandard2.0 analyzer consumed via OutputItemType=Analyzer. -->
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" />
+  </ItemGroup>
+
 </Project>

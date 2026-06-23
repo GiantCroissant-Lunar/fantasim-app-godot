@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Roslyn incremental source generator: MUST target netstandard2.0 so the
+         compiler can load it as an analyzer. Consumed by project reference with
+         OutputItemType="Analyzer" (see tests/Cross.Tests) - never packed or shipped. -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>FantaSim.Cross.SourceGenerators</RootNamespace>
+    <AssemblyName>FantaSim.Cross.SourceGenerators</AssemblyName>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IsPackable>false</IsPackable>
+    <!-- RS2008: this app-internal generator ships no analyzer-release tracking files. -->
+    <NoWarn>$(NoWarn);RS2008</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

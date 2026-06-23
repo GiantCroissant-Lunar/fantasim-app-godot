@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- netstandard2.0: attribute-only contract for the cross-forwarding generator. Referenced by
+         the generator's consumers (net8.0 residents/seams) and kept at the widest TFM for reach. -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>FantaSim.Cross</RootNamespace>
+    <AssemblyName>FantaSim.Cross.Abstractions</AssemblyName>
+    <PackageId>GiantCroissant.FantaSim.Cross.Abstractions</PackageId>
+    <!-- Hosts the canonical repo-wide IsExternalInit polyfill (Polyfills/IsExternalInit.cs), which
+         project/Directory.Build.props link-compiles into every OTHER project. This project compiles
+         its own copy via the default glob, so Directory.Build.props excludes it by project name. -->
+  </PropertyGroup>
+
+</Project>
