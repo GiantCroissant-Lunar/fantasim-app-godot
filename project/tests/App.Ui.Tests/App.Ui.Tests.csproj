@@ -11,6 +11,9 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\plugins\App.Ui\App.Ui.csproj" />
+    <ProjectReference Include="..\..\plugins\App.Ui.NodeGraph\App.Ui.NodeGraph.csproj" />
+    <ProjectReference Include="..\..\plugins\App.NodeGraph\App.NodeGraph.csproj" />
     <ProjectReference Include="..\..\contracts\App.Ui\App.Ui.csproj" />
+    <ProjectReference Include="..\..\contracts\App.NodeGraph\App.NodeGraph.csproj" />
   </ItemGroup>
 </Project>

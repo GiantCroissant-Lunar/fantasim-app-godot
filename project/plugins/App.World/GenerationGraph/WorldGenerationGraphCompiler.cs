@@ -22,13 +22,15 @@ public static class WorldGenerationGraphCompiler
 {
     public static CompiledWorldGenerationGraph Compile(
         WorldGenerationGraphView graph,
-        string? sinkNodeId = null)
+        string? sinkNodeId = null,
+        bool validateRequiredInputs = true)
     {
         ArgumentNullException.ThrowIfNull(graph);
 
         var byId = ValidateNodes(graph);
         ValidateWires(graph, byId);
-        ValidateRequiredInputs(graph);
+        if (validateRequiredInputs)
+            ValidateRequiredInputs(graph);
 
         var nodes = graph.Nodes
             .Select(node => new GraphNode(node.NodeId, node.TypeId, BuildParams(node)))

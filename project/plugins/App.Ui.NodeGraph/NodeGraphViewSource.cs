@@ -19,7 +19,7 @@ namespace FantaSim.App.Ui.NodeGraph;
 /// <see cref="NodeItem"/>/<see cref="WireItem"/> records and build their own surface, or wrap an
 /// <see cref="IGraphSource"/> with extra metadata before handing it to this view.
 /// </summary>
-public class NodeGraphViewSource : IViewSource
+public class NodeGraphViewSource : IViewSource, IDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
@@ -28,6 +28,7 @@ public class NodeGraphViewSource : IViewSource
     private readonly string _title;
     private string _status = "ready";
     private int _revision;
+    private bool _disposed;
 
     public NodeGraphViewSource(IGraphSource source, Func<Task<JsonObject>>? runAsync = null, string? title = null)
     {
@@ -41,6 +42,13 @@ public class NodeGraphViewSource : IViewSource
     public string ViewId => $"{_source.SourceId}-node-graph";
 
     public event Action? Changed;
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _source.Changed -= OnSourceChanged;
+        _disposed = true;
+    }
 
     // MVVM surface reflected by the resident binder (by property name: "Nodes" / "Wires").
     public ObservableCollection<NodeItem> Nodes { get; } = new();

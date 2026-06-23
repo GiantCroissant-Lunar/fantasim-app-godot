@@ -1,5 +1,7 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using FantaSim.App.NodeGraph;
 using FantaSim.App.World.GenerationGraph;
 using Xunit;
 
@@ -221,6 +223,101 @@ public sealed class WorldGenerationGraphPortTests
             "body:formation", "regime", "graph", 1, 1, "base", "main"));
         Assert.Throws<ArgumentException>(() => new WorldGenerationProductAddress(
             "base", "main/branch", "formation", "body-set", 500));
+    }
+
+    [Fact]
+    public void NodeCatalog_ContainsCurrentExecutableWorldGraphNodes()
+    {
+        var options = WorldGenerationNodeCatalog.Find(WorldFunctionProvider.WorldOptions);
+        var crust = WorldGenerationNodeCatalog.Find(WorldFunctionProvider.CrustGenerate);
+
+        Assert.NotNull(options);
+        Assert.NotNull(crust);
+        Assert.Equal("options", options!.Outputs[0].PortId);
+        Assert.Equal("options", crust!.Inputs[0].PortId);
+        Assert.True(crust.IsExpensive);
+    }
+
+    [Fact]
+    public async Task DefaultWorldGraphSource_CompilesAndRunsThroughGenericExecutor()
+    {
+        var source = new WorldGenerationGraphSource(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildCrustGraph());
+
+        var compiled = source.CompileForExecution();
+        var result = await new GraphExecutor(new[] { new WorldFunctionProvider() }).ExecuteAsync(compiled.Document);
+
+        Assert.Equal(2, compiled.Document.Nodes.Count);
+        Assert.Equal("crust", compiled.Document.SinkNodeId);
+        Assert.Equal(WorldFunctionProvider.WorldOptions, compiled.Document.Nodes[0].FunctionId);
+        Assert.Equal(WorldFunctionProvider.CrustGenerate, compiled.Document.Nodes[1].FunctionId);
+        Assert.Equal(WorldFunctionProvider.CrustGenerate, result["function"]?.GetValue<string>());
+        Assert.Equal(3, result["frequency"]?.GetValue<int>());
+        Assert.True(result["activeBoundaries"]?.GetValue<bool>());
+    }
+
+    [Fact]
+    public async Task WorldGraphSource_AppliesGenericParamEditsToTypedGraphAndProjection()
+    {
+        var source = new WorldGenerationGraphSource(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildCrustGraph());
+        var changed = 0;
+        source.Changed += () => changed++;
+
+        await source.ApplyEditAsync(new GraphEdit.SetParam("options", "frequency", JsonValue.Create(4)));
+
+        var typedParam = source.Graph.Nodes.Single(node => node.NodeId == "options")
+            .Parameters!
+            .Single(parameter => parameter.Key == "frequency");
+        var projectedNode = source.Document.Nodes.Single(node => node.Id == "options");
+
+        Assert.Equal(1, changed);
+        Assert.Equal("4", typedParam.Value);
+        Assert.Equal(4, projectedNode.Params["frequency"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task WorldGraphSource_AllowsAuthoringIncompleteNodesButExecutionCompileRejectsThem()
+    {
+        var source = new WorldGenerationGraphSource(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildCrustGraph());
+
+        await source.ApplyEditAsync(new GraphEdit.AddNode(new GraphNode(
+            "extra_crust",
+            WorldFunctionProvider.CrustGenerate,
+            new JsonObject())));
+
+        Assert.Contains(source.Graph.Nodes, node => node.NodeId == "extra_crust");
+        Assert.Contains(source.Document.Nodes, node => node.Id == "extra_crust");
+        Assert.Throws<ArgumentException>(() => source.CompileForExecution());
+    }
+
+    [Fact]
+    public async Task WorldGraphSource_RemoveNodeUpdatesWiresAndAnnotations()
+    {
+        var source = new WorldGenerationGraphSource(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildCrustGraph());
+
+        await source.ApplyEditAsync(new GraphEdit.RemoveNode("options"));
+
+        Assert.DoesNotContain(source.Graph.Nodes, node => node.NodeId == "options");
+        Assert.Empty(source.Graph.Wires);
+        Assert.DoesNotContain(source.Graph.Annotations![0].NodeIds, id => id == "options");
+    }
+
+    [Fact]
+    public async Task WorldGraphSource_RejectsRemovingOutputNode()
+    {
+        var source = new WorldGenerationGraphSource(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildCrustGraph());
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            source.ApplyEditAsync(new GraphEdit.RemoveNode("crust")));
     }
 
     private static WorldGenerationGraphView MakeView(string graphId, string label)

@@ -32,6 +32,9 @@ namespace FantaSim.App.World;
 /// </summary>
 public sealed class WorldFunctionProvider : INodeFunctionProvider
 {
+    /// <summary>Function id for a source node that packages authored world-generation options.</summary>
+    public const string WorldOptions = "world.options";
+
     /// <summary>Function id for the crust-evolution pipeline run.</summary>
     public const string CrustGenerate = "crust.generate";
 
@@ -69,26 +72,34 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
 
         return functionId switch
         {
+            WorldOptions => PackageWorldOptions(payload),
             CrustGenerate => await GenerateCrustAsync(payload, cancellationToken).ConfigureAwait(false),
             _ => throw new InvalidOperationException(
                 $"WorldFunctionProvider has no handler for function '{functionId}'."),
         };
     }
 
+    private static JsonObject PackageWorldOptions(JsonObject payload)
+        => new()
+        {
+            ["options"] = payload.DeepClone(),
+        };
+
     // ---------------------------------------------------------------- crust.generate
 
     private static async Task<JsonObject> GenerateCrustAsync(JsonObject payload, CancellationToken ct)
     {
-        int frequency = ReadInt(payload, "frequency", DefaultFrequency);
-        long targetTick = ReadTargetTick(payload);
+        var effectivePayload = MergeNestedOptions(payload);
+        int frequency = ReadInt(effectivePayload, "frequency", DefaultFrequency);
+        long targetTick = ReadTargetTick(effectivePayload);
         double durationMegaAnnum = UnitConverter.TickDeltaToMegaAnnum(targetTick);
-        double rate = ReadDouble(payload, "spinRateRadiansPerMegaAnnum",
-            ReadDouble(payload, "spinRate", DefaultSpinRateRadiansPerMegaAnnum));
-        var rates = ReadRates(payload);
+        double rate = ReadDouble(effectivePayload, "spinRateRadiansPerMegaAnnum",
+            ReadDouble(effectivePayload, "spinRate", DefaultSpinRateRadiansPerMegaAnnum));
+        var rates = ReadRates(effectivePayload);
 
         var tessellation = new GeodesicSphereTessellation(frequency);
-        var plates = ReadPlates(payload, rate);
-        var recipe = ReadRecipe(payload);
+        var plates = ReadPlates(effectivePayload, rate);
+        var recipe = ReadRecipe(effectivePayload);
 
         var topology = PlateTopologyBuilder.Build(tessellation, plates);
 
@@ -111,6 +122,25 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
             topology,
             result,
             targetTick);
+    }
+
+    private static JsonObject MergeNestedOptions(JsonObject payload)
+    {
+        var result = new JsonObject();
+        if (payload.TryGetPropertyValue("options", out var optionsNode) && optionsNode is JsonObject options)
+        {
+            foreach (var kv in options)
+                result[kv.Key] = kv.Value?.DeepClone();
+        }
+
+        foreach (var kv in payload)
+        {
+            if (string.Equals(kv.Key, "options", StringComparison.Ordinal))
+                continue;
+            result[kv.Key] = kv.Value?.DeepClone();
+        }
+
+        return result;
     }
 
     private static JsonObject Summarize(
