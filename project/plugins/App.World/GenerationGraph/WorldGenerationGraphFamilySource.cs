@@ -134,6 +134,28 @@ public sealed class WorldGenerationGraphFamilySource : IGraphSource, IGraphAnnot
     public CompiledWorldGenerationGraph CompileForExecution(string? sinkNodeId = null)
         => WorldGenerationGraphCompiler.Compile(Graph, sinkNodeId);
 
+    public WorldGenerationGraphExecutionScopeKey? TryBuildExecutionScopeKey(
+        string variant = "base",
+        string branch = "main",
+        int scheduleRevision = 1)
+    {
+        lock (_gate)
+        {
+            var binding = ResolveRegimeBindingForGraph(Family, ActiveGraphId);
+            if (binding is null)
+                return null;
+
+            return new WorldGenerationGraphExecutionScopeKey(
+                binding.ScheduleKind,
+                binding.RegimeId,
+                ActiveGraphId,
+                Family.Revision,
+                scheduleRevision,
+                variant,
+                branch);
+        }
+    }
+
     private void RecomposeLocked()
     {
         var composition = WorldGenerationGraphFamilyComposer.ComposeEffectiveGraph(
@@ -174,6 +196,37 @@ public sealed class WorldGenerationGraphFamilySource : IGraphSource, IGraphAnnot
 
         return family.Graphs.FirstOrDefault(candidate =>
             string.Equals(candidate.GraphId, graphId, StringComparison.Ordinal));
+    }
+
+    private static WorldRegimeGraphBinding? ResolveRegimeBindingForGraph(
+        WorldGenerationGraphFamilyDocument family,
+        string graphId)
+        => ResolveRegimeBindingForGraph(family, graphId, new HashSet<string>(StringComparer.Ordinal));
+
+    private static WorldRegimeGraphBinding? ResolveRegimeBindingForGraph(
+        WorldGenerationGraphFamilyDocument family,
+        string graphId,
+        ISet<string> visited)
+    {
+        if (!visited.Add(graphId))
+            return null;
+
+        var direct = family.RegimeGraphBindings.FirstOrDefault(binding =>
+            string.Equals(binding.GraphId, graphId, StringComparison.Ordinal));
+        if (direct is not null)
+            return direct;
+
+        foreach (var subgraph in family.SubgraphBindings ?? Array.Empty<WorldGenerationSubgraphBinding>())
+        {
+            if (!string.Equals(subgraph.SubgraphId, graphId, StringComparison.Ordinal))
+                continue;
+
+            var parentBinding = ResolveRegimeBindingForGraph(family, subgraph.ParentGraphId, visited);
+            if (parentBinding is not null)
+                return parentBinding;
+        }
+
+        return null;
     }
 
     private static WorldGenerationGraphView ResolveAuthoredGraph(

@@ -359,16 +359,34 @@ public sealed class WorldGenerationGraphPortTests
         Assert.Equal(WorldGenerationGraphDefaults.MobilePlateLayerGraphId, activeSubgraph.SubgraphId);
         Assert.Equal("Mobile Plate Layers", activeSubgraph.Label);
         Assert.Equal(5, source.Document.Nodes.Single(node => node.Id == "options").Params["frequency"]!.GetValue<int>());
+        var scopeKey = source.TryBuildExecutionScopeKey();
+        Assert.NotNull(scopeKey);
+        Assert.Equal(WorldRegimeScheduleKinds.Sphere, scopeKey!.LifecycleKind);
+        Assert.Equal("mobile-plate", scopeKey.RegimeId);
+        Assert.Equal(WorldGenerationGraphDefaults.GeosphereGraphId, scopeKey.GraphId);
+        Assert.Equal(family.Revision, scopeKey.GraphRevision);
 
         navigator.SelectGraph(WorldGenerationGraphDefaults.MobilePlateLayerGraphId);
 
         Assert.Equal(WorldGenerationGraphDefaults.MobilePlateLayerGraphId, source.ActiveGraphId);
         Assert.Equal("Mobile Plate Layers", navigator.ActiveGraphLabel);
         Assert.Equal(2, navigator.Subgraphs.Count);
+        var layerScopeKey = source.TryBuildExecutionScopeKey();
+        Assert.NotNull(layerScopeKey);
+        Assert.Equal(WorldRegimeScheduleKinds.Sphere, layerScopeKey!.LifecycleKind);
+        Assert.Equal("mobile-plate", layerScopeKey.RegimeId);
+        Assert.Equal(WorldGenerationGraphDefaults.MobilePlateLayerGraphId, layerScopeKey.GraphId);
+
+        navigator.SelectGraph(WorldGenerationGraphDefaults.GeospherePlateLayerGraphId);
+
+        var leafLayerScopeKey = source.TryBuildExecutionScopeKey();
+        Assert.NotNull(leafLayerScopeKey);
+        Assert.Equal("mobile-plate", leafLayerScopeKey!.RegimeId);
+        Assert.Equal(WorldGenerationGraphDefaults.GeospherePlateLayerGraphId, leafLayerScopeKey.GraphId);
 
         source.SetTick(9);
 
-        Assert.Equal("geosphere.plate", source.Document.Nodes.Single(node => node.Id == "plate_layer").Params["layerId"]!.GetValue<string>());
+        Assert.Equal("geosphere.plate", source.Document.Nodes.Single(node => node.Id == "layer_scope").Params["layerId"]!.GetValue<string>());
     }
 
     [Fact]
@@ -616,19 +634,25 @@ public sealed class WorldGenerationGraphPortTests
             tick: 0);
 
         var compiled = source.CompileForExecution();
+        var scopeKey = source.TryBuildExecutionScopeKey();
         var run = await new WorldGenerationGraphRunner(new[] { new WorldFunctionProvider() })
-            .RunAsync(compiled.Document);
+            .RunAsync(compiled.Document, executionScopeKey: scopeKey);
         var commandResult = WorldGenerationGraphRunner.ToCommandResult(run);
         var products = Assert.IsType<JsonArray>(commandResult["products"]);
 
         Assert.Equal(WorldFunctionProvider.BodyFormation, run.Sink["function"]?.GetValue<string>());
+        Assert.NotNull(scopeKey);
+        Assert.Equal(scopeKey!.ToCacheKey(), run.ExecutionScopeKey!.ToCacheKey());
         Assert.Single(run.Products);
         Assert.Equal("body_formation", run.Products[0].NodeId);
         Assert.Equal("/base/main/formation/body-set@0", run.Products[0].ProductAddress);
+        Assert.Equal(scopeKey.ToCacheKey(), run.Products[0].ExecutionScopeKey!.ToCacheKey());
         Assert.NotNull(run.SphereHandoff);
         Assert.InRange(run.SphereHandoff!.RetainedHeatJ, 5.971e31, 5.973e31);
+        Assert.Equal(scopeKey.ToCacheKey(), commandResult["executionScopeKey"]!.GetValue<string>());
         Assert.Single(products);
         Assert.Equal("/base/main/formation/body-set@0", products[0]!["productAddress"]!.GetValue<string>());
+        Assert.Equal(scopeKey.ToCacheKey(), products[0]!["executionScopeKey"]!.GetValue<string>());
     }
 
     [Fact]
@@ -646,14 +670,26 @@ public sealed class WorldGenerationGraphPortTests
 
         var payloadJson = WorldGenerationGraphExecutionPayload.Serialize(
             graph,
-            new JsonObject { ["canonicalTick"] = 1_234 });
+            new JsonObject { ["canonicalTick"] = 1_234 },
+            new WorldGenerationGraphExecutionScopeKey(
+                WorldRegimeScheduleKinds.Sphere,
+                "magma-ocean",
+                WorldGenerationGraphDefaults.GeosphereMagmaOceanGraphId,
+                7,
+                1,
+                "base",
+                "main"));
         var payload = WorldGenerationGraphExecutionPayload.Deserialize(payloadJson);
         var legacy = WorldGenerationGraphExecutionPayload.Deserialize(JsonSerializer.Serialize(graph));
 
         Assert.Equal(graph.SinkNodeId, payload.Graph.SinkNodeId);
         Assert.Equal(1_234, payload.SharedParams!["canonicalTick"]!.GetValue<int>());
+        Assert.Equal(
+            "sphere:magma-ocean:geosphere.magma-ocean:G7:S1:base:main",
+            payload.ExecutionScopeKey!.ToCacheKey());
         Assert.Equal(graph.SinkNodeId, legacy.Graph.SinkNodeId);
         Assert.Null(legacy.SharedParams);
+        Assert.Null(legacy.ExecutionScopeKey);
     }
 
     [Fact]

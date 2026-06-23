@@ -15,13 +15,15 @@ public sealed record WorldGenerationGraphProduct(
     string NodeId,
     string FunctionId,
     string ProductAddress,
-    JsonObject Payload);
+    JsonObject Payload,
+    WorldGenerationGraphExecutionScopeKey? ExecutionScopeKey = null);
 
 /// <summary>World-specific execution projection over the generic graph executor.</summary>
 public sealed record WorldGenerationGraphRunOutput(
     JsonObject Sink,
     IReadOnlyList<WorldGenerationGraphProduct> Products,
-    SphereHandoff? SphereHandoff);
+    SphereHandoff? SphereHandoff,
+    WorldGenerationGraphExecutionScopeKey? ExecutionScopeKey = null);
 
 /// <summary>
 /// Command payload for executing a graph with run-scoped parameters such as the active canonical tick.
@@ -29,14 +31,18 @@ public sealed record WorldGenerationGraphRunOutput(
 /// </summary>
 public sealed record WorldGenerationGraphExecutionPayload(
     GraphDocument Graph,
-    JsonObject? SharedParams = null)
+    JsonObject? SharedParams = null,
+    WorldGenerationGraphExecutionScopeKey? ExecutionScopeKey = null)
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
     };
 
-    public static string Serialize(GraphDocument graph, JsonObject? sharedParams = null)
+    public static string Serialize(
+        GraphDocument graph,
+        JsonObject? sharedParams = null,
+        WorldGenerationGraphExecutionScopeKey? executionScopeKey = null)
     {
         ArgumentNullException.ThrowIfNull(graph);
 
@@ -46,6 +52,8 @@ public sealed record WorldGenerationGraphExecutionPayload(
         };
         if (sharedParams is not null)
             payload["sharedParams"] = sharedParams.DeepClone();
+        if (executionScopeKey is not null)
+            payload["executionScopeKey"] = JsonSerializer.SerializeToNode(executionScopeKey, JsonOptions);
 
         return payload.ToJsonString();
     }
@@ -68,7 +76,11 @@ public sealed record WorldGenerationGraphExecutionPayload(
                 && sharedNode is JsonObject sharedObject
                     ? sharedObject.DeepClone().AsObject()
                     : null;
-            return new WorldGenerationGraphExecutionPayload(graph, sharedParams);
+            var executionScopeKey = wrapper.TryGetPropertyValue("executionScopeKey", out var scopeNode)
+                && scopeNode is not null
+                    ? scopeNode.Deserialize<WorldGenerationGraphExecutionScopeKey>(JsonOptions)
+                    : null;
+            return new WorldGenerationGraphExecutionPayload(graph, sharedParams, executionScopeKey);
         }
 
         var legacyGraph = node.Deserialize<GraphDocument>(JsonOptions)
@@ -94,6 +106,7 @@ public sealed class WorldGenerationGraphRunner
     public async Task<WorldGenerationGraphRunOutput> RunAsync(
         GraphDocument graph,
         JsonObject? sharedParams = null,
+        WorldGenerationGraphExecutionScopeKey? executionScopeKey = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(graph);
@@ -110,7 +123,8 @@ public sealed class WorldGenerationGraphRunner
                         node.Id,
                         node.FunctionId,
                         productAddress,
-                        result.DeepClone().AsObject()));
+                        result.DeepClone().AsObject(),
+                        executionScopeKey));
                 }
 
                 if (result.TryGetPropertyValue("sphereHandoff", out var handoffNode))
@@ -134,7 +148,7 @@ public sealed class WorldGenerationGraphRunner
                 sphereHandoff = SphereHandoff.FromJson(sinkHandoffJson);
         }
 
-        return new WorldGenerationGraphRunOutput(sink, products, sphereHandoff);
+        return new WorldGenerationGraphRunOutput(sink, products, sphereHandoff, executionScopeKey);
     }
 
     public static JsonObject ToCommandResult(WorldGenerationGraphRunOutput run)
@@ -142,17 +156,24 @@ public sealed class WorldGenerationGraphRunner
         ArgumentNullException.ThrowIfNull(run);
 
         var result = run.Sink.DeepClone().AsObject();
+        if (run.ExecutionScopeKey is not null)
+            result["executionScopeKey"] = run.ExecutionScopeKey.ToCacheKey();
+
         if (run.Products.Count > 0)
         {
             var products = new JsonArray();
             foreach (var product in run.Products)
             {
-                products.Add(new JsonObject
+                var productJson = new JsonObject
                 {
                     ["nodeId"] = product.NodeId,
                     ["functionId"] = product.FunctionId,
                     ["productAddress"] = product.ProductAddress,
-                });
+                };
+                if (product.ExecutionScopeKey is not null)
+                    productJson["executionScopeKey"] = product.ExecutionScopeKey.ToCacheKey();
+
+                products.Add(productJson);
             }
 
             result["products"] = products;

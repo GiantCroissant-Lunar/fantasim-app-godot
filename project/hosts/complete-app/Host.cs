@@ -143,7 +143,8 @@ public partial class Host : Node
                 var compiled = graphSource.CompileForExecution();
                 var payload = WorldGenerationGraphExecutionPayload.Serialize(
                     compiled.Document,
-                    WorldGraphSharedParams(graphSource.ActiveTick));
+                    WorldGraphSharedParams(graphSource.ActiveTick),
+                    graphSource.TryBuildExecutionScopeKey());
                 var result = await client.CommandAsync(new FantaSim.App.Command.CommandRequest(
                     Command: RunWorldGenerationGraphCommand,
                     PayloadJson: payload));
@@ -266,7 +267,8 @@ public partial class Host : Node
             var compiled = graphSource.CompileForExecution();
             var payload = WorldGenerationGraphExecutionPayload.Serialize(
                 compiled.Document,
-                WorldGraphSharedParams(graphSource.ActiveTick));
+                WorldGraphSharedParams(graphSource.ActiveTick),
+                graphSource.TryBuildExecutionScopeKey());
             var result = await client.CommandAsync(new FantaSim.App.Command.CommandRequest(
                 Command: RunWorldGenerationGraphCommand,
                 PayloadJson: payload));
@@ -632,7 +634,7 @@ public partial class Host : Node
 
                 var providers = registry.GetAll<FantaSim.App.NodeGraph.INodeFunctionProvider>().ToArray();
                 var runner = new WorldGenerationGraphRunner(providers);
-                var run = await runner.RunAsync(request.Graph, request.SharedParams, ct);
+                var run = await runner.RunAsync(request.Graph, request.SharedParams, request.ExecutionScopeKey, ct);
                 return WorldGenerationGraphRunner.ToCommandResult(run).ToJsonString();
             });
 
