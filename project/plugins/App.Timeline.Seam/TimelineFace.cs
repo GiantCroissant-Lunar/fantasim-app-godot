@@ -46,9 +46,9 @@ public partial class TimelineFace : Control, ITimelineFace
     /// the face needs _Ready/_ExitTree lifecycle, so it is a Node, but it exposes only
     /// ITimelineFace upward to T3).
     /// </summary>
-    internal static ITimelineController? ResidentController { get; set; }
+    public static ITimelineController? ResidentController { get; set; }
 
-    internal static DeferredTimelineFace? ResidentProxy;
+    public static DeferredTimelineFace? ResidentProxy;
 
     [Export]
     public double InternalTick

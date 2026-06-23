@@ -54,6 +54,7 @@ public partial class Host : Node
         // World view (the T4 relief render) is composed AFTER the cell-elevation model and the GPU
         // compute service so it can feed per-cell elevation through the compute displacement path.
         ComposeWorldView(_composition);
+        ComposeTimeline(_composition);
         ComposeActivity(_composition);
         ComposeUi(_composition);
 
@@ -753,6 +754,45 @@ public partial class Host : Node
             });
 
         GD.Print("[Host] registered: Iii (bridge, function provider, orchestration, 2 commands)");
+    }
+
+    // ComposeTimeline: the resident T4 TimelineFace + the T3 timeline Service orchestrator.
+    // The face is a Godot Control (Node-backed seam exception - it needs _Ready/_ExitTree for
+    // the AnimationPlayer lifecycle). The T3 Service is pure C# and registered into the kernel
+    // IRegistry so other plugins can resolve IService. The face resolves ITimelineController
+    // from the static set here (the controller was registered by ComposeWorldView above).
+    // Ordered AFTER ComposeWorldView (ITimelineController must exist) and BEFORE the deferred
+    // EnterInitialScenes (the timeline bundle's scene instantiates the face, which reads
+    // ResidentController).
+    private void ComposeTimeline(AppComposition composition)
+    {
+        var registry = composition.Bootstrap.Registry;
+        var controller = registry.TryGet<FantaSim.App.World.Composition.ITimelineController>();
+        if (controller is null)
+        {
+            GD.PushWarning("[Host] Timeline: no ITimelineController registered; timeline service will be inert.");
+            return;
+        }
+
+        // Build the deferred face proxy and set the resident statics the T4 face reads in _Ready.
+        var deferredFace = new FantaSim.App.Timeline.Seam.DeferredTimelineFace(controller);
+        FantaSim.App.Timeline.Seam.TimelineFace.ResidentController = controller;
+        FantaSim.App.Timeline.Seam.TimelineFace.ResidentProxy = deferredFace;
+
+        // Build the T3 service with the controller's schedules. The T3 Service drives the face
+        // via ITimelineFace; the face also calls back into the controller (PushTick) during
+        // animation playback.
+        var timelineService = new FantaSim.App.Timeline.Services.Service(
+            deferredFace,
+            controller.GeosphereSchedule,
+            controller.AtmosphereSchedule,
+            controller.MaxTick,
+            composition.Bootstrap.LoggerFactory);
+        registry.Register<FantaSim.App.Timeline.IService>(
+            timelineService,
+            new ServiceRegistration { Tags = new[] { "timeline" }, Description = "Timeline playback service" });
+
+        GD.Print("[Host] registered: Timeline (IService + resident TimelineFace)");
     }
 
     private void ComposeActivity(AppComposition composition)

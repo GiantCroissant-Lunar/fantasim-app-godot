@@ -32,6 +32,10 @@
          the Godot camera rig over the vendored phantom-camera addon). -->
     <ProjectReference Include="..\..\plugins\App.Camera\App.Camera.csproj" />
     <ProjectReference Include="..\..\plugins\App.Camera.Seam\App.Camera.Seam.csproj" />
+    <!-- Timeline service: T3 (App.Timeline, engine-agnostic orchestrator) + T4 (App.Timeline.Seam,
+         the Godot timeline face). -->
+    <ProjectReference Include="..\..\plugins\App.Timeline\App.Timeline.csproj" />
+    <ProjectReference Include="..\..\plugins\App.Timeline.Seam\App.Timeline.Seam.csproj" />
   </ItemGroup>
 
   <!-- Vendored phantom-camera addon (v0.11.0.2, GDScript at runtime). Its bundled C# wrapper sources
