@@ -805,6 +805,67 @@ public sealed class WorldGenerationGraphPortTests
             source.ApplyEditAsync(new GraphEdit.RemoveNode("crust")));
     }
 
+    [Fact]
+    public void TimelineGraphBinding_FollowsGeosphereRegimeChanges()
+    {
+        var timeline = new FakeTimelineController(
+            SphereRegimeScheduleDefaults.GeosphereDefault,
+            SphereRegimeScheduleDefaults.AtmosphereFor(SphereRegimeScheduleDefaults.PlateOnsetTick));
+        var source = WorldGenerationGraphFamilySource.ForRegime(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildFamily(),
+            WorldRegimeScheduleKinds.Sphere,
+            "mobile-plate",
+            SphereRegimeScheduleDefaults.PlateOnsetTick,
+            WorldGenerationGraphDefaults.GeosphereSphereId);
+
+        using var binding = WorldGenerationTimelineGraphBinding.BindGeosphere(timeline, source);
+
+        Assert.Equal(WorldGenerationGraphDefaults.GeosphereMagmaOceanGraphId, source.ActiveGraphId);
+        Assert.Equal(0, source.ActiveTick);
+
+        timeline.PushTick(SphereRegimeScheduleDefaults.MagmaOceanEndTick);
+
+        Assert.Equal(WorldGenerationGraphDefaults.GeosphereStagnantLidGraphId, source.ActiveGraphId);
+        Assert.Equal(SphereRegimeScheduleDefaults.MagmaOceanEndTick, source.ActiveTick);
+
+        timeline.PushTick(SphereRegimeScheduleDefaults.PlateOnsetTick);
+
+        Assert.Equal(WorldGenerationGraphDefaults.GeosphereGraphId, source.ActiveGraphId);
+        Assert.Equal(SphereRegimeScheduleDefaults.PlateOnsetTick, source.ActiveTick);
+    }
+
+    [Fact]
+    public void TimelineGraphBinding_PreservesOpenedSubgraphWithinSameRegime_AndDisposes()
+    {
+        var onset = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        var timeline = new FakeTimelineController(
+            SphereRegimeScheduleDefaults.GeosphereDefault,
+            SphereRegimeScheduleDefaults.AtmosphereFor(onset),
+            onset);
+        var source = WorldGenerationGraphFamilySource.ForRegime(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildFamily(),
+            WorldRegimeScheduleKinds.Sphere,
+            "mobile-plate",
+            onset,
+            WorldGenerationGraphDefaults.GeosphereSphereId);
+        using var binding = WorldGenerationTimelineGraphBinding.BindGeosphere(timeline, source);
+        var navigator = Assert.IsAssignableFrom<IGraphSubgraphSource>(source);
+        navigator.SelectGraph(WorldGenerationGraphDefaults.MobilePlateLayerGraphId);
+
+        timeline.PushTick(onset + 1);
+
+        Assert.Equal(WorldGenerationGraphDefaults.MobilePlateLayerGraphId, source.ActiveGraphId);
+        Assert.Equal(onset + 1, source.ActiveTick);
+
+        binding.Dispose();
+        timeline.PushTick(0);
+
+        Assert.Equal(WorldGenerationGraphDefaults.MobilePlateLayerGraphId, source.ActiveGraphId);
+        Assert.Equal(onset + 1, source.ActiveTick);
+    }
+
     private static WorldGenerationGraphView MakeView(string graphId, string label)
     {
         var source = new WorldGenerationGraphNode(
@@ -846,5 +907,40 @@ public sealed class WorldGenerationGraphPortTests
                     Color: "#6ea8fe"),
             },
             OutputNodeIds: new[] { "crust" });
+    }
+
+    private sealed class FakeTimelineController : ITimelineController
+    {
+        public FakeTimelineController(
+            SphereRegimeSchedule geosphereSchedule,
+            SphereRegimeSchedule atmosphereSchedule,
+            long tick = 0,
+            long maxTick = 120_000_000)
+        {
+            GeosphereSchedule = geosphereSchedule;
+            AtmosphereSchedule = atmosphereSchedule;
+            Tick = tick;
+            MaxTick = maxTick;
+        }
+
+        public long Tick { get; private set; }
+        public long MaxTick { get; }
+        public bool IsPlaying => false;
+        public SphereRegimeSchedule GeosphereSchedule { get; }
+        public SphereRegimeSchedule AtmosphereSchedule { get; }
+        public event Action<long>? TickChanged;
+
+        public void Play() { }
+        public void Pause() { }
+        public void SeekTo(long tick) => PushTick(tick);
+
+        public void PushTick(long tick)
+        {
+            Tick = tick;
+            TickChanged?.Invoke(tick);
+        }
+
+        public void RegisterPlayback(Action onPlay, Action onPause, Action<long> onSeek, Func<bool> checkPlaying) { }
+        public void UnregisterPlayback() { }
     }
 }

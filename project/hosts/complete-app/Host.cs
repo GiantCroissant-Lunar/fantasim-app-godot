@@ -26,6 +26,7 @@ public partial class Host : Node
     // Sub-project B: the Godot-free ECS cell model that derives per-cell elevation. Owned here so its
     // lifetime matches the host; the relief render (sub-project C) reads GetElevations() off it.
     private FantaSim.App.World.Cells.CellElevationModel? _cellElevation;
+    private IDisposable? _worldGraphTimelineBinding;
 
     public override void _Ready()
     {
@@ -120,6 +121,20 @@ public partial class Host : Node
             return;
         }
 
+        if (ReadWorldGraphFollowTimeline())
+        {
+            var timeline = _composition.Bootstrap.Registry.TryGet<FantaSim.App.World.Composition.ITimelineController>();
+            if (timeline is not null)
+            {
+                _worldGraphTimelineBinding?.Dispose();
+                _worldGraphTimelineBinding = WorldGenerationTimelineGraphBinding.BindGeosphere(timeline, graphSource);
+            }
+            else
+            {
+                GD.PushWarning("[graph] timeline follow requested, but no ITimelineController is registered.");
+            }
+        }
+
         var client = _composition.Bootstrap.Registry.Get<FantaSim.App.Command.IClient>();
         var view = new FantaSim.App.Ui.NodeGraph.NodeGraphViewSource(
             graphSource,
@@ -188,6 +203,13 @@ public partial class Host : Node
 
         GD.PushWarning($"[graph] invalid FANTASIM_WORLD_GRAPH_TICK '{value}', using 0.");
         return 0;
+    }
+
+    private static bool ReadWorldGraphFollowTimeline()
+    {
+        var value = System.Environment.GetEnvironmentVariable("FANTASIM_WORLD_GRAPH_FOLLOW_TIMELINE");
+        return !string.Equals(value, "0", StringComparison.Ordinal)
+               && !string.Equals(value, "false", StringComparison.OrdinalIgnoreCase);
     }
 
     private static JsonObject WorldGraphSharedParams(long tick)
