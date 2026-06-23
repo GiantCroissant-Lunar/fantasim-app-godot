@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FantaSim.App.Common;
@@ -13,6 +14,8 @@ namespace FantaSim.App.Common.Entry;
 
 public partial class Host : Node
 {
+    private const string RunWorldGenerationGraphCommand = "world.run_generation_graph";
+
     private AppComposition? _composition;
     private CollectibleBundles? _collectibleBundles;
     private FantaSim.App.Ecs.IService? _ecs;
@@ -55,7 +58,9 @@ public partial class Host : Node
         Callable.From(EnterInitialScenes).CallDeferred();
         Callable.From(PingIiiBridge).CallDeferred();
         Callable.From(RunGraphTest).CallDeferred();
+        Callable.From(RunWorldGraphTest).CallDeferred();
         Callable.From(ShowIiiGraph).CallDeferred();
+        Callable.From(ShowWorldGraph).CallDeferred();
         Callable.From(RunGpuSmoke).CallDeferred();
         Callable.From(RunGpuShaderSmoke).CallDeferred();
     }
@@ -93,6 +98,41 @@ public partial class Host : Node
         GD.Print($"[graph] iii-graph view mounted: {view.Nodes.Count} nodes, {view.Wires.Count} wires.");
     }
 
+    // Mount the current world-generation graph as a BoomHud nodeGraph (env-guarded demo). Uses the
+    // typed App.World authoring source projected into the GENERAL App.Ui.NodeGraph view; RUN compiles
+    // the live edited graph and routes execution through App.Command.
+    private void ShowWorldGraph()
+    {
+        if (System.Environment.GetEnvironmentVariable("FANTASIM_SHOW_WORLD_GRAPH") != "1") return;
+        var logger = _composition!.Bootstrap.LoggerFactory.CreateLogger("WorldGraph");
+
+        var graphSource = new FantaSim.App.World.GenerationGraph.WorldGenerationGraphSource(
+            "world-generation",
+            FantaSim.App.World.GenerationGraph.WorldGenerationGraphDefaults.BuildCrustGraph());
+
+        var client = _composition.Bootstrap.Registry.Get<FantaSim.App.Command.IClient>();
+        var view = new FantaSim.App.Ui.NodeGraph.NodeGraphViewSource(
+            graphSource,
+            runAsync: async () =>
+            {
+                var compiled = graphSource.CompileForExecution();
+                var payload = JsonSerializer.Serialize(compiled.Document);
+                var result = await client.CommandAsync(new FantaSim.App.Command.CommandRequest(
+                    Command: RunWorldGenerationGraphCommand,
+                    PayloadJson: payload));
+                return JsonSerializer.SerializeToNode(result)?.AsObject() ?? new JsonObject();
+            },
+            title: "world generation graph");
+
+        var uiRoot = new Control { Name = "WorldGraphRoot" };
+        uiRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        GetTree().Root.AddChild(uiRoot);
+
+        var renderer = new FantaSim.App.Ui.Seam.ViewRenderer(uiRoot, () => view, _ => null, logger);
+        renderer.Bind();
+        GD.Print($"[graph] world-generation graph view mounted: {view.Nodes.Count} nodes, {view.Wires.Count} wires.");
+    }
+
     // pipeline.run_text_to_3d via the composed iii axis (env-guarded demo). The graph is authored in
     // App.Iii.Recipes and executed by the general App.NodeGraph.GraphExecutor through the iii function
     // provider. Quits when done so the windowed verification run terminates.
@@ -119,6 +159,37 @@ public partial class Host : Node
         {
             var msg = ex.Message;
             Callable.From(() => { GD.PushError($"[graph] execution failed: {msg}"); GetTree().Quit(); }).CallDeferred();
+        }
+    }
+
+    // world.run_generation_graph via the composed World axis (env-guarded smoke). Executes the default
+    // typed world-generation graph through App.Command -> GraphExecutor -> WorldFunctionProvider and
+    // quits when done.
+    private async void RunWorldGraphTest()
+    {
+        if (System.Environment.GetEnvironmentVariable("FANTASIM_WORLD_GRAPH_TEST") != "1") return;
+        GD.Print("[graph] executing world-generation graph via world axis...");
+
+        var client = _composition!.Bootstrap.Registry.Get<FantaSim.App.Command.IClient>();
+        try
+        {
+            var graph = FantaSim.App.World.GenerationGraph.WorldGenerationGraphDefaults.BuildCrustGraph();
+            var compiled = FantaSim.App.World.GenerationGraph.WorldGenerationGraphCompiler.Compile(graph);
+            var payload = JsonSerializer.Serialize(compiled.Document);
+            var result = await client.CommandAsync(new FantaSim.App.Command.CommandRequest(
+                Command: RunWorldGenerationGraphCommand,
+                PayloadJson: payload));
+            Callable.From(() =>
+            {
+                if (result.Ok) GD.Print($"[graph] WORLD DONE - {result.ResultJson}");
+                else GD.PushError($"[graph] world generation failed: {result.Error?.Message}");
+                GetTree().Quit();
+            }).CallDeferred();
+        }
+        catch (Exception ex)
+        {
+            var msg = ex.Message;
+            Callable.From(() => { GD.PushError($"[graph] world generation execution failed: {msg}"); GetTree().Quit(); }).CallDeferred();
         }
     }
 
@@ -418,6 +489,28 @@ public partial class Host : Node
         registry.Register<FantaSim.App.Command.IClient>(
             client,
             new ServiceRegistration { Tags = new[] { "command", "client" }, Description = "In-process command client" });
+
+        commands.Register(
+            new FantaSim.App.Command.CommandDescriptor(
+                Id: RunWorldGenerationGraphCommand,
+                Title: "Run world generation graph",
+                Description: "Executes a compiled App.NodeGraph world-generation graph through registered node providers.",
+                Category: "world"),
+            async (payloadJson, ct) =>
+            {
+                if (string.IsNullOrWhiteSpace(payloadJson))
+                    throw new ArgumentException("World generation graph payload is required.", nameof(payloadJson));
+
+                var graph = JsonSerializer.Deserialize<FantaSim.App.NodeGraph.GraphDocument>(
+                    payloadJson,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                    ?? throw new InvalidOperationException("World generation graph payload could not be deserialized.");
+
+                var providers = registry.GetAll<FantaSim.App.NodeGraph.INodeFunctionProvider>().ToArray();
+                var executor = new FantaSim.App.NodeGraph.GraphExecutor(providers);
+                var result = await executor.ExecuteAsync(graph, cancellationToken: ct);
+                return result.ToJsonString();
+            });
 
         var health = orchestration.HealthAsync().GetAwaiter().GetResult();
         GD.Print($"[Host] registered: Command (orchestration {(health.Ok ? "healthy" : "degraded")}, {health.Commands} commands)");
