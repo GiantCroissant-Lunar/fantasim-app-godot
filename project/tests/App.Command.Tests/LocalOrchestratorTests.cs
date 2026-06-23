@@ -124,6 +124,31 @@ public class LocalOrchestratorTests
         Assert.Contains("\"fieldCount\":2", result.ResultJson);
     }
 
+    [Fact]
+    public async Task Generation_products_reports_product_snapshot_without_ecs_update()
+    {
+        var registry = NewRegistry();
+        var world = new FakeWorldService
+        {
+            ProductsView = new WorldGenerationProductsView(
+                7,
+                new[] { "/base/main/formation/body-set@1234" },
+                1_234L,
+                Array.Empty<long>()),
+        };
+        registry.Register<WorldService>(world, new ServiceRegistration { Tags = new[] { "world" } });
+        var orchestrator = new LocalOrchestrator(registry, NullLoggerFactory.Instance);
+
+        var result = await orchestrator.TriggerAsync(new CommandRequest(
+            Command: LocalOrchestrator.WellKnownCommands.GenerationProducts));
+
+        Assert.True(result.Ok);
+        Assert.Equal(1, world.ProductsCalls);
+        Assert.Contains("\"graphRevision\":7", result.ResultJson);
+        Assert.Contains("\"products\":[\"/base/main/formation/body-set@1234\"]", result.ResultJson);
+        Assert.Contains("\"referenceTick\":1234", result.ResultJson);
+    }
+
     // ---------------------------------------------------------------------
     // Behavior 4: missing App.World registration yields a typed
     // missing-service error rather than a NullReferenceException.
@@ -191,7 +216,7 @@ public class LocalOrchestratorTests
 
         // Then Ok is true and the command count matches the trimmed surface
         Assert.True(full.Ok);
-        Assert.Equal(3, full.Commands);
+        Assert.Equal(4, full.Commands);
     }
 }
 
@@ -274,6 +299,8 @@ internal sealed class FakeWorldService : WorldService
 {
     public int GenerateCalls;
     public int OverviewCalls;
+    public int ProductsCalls;
+    public WorldGenerationProductsView ProductsView = new(0, Array.Empty<string>(), 0L, Array.Empty<long>());
 
     public WorldOverview GetOverviewAsync()
     {
@@ -291,7 +318,10 @@ internal sealed class FakeWorldService : WorldService
         => new(0, Array.Empty<RenderEntityDto>());
 
     public WorldGenerationProductsView GetGenerationProductsAsync()
-        => new(0, Array.Empty<string>(), 0L, Array.Empty<long>());
+    {
+        ProductsCalls++;
+        return ProductsView;
+    }
 
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
     {

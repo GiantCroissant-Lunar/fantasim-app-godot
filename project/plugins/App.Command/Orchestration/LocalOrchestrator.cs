@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using FantaSim.App.World;
 using FantaSim.App.World.Dto;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -29,7 +30,13 @@ public sealed class LocalOrchestrator : IWorldOrchestration
         public const string Generate = "world.generate";
         public const string Tick = "world.tick";
         public const string Refresh = "world.refresh";
+        public const string GenerationProducts = "world.generation_products";
     }
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
 
     private readonly IRegistry _registry;
     private readonly ILogger _logger;
@@ -55,6 +62,7 @@ public sealed class LocalOrchestrator : IWorldOrchestration
             WellKnownCommands.Generate => TriggerGenerateAsync(request, commandId, cancellationToken),
             WellKnownCommands.Tick => TriggerTickAsync(request, commandId, cancellationToken),
             WellKnownCommands.Refresh => TriggerRefreshAsync(request, commandId, cancellationToken),
+            WellKnownCommands.GenerationProducts => TriggerGenerationProductsAsync(request, commandId, cancellationToken),
             _ => Task.FromResult(UnknownCommand(request, commandId)),
         };
     }
@@ -65,7 +73,7 @@ public sealed class LocalOrchestrator : IWorldOrchestration
         var world = _registry.TryGet<WorldService>();
         var ecs = _registry.TryGet<EcsService>();
         var ok = world is not null && ecs is not null;
-        var commands = 3; // generate + tick + refresh
+        var commands = 4; // generate + tick + refresh + generation_products
         return Task.FromResult(new CommandHealth(ok, commands));
     }
 
@@ -144,6 +152,28 @@ public sealed class LocalOrchestrator : IWorldOrchestration
         catch (Exception ex)
         {
             _logger.LogError(ex, "world.refresh failed for command {CommandId}.", commandId);
+            return Task.FromResult(new CommandResult(commandId, false, Error: ToError(ex)));
+        }
+    }
+
+    private Task<CommandResult> TriggerGenerationProductsAsync(
+        CommandRequest request, string commandId, CancellationToken cancellationToken)
+    {
+        var world = _registry.TryGet<WorldService>();
+        if (world is null)
+            return Task.FromResult(MissingService(request, commandId, "FantaSim.App.World.IService"));
+
+        try
+        {
+            var products = world.GetGenerationProductsAsync();
+            return Task.FromResult(new CommandResult(
+                commandId,
+                true,
+                ResultJson: SerializeGenerationProducts(products)));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "world.generation_products failed for command {CommandId}.", commandId);
             return Task.FromResult(new CommandResult(commandId, false, Error: ToError(ex)));
         }
     }
@@ -245,6 +275,9 @@ public sealed class LocalOrchestrator : IWorldOrchestration
 
     private static string SerializeOverview(WorldOverview overview)
         => $"{{\"worldId\":\"{Escape(overview.WorldId)}\",\"name\":\"{Escape(overview.Name)}\",\"entityCount\":{overview.EntityCount},\"fieldCount\":{overview.FieldCount},\"isDirty\":{(overview.IsDirty ? "true" : "false")}}}";
+
+    private static string SerializeGenerationProducts(WorldGenerationProductsView products)
+        => JsonSerializer.Serialize(products, JsonOptions);
 
     private static string SerializeTick(TickRequest request)
     {
