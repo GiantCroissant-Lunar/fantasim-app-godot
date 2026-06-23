@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.Camera</RootNamespace>
+    <AssemblyName>FantaSim.App.Camera</AssemblyName>
+    <!-- ServiceArchi Tier 3: engine-agnostic virtual-camera orchestrator. Registers camera viewpoints
+         by id, tracks the active camera per viewport, forwards to the ICameraRig seam (implemented by
+         the Godot App.Camera.Seam). Pure C# (Microsoft.NET.Sdk, not Godot.NET.Sdk); T3 owns the seam
+         interface (Providers/ICameraRig) and is handed one ICameraRig at composition - it references
+         no concrete rig and no Godot. Bus-triggered: subscribes to ActivateCameraMessage. -->
+    <ServiceArchiTier>T3</ServiceArchiTier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The T1 contract (IService, CameraSpec, ActivateCameraMessage). The camera-rig seam interface
+         lives in THIS project (Providers/), not a separate contracts assembly - the T4 seam references
+         this project to implement it. -->
+    <ProjectReference Include="..\..\contracts\App.Camera\App.Camera.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <!-- The crosscut bus: the service subscribes to ActivateCameraMessage. -->
+    <PackageReference Include="GiantCroissant.CrosscutFoundation.Messaging.Contracts" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,38 @@
+<Project Sdk="Godot.NET.Sdk/4.7.0">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.Camera.Seam</RootNamespace>
+    <AssemblyName>FantaSim.App.Camera.Seam</AssemblyName>
+    <ServiceArchiTier>T4</ServiceArchiTier>
+    <!-- The RESIDENT camera seam: implements the T3 ICameraRig with the vendored phantom-camera
+         addon. Godot.NET.Sdk for the GodotSharp reference, mirroring App.GpuShader.Seam. Stays
+         resident (shared via "App." prefix) - it is the only Godot-aware piece; a camera bundle
+         itself would define no Godot types and its collectible ALC would unload cleanly.
+         Seam tier opts out of CPM (Godot SDK manages its package graph). -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The T1 contract (CameraSpec, IService, ActivateCameraMessage). -->
+    <ProjectReference Include="..\..\contracts\App.Camera\App.Camera.csproj" />
+    <!-- The T3 camera service this seam implements the rig (Providers/ICameraRig) for. T3 never
+         references T4 (this project); the dependency points only T4 -> T3. -->
+    <ProjectReference Include="..\App.Camera\App.Camera.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The vendored phantom-camera addon's bundled C# wrappers (compiled into this seam,
+         excluded from the host assembly so the seam owns them). -->
+    <Compile Include="..\..\hosts\complete-app\addons\phantom_camera\**\*.cs" LinkBase="PhantomCameraWrapper" />
+  </ItemGroup>
+
+</Project>

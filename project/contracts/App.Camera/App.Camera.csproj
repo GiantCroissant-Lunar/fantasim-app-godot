@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.Camera</RootNamespace>
+    <AssemblyName>FantaSim.App.Camera.Contracts</AssemblyName>
+    <!-- ServiceArchi Tier 1: engine-agnostic virtual-camera contract - CameraSpec records, bus
+         messages, and the by-id IService interface + T2 proxy. The T3 orchestrator is
+         plugins/App.Camera; the Godot phantom-camera rig is the resident T4 seam
+         plugins/App.Camera.Seam. Mirrors App.GpuCompute / App.Ui contracts. -->
+    <ServiceArchiTier>T1</ServiceArchiTier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+
+  <!-- PluginArchi: [assembly: PluginSharedContract] (the camera contract types cross the host-bundle
+       ALC boundary). ServiceArchi: the T2 proxy (Services/Service.cs) is realized here by the source
+       generator. -->
+  <ItemGroup>
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" />
+    <PackageReference Include="GiantCroissant.ServiceArchi.Contracts" />
+    <PackageReference Include="GiantCroissant.ServiceArchi.SourceGen" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>
