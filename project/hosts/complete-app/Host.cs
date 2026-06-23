@@ -501,6 +501,7 @@ public partial class Host : Node
             magmaSurfaceTemperatureAt);
         // Extend the scrubber to cover the full transport range so the user can drag to onset and beyond.
         view.SetMaxTick(maxTransportTick);
+        SubscribeWorldGenerationRefresh(composition, view);
         GetTree().Root.CallDeferred("add_child", view);
 
 
@@ -537,6 +538,29 @@ public partial class Host : Node
             WorldGenerationGraphDefaults.GeosphereSphereId);
 
         return WorldGenerationRenderOptions.Resolve(source.Graph);
+    }
+
+    private void SubscribeWorldGenerationRefresh(AppComposition composition, GlobeView view)
+    {
+        var world = composition.Bootstrap.Registry.TryGet<FantaSim.App.World.IService>();
+        if (world is null)
+            return;
+
+        world.SubscribeGenerationChanged(evt =>
+        {
+            if (!WorldGenerationRefreshPolicy.ShouldRefreshGlobe(evt))
+                return;
+
+            Callable.From(() =>
+            {
+                if (!view.IsInsideTree())
+                    return;
+
+                var tick = view.Tick;
+                view.SetTick(tick);
+                GD.Print($"[Host] World view refreshed after generation change at tick={tick:N0}; detail={evt.Detail}");
+            }).CallDeferred();
+        });
     }
 
     private static SphereHandoff? TryBuildDefaultSphereHandoff(AppComposition composition)
