@@ -116,7 +116,7 @@ public static class WorldGenerationGraphFamilyComposer
                 ApplySetParam(edit, nodes, warnings);
                 return;
             case "add-node":
-                warnings.Add($"Override '{overrideId}' skipped add-node edit because no node catalog was provided.");
+                ApplyAddNode(overrideId, edit, nodes, warnings);
                 return;
             default:
                 warnings.Add($"Override '{overrideId}' skipped unsupported edit kind '{edit.Kind}'.");
@@ -254,6 +254,35 @@ public static class WorldGenerationGraphFamilyComposer
         var parameters = node.Parameters.ToList();
         parameters[parameterIndex] = parameters[parameterIndex] with { Value = edit.ParamValue };
         nodes[index] = node with { Parameters = parameters };
+    }
+
+    private static void ApplyAddNode(
+        string overrideId,
+        WorldGenerationGraphEdit edit,
+        List<WorldGenerationGraphNode> nodes,
+        List<string> warnings)
+    {
+        if (string.IsNullOrWhiteSpace(edit.NodeId)
+            || string.IsNullOrWhiteSpace(edit.TypeId))
+        {
+            warnings.Add($"Override '{overrideId}' skipped add-node edit with incomplete fields.");
+            return;
+        }
+
+        if (nodes.Any(node => string.Equals(node.NodeId, edit.NodeId, StringComparison.Ordinal)))
+        {
+            warnings.Add($"Override '{overrideId}' skipped add-node edit because node '{edit.NodeId}' already exists.");
+            return;
+        }
+
+        try
+        {
+            nodes.Add(WorldGenerationGraphDefaults.NodeFromSchema(edit.NodeId, edit.TypeId));
+        }
+        catch (ArgumentException ex)
+        {
+            warnings.Add($"Override '{overrideId}' skipped add-node edit for unknown node schema '{edit.TypeId}': {ex.Message}");
+        }
     }
 
     private static void RequireNonEmpty(string value, string parameterName)

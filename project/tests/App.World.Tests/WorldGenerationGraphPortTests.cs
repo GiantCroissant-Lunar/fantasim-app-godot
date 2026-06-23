@@ -235,6 +235,87 @@ public sealed class WorldGenerationGraphPortTests
     }
 
     [Fact]
+    public void Composer_AddNodeOverrideCreatesCatalogBackedNode()
+    {
+        var baseGraph = MakeView("world.base", "Base");
+        var family = new WorldGenerationGraphFamilyDocument(
+            DocumentId: "world-generation.family",
+            SchemaVersion: 1,
+            Revision: 2,
+            BaseGraph: baseGraph,
+            Graphs: Array.Empty<WorldGenerationGraphView>(),
+            RegimeGraphBindings: Array.Empty<WorldRegimeGraphBinding>(),
+            GraphOverrides: new[]
+            {
+                new WorldGenerationGraphScopedOverride(
+                    "add_layer_probe",
+                    baseGraph.GraphId,
+                    "Add layer probe",
+                    new WorldGenerationTickRange(10, 20),
+                    0,
+                    new[]
+                    {
+                        new WorldGenerationGraphEdit(
+                            "add-node",
+                            NodeId: "layer_probe",
+                            TypeId: WorldFunctionProvider.LayerScope),
+                    }),
+            },
+            LegacyOverrides: Array.Empty<WorldGenerationGraphOverride>(),
+            RunHistory: Array.Empty<WorldGenerationRunHistoryEntry>(),
+            UpdatedUtc: DateTimeOffset.UtcNow);
+
+        var active = WorldGenerationGraphFamilyComposer.ComposeEffectiveGraph(family, baseGraph.GraphId, tick: 12);
+        var inactive = WorldGenerationGraphFamilyComposer.ComposeEffectiveGraph(family, baseGraph.GraphId, tick: 9);
+
+        Assert.Empty(active.Warnings);
+        var node = Assert.Single(active.Graph.Nodes, candidate => candidate.NodeId == "layer_probe");
+        Assert.Equal(WorldFunctionProvider.LayerScope, node.TypeId);
+        Assert.Equal("Layer Scope", node.Label);
+        Assert.DoesNotContain(inactive.Graph.Nodes, candidate => candidate.NodeId == "layer_probe");
+    }
+
+    [Fact]
+    public void Composer_AddNodeOverrideWarnsForInvalidCatalogEdits()
+    {
+        var baseGraph = MakeView("world.base", "Base");
+        var family = new WorldGenerationGraphFamilyDocument(
+            DocumentId: "world-generation.family",
+            SchemaVersion: 1,
+            Revision: 2,
+            BaseGraph: baseGraph,
+            Graphs: Array.Empty<WorldGenerationGraphView>(),
+            RegimeGraphBindings: Array.Empty<WorldRegimeGraphBinding>(),
+            GraphOverrides: new[]
+            {
+                new WorldGenerationGraphScopedOverride(
+                    "bad_add_nodes",
+                    baseGraph.GraphId,
+                    "Bad add nodes",
+                    new WorldGenerationTickRange(10, 20),
+                    0,
+                    new[]
+                    {
+                        new WorldGenerationGraphEdit("add-node", TypeId: WorldFunctionProvider.LayerScope),
+                        new WorldGenerationGraphEdit("add-node", NodeId: "source", TypeId: WorldFunctionProvider.LayerScope),
+                        new WorldGenerationGraphEdit("add-node", NodeId: "unknown", TypeId: "unknown.node"),
+                    }),
+            },
+            LegacyOverrides: Array.Empty<WorldGenerationGraphOverride>(),
+            RunHistory: Array.Empty<WorldGenerationRunHistoryEntry>(),
+            UpdatedUtc: DateTimeOffset.UtcNow);
+
+        var active = WorldGenerationGraphFamilyComposer.ComposeEffectiveGraph(family, baseGraph.GraphId, tick: 12);
+
+        Assert.Equal(3, active.Warnings.Count);
+        Assert.Contains(active.Warnings, warning => warning.Contains("incomplete fields", StringComparison.Ordinal));
+        Assert.Contains(active.Warnings, warning => warning.Contains("already exists", StringComparison.Ordinal));
+        Assert.Contains(active.Warnings, warning => warning.Contains("unknown node schema 'unknown.node'", StringComparison.Ordinal));
+        Assert.DoesNotContain(active.Graph.Nodes, node => node.NodeId == "unknown");
+        Assert.Equal(2, active.Graph.Nodes.Count);
+    }
+
+    [Fact]
     public void FamilySource_SelectsRegimeGraph_ComposesTickOverrides_AndListsSubgraphs()
     {
         var family = WorldGenerationGraphDefaults.BuildFamily() with
