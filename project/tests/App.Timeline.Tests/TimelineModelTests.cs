@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using FantaSim.App.World.Composition;
 using FantaSim.App.Timeline;
@@ -77,5 +78,69 @@ public class TimelineModelTests
 
         Assert.Equal(1, step);
         Assert.Equal("10 jy", TimelineTimeFormatter.ForTick(step));
+    }
+
+    // FIX 8 guard: lock the gap-free candidate invariant for mid-zoom spans.
+    [Theory]
+    [InlineData(8_000L)]
+    [InlineData(58_000L)]
+    public void RulerStep_MidZoomSpan_IsNotDegenerate(long span)
+    {
+        const int targetMarkCount = 8;
+
+        long step = TimelineModel.RulerStepTicks(0, span, targetMarkCount: targetMarkCount);
+        Assert.True(step > 0, "step must be positive");
+        int markCount = (int)Math.Ceiling(span / (double)step);
+
+        Assert.InRange(markCount, 4, 16);
+    }
+
+    [Theory]
+    [InlineData(8_000L)]
+    [InlineData(58_000L)]
+    public void Ruler_MidZoomSpan_ProducesSaneMarkCount(long span)
+    {
+        var marks = TimelineModel.Ruler(0, span, targetMarkCount: 8);
+
+        Assert.InRange(marks.Count, 4, 16);
+    }
+
+    [Fact]
+    public void Ruler_DenseSpanSweep_NeverDegenerate()
+    {
+        for (long span = 100; span <= 1_000_000; span += 100)
+        {
+            long step = TimelineModel.RulerStepTicks(0, span, targetMarkCount: 8);
+            Assert.True(step > 0, $"step<=0 at span={span}");
+            int marks = (int)Math.Ceiling(span / (double)step);
+            Assert.True(marks >= 4 && marks <= 16, $"degenerate at span={span}: step={step} marks={marks}");
+        }
+    }
+
+    // FIX 9: degenerate range (MaxTick == 0 / viewEnd <= viewStart) must not throw.
+    [Fact]
+    public void Ruler_EmptyRange_ReturnsEmpty_DoesNotThrow()
+    {
+        Assert.Null(Record.Exception(() => TimelineModel.Ruler(0, 0)));
+        Assert.Empty(TimelineModel.Ruler(0, 0));
+
+        Assert.Null(Record.Exception(() => TimelineModel.Ruler(7, 7)));
+        Assert.Empty(TimelineModel.Ruler(7, 7));
+
+        Assert.Null(Record.Exception(() => TimelineModel.Ruler(10, 3)));
+        Assert.Empty(TimelineModel.Ruler(10, 3));
+    }
+
+    [Fact]
+    public void RulerStepTicks_EmptyRange_ReturnsZero_DoesNotThrow()
+    {
+        Assert.Null(Record.Exception(() => TimelineModel.RulerStepTicks(0, 0)));
+        Assert.Equal(0L, TimelineModel.RulerStepTicks(0, 0));
+
+        Assert.Null(Record.Exception(() => TimelineModel.RulerStepTicks(7, 7)));
+        Assert.Equal(0L, TimelineModel.RulerStepTicks(7, 7));
+
+        Assert.Null(Record.Exception(() => TimelineModel.RulerStepTicks(10, 3)));
+        Assert.Equal(0L, TimelineModel.RulerStepTicks(10, 3));
     }
 }

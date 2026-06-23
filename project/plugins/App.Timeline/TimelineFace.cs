@@ -335,6 +335,8 @@ public partial class TimelineFace : Control
         _atmosphereBands.Clear();
         _tracks.Clear();
 
+        if (_ctl.MaxTick <= 0L) return;
+
         PopulateLane(_ctl.GeosphereSchedule, geosphereRegimesRoot, geosphereTracksRoot, _geosphereBands, "geosphere");
         PopulateLane(_ctl.AtmosphereSchedule, atmosphereRegimesRoot, atmosphereTracksRoot, _atmosphereBands, "atmosphere");
     }
@@ -411,8 +413,16 @@ public partial class TimelineFace : Control
         _playPauseButton.Text = _isPlaying ? "Pause" : "Play";
         if (_zoomLabel is not null)
         {
-            long step = TimelineModel.RulerStepTicks(_viewStartTick, _viewEndTick);
-            _zoomLabel.Text = $"view {TimelineTimeFormatter.ForTick(_viewStartTick)} - {TimelineTimeFormatter.ForTick(_viewEndTick)} | step {TimelineTimeFormatter.ForTick(step)}";
+            string viewRange = $"view {TimelineTimeFormatter.ForTick(_viewStartTick)} - {TimelineTimeFormatter.ForTick(_viewEndTick)}";
+            if (_viewEndTick > _viewStartTick)
+            {
+                long step = TimelineModel.RulerStepTicks(_viewStartTick, _viewEndTick);
+                _zoomLabel.Text = $"{viewRange} | step {TimelineTimeFormatter.ForTick(step)}";
+            }
+            else
+            {
+                _zoomLabel.Text = viewRange;
+            }
         }
 
         var span = Math.Max(1L, _viewEndTick - _viewStartTick);
@@ -452,6 +462,7 @@ public partial class TimelineFace : Control
         ClearChildren(_rulerRoot);
         var width = _rulerRoot.Size.X;
         if (width <= 0) return;
+        if (_viewEndTick <= _viewStartTick) return;
 
         var baseline = new ColorRect
         {
