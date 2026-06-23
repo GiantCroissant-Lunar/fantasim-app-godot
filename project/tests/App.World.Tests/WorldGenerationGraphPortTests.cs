@@ -1,0 +1,268 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using FantaSim.App.World.GenerationGraph;
+using Xunit;
+
+namespace FantaSim.App.World.Tests;
+
+public sealed class WorldGenerationGraphPortTests
+{
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        PropertyNameCaseInsensitive = true,
+    };
+
+    [Fact]
+    public void FamilyDocument_CarriesRegimeGraphs_Subgraphs_AndCommentBoundaries()
+    {
+        var baseGraph = MakeView("world.base", "Base");
+        var formationGraph = MakeView("formation.planetesimal-swarm", "Planetesimal Swarm");
+        var geosphereGraph = MakeView("geosphere.mobile-plate", "Mobile Plate");
+
+        var family = new WorldGenerationGraphFamilyDocument(
+            DocumentId: "world-generation.family",
+            SchemaVersion: 1,
+            Revision: 2,
+            BaseGraph: baseGraph,
+            Graphs: new[] { formationGraph, geosphereGraph },
+            RegimeGraphBindings: new[]
+            {
+                new WorldRegimeGraphBinding(
+                    WorldRegimeScheduleKinds.BodyFormation,
+                    "planetesimal-swarm",
+                    formationGraph.GraphId),
+                new WorldRegimeGraphBinding(
+                    WorldRegimeScheduleKinds.Sphere,
+                    "mobile-plate",
+                    geosphereGraph.GraphId,
+                    SphereId: "primary"),
+            },
+            GraphOverrides: Array.Empty<WorldGenerationGraphScopedOverride>(),
+            LegacyOverrides: Array.Empty<WorldGenerationGraphOverride>(),
+            RunHistory: Array.Empty<WorldGenerationRunHistoryEntry>(),
+            UpdatedUtc: new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero),
+            SubgraphBindings: new[]
+            {
+                new WorldGenerationSubgraphBinding(
+                    ParentGraphId: geosphereGraph.GraphId,
+                    NodeId: "geosphere_subgraph",
+                    SubgraphId: "geosphere.mobile-plate.layers"),
+            });
+
+        Assert.Equal(2, family.Graphs.Count);
+        Assert.Single(family.SubgraphBindings!);
+        Assert.Equal("geosphere.mobile-plate.layers", family.SubgraphBindings![0].SubgraphId);
+        Assert.Equal(WorldGenerationGraphAnnotationKinds.CommentBoundary, baseGraph.Annotations![0].Kind);
+    }
+
+    [Fact]
+    public void FamilyDocument_RoundTrips_WithCamelCaseJson()
+    {
+        var family = new WorldGenerationGraphFamilyDocument(
+            DocumentId: "world-generation.family",
+            SchemaVersion: 1,
+            Revision: 2,
+            BaseGraph: MakeView("world.base", "Base"),
+            Graphs: new[] { MakeView("formation.substrate", "Formation Substrate") },
+            RegimeGraphBindings: new[]
+            {
+                new WorldRegimeGraphBinding(
+                    WorldRegimeScheduleKinds.BodyFormation,
+                    "dispersed-material",
+                    "formation.substrate"),
+            },
+            GraphOverrides: new[]
+            {
+                new WorldGenerationGraphScopedOverride(
+                    "override_1",
+                    "formation.substrate",
+                    "Early accretion rate",
+                    new WorldGenerationTickRange(0, 100),
+                    1,
+                    new[] { new WorldGenerationGraphEdit("set-param", NodeId: "source", ParamKey: "seed", ParamValue: "7") }),
+            },
+            LegacyOverrides: Array.Empty<WorldGenerationGraphOverride>(),
+            RunHistory: Array.Empty<WorldGenerationRunHistoryEntry>(),
+            UpdatedUtc: new DateTimeOffset(2026, 6, 23, 1, 0, 0, TimeSpan.Zero),
+            SubgraphBindings: new[]
+            {
+                new WorldGenerationSubgraphBinding("formation.substrate", "sub", "formation.material-cell-set"),
+            });
+
+        var json = JsonSerializer.Serialize(family, JsonOptions);
+        var deserialized = JsonSerializer.Deserialize<WorldGenerationGraphFamilyDocument>(json, JsonOptions);
+
+        Assert.Contains("\"documentId\"", json);
+        Assert.Contains("\"subgraphBindings\"", json);
+        Assert.Contains("\"annotations\"", json);
+        Assert.NotNull(deserialized);
+        Assert.Equal(family.DocumentId, deserialized!.DocumentId);
+        Assert.Single(deserialized.SubgraphBindings!);
+        Assert.Equal("formation.material-cell-set", deserialized.SubgraphBindings![0].SubgraphId);
+        Assert.Single(deserialized.BaseGraph.Annotations!);
+    }
+
+    [Fact]
+    public void Compiler_LowersTypedWorldGraph_ToGenericExecutableGraph()
+    {
+        var graph = MakeView("world.base", "Base");
+
+        var compiled = WorldGenerationGraphCompiler.Compile(graph);
+
+        Assert.Equal("crust", compiled.Document.SinkNodeId);
+        Assert.Equal(new[] { "crust" }, compiled.OutputNodeIds);
+        Assert.Equal("world.options", compiled.Document.Nodes[0].FunctionId);
+        Assert.Equal(42, compiled.Document.Nodes[0].Params["seed"]!.GetValue<int>());
+        Assert.Equal("crust.generate", compiled.Document.Nodes[1].FunctionId);
+        Assert.Single(compiled.Document.Wires);
+        Assert.Equal("options", compiled.Document.Wires[0].FromPort);
+    }
+
+    [Fact]
+    public void Compiler_RejectsMissingRequiredInput()
+    {
+        var graph = MakeView("world.base", "Base") with
+        {
+            Wires = Array.Empty<WorldGenerationGraphWire>(),
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => WorldGenerationGraphCompiler.Compile(graph));
+        Assert.Contains("missing required input", ex.Message);
+    }
+
+    [Fact]
+    public void Compiler_RejectsUnknownOutputNode()
+    {
+        var graph = MakeView("world.base", "Base") with
+        {
+            OutputNodeIds = new[] { "ghost" },
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => WorldGenerationGraphCompiler.Compile(graph));
+        Assert.Contains("Output node 'ghost' does not exist", ex.Message);
+    }
+
+    [Fact]
+    public void Composer_ResolvesRegimeGraph_AndAppliesTickScopedSetParamOverride()
+    {
+        var baseGraph = MakeView("world.base", "Base");
+        var formationGraph = MakeView("formation.planetesimal-swarm", "Planetesimal Swarm");
+        var family = new WorldGenerationGraphFamilyDocument(
+            DocumentId: "world-generation.family",
+            SchemaVersion: 1,
+            Revision: 2,
+            BaseGraph: baseGraph,
+            Graphs: new[] { formationGraph },
+            RegimeGraphBindings: new[]
+            {
+                new WorldRegimeGraphBinding(
+                    WorldRegimeScheduleKinds.BodyFormation,
+                    "planetesimal-swarm",
+                    formationGraph.GraphId),
+            },
+            GraphOverrides: new[]
+            {
+                new WorldGenerationGraphScopedOverride(
+                    "boost_seed",
+                    formationGraph.GraphId,
+                    "Boost seed",
+                    new WorldGenerationTickRange(10, 20),
+                    0,
+                    new[] { new WorldGenerationGraphEdit("set-param", NodeId: "source", ParamKey: "seed", ParamValue: "99") }),
+            },
+            LegacyOverrides: Array.Empty<WorldGenerationGraphOverride>(),
+            RunHistory: Array.Empty<WorldGenerationRunHistoryEntry>(),
+            UpdatedUtc: DateTimeOffset.UtcNow,
+            SubgraphBindings: new[]
+            {
+                new WorldGenerationSubgraphBinding(formationGraph.GraphId, "crust", "formation.detail"),
+            });
+
+        var resolved = WorldGenerationGraphFamilyComposer.ResolveRegimeGraph(
+            family,
+            WorldRegimeScheduleKinds.BodyFormation,
+            "planetesimal-swarm");
+        var active = WorldGenerationGraphFamilyComposer.ComposeEffectiveGraph(family, resolved.GraphId, tick: 12);
+        var inactive = WorldGenerationGraphFamilyComposer.ComposeEffectiveGraph(family, resolved.GraphId, tick: 9);
+        var subgraphs = WorldGenerationGraphFamilyComposer.ListSubgraphs(family, resolved.GraphId);
+
+        Assert.Equal(formationGraph.GraphId, resolved.GraphId);
+        Assert.Empty(active.Warnings);
+        Assert.Equal("99", active.Graph.Nodes[0].Parameters![0].Value);
+        Assert.Equal("42", inactive.Graph.Nodes[0].Parameters![0].Value);
+        Assert.Single(subgraphs);
+        Assert.Equal("formation.detail", subgraphs[0].SubgraphId);
+    }
+
+    [Fact]
+    public void ScopeKeyAndProductAddress_KeepCacheIdentitySeparateFromProductPath()
+    {
+        var key = new WorldGenerationGraphExecutionScopeKey(
+            LifecycleKind: WorldRegimeScheduleKinds.BodyFormation,
+            RegimeId: "planetesimal-swarm",
+            GraphId: "formation.planetesimal-swarm",
+            GraphRevision: 7,
+            ScheduleRevision: 3,
+            Variant: "base",
+            Branch: "main");
+
+        var address = new WorldGenerationProductAddress(
+            Variant: "base",
+            Branch: "main",
+            Domain: "formation",
+            Product: "body-set",
+            Tick: 500);
+
+        Assert.Equal("body-formation:planetesimal-swarm:formation.planetesimal-swarm:G7:S3:base:main", key.ToCacheKey());
+        Assert.Equal("/base/main/formation/body-set@500", address.ToPath());
+        Assert.Throws<ArgumentException>(() => new WorldGenerationGraphExecutionScopeKey(
+            "body:formation", "regime", "graph", 1, 1, "base", "main"));
+        Assert.Throws<ArgumentException>(() => new WorldGenerationProductAddress(
+            "base", "main/branch", "formation", "body-set", 500));
+    }
+
+    private static WorldGenerationGraphView MakeView(string graphId, string label)
+    {
+        var source = new WorldGenerationGraphNode(
+            NodeId: "source",
+            TypeId: "world.options",
+            Label: "World Options",
+            Category: "source",
+            IsSideEffect: false,
+            IsExpensive: false,
+            Inputs: Array.Empty<WorldGenerationGraphPort>(),
+            Outputs: new[] { new WorldGenerationGraphPort("options", "Options", "world/options", Required: false) },
+            Parameters: new[] { new WorldGenerationGraphParameter("seed", "Seed", "42", "int") });
+
+        var crust = new WorldGenerationGraphNode(
+            NodeId: "crust",
+            TypeId: "crust.generate",
+            Label: "Crust Generation",
+            Category: "geosphere",
+            IsSideEffect: false,
+            IsExpensive: true,
+            Inputs: new[] { new WorldGenerationGraphPort("options", "Options", "world/options", Required: true) },
+            Outputs: new[] { new WorldGenerationGraphPort("result", "Result", "world/result", Required: false) });
+
+        return new WorldGenerationGraphView(
+            GraphId: graphId,
+            Label: label,
+            Description: $"Description of {label}",
+            Nodes: new[] { source, crust },
+            Wires: new[] { new WorldGenerationGraphWire("source", "options", "crust", "options", "world/options") },
+            Annotations: new[]
+            {
+                new WorldGenerationGraphAnnotation(
+                    AnnotationId: "comment_1",
+                    Kind: WorldGenerationGraphAnnotationKinds.CommentBoundary,
+                    Label: "Geosphere setup",
+                    Bounds: new WorldGenerationGraphBounds(0, 0, 320, 180),
+                    NodeIds: new[] { "source", "crust" },
+                    Text: "Inputs that drive the geosphere recipe.",
+                    Color: "#6ea8fe"),
+            },
+            OutputNodeIds: new[] { "crust" });
+    }
+}
