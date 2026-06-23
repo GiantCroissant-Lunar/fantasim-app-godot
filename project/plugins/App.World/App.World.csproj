@@ -31,6 +31,7 @@
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
     <ProjectReference Include="..\..\contracts\App.NodeGraph\App.NodeGraph.csproj" />
     <ProjectReference Include="..\..\contracts\App.Ecs\App.Ecs.csproj" />
+    <ProjectReference Include="..\App.NodeGraph\App.NodeGraph.csproj" />
     <ProjectReference Include="..\App.World.Composition\App.World.Composition.csproj" />
     <!--
       App.Ecs PLUGIN (not just contracts): CellElevationModel owns an Arch ECS world built from the

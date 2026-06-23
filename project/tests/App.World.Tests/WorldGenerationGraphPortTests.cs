@@ -516,6 +516,32 @@ public sealed class WorldGenerationGraphPortTests
     }
 
     [Fact]
+    public async Task WorldGenerationGraphRunner_CapturesFormationProductsAndHandoff()
+    {
+        var source = WorldGenerationGraphFamilySource.ForRegime(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildFamily(),
+            WorldRegimeScheduleKinds.BodyFormation,
+            "planetesimal-swarm",
+            tick: 0);
+
+        var compiled = source.CompileForExecution();
+        var run = await new WorldGenerationGraphRunner(new[] { new WorldFunctionProvider() })
+            .RunAsync(compiled.Document);
+        var commandResult = WorldGenerationGraphRunner.ToCommandResult(run);
+        var products = Assert.IsType<JsonArray>(commandResult["products"]);
+
+        Assert.Equal(WorldFunctionProvider.BodyFormation, run.Sink["function"]?.GetValue<string>());
+        Assert.Single(run.Products);
+        Assert.Equal("body_formation", run.Products[0].NodeId);
+        Assert.Equal("/base/main/formation/body-set@0", run.Products[0].ProductAddress);
+        Assert.NotNull(run.SphereHandoff);
+        Assert.InRange(run.SphereHandoff!.RetainedHeatJ, 5.971e31, 5.973e31);
+        Assert.Single(products);
+        Assert.Equal("/base/main/formation/body-set@0", products[0]!["productAddress"]!.GetValue<string>());
+    }
+
+    [Fact]
     public void ScopeKeyAndProductAddress_KeepCacheIdentitySeparateFromProductPath()
     {
         var key = new WorldGenerationGraphExecutionScopeKey(

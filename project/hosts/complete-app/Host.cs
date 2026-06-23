@@ -565,9 +565,9 @@ public partial class Host : Node
                     ?? throw new InvalidOperationException("World generation graph payload could not be deserialized.");
 
                 var providers = registry.GetAll<FantaSim.App.NodeGraph.INodeFunctionProvider>().ToArray();
-                var executor = new FantaSim.App.NodeGraph.GraphExecutor(providers);
-                var result = await executor.ExecuteAsync(graph, cancellationToken: ct);
-                return result.ToJsonString();
+                var runner = new WorldGenerationGraphRunner(providers);
+                var run = await runner.RunAsync(graph, cancellationToken: ct);
+                return WorldGenerationGraphRunner.ToCommandResult(run).ToJsonString();
             });
 
         var health = orchestration.HealthAsync().GetAwaiter().GetResult();
