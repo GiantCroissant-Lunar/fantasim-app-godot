@@ -1,0 +1,25 @@
+# Codex adapter for fantasim-app-godot.
+# Synced by the workspace engine. From the workspace root:
+#   python .agent/scripts/sync-project.py --project yokan-projects/fantasim-app-godot
+#       rule sync  -> concatenates the listed rules into AGENTS.md (hand-written guard applies)
+#       skill sync -> .agents/skills junctions (Codex reads .agents/skills/ at the repo root)
+
+tool: codex
+display_name: Codex
+
+# No `rules` block: AGENTS.md is hand-maintained (the kept source of truth) and codex reads
+# it directly — it indexes the rules under .agent/rules/ rather than concatenating them in.
+# Convention (any scope): AGENTS.md kept + hand-authored; CLAUDE.md is its @AGENTS.md pointer.
+
+skills:
+  target: .agents/skills
+  local:
+    - 04-tooling/verify-windowed
+
+commands:
+  enabled: false
+
+mcp:
+  strategy: none
+
+cleanup: []
