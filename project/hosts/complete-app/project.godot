@@ -5,7 +5,7 @@ config_version=5
 [application]
 
 config/name="complete-app"
-run/main_scene="res://Main.tscn"
+run/main_scene="res://scenes/app_entry.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"
 
