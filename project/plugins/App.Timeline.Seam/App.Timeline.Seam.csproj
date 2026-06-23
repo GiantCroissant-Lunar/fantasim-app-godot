@@ -1,0 +1,35 @@
+<Project Sdk="Godot.NET.Sdk/4.7.0">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.Timeline.Seam</RootNamespace>
+    <AssemblyName>FantaSim.App.Timeline.Seam</AssemblyName>
+    <ServiceArchiTier>T4</ServiceArchiTier>
+    <!-- The RESIDENT timeline seam: implements the T3 ITimelineFace with Godot's
+         AnimationPlayer/AnimationTree + Control UI. Godot.NET.Sdk for GodotSharp. Stays
+         resident (shared via "FantaSim.App." prefix) - it is the only Godot-aware piece;
+         the timeline bundle itself ships no Godot types and its collectible ALC unloads
+         cleanly. Mirrors App.Camera.Seam / App.World.Seam. -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- T1 contract (IService, DTOs, TimelineViewSnapshot). -->
+    <ProjectReference Include="..\..\contracts\App.Timeline\App.Timeline.csproj" />
+    <!-- T3 orchestrator (ITimelineFace, TimelineModel, TimelineTimeFormatter). T3 never
+         references T4 (this project); the dependency points only T4 -> T3. -->
+    <ProjectReference Include="..\App.Timeline\App.Timeline.csproj" />
+    <!-- App.World contracts for ITimelineController + SphereRegimeSchedule (the face resolves
+         the controller from the registry passed at construction). -->
+    <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+  </ItemGroup>
+
+</Project>

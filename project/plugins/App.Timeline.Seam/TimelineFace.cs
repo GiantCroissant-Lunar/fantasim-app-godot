@@ -3,10 +3,12 @@ using System.Collections.Generic;
 using System.Linq;
 using Godot;
 using FantaSim.App.World.Composition;
+using FantaSim.App.Timeline.Providers;
+using FantaSim.App.Timeline;
 
-namespace FantaSim.App.Timeline;
+namespace FantaSim.App.Timeline.Seam;
 
-public partial class TimelineFace : Control
+public partial class TimelineFace : Control, ITimelineFace
 {
     private ITimelineController? _ctl;
     private AnimationPlayer? _animationPlayer;
@@ -37,6 +39,17 @@ public partial class TimelineFace : Control
     private const float RegimeBandHeight = 24f;
     private const float TrackHeight = 22f;
 
+    /// <summary>
+    /// Set by Host.cs ComposeTimeline BEFORE the timeline bundle scene instantiates this face.
+    /// The resident seam owns the reference; the collectible bundle's TimelinePlugin no longer
+    /// holds a static. This is the same pattern as IiiBridge (Node-backed seam exception:
+    /// the face needs _Ready/_ExitTree lifecycle, so it is a Node, but it exposes only
+    /// ITimelineFace upward to T3).
+    /// </summary>
+    internal static ITimelineController? ResidentController { get; set; }
+
+    internal static DeferredTimelineFace? ResidentProxy;
+
     [Export]
     public double InternalTick
     {
@@ -56,7 +69,7 @@ public partial class TimelineFace : Control
 
     public override void _Ready()
     {
-        _ctl = TimelinePlugin.ActiveController;
+        _ctl = ResidentController;
         if (_ctl is null)
         {
             GD.PushWarning("[TimelineFace] No active ITimelineController found.");
@@ -85,8 +98,9 @@ public partial class TimelineFace : Control
         Resized += OnLanesResized;
 
         BuildLanes();
-        _ctl.RegisterPlayback(Play, Pause, SeekTo, () => _isPlaying);
         SetupAnimationSystem();
+
+        ResidentProxy?.Connect(this);
 
         SeekTo(_ctl.Tick);
         UpdateLayout();
@@ -190,21 +204,21 @@ public partial class TimelineFace : Control
         _playback?.Start(new StringName("idle"), reset: true);
     }
 
-    private void Play()
+    public void Play()
     {
         if (_ctl is null) return;
         _isPlaying = true;
         TransitionState("playing");
     }
 
-    private void Pause()
+    public void Pause()
     {
         if (_ctl is null) return;
         _isPlaying = false;
         TransitionState("idle");
     }
 
-    private void SeekTo(long tick)
+    public void SeekTo(long tick)
     {
         if (_ctl is null) return;
         tick = Math.Clamp(tick, 0L, _ctl.MaxTick);
@@ -219,6 +233,11 @@ public partial class TimelineFace : Control
 
         TransitionState("scrub");
         _ctl.PushTick(tick);
+        UpdateUI();
+    }
+
+    public void ApplyView(TimelineViewSnapshot snapshot)
+    {
         UpdateUI();
     }
 
