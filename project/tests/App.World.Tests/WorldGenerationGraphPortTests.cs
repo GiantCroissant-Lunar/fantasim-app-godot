@@ -1054,6 +1054,14 @@ public sealed class WorldGenerationGraphPortTests
         Assert.Empty(run.Products);
     }
 
+    [Fact]
+    public void WorldGenerationGraphExecutionPayload_Deserialize_LackingGraph_ThrowsMalformed()
+    {
+        var invalidJson = "{\"somethingElse\": 123}";
+        var ex = Assert.Throws<InvalidOperationException>(() => WorldGenerationGraphExecutionPayload.Deserialize(invalidJson));
+        Assert.StartsWith("World generation graph payload is malformed", ex.Message);
+    }
+
     private sealed class FakeProductProvider : INodeFunctionProvider
     {
         private readonly JsonNode? _productAddressValue;

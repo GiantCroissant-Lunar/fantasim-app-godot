@@ -87,6 +87,12 @@ public sealed record WorldGenerationGraphExecutionPayload(
 
         var legacyGraph = node.Deserialize<GraphDocument>(JsonOptions)
             ?? throw new InvalidOperationException("World generation graph payload could not be deserialized.");
+
+        if (legacyGraph.Nodes is null || legacyGraph.Wires is null)
+        {
+            throw new InvalidOperationException("World generation graph payload is malformed: legacy fallback did not yield valid nodes and wires lists.");
+        }
+
         return new WorldGenerationGraphExecutionPayload(legacyGraph);
     }
 }
