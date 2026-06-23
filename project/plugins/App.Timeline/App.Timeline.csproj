@@ -8,6 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- T1 contracts (IService, DTOs, T2 proxy). -->
+    <ProjectReference Include="..\..\contracts\App.Timeline\App.Timeline.csproj" />
     <ProjectReference Include="..\..\contracts\App.SceneFlow\App.SceneFlow.csproj" />
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
     <ProjectReference Include="..\..\contracts\App.Ui\App.Ui.csproj" />

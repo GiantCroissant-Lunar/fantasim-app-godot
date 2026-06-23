@@ -13,6 +13,7 @@
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\contracts\App.Timeline\App.Timeline.csproj" />
     <ProjectReference Include="..\..\plugins\App.Timeline\App.Timeline.csproj" />
     <ProjectReference Include="..\..\plugins\App.World.Composition\App.World.Composition.csproj" />
   </ItemGroup>

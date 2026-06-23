@@ -7,10 +7,6 @@ using FantaSim.World.Contracts.Units;
 
 namespace FantaSim.App.Timeline;
 
-public sealed record TimelineBand(string RegimeId, double StartFraction, double WidthFraction, string Variant, bool IsActive, long StartTick, long EndTick);
-public sealed record TimelineTrack(string LayerId, bool IsActive);
-public sealed record TimelineRulerMark(long Tick, double Fraction, string Label);
-
 public static class TimelineModel
 {
     private static readonly int[] NiceMultipliers = { 1, 2, 5, 10, 20, 50, 100, 200, 500 };
