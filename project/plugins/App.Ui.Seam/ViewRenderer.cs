@@ -119,6 +119,7 @@ public sealed class ViewRenderer : IDisposable
             {
                 GraphNodeVisualEnhancer.TryApply(graphEdit, source, _logger);
                 MsaglGraphLayoutApplicator.TryApply(graphEdit, source, _logger);
+                GraphAnnotationFrameEnhancer.TryApply(graphEdit, source, _logger);
             }
         }).CallDeferred();
     }
