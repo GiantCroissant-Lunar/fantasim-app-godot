@@ -55,9 +55,14 @@ public sealed class GeosphereMagmaOceanLayer : IFieldProducer
         var segments = context.Geometry.BoundarySegments;
         int n = context.CellCount;
 
-        // Body→sphere handoff (IFieldHandoffComputeContext) is DEFERRED (body formation out of scope).
-        // Fall back to the stylized constant genesis temperature — identical to pre-body-formation behavior.
-        double genesisK = GenesisSurfaceK;
+        // Body->sphere handoff: formation retained heat scales the magma-ocean genesis temperature.
+        // Missing handoff falls back to the ref default, preserving the old world exactly.
+        double retainedHeatJ = context is IFieldHandoffComputeContext handoffContext
+                               && handoffContext.SphereHandoff is { } handoff
+            ? handoff.RetainedHeatJ
+            : ReferenceHeatJ;
+        double heatRatio = Math.Clamp(retainedHeatJ / ReferenceHeatJ, 0.0, 4.0);
+        double genesisK = AmbientK + (GenesisSurfaceK - AmbientK) * heatRatio;
 
         // Global cooling: exponential decay from the genesis temperature toward ambient. 1 at Genesis -> 0 as t grows.
         double cooled = Math.Exp(-context.Tick / CoolingTauTicks);

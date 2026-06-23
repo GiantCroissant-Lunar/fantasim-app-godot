@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using FantaSim.App.NodeGraph;
+using FantaSim.App.World.Composition;
 using FantaSim.App.World.GenerationGraph;
 using Xunit;
 
@@ -505,6 +506,13 @@ public sealed class WorldGenerationGraphPortTests
         Assert.Equal(handoff["retainedHeatJ"]!.GetValue<double>(), handoffAlias["retainedHeatJ"]!.GetValue<double>());
         Assert.Equal(3, composition.Count);
         Assert.Equal("/base/main/formation/body-set@0", result["productAddress"]!.GetValue<string>());
+
+        var typedHandoff = SphereHandoff.FromJson(handoff);
+        Assert.Equal(0, typedHandoff.Tick);
+        Assert.Equal("protoplanet", typedHandoff.SourceBodyId);
+        Assert.InRange(typedHandoff.RetainedHeatJ, 5.971e31, 5.973e31);
+        Assert.Equal("geosphere/seed-7", typedHandoff.LatentSubstrateSeed);
+        Assert.Equal(3, typedHandoff.BulkCompositionFractions.Count);
     }
 
     [Fact]

@@ -22,7 +22,8 @@ public sealed class FieldValueResolver
         FieldCompositionResult composition,
         IReadOnlyList<ILayer> layers,
         WorldGlobeGeometry geometry,
-        long tick)
+        long tick,
+        SphereHandoff? sphereHandoff = null)
     {
         // 0. Precondition: a public primitive guards its own input -- never resolve an INVALID
         //    composition (the resident path also fail-fasts upstream in ComposeResidentLayers).
@@ -64,8 +65,8 @@ public sealed class FieldValueResolver
             }
         }
 
-        // 4. Build an internal IFieldComputeContext over (tick, geometry, cellCount, scalars).
-        var context = new ComputeContext(tick, geometry, cellCount, scalars);
+        // 4. Build an internal IFieldComputeContext over (tick, geometry, handoff, cellCount, scalars).
+        var context = new ComputeContext(tick, geometry, sphereHandoff, cellCount, scalars);
 
         // 5. For each layerId in ExecutionOrder, if it is IFieldProducer, call Produce. A producer
         //    only OWNS (and may store) the fields it WINS; a write to a field it declares but loses
@@ -115,7 +116,7 @@ public sealed class FieldValueResolver
             scalars.Select(kv => new WorldScalarFieldValues(kv.Key, kv.Value)).ToList());
     }
 
-    private sealed class ComputeContext : IFieldComputeContext
+    private sealed class ComputeContext : IFieldHandoffComputeContext
     {
         private readonly Dictionary<FieldId, double[]> _scalars;
         private readonly HashSet<FieldId> _written = new();
@@ -125,12 +126,19 @@ public sealed class FieldValueResolver
 
         public long Tick { get; }
         public WorldGlobeGeometry Geometry { get; }
+        public SphereHandoff? SphereHandoff { get; }
         public int CellCount { get; }
 
-        public ComputeContext(long tick, WorldGlobeGeometry geometry, int cellCount, Dictionary<FieldId, double[]> scalars)
+        public ComputeContext(
+            long tick,
+            WorldGlobeGeometry geometry,
+            SphereHandoff? sphereHandoff,
+            int cellCount,
+            Dictionary<FieldId, double[]> scalars)
         {
             Tick = tick;
             Geometry = geometry;
+            SphereHandoff = sphereHandoff;
             CellCount = cellCount;
             _scalars = scalars;
         }
