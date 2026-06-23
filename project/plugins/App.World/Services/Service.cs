@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text.Json;
 using FantaSim.App.World.Dto;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using ServiceArchi.Contracts;
 
 namespace FantaSim.App.World.Services;
@@ -23,18 +25,30 @@ public sealed class Service : IService, IDisposable
 
     private readonly IRegistry _registry;
     private readonly IWorldRuntime _runtime;
+    private readonly ILogger _logger;
     private readonly List<Action<WorldGenerationChangedEvent>> _subscribers = new();
     private readonly object _subscribersGate = new();
     private readonly object _generationProductsGate = new();
     private WorldGenerationProductsView _generationProducts =
         new(0, Array.Empty<string>(), 0L);
+    private Exception? _lastSubscriberError;
     private bool _disposed;
 
     public Service(IRegistry registry)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _runtime = WorldRuntimeFactory.Create(registry);
+        var loggerFactory = registry.TryGet<ILoggerFactory>();
+        _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<Service>();
     }
+
+    /// <summary>
+    /// Last exception thrown by a subscriber during <see cref="EmitGenerationChanged"/>, or null
+    /// when no subscriber has faulted since the last successful emit. Populated only when no
+    /// ILoggerFactory is registered in the registry (the registry-resolved logger path logs the
+    /// fault directly, making this field unnecessary in that case).
+    /// </summary>
+    public Exception? LastSubscriberError => _lastSubscriberError;
 
     public WorldOverview GetOverviewAsync()
         => _runtime.GetOverview();
@@ -82,7 +96,15 @@ public sealed class Service : IService, IDisposable
         lock (_subscribersGate) snapshot = _subscribers.ToArray();
         foreach (var cb in snapshot)
         {
-            try { cb(evt); } catch { /* subscriber faults are isolated; world runtime stays up */ }
+            try
+            {
+                cb(evt);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "GenerationChanged subscriber faulted.");
+                _lastSubscriberError = ex;
+            }
         }
     }
 

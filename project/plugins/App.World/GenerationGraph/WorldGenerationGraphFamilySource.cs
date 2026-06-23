@@ -246,8 +246,10 @@ public sealed class WorldGenerationGraphFamilySource : IGraphSource, IGraphAnnot
     private static WorldGenerationGraphFamilyDocument ReplaceAuthoredGraph(
         WorldGenerationGraphFamilyDocument family,
         string graphId,
-        WorldGenerationGraphView graph)
+        WorldGenerationGraphView graph,
+        DateTimeOffset? updatedUtc = null)
     {
+        var stamp = updatedUtc ?? DateTimeOffset.UnixEpoch;
         var revision = family.Revision + 1;
         if (string.Equals(family.BaseGraph.GraphId, graphId, StringComparison.Ordinal))
         {
@@ -255,7 +257,7 @@ public sealed class WorldGenerationGraphFamilySource : IGraphSource, IGraphAnnot
             {
                 Revision = revision,
                 BaseGraph = graph,
-                UpdatedUtc = DateTimeOffset.UtcNow,
+                UpdatedUtc = stamp,
             };
         }
 
@@ -269,7 +271,7 @@ public sealed class WorldGenerationGraphFamilySource : IGraphSource, IGraphAnnot
         {
             Revision = revision,
             Graphs = graphs,
-            UpdatedUtc = DateTimeOffset.UtcNow,
+            UpdatedUtc = stamp,
         };
     }
 
