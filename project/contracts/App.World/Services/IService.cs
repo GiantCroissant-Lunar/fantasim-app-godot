@@ -11,6 +11,7 @@ public interface IService
     WorldFieldValues GetFieldValuesAsync(WorldFieldValuesRequest request);
     WorldScalarFieldValues GetScalarFieldValuesAsync(WorldScalarFieldValuesRequest request);
     WorldRenderSnapshot GetRenderSnapshotAsync();
+    WorldGenerationProductsView GetGenerationProductsAsync();
     WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request);
     void SubscribeGenerationChanged(Action<WorldGenerationChangedEvent> callback);
 }

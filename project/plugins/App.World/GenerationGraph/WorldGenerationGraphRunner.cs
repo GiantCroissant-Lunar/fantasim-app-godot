@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -210,6 +211,10 @@ public sealed class WorldGenerationGraphRunner
             parameters["branch"] = scope.Branch;
         }
 
+        var canonicalTick = TryReadLong(run.Sink, "canonicalTick") ?? TryReadLong(run.Sink, "tick");
+        if (canonicalTick is { } tick)
+            parameters["canonicalTick"] = tick;
+
         if (run.SphereHandoff is { } handoff)
         {
             parameters["sphereHandoffTick"] = handoff.Tick;
@@ -220,6 +225,24 @@ public sealed class WorldGenerationGraphRunner
 
         var generationSpec = run.ExecutionScopeKey?.ToCacheKey() ?? "world-generation.graph";
         return new WorldGenerationRequest(worldId, generationSpec, parameters);
+    }
+
+    private static long? TryReadLong(JsonObject result, string key)
+    {
+        if (!result.TryGetPropertyValue(key, out var node) || node is not JsonValue value)
+            return null;
+
+        if (value.TryGetValue<long>(out var longValue))
+            return longValue;
+        if (value.TryGetValue<int>(out var intValue))
+            return intValue;
+        if (value.TryGetValue<string>(out var text)
+            && long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var stringValue))
+        {
+            return stringValue;
+        }
+
+        return null;
     }
 
     private static string? TryReadProductAddress(JsonObject result)

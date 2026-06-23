@@ -290,6 +290,9 @@ internal sealed class FakeWorldService : WorldService
     public WorldRenderSnapshot GetRenderSnapshotAsync()
         => new(0, Array.Empty<RenderEntityDto>());
 
+    public WorldGenerationProductsView GetGenerationProductsAsync()
+        => new(0, Array.Empty<string>(), 0L, Array.Empty<long>());
+
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
     {
         GenerateCalls++;

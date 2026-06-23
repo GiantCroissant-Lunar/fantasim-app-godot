@@ -666,6 +666,7 @@ public sealed class WorldGenerationGraphPortTests
         Assert.Equal(scopeKey.ToCacheKey(), generationRequest.Parameters["executionScopeKey"]);
         Assert.Equal(WorldRegimeScheduleKinds.BodyFormation, generationRequest.Parameters["lifecycleKind"]);
         Assert.Equal(WorldGenerationGraphDefaults.FormationGraphId, generationRequest.Parameters["graphId"]);
+        Assert.Equal(0L, generationRequest.Parameters["canonicalTick"]);
         Assert.Equal("geosphere/seed-7", generationRequest.Parameters["sphereHandoffLatentSubstrateSeed"]);
     }
 
