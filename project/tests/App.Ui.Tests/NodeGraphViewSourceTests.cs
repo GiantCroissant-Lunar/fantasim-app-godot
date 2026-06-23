@@ -34,6 +34,39 @@ public sealed class NodeGraphViewSourceTests
     }
 
     [Fact]
+    public async Task Dispatch_run_projects_product_count_and_tick_into_status()
+    {
+        var graph = new GraphDocument(
+            Nodes: new[] { new GraphNode("n", "fn", new JsonObject()) },
+            Wires: Array.Empty<GraphWire>(),
+            SinkNodeId: "n");
+        var source = new EditableGraphSource("editable", graph);
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var view = new NodeGraphViewSource(
+            source,
+            runAsync: () => Task.FromResult(new JsonObject
+            {
+                ["canonicalTick"] = 1_234L,
+                ["products"] = new JsonArray
+                {
+                    new JsonObject { ["productAddress"] = "/base/main/formation/body-set@1234" },
+                },
+            }));
+        view.Changed += () =>
+        {
+            var json = JsonSerializer.SerializeToNode(view.BuildDocument())?.ToJsonString();
+            if (json?.Contains("done: 1 product @ tick 1234", StringComparison.Ordinal) == true)
+                done.TrySetResult();
+        };
+
+        view.Dispatch("run", "btn-run");
+        await done.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        var documentJson = JsonSerializer.SerializeToNode(view.BuildDocument())?.ToJsonString();
+
+        Assert.Contains("done: 1 product @ tick 1234", documentJson);
+    }
+
+    [Fact]
     public void BuildDocument_projects_graph_annotations()
     {
         var graph = new GraphDocument(

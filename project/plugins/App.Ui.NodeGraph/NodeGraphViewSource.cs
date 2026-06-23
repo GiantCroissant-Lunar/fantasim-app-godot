@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -181,14 +182,48 @@ public class NodeGraphViewSource : IViewSource, IDisposable
         Changed?.Invoke();
         try
         {
-            await _runAsync();
-            _status = "done";
+            var result = await _runAsync();
+            _status = DescribeRunResult(result);
         }
         catch (Exception ex)
         {
             _status = $"failed: {ex.Message}";
         }
         Changed?.Invoke();
+    }
+
+    private static string DescribeRunResult(JsonObject result)
+    {
+        if (result.TryGetPropertyValue("products", out var productsNode)
+            && productsNode is JsonArray products
+            && products.Count > 0)
+        {
+            var noun = products.Count == 1 ? "product" : "products";
+            var tick = TryReadLong(result, "canonicalTick") ?? TryReadLong(result, "tick");
+            return tick is { } value
+                ? $"done: {products.Count} {noun} @ tick {value}"
+                : $"done: {products.Count} {noun}";
+        }
+
+        return "done";
+    }
+
+    private static long? TryReadLong(JsonObject result, string key)
+    {
+        if (!result.TryGetPropertyValue(key, out var node) || node is not JsonValue value)
+            return null;
+
+        if (value.TryGetValue<long>(out var longValue))
+            return longValue;
+        if (value.TryGetValue<int>(out var intValue))
+            return intValue;
+        if (value.TryGetValue<string>(out var text)
+            && long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var stringValue))
+        {
+            return stringValue;
+        }
+
+        return null;
     }
 
     private void OpenSubgraph(string subgraphId)
