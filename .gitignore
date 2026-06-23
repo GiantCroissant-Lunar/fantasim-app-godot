@@ -5,6 +5,13 @@
 # .NET build artifacts
 bin/
 obj/
+# Exception: the host's native-lib bin/ holds the tracked GDExtension descriptor + .uid
+# (source) alongside the gitignored dylib/.so/.dll staged by `task bridge:build`.
+# Re-include the directory, then re-ignore the build artifacts inside it.
+!project/hosts/complete-app/bin/
+project/hosts/complete-app/bin/*
+!project/hosts/complete-app/bin/*.gdextension
+!project/hosts/complete-app/bin/*.gdextension.uid
 *.user
 *.suo
 *.userprefs
@@ -36,11 +43,8 @@ project/hosts/content-app/bundles
 project/workers/.venv/
 **/__pycache__/
 
-# Rust gdext bridge: cargo build output + the staged dylib (rebuilt by `task bridge:build`)
+# Rust gdext bridge: cargo build output (rebuilt by `task bridge:build`)
 project/target/
-project/hosts/complete-app/bin/*.dylib
-project/hosts/complete-app/bin/*.so
-project/hosts/complete-app/bin/*.dll
 
 # OS / editor cruft
 .DS_Store

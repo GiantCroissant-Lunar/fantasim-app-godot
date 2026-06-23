@@ -1,0 +1,15 @@
+[configuration]
+entry_symbol = "gdext_rust_init"
+compatibility_minimum = 4.6
+reloadable = true
+
+[libraries]
+; Lib lives next to this .gdextension file (res://bin). `task bridge:build` copies
+; the cargo output here (debug for dev; the export task copies the release build over
+; it). Same file for debug+release. Relative paths so the file can be relocated.
+macos.debug          = "./libiii_bridge.dylib"
+macos.release        = "./libiii_bridge.dylib"
+linux.debug.x86_64   = "./libiii_bridge.so"
+linux.release.x86_64 = "./libiii_bridge.so"
+windows.debug.x86_64   = "./iii_bridge.dll"
+windows.release.x86_64 = "./iii_bridge.dll"
