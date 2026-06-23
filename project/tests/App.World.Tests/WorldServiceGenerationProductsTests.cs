@@ -61,4 +61,38 @@ public sealed class WorldServiceGenerationProductsTests
         Assert.Equal(new[] { productAddress }, products.Products);
         Assert.Empty(products.CachedTicks);
     }
+
+    [Fact]
+    public void Service_IdenticalReRuns_DoNotIncrementGraphRevision()
+    {
+        using var service = new Service(new ServiceRegistry());
+        var productAddress = "/base/main/formation/body-set@1234";
+
+        var result1 = service.RunGenerationAsync(new WorldGenerationRequest(
+            WorldId: "graph-world",
+            GenerationSpec: "world.generate",
+            Parameters: new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["source"] = "world-generation.graph",
+                ["canonicalTick"] = 1_234L,
+                ["productAddresses"] = new[] { productAddress },
+            }));
+        var products1 = service.GetGenerationProductsAsync();
+        var initialRevision = products1.GraphRevision;
+
+        var result2 = service.RunGenerationAsync(new WorldGenerationRequest(
+            WorldId: "graph-world",
+            GenerationSpec: "world.generate",
+            Parameters: new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["source"] = "world-generation.graph",
+                ["canonicalTick"] = 1_234L,
+                ["productAddresses"] = new[] { productAddress },
+            }));
+        var products2 = service.GetGenerationProductsAsync();
+
+        Assert.True(result1.Success);
+        Assert.True(result2.Success);
+        Assert.Equal(initialRevision, products2.GraphRevision);
+    }
 }

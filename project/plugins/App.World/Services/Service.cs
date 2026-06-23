@@ -99,7 +99,7 @@ public sealed class Service : IService, IDisposable
         IReadOnlyDictionary<string, object> parameters =
             request.Parameters ?? new Dictionary<string, object>(StringComparer.Ordinal);
         var products = ReadStringArray(parameters, "productAddresses");
-        var graphRevision = ReadInt(parameters, "graphRevision", previous.GraphRevision + 1);
+        var graphRevision = ReadInt(parameters, "graphRevision", previous.GraphRevision);
         var referenceTick = ReadLong(
             parameters,
             "canonicalTick",
