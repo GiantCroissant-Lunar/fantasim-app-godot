@@ -79,7 +79,7 @@ public static class TimelineModel
         int targetMarkCount = 8)
     {
         if (targetMarkCount <= 0) throw new ArgumentOutOfRangeException(nameof(targetMarkCount));
-        if (viewEndTick <= viewStartTick) throw new ArgumentOutOfRangeException(nameof(viewEndTick));
+        if (viewEndTick <= viewStartTick) return Array.Empty<TimelineRulerMark>();
 
         long step = RulerStepTicks(viewStartTick, viewEndTick, targetMarkCount);
         long first = AlignUp(viewStartTick, step);
@@ -102,7 +102,7 @@ public static class TimelineModel
         int targetMarkCount = 8)
     {
         if (targetMarkCount <= 0) throw new ArgumentOutOfRangeException(nameof(targetMarkCount));
-        if (viewEndTick <= viewStartTick) throw new ArgumentOutOfRangeException(nameof(viewEndTick));
+        if (viewEndTick <= viewStartTick) return 0L;
 
         double ideal = (viewEndTick - viewStartTick) / (double)targetMarkCount;
         var candidates = RulerStepCandidates().ToArray();
@@ -121,7 +121,27 @@ public static class TimelineModel
             }
         }
 
+        AppendDecadeLadder(candidates, candidates.Max);
         return candidates;
+    }
+
+    // Guarantees a contiguous 1/2/5 * 10^k ladder up to ceiling, independent of
+    // the time ladder, so collapsed sub-ka rungs cannot open a candidate gap.
+    private static void AppendDecadeLadder(SortedSet<long> candidates, long ceiling)
+    {
+        for (long decade = 1L; decade > 0 && decade <= ceiling;)
+        {
+            candidates.Add(decade);
+            AddIfPositive(candidates, decade * 2L);
+            AddIfPositive(candidates, decade * 5L);
+            if (decade > long.MaxValue / 10L) break;
+            decade *= 10L;
+        }
+    }
+
+    private static void AddIfPositive(SortedSet<long> set, long value)
+    {
+        if (value > 0L) set.Add(value);
     }
 
     private static IReadOnlyList<double> TimeLadderUnitTicks()
