@@ -22,3 +22,12 @@ public interface IGraphAnnotationSource
 {
     IReadOnlyList<GraphAnnotation> Annotations { get; }
 }
+
+/// <summary>Optional extension for graph families that can navigate from nodes to child graphs.</summary>
+public interface IGraphSubgraphSource
+{
+    string ActiveGraphId { get; }
+    string ActiveGraphLabel { get; }
+    IReadOnlyList<GraphSubgraph> Subgraphs { get; }
+    void SelectGraph(string graphId);
+}

@@ -235,11 +235,23 @@ public sealed class WorldGenerationGraphPortTests
         Assert.Empty(source.CompositionWarnings);
         Assert.Single(source.ActiveSubgraphs);
         Assert.Equal("geosphere.mobile-plate.layers", source.ActiveSubgraphs[0].SubgraphId);
+        var navigator = Assert.IsAssignableFrom<IGraphSubgraphSource>(source);
+        Assert.Equal(WorldGenerationGraphDefaults.GeosphereGraphId, navigator.ActiveGraphId);
+        var activeSubgraph = Assert.Single(navigator.Subgraphs);
+        Assert.Equal("crust", activeSubgraph.ParentNodeId);
+        Assert.Equal(WorldGenerationGraphDefaults.MobilePlateLayerGraphId, activeSubgraph.SubgraphId);
+        Assert.Equal("Mobile Plate Layers", activeSubgraph.Label);
         Assert.Equal(5, source.Document.Nodes.Single(node => node.Id == "options").Params["frequency"]!.GetValue<int>());
+
+        navigator.SelectGraph(WorldGenerationGraphDefaults.MobilePlateLayerGraphId);
+
+        Assert.Equal(WorldGenerationGraphDefaults.MobilePlateLayerGraphId, source.ActiveGraphId);
+        Assert.Equal("Mobile Plate Layers", navigator.ActiveGraphLabel);
+        Assert.Equal(2, navigator.Subgraphs.Count);
 
         source.SetTick(9);
 
-        Assert.Equal(3, source.Document.Nodes.Single(node => node.Id == "options").Params["frequency"]!.GetValue<int>());
+        Assert.Equal("geosphere.plate", source.Document.Nodes.Single(node => node.Id == "plate_layer").Params["layerId"]!.GetValue<string>());
     }
 
     [Fact]

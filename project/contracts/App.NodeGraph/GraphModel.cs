@@ -42,6 +42,16 @@ public sealed record GraphAnnotation(
     string? Text = null,
     string? Color = null);
 
+/// <summary>Domain-neutral pointer from a parent node to another authored graph in the same family.</summary>
+public sealed record GraphSubgraph(
+    string ParentGraphId,
+    string ParentNodeId,
+    string SubgraphId,
+    string Label,
+    string? Description = null,
+    IReadOnlyDictionary<string, string>? InputPortMap = null,
+    IReadOnlyDictionary<string, string>? OutputPortMap = null);
+
 /// <summary>Discriminated edit applied to an <see cref="IGraphSource"/>. Kept structural so every
 /// domain's graph source accepts the same edit vocabulary.</summary>
 public abstract record GraphEdit

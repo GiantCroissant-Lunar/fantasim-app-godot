@@ -132,7 +132,7 @@ public partial class Host : Node
                     PayloadJson: payload));
                 return JsonSerializer.SerializeToNode(result)?.AsObject() ?? new JsonObject();
             },
-            title: $"world generation graph - {graphSource.Graph.Label}");
+            title: "world generation graph");
 
         var uiRoot = new Control { Name = "WorldGraphRoot" };
         uiRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
@@ -142,7 +142,7 @@ public partial class Host : Node
         renderer.Bind();
         if (graphSource.CompositionWarnings.Count > 0)
             GD.PushWarning($"[graph] world-generation graph warnings: {string.Join("; ", graphSource.CompositionWarnings)}");
-        GD.Print($"[graph] world-generation graph view mounted: graph={graphSource.ActiveGraphId}, tick={graphSource.ActiveTick}, subgraphs={graphSource.ActiveSubgraphs.Count}, {view.Nodes.Count} nodes, {view.Wires.Count} wires.");
+        GD.Print($"[graph] world-generation graph view mounted: graph={graphSource.ActiveGraphId}, tick={graphSource.ActiveTick}, subgraphs={graphSource.ActiveSubgraphs.Count}, uiSubgraphs={view.Subgraphs.Count}, {view.Nodes.Count} nodes, {view.Wires.Count} wires.");
     }
 
     private static WorldGenerationGraphFamilySource CreateWorldGenerationGraphSource()

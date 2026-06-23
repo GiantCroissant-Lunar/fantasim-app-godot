@@ -26,7 +26,11 @@ public class NodeGraphViewSource : IViewSource, IDisposable
     private readonly IGraphSource _source;
     private readonly Func<Task<JsonObject>>? _runAsync;
     private readonly string _title;
+    private readonly Stack<string> _graphBackStack = new();
     private string _status = "ready";
+    private string? _activeGraphId;
+    private string? _activeGraphLabel;
+    private string? _expectedGraphId;
     private int _revision;
     private bool _disposed;
 
@@ -37,6 +41,7 @@ public class NodeGraphViewSource : IViewSource, IDisposable
         _title = title ?? $"{source.SourceId} graph";
         _source.Changed += OnSourceChanged;
         Populate();
+        _expectedGraphId = _activeGraphId;
     }
 
     public string ViewId => $"{_source.SourceId}-node-graph";
@@ -54,6 +59,7 @@ public class NodeGraphViewSource : IViewSource, IDisposable
     public ObservableCollection<NodeItem> Nodes { get; } = new();
     public ObservableCollection<WireItem> Wires { get; } = new();
     public ObservableCollection<AnnotationItem> Annotations { get; } = new();
+    public ObservableCollection<SubgraphItem> Subgraphs { get; } = new();
 
     public RuntimeSurfaceDocument BuildDocument()
     {
@@ -64,16 +70,29 @@ public class NodeGraphViewSource : IViewSource, IDisposable
             ["properties"] = new JsonObject { ["text"] = new JsonObject { ["literal"] = text } },
         };
 
+        JsonObject MkButton(string id, string text, string command) => new()
+        {
+            ["id"] = id,
+            ["type"] = "button",
+            ["properties"] = new JsonObject { ["text"] = new JsonObject { ["literal"] = text } },
+            ["actions"] = new JsonArray { new JsonObject { ["event"] = "pressed", ["command"] = command } },
+        };
+
         var toolbar = new JsonArray { MkLabel("lbl-status", _status) };
+        if (_graphBackStack.Count > 0)
+            toolbar.Add(MkButton("btn-graph-back", "BACK", "graph-back"));
+
+        foreach (var subgraph in Subgraphs)
+        {
+            toolbar.Add(MkButton(
+                $"btn-subgraph-{SafeComponentId(subgraph.ParentNodeId)}-{SafeComponentId(subgraph.SubgraphId)}",
+                $"OPEN {subgraph.Label}",
+                $"open-subgraph:{subgraph.SubgraphId}"));
+        }
+
         if (_runAsync is not null)
         {
-            toolbar.Add(new JsonObject
-            {
-                ["id"] = "btn-run",
-                ["type"] = "button",
-                ["properties"] = new JsonObject { ["text"] = new JsonObject { ["literal"] = "RUN GRAPH" } },
-                ["actions"] = new JsonArray { new JsonObject { ["event"] = "pressed", ["command"] = "run" } },
-            });
+            toolbar.Add(MkButton("btn-run", "RUN GRAPH", "run"));
         }
 
         var root = new JsonObject
@@ -97,7 +116,7 @@ public class NodeGraphViewSource : IViewSource, IDisposable
                         ["layout"] = new JsonObject { ["type"] = "horizontal", ["gap"] = 8 },
                         ["children"] = toolbar,
                     },
-                    MkLabel("lbl-title", _title),
+                    MkLabel("lbl-title", ActiveTitle()),
                     new JsonObject
                     {
                         ["id"] = "graph",
@@ -133,6 +152,19 @@ public class NodeGraphViewSource : IViewSource, IDisposable
 
     public async void Dispatch(string action, string? componentId)
     {
+        if (action == "graph-back")
+        {
+            NavigateBack();
+            return;
+        }
+
+        const string openSubgraphPrefix = "open-subgraph:";
+        if (action.StartsWith(openSubgraphPrefix, StringComparison.Ordinal))
+        {
+            OpenSubgraph(action[openSubgraphPrefix.Length..]);
+            return;
+        }
+
         if (action != "run" || _runAsync is null) return;
 
         _status = "running…";
@@ -146,6 +178,77 @@ public class NodeGraphViewSource : IViewSource, IDisposable
         {
             _status = $"failed: {ex.Message}";
         }
+        Changed?.Invoke();
+    }
+
+    private void OpenSubgraph(string subgraphId)
+    {
+        if (_source is not IGraphSubgraphSource navigator)
+        {
+            _status = "subgraphs unavailable";
+            Changed?.Invoke();
+            return;
+        }
+
+        var subgraph = Subgraphs.FirstOrDefault(candidate =>
+            string.Equals(candidate.SubgraphId, subgraphId, StringComparison.Ordinal));
+        if (subgraph is null)
+        {
+            _status = $"unknown subgraph: {subgraphId}";
+            Changed?.Invoke();
+            return;
+        }
+
+        var pushedBackStack = false;
+        if (!string.Equals(navigator.ActiveGraphId, subgraph.SubgraphId, StringComparison.Ordinal))
+        {
+            _graphBackStack.Push(navigator.ActiveGraphId);
+            pushedBackStack = true;
+        }
+
+        _status = $"opened {subgraph.Label}";
+        _expectedGraphId = subgraph.SubgraphId;
+        try
+        {
+            navigator.SelectGraph(subgraph.SubgraphId);
+        }
+        catch (Exception ex)
+        {
+            if (pushedBackStack && _graphBackStack.Count > 0)
+                _graphBackStack.Pop();
+            _expectedGraphId = navigator.ActiveGraphId;
+            _status = ex.Message;
+            Changed?.Invoke();
+        }
+    }
+
+    private void NavigateBack()
+    {
+        if (_source is not IGraphSubgraphSource navigator)
+        {
+            _status = "subgraphs unavailable";
+            Changed?.Invoke();
+            return;
+        }
+
+        while (_graphBackStack.Count > 0)
+        {
+            var graphId = _graphBackStack.Pop();
+            try
+            {
+                _status = $"opened {graphId}";
+                _expectedGraphId = graphId;
+                navigator.SelectGraph(graphId);
+                return;
+            }
+            catch (Exception ex)
+            {
+                _expectedGraphId = navigator.ActiveGraphId;
+                _status = ex.Message;
+            }
+        }
+
+        _status = "ready";
         Changed?.Invoke();
     }
 
@@ -176,6 +279,17 @@ public class NodeGraphViewSource : IViewSource, IDisposable
 
     private void OnSourceChanged()
     {
+        if (_source is IGraphSubgraphSource subgraphSource)
+        {
+            if (_expectedGraphId is not null
+                && !string.Equals(_expectedGraphId, subgraphSource.ActiveGraphId, StringComparison.Ordinal))
+            {
+                _graphBackStack.Clear();
+            }
+
+            _expectedGraphId = subgraphSource.ActiveGraphId;
+        }
+
         Populate();
         Changed?.Invoke();
     }
@@ -185,6 +299,9 @@ public class NodeGraphViewSource : IViewSource, IDisposable
         Nodes.Clear();
         Wires.Clear();
         Annotations.Clear();
+        Subgraphs.Clear();
+        _activeGraphId = null;
+        _activeGraphLabel = null;
         var doc = _source.Document;
 
         var inPorts = doc.Nodes.ToDictionary(n => n.Id, _ => new List<string>(), StringComparer.Ordinal);
@@ -236,6 +353,23 @@ public class NodeGraphViewSource : IViewSource, IDisposable
                     annotation.NodeIds,
                     annotation.Text,
                     annotation.Color));
+            }
+        }
+
+        if (_source is IGraphSubgraphSource subgraphSource)
+        {
+            _activeGraphId = subgraphSource.ActiveGraphId;
+            _activeGraphLabel = subgraphSource.ActiveGraphLabel;
+            foreach (var subgraph in subgraphSource.Subgraphs)
+            {
+                Subgraphs.Add(new SubgraphItem(
+                    subgraph.ParentGraphId,
+                    subgraph.ParentNodeId,
+                    subgraph.SubgraphId,
+                    subgraph.Label,
+                    subgraph.Description,
+                    subgraph.InputPortMap,
+                    subgraph.OutputPortMap));
             }
         }
     }
@@ -308,19 +442,40 @@ public class NodeGraphViewSource : IViewSource, IDisposable
             });
         }
 
+        var subgraphs = new JsonArray();
+        foreach (var subgraph in Subgraphs)
+        {
+            subgraphs.Add(new JsonObject
+            {
+                ["parentGraphId"] = subgraph.ParentGraphId,
+                ["parentNodeId"] = subgraph.ParentNodeId,
+                ["subgraphId"] = subgraph.SubgraphId,
+                ["label"] = subgraph.Label,
+                ["description"] = subgraph.Description,
+                ["inputPortMap"] = BuildStringMap(subgraph.InputPortMap),
+                ["outputPortMap"] = BuildStringMap(subgraph.OutputPortMap),
+            });
+        }
+
         return new JsonObject
         {
             ["graph"] = new JsonObject
             {
                 ["status"] = _status,
                 ["title"] = _title,
+                ["activeGraphId"] = _activeGraphId,
+                ["activeGraphLabel"] = _activeGraphLabel,
                 ["revision"] = _revision,
                 ["nodes"] = nodes,
                 ["wires"] = wires,
                 ["annotations"] = annotations,
+                ["subgraphs"] = subgraphs,
             },
         };
     }
+
+    private string ActiveTitle()
+        => string.IsNullOrWhiteSpace(_activeGraphLabel) ? _title : $"{_title} - {_activeGraphLabel}";
 
     private static JsonArray BuildPorts(IReadOnlyList<PortItem> ports)
     {
@@ -343,6 +498,27 @@ public class NodeGraphViewSource : IViewSource, IDisposable
         var result = new JsonArray();
         foreach (var v in values) result.Add(v);
         return result;
+    }
+
+    private static JsonObject BuildStringMap(IReadOnlyDictionary<string, string>? values)
+    {
+        var result = new JsonObject();
+        if (values is null)
+            return result;
+
+        foreach (var (key, value) in values)
+            result[key] = value;
+        return result;
+    }
+
+    private static string SafeComponentId(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "subgraph";
+
+        var chars = value.Select(ch => char.IsLetterOrDigit(ch) || ch is '_' or '-' ? ch : '-').ToArray();
+        var safe = new string(chars).Trim('-');
+        return string.IsNullOrWhiteSpace(safe) ? "subgraph" : safe;
     }
 
     private static JsonArray BuildParameters(IReadOnlyList<ParameterItem> parameters)

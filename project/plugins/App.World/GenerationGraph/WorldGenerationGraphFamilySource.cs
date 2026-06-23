@@ -12,7 +12,7 @@ namespace FantaSim.App.World.GenerationGraph;
 /// The generic UI sees the effective graph for the active tick; edits are applied to the
 /// authored graph, then the effective graph is recomposed.
 /// </summary>
-public sealed class WorldGenerationGraphFamilySource : IGraphSource, IGraphAnnotationSource
+public sealed class WorldGenerationGraphFamilySource : IGraphSource, IGraphAnnotationSource, IGraphSubgraphSource
 {
     private readonly object _gate = new();
     private WorldGenerationGraphSource _activeSource = null!;
@@ -38,12 +38,16 @@ public sealed class WorldGenerationGraphFamilySource : IGraphSource, IGraphAnnot
 
     public string ActiveGraphId { get; private set; }
 
+    public string ActiveGraphLabel => Graph.Label;
+
     public long ActiveTick { get; private set; }
 
     public IReadOnlyList<string> CompositionWarnings { get; private set; } = Array.Empty<string>();
 
     public IReadOnlyList<WorldGenerationSubgraphBinding> ActiveSubgraphs { get; private set; } =
         Array.Empty<WorldGenerationSubgraphBinding>();
+
+    public IReadOnlyList<GraphSubgraph> Subgraphs { get; private set; } = Array.Empty<GraphSubgraph>();
 
     public WorldGenerationGraphView Graph => _activeSource.Graph;
 
@@ -82,6 +86,8 @@ public sealed class WorldGenerationGraphFamilySource : IGraphSource, IGraphAnnot
 
         Changed?.Invoke();
     }
+
+    void IGraphSubgraphSource.SelectGraph(string graphId) => SelectGraph(graphId);
 
     public void SelectRegime(string scheduleKind, string regimeId, long tick, string? sphereId = null)
     {
@@ -138,6 +144,36 @@ public sealed class WorldGenerationGraphFamilySource : IGraphSource, IGraphAnnot
         _activeSource = new WorldGenerationGraphSource(SourceId, composition.Graph);
         CompositionWarnings = composition.Warnings;
         ActiveSubgraphs = WorldGenerationGraphFamilyComposer.ListSubgraphs(Family, ActiveGraphId);
+        Subgraphs = MapSubgraphs(Family, ActiveSubgraphs);
+    }
+
+    private static IReadOnlyList<GraphSubgraph> MapSubgraphs(
+        WorldGenerationGraphFamilyDocument family,
+        IReadOnlyList<WorldGenerationSubgraphBinding> bindings)
+        => bindings
+            .Select(binding =>
+            {
+                var graph = TryResolveFamilyGraph(family, binding.SubgraphId);
+                return new GraphSubgraph(
+                    binding.ParentGraphId,
+                    binding.NodeId,
+                    binding.SubgraphId,
+                    graph?.Label ?? binding.SubgraphId,
+                    graph?.Description,
+                    binding.InputPortMap,
+                    binding.OutputPortMap);
+            })
+            .ToList();
+
+    private static WorldGenerationGraphView? TryResolveFamilyGraph(
+        WorldGenerationGraphFamilyDocument family,
+        string graphId)
+    {
+        if (string.Equals(family.BaseGraph.GraphId, graphId, StringComparison.Ordinal))
+            return family.BaseGraph;
+
+        return family.Graphs.FirstOrDefault(candidate =>
+            string.Equals(candidate.GraphId, graphId, StringComparison.Ordinal));
     }
 
     private static WorldGenerationGraphView ResolveAuthoredGraph(

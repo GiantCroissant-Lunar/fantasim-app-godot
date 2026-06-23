@@ -20,7 +20,13 @@ internal static class GraphNodeVisualEnhancer
 
         try
         {
-            var nodes = ReadNodes(viewModel).ToDictionary(node => node.NodeId, StringComparer.Ordinal);
+            var subgraphsByNode = ReadSubgraphs(viewModel)
+                .GroupBy(subgraph => subgraph.ParentNodeId, StringComparer.Ordinal)
+                .ToDictionary(
+                    group => group.Key,
+                    group => (IReadOnlyList<VisualSubgraph>)group.ToList(),
+                    StringComparer.Ordinal);
+            var nodes = ReadNodes(viewModel, subgraphsByNode).ToDictionary(node => node.NodeId, StringComparer.Ordinal);
             if (nodes.Count == 0)
                 return false;
 
@@ -138,6 +144,26 @@ internal static class GraphNodeVisualEnhancer
         detail.AddThemeColorOverride("font_color", new Color(0.90f, 0.93f, 0.97f, 0.98f));
         detail.AddThemeFontSizeOverride("font_size", 11);
         graphNode.AddChild(detail);
+
+        if (node.Subgraphs.Count > 0)
+        {
+            var labels = node.Subgraphs
+                .Select(subgraph => Shorten(subgraph.Label, 24))
+                .Take(3)
+                .ToList();
+            var suffix = node.Subgraphs.Count > labels.Count ? $" +{node.Subgraphs.Count - labels.Count}" : string.Empty;
+            var subgraphLabel = new Label
+            {
+                Name = $"{MetadataPrefix}subgraph",
+                Text = $"opens: {string.Join(", ", labels)}{suffix}",
+                AutowrapMode = TextServer.AutowrapMode.Off,
+                ClipText = true,
+                CustomMinimumSize = new Vector2(NodeContentWidth, 0),
+            };
+            subgraphLabel.AddThemeColorOverride("font_color", new Color(0.70f, 0.92f, 1.00f, 0.96f));
+            subgraphLabel.AddThemeFontSizeOverride("font_size", 11);
+            graphNode.AddChild(subgraphLabel);
+        }
 
         if (node.ParameterLines is { Count: > 0 })
         {
@@ -309,7 +335,9 @@ internal static class GraphNodeVisualEnhancer
             _ => new Color(0.66f, 0.70f, 0.78f),
         };
 
-    private static IEnumerable<VisualNode> ReadNodes(object viewModel)
+    private static IEnumerable<VisualNode> ReadNodes(
+        object viewModel,
+        IReadOnlyDictionary<string, IReadOnlyList<VisualSubgraph>> subgraphsByNode)
     {
         var property = viewModel.GetType().GetProperty("Nodes", BindingFlags.Public | BindingFlags.Instance);
         if (property?.GetValue(viewModel) is not IEnumerable items)
@@ -334,7 +362,28 @@ internal static class GraphNodeVisualEnhancer
                 ReadStringList(item, "ParameterLines"),
                 ReadInt(item, "PreviewWidth"),
                 ReadInt(item, "PreviewHeight"),
-                ReadByteArray(item, "PreviewRgba"));
+                ReadByteArray(item, "PreviewRgba"),
+                subgraphsByNode.TryGetValue(nodeId, out var subgraphs) ? subgraphs : Array.Empty<VisualSubgraph>());
+        }
+    }
+
+    private static IEnumerable<VisualSubgraph> ReadSubgraphs(object viewModel)
+    {
+        var property = viewModel.GetType().GetProperty("Subgraphs", BindingFlags.Public | BindingFlags.Instance);
+        if (property?.GetValue(viewModel) is not IEnumerable items)
+            yield break;
+
+        foreach (var item in items)
+        {
+            var parentNodeId = ReadString(item, "ParentNodeId");
+            var subgraphId = ReadString(item, "SubgraphId");
+            if (string.IsNullOrWhiteSpace(parentNodeId) || string.IsNullOrWhiteSpace(subgraphId))
+                continue;
+
+            yield return new VisualSubgraph(
+                parentNodeId,
+                subgraphId,
+                ReadString(item, "Label") ?? subgraphId);
         }
     }
 
@@ -387,7 +436,9 @@ internal static class GraphNodeVisualEnhancer
         IReadOnlyList<string>? ParameterLines,
         int PreviewWidth,
         int PreviewHeight,
-        byte[]? PreviewRgba);
+        byte[]? PreviewRgba,
+        IReadOnlyList<VisualSubgraph> Subgraphs);
 
     private sealed record VisualPort(string Label, string KindHint);
+    private sealed record VisualSubgraph(string ParentNodeId, string SubgraphId, string Label);
 }

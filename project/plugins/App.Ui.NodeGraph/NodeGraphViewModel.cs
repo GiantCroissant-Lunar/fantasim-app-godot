@@ -48,3 +48,12 @@ public sealed record AnnotationItem(
     IReadOnlyList<string> NodeIds,
     string? Text = null,
     string? Color = null);
+
+public sealed record SubgraphItem(
+    string ParentGraphId,
+    string ParentNodeId,
+    string SubgraphId,
+    string Label,
+    string? Description = null,
+    IReadOnlyDictionary<string, string>? InputPortMap = null,
+    IReadOnlyDictionary<string, string>? OutputPortMap = null);
