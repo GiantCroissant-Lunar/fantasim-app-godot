@@ -22,6 +22,7 @@ namespace FantaSim.App.Ui.NodeGraph;
 public class NodeGraphViewSource : IViewSource, IDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
+    private const string CommentBoundaryKind = "comment-boundary";
 
     private readonly IGraphSource _source;
     private readonly Func<Task<JsonObject>>? _runAsync;
@@ -81,6 +82,9 @@ public class NodeGraphViewSource : IViewSource, IDisposable
         var toolbar = new JsonArray { MkLabel("lbl-status", _status) };
         if (_graphBackStack.Count > 0)
             toolbar.Add(MkButton("btn-graph-back", "BACK", "graph-back"));
+
+        if (_source is IGraphAnnotationSource)
+            toolbar.Add(MkButton("btn-add-comment-boundary", "ADD COMMENT", "add-comment-boundary"));
 
         foreach (var subgraph in Subgraphs)
         {
@@ -155,6 +159,12 @@ public class NodeGraphViewSource : IViewSource, IDisposable
         if (action == "graph-back")
         {
             NavigateBack();
+            return;
+        }
+
+        if (action == "add-comment-boundary")
+        {
+            AddCommentBoundary();
             return;
         }
 
@@ -275,6 +285,140 @@ public class NodeGraphViewSource : IViewSource, IDisposable
     {
         try { await _source.ApplyEditAsync(new GraphEdit.RemoveNode(nodeId)); }
         catch (Exception ex) { _status = ex.Message; Changed?.Invoke(); }
+    }
+
+    public async void AddAnnotation(
+        string annotationId,
+        string kind,
+        string label,
+        float x,
+        float y,
+        float width,
+        float height,
+        string[] nodeIds,
+        string? text,
+        string? color)
+    {
+        await ApplyGraphEditAsync(
+            new GraphEdit.AddAnnotation(new GraphAnnotation(
+                annotationId,
+                kind,
+                label,
+                new GraphAnnotationBounds(x, y, width, height),
+                nodeIds,
+                text,
+                color)),
+            $"added {label}");
+    }
+
+    public async void UpdateAnnotation(
+        string annotationId,
+        string kind,
+        string label,
+        float x,
+        float y,
+        float width,
+        float height,
+        string[] nodeIds,
+        string? text,
+        string? color)
+    {
+        await ApplyGraphEditAsync(
+            new GraphEdit.UpdateAnnotation(new GraphAnnotation(
+                annotationId,
+                kind,
+                label,
+                new GraphAnnotationBounds(x, y, width, height),
+                nodeIds,
+                text,
+                color)),
+            $"updated {label}");
+    }
+
+    public void SetAnnotationBounds(string annotationId, float x, float y, float width, float height)
+    {
+        var annotation = FindAnnotation(annotationId);
+        if (annotation is null)
+        {
+            _status = $"unknown annotation: {annotationId}";
+            Changed?.Invoke();
+            return;
+        }
+
+        UpdateAnnotation(
+            annotation.AnnotationId,
+            annotation.Kind,
+            annotation.Label,
+            x,
+            y,
+            width,
+            height,
+            annotation.NodeIds.ToArray(),
+            annotation.Text,
+            annotation.Color);
+    }
+
+    public async void RemoveAnnotation(string annotationId)
+    {
+        await ApplyGraphEditAsync(
+            new GraphEdit.RemoveAnnotation(annotationId),
+            $"removed {annotationId}");
+    }
+
+    private void AddCommentBoundary()
+    {
+        var nodeIds = Nodes.Select(node => node.NodeId).ToArray();
+        if (nodeIds.Length == 0)
+        {
+            _status = "comment boundary needs at least one node";
+            Changed?.Invoke();
+            return;
+        }
+
+        var ordinal = NextAnnotationOrdinal();
+        var label = $"Comment {ordinal}";
+        AddAnnotation(
+            $"comment_{ordinal}",
+            CommentBoundaryKind,
+            label,
+            40,
+            40,
+            320,
+            180,
+            nodeIds,
+            "Graph note",
+            "#6ea8fe");
+    }
+
+    private AnnotationItem? FindAnnotation(string annotationId)
+        => Annotations.FirstOrDefault(annotation =>
+            string.Equals(annotation.AnnotationId, annotationId, StringComparison.Ordinal));
+
+    private int NextAnnotationOrdinal()
+    {
+        var used = Annotations
+            .Select(annotation => annotation.AnnotationId)
+            .ToHashSet(StringComparer.Ordinal);
+
+        for (var ordinal = Annotations.Count + 1; ; ordinal++)
+        {
+            if (!used.Contains($"comment_{ordinal}"))
+                return ordinal;
+        }
+    }
+
+    private async Task ApplyGraphEditAsync(GraphEdit edit, string status)
+    {
+        _status = status;
+        try
+        {
+            await _source.ApplyEditAsync(edit);
+        }
+        catch (Exception ex)
+        {
+            _status = ex.Message;
+            Changed?.Invoke();
+        }
     }
 
     private void OnSourceChanged()

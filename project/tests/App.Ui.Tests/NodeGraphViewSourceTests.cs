@@ -66,6 +66,49 @@ public sealed class NodeGraphViewSourceTests
     }
 
     [Fact]
+    public void Dispatch_and_annotation_hooks_forward_comment_boundary_edits()
+    {
+        var graph = new GraphDocument(
+            Nodes: new[]
+            {
+                new GraphNode("source", "fn.source", new JsonObject()),
+                new GraphNode("sink", "fn.sink", new JsonObject()),
+            },
+            Wires: Array.Empty<GraphWire>(),
+            SinkNodeId: "sink");
+        var source = new AnnotatedGraphSource(
+            "annotated",
+            graph,
+            Array.Empty<GraphAnnotation>());
+        var view = new NodeGraphViewSource(source);
+        var json = JsonSerializer.SerializeToNode(view.BuildDocument())?.ToJsonString();
+
+        Assert.Contains("ADD COMMENT", json);
+
+        view.Dispatch("add-comment-boundary", "btn-add-comment-boundary");
+
+        var added = Assert.Single(source.Annotations);
+        Assert.IsType<GraphEdit.AddAnnotation>(source.LastEdit);
+        Assert.Equal("comment_1", added.AnnotationId);
+        Assert.Equal("comment-boundary", added.Kind);
+        Assert.Equal(new[] { "source", "sink" }, added.NodeIds);
+        Assert.Single(view.Annotations);
+
+        view.SetAnnotationBounds("comment_1", 10, 20, 300, 140);
+
+        var updated = Assert.Single(source.Annotations);
+        Assert.IsType<GraphEdit.UpdateAnnotation>(source.LastEdit);
+        Assert.Equal(10, updated.Bounds.X);
+        Assert.Equal(140, updated.Bounds.Height);
+
+        view.RemoveAnnotation("comment_1");
+
+        Assert.IsType<GraphEdit.RemoveAnnotation>(source.LastEdit);
+        Assert.Empty(source.Annotations);
+        Assert.Empty(view.Annotations);
+    }
+
+    [Fact]
     public void BuildDocument_projects_subgraphs_and_dispatch_navigates_open_and_back()
     {
         var root = new GraphDocument(
@@ -149,11 +192,36 @@ public sealed class NodeGraphViewSourceTests
 
         public string SourceId { get; }
         public GraphDocument Document { get; }
-        public IReadOnlyList<GraphAnnotation> Annotations { get; }
-        public event Action? Changed { add { } remove { } }
+        public IReadOnlyList<GraphAnnotation> Annotations { get; private set; }
+        public GraphEdit? LastEdit { get; private set; }
+        public event Action? Changed;
 
         public Task ApplyEditAsync(GraphEdit edit, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LastEdit = edit;
+            switch (edit)
+            {
+                case GraphEdit.AddAnnotation add:
+                    Annotations = Annotations.Append(add.Annotation).ToList();
+                    break;
+                case GraphEdit.UpdateAnnotation update:
+                    Annotations = Annotations
+                        .Select(annotation => string.Equals(annotation.AnnotationId, update.Annotation.AnnotationId, StringComparison.Ordinal)
+                            ? update.Annotation
+                            : annotation)
+                        .ToList();
+                    break;
+                case GraphEdit.RemoveAnnotation remove:
+                    Annotations = Annotations
+                        .Where(annotation => !string.Equals(annotation.AnnotationId, remove.AnnotationId, StringComparison.Ordinal))
+                        .ToList();
+                    break;
+            }
+
+            Changed?.Invoke();
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class NavigableGraphSource : IGraphSource, IGraphSubgraphSource

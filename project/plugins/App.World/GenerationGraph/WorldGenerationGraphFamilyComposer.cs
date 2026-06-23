@@ -48,6 +48,7 @@ public static class WorldGenerationGraphFamilyComposer
         var graph = ResolveGraph(family, graphId);
         var nodes = graph.Nodes.ToList();
         var wires = graph.Wires.ToList();
+        var annotations = graph.Annotations?.ToList();
         var warnings = new List<string>();
 
         foreach (var layer in family.GraphOverrides
@@ -57,11 +58,11 @@ public static class WorldGenerationGraphFamilyComposer
                      .ThenBy(layer => layer.OverrideId, StringComparer.Ordinal))
         {
             foreach (var edit in layer.Edits)
-                ApplyEdit(layer.OverrideId, edit, nodes, wires, warnings);
+                ApplyEdit(layer.OverrideId, edit, nodes, wires, annotations, warnings);
         }
 
         return new WorldGenerationGraphCompositionResult(
-            graph with { Nodes = nodes, Wires = wires },
+            graph with { Nodes = nodes, Wires = wires, Annotations = annotations },
             warnings);
     }
 
@@ -97,12 +98,13 @@ public static class WorldGenerationGraphFamilyComposer
         WorldGenerationGraphEdit edit,
         List<WorldGenerationGraphNode> nodes,
         List<WorldGenerationGraphWire> wires,
+        List<WorldGenerationGraphAnnotation>? annotations,
         List<string> warnings)
     {
         switch (edit.Kind)
         {
             case "remove-node":
-                ApplyRemoveNode(edit, nodes, wires, warnings);
+                ApplyRemoveNode(edit, nodes, wires, annotations, warnings);
                 return;
             case "add-wire":
                 ApplyAddWire(edit, nodes, wires, warnings);
@@ -126,6 +128,7 @@ public static class WorldGenerationGraphFamilyComposer
         WorldGenerationGraphEdit edit,
         List<WorldGenerationGraphNode> nodes,
         List<WorldGenerationGraphWire> wires,
+        List<WorldGenerationGraphAnnotation>? annotations,
         List<string> warnings)
     {
         if (string.IsNullOrWhiteSpace(edit.NodeId))
@@ -144,6 +147,20 @@ public static class WorldGenerationGraphFamilyComposer
         wires.RemoveAll(wire =>
             string.Equals(wire.FromNodeId, edit.NodeId, StringComparison.Ordinal)
             || string.Equals(wire.ToNodeId, edit.NodeId, StringComparison.Ordinal));
+
+        if (annotations is null)
+            return;
+
+        for (var index = 0; index < annotations.Count; index++)
+        {
+            var annotation = annotations[index];
+            annotations[index] = annotation with
+            {
+                NodeIds = annotation.NodeIds
+                    .Where(nodeId => !string.Equals(nodeId, edit.NodeId, StringComparison.Ordinal))
+                    .ToList(),
+            };
+        }
     }
 
     private static void ApplyAddWire(

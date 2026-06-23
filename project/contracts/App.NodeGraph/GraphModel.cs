@@ -61,4 +61,7 @@ public abstract record GraphEdit
     public sealed record AddWire(GraphWire Wire) : GraphEdit;
     public sealed record RemoveWire(string FromNode, string FromPort, string ToNode, string ToPort) : GraphEdit;
     public sealed record SetParam(string NodeId, string Key, JsonNode? Value) : GraphEdit;
+    public sealed record AddAnnotation(GraphAnnotation Annotation) : GraphEdit;
+    public sealed record UpdateAnnotation(GraphAnnotation Annotation) : GraphEdit;
+    public sealed record RemoveAnnotation(string AnnotationId) : GraphEdit;
 }

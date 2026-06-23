@@ -199,6 +199,41 @@ public sealed class WorldGenerationGraphPortTests
     }
 
     [Fact]
+    public void Composer_RemoveNodeOverridePrunesAnnotationAttachments()
+    {
+        var baseGraph = MakeView("world.base", "Base");
+        var family = new WorldGenerationGraphFamilyDocument(
+            DocumentId: "world-generation.family",
+            SchemaVersion: 1,
+            Revision: 2,
+            BaseGraph: baseGraph,
+            Graphs: Array.Empty<WorldGenerationGraphView>(),
+            RegimeGraphBindings: Array.Empty<WorldRegimeGraphBinding>(),
+            GraphOverrides: new[]
+            {
+                new WorldGenerationGraphScopedOverride(
+                    "remove_source",
+                    baseGraph.GraphId,
+                    "Remove source",
+                    new WorldGenerationTickRange(10, 20),
+                    0,
+                    new[] { new WorldGenerationGraphEdit("remove-node", NodeId: "source") }),
+            },
+            LegacyOverrides: Array.Empty<WorldGenerationGraphOverride>(),
+            RunHistory: Array.Empty<WorldGenerationRunHistoryEntry>(),
+            UpdatedUtc: DateTimeOffset.UtcNow);
+
+        var active = WorldGenerationGraphFamilyComposer.ComposeEffectiveGraph(family, baseGraph.GraphId, tick: 12);
+        var inactive = WorldGenerationGraphFamilyComposer.ComposeEffectiveGraph(family, baseGraph.GraphId, tick: 9);
+
+        Assert.DoesNotContain(active.Graph.Nodes, node => node.NodeId == "source");
+        Assert.Empty(active.Graph.Wires);
+        Assert.DoesNotContain(active.Graph.Annotations![0].NodeIds, nodeId => nodeId == "source");
+        Assert.Equal(new[] { "crust" }, active.Graph.Annotations![0].NodeIds);
+        Assert.Equal(new[] { "source", "crust" }, inactive.Graph.Annotations![0].NodeIds);
+    }
+
+    [Fact]
     public void FamilySource_SelectsRegimeGraph_ComposesTickOverrides_AndListsSubgraphs()
     {
         var family = WorldGenerationGraphDefaults.BuildFamily() with
@@ -301,6 +336,60 @@ public sealed class WorldGenerationGraphPortTests
         source.SetTick(9);
 
         Assert.Equal(4, source.Document.Nodes.Single(node => node.Id == "options").Params["frequency"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task FamilySource_AppliesAnnotationEditsToActiveAuthoredGraph()
+    {
+        var originalRevision = WorldGenerationGraphDefaults.BuildFamily().Revision;
+        var source = WorldGenerationGraphFamilySource.ForRegime(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildFamily(),
+            WorldRegimeScheduleKinds.Sphere,
+            "mobile-plate",
+            tick: 0,
+            sphereId: WorldGenerationGraphDefaults.GeosphereSphereId);
+        var annotation = new GraphAnnotation(
+            "comment_extra",
+            WorldGenerationGraphAnnotationKinds.CommentBoundary,
+            "Extra comment",
+            new GraphAnnotationBounds(8, 12, 300, 160),
+            new[] { "options", "crust" },
+            "Review this world recipe.",
+            "#89c2ff");
+
+        await source.ApplyEditAsync(new GraphEdit.AddAnnotation(annotation));
+
+        var authoredGraph = source.Family.Graphs.Single(graph =>
+            graph.GraphId == WorldGenerationGraphDefaults.GeosphereGraphId);
+        var authoredAnnotation = authoredGraph.Annotations!.Single(candidate =>
+            candidate.AnnotationId == "comment_extra");
+
+        Assert.Equal(originalRevision + 1, source.Family.Revision);
+        Assert.Equal("Extra comment", authoredAnnotation.Label);
+        Assert.Contains(source.Annotations, candidate => candidate.AnnotationId == "comment_extra");
+
+        await source.ApplyEditAsync(new GraphEdit.UpdateAnnotation(annotation with
+        {
+            Label = "Updated comment",
+            Bounds = new GraphAnnotationBounds(20, 30, 340, 180),
+        }));
+
+        authoredGraph = source.Family.Graphs.Single(graph =>
+            graph.GraphId == WorldGenerationGraphDefaults.GeosphereGraphId);
+        authoredAnnotation = authoredGraph.Annotations!.Single(candidate =>
+            candidate.AnnotationId == "comment_extra");
+
+        Assert.Equal("Updated comment", authoredAnnotation.Label);
+        Assert.Equal(340, authoredAnnotation.Bounds.Width);
+
+        await source.ApplyEditAsync(new GraphEdit.RemoveAnnotation("comment_extra"));
+
+        authoredGraph = source.Family.Graphs.Single(graph =>
+            graph.GraphId == WorldGenerationGraphDefaults.GeosphereGraphId);
+
+        Assert.DoesNotContain(authoredGraph.Annotations!, candidate => candidate.AnnotationId == "comment_extra");
+        Assert.DoesNotContain(source.Annotations, candidate => candidate.AnnotationId == "comment_extra");
     }
 
     [Fact]
@@ -466,6 +555,84 @@ public sealed class WorldGenerationGraphPortTests
         Assert.Equal(1, changed);
         Assert.Equal("4", typedParam.Value);
         Assert.Equal(4, projectedNode.Params["frequency"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task WorldGraphSource_AppliesAnnotationEditsToTypedGraphAndProjection()
+    {
+        var source = new WorldGenerationGraphSource(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildCrustGraph());
+        var annotation = new GraphAnnotation(
+            "comment_extra",
+            WorldGenerationGraphAnnotationKinds.GroupBoundary,
+            "Extra group",
+            new GraphAnnotationBounds(10, 20, 300, 140),
+            new[] { "options", "crust", "options" },
+            "Grouped inputs and output.",
+            "#6ea8fe");
+
+        await source.ApplyEditAsync(new GraphEdit.AddAnnotation(annotation));
+
+        var typedAnnotation = source.Graph.Annotations!.Single(candidate =>
+            candidate.AnnotationId == "comment_extra");
+        var projectedAnnotation = source.Annotations.Single(candidate =>
+            candidate.AnnotationId == "comment_extra");
+
+        Assert.Equal(WorldGenerationGraphAnnotationKinds.GroupBoundary, typedAnnotation.Kind);
+        Assert.Equal(new[] { "options", "crust" }, typedAnnotation.NodeIds);
+        Assert.Equal(300, projectedAnnotation.Bounds.Width);
+
+        await source.ApplyEditAsync(new GraphEdit.UpdateAnnotation(annotation with
+        {
+            Label = "Updated group",
+            Bounds = new GraphAnnotationBounds(30, 40, 360, 180),
+            NodeIds = new[] { "crust" },
+        }));
+
+        typedAnnotation = source.Graph.Annotations!.Single(candidate =>
+            candidate.AnnotationId == "comment_extra");
+
+        Assert.Equal("Updated group", typedAnnotation.Label);
+        Assert.Equal(360, typedAnnotation.Bounds.Width);
+        Assert.Equal(new[] { "crust" }, typedAnnotation.NodeIds);
+
+        await source.ApplyEditAsync(new GraphEdit.RemoveAnnotation("comment_extra"));
+
+        Assert.DoesNotContain(source.Graph.Annotations!, candidate => candidate.AnnotationId == "comment_extra");
+        Assert.DoesNotContain(source.Annotations, candidate => candidate.AnnotationId == "comment_extra");
+    }
+
+    [Fact]
+    public async Task WorldGraphSource_RejectsInvalidAnnotationEdits()
+    {
+        var source = new WorldGenerationGraphSource(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildCrustGraph());
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            source.ApplyEditAsync(new GraphEdit.AddAnnotation(new GraphAnnotation(
+                "bad_node",
+                WorldGenerationGraphAnnotationKinds.CommentBoundary,
+                "Bad node",
+                new GraphAnnotationBounds(0, 0, 200, 120),
+                new[] { "ghost" }))));
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            source.ApplyEditAsync(new GraphEdit.AddAnnotation(new GraphAnnotation(
+                "bad_bounds",
+                WorldGenerationGraphAnnotationKinds.CommentBoundary,
+                "Bad bounds",
+                new GraphAnnotationBounds(0, 0, 0, 120),
+                new[] { "options" }))));
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            source.ApplyEditAsync(new GraphEdit.AddAnnotation(new GraphAnnotation(
+                "bad_kind",
+                "unknown-boundary",
+                "Bad kind",
+                new GraphAnnotationBounds(0, 0, 200, 120),
+                new[] { "options" }))));
     }
 
     [Fact]

@@ -71,6 +71,9 @@ public sealed class WorldGenerationGraphSource : IGraphSource, IGraphAnnotationS
             GraphEdit.AddWire add => AddWire(graph, add.Wire),
             GraphEdit.RemoveWire remove => RemoveWire(graph, remove),
             GraphEdit.SetParam set => SetParam(graph, set.NodeId, set.Key, set.Value),
+            GraphEdit.AddAnnotation add => AddAnnotation(graph, add.Annotation),
+            GraphEdit.UpdateAnnotation update => UpdateAnnotation(graph, update.Annotation),
+            GraphEdit.RemoveAnnotation remove => RemoveAnnotation(graph, remove.AnnotationId),
             _ => throw new NotSupportedException($"Unsupported graph edit '{edit.GetType().Name}'."),
         };
     }
@@ -208,6 +211,112 @@ public sealed class WorldGenerationGraphSource : IGraphSource, IGraphAnnotationS
         var nodes = graph.Nodes.ToList();
         nodes[index] = node with { Parameters = parameters };
         return ValidateAuthoringGraph(graph with { Nodes = nodes });
+    }
+
+    private static WorldGenerationGraphView AddAnnotation(
+        WorldGenerationGraphView graph,
+        GraphAnnotation annotation)
+    {
+        var typedAnnotation = MapAnnotation(graph, annotation);
+        var annotations = graph.Annotations?.ToList() ?? new List<WorldGenerationGraphAnnotation>();
+        if (annotations.Any(existing => string.Equals(existing.AnnotationId, typedAnnotation.AnnotationId, StringComparison.Ordinal)))
+            throw new ArgumentException($"Graph '{graph.GraphId}' already contains annotation '{typedAnnotation.AnnotationId}'.");
+
+        annotations.Add(typedAnnotation);
+        return ValidateAuthoringGraph(graph with { Annotations = annotations });
+    }
+
+    private static WorldGenerationGraphView UpdateAnnotation(
+        WorldGenerationGraphView graph,
+        GraphAnnotation annotation)
+    {
+        var typedAnnotation = MapAnnotation(graph, annotation);
+        var annotations = graph.Annotations?.ToList() ?? new List<WorldGenerationGraphAnnotation>();
+        var index = annotations.FindIndex(existing =>
+            string.Equals(existing.AnnotationId, typedAnnotation.AnnotationId, StringComparison.Ordinal));
+        if (index < 0)
+            throw new ArgumentException($"Graph '{graph.GraphId}' does not contain annotation '{typedAnnotation.AnnotationId}'.");
+
+        annotations[index] = typedAnnotation;
+        return ValidateAuthoringGraph(graph with { Annotations = annotations });
+    }
+
+    private static WorldGenerationGraphView RemoveAnnotation(
+        WorldGenerationGraphView graph,
+        string annotationId)
+    {
+        RequireNonEmpty(annotationId, nameof(annotationId));
+        var annotations = graph.Annotations?.ToList() ?? new List<WorldGenerationGraphAnnotation>();
+        var next = annotations
+            .Where(annotation => !string.Equals(annotation.AnnotationId, annotationId, StringComparison.Ordinal))
+            .ToList();
+        if (next.Count == annotations.Count)
+            throw new ArgumentException($"Graph '{graph.GraphId}' does not contain annotation '{annotationId}'.");
+
+        return ValidateAuthoringGraph(graph with { Annotations = next });
+    }
+
+    private static WorldGenerationGraphAnnotation MapAnnotation(
+        WorldGenerationGraphView graph,
+        GraphAnnotation annotation)
+    {
+        ArgumentNullException.ThrowIfNull(annotation);
+        RequireNonEmpty(annotation.AnnotationId, nameof(annotation.AnnotationId));
+        RequireNonEmpty(annotation.Kind, nameof(annotation.Kind));
+        RequireNonEmpty(annotation.Label, nameof(annotation.Label));
+        ValidateAnnotationKind(annotation.Kind);
+        ArgumentNullException.ThrowIfNull(annotation.Bounds);
+        ValidateBounds(annotation.Bounds);
+
+        var graphNodeIds = graph.Nodes.Select(node => node.NodeId).ToHashSet(StringComparer.Ordinal);
+        var annotationNodeIds = annotation.NodeIds ?? Array.Empty<string>();
+        var nodeIds = annotationNodeIds
+            .Where(nodeId => !string.IsNullOrWhiteSpace(nodeId))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        foreach (var nodeId in nodeIds)
+        {
+            if (!graphNodeIds.Contains(nodeId))
+                throw new ArgumentException($"Annotation '{annotation.AnnotationId}' references unknown node '{nodeId}'.");
+        }
+
+        return new WorldGenerationGraphAnnotation(
+            annotation.AnnotationId,
+            annotation.Kind,
+            annotation.Label,
+            new WorldGenerationGraphBounds(
+                annotation.Bounds.X,
+                annotation.Bounds.Y,
+                annotation.Bounds.Width,
+                annotation.Bounds.Height),
+            nodeIds,
+            annotation.Text,
+            annotation.Color);
+    }
+
+    private static void ValidateBounds(GraphAnnotationBounds bounds)
+    {
+        if (!float.IsFinite(bounds.X)
+            || !float.IsFinite(bounds.Y)
+            || !float.IsFinite(bounds.Width)
+            || !float.IsFinite(bounds.Height))
+        {
+            throw new ArgumentException("Annotation bounds must be finite.");
+        }
+
+        if (bounds.Width <= 0 || bounds.Height <= 0)
+            throw new ArgumentException("Annotation bounds width and height must be positive.");
+    }
+
+    private static void ValidateAnnotationKind(string kind)
+    {
+        if (string.Equals(kind, WorldGenerationGraphAnnotationKinds.CommentBoundary, StringComparison.Ordinal)
+            || string.Equals(kind, WorldGenerationGraphAnnotationKinds.GroupBoundary, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        throw new ArgumentException($"Unsupported world-generation annotation kind '{kind}'.");
     }
 
     private static WorldGenerationGraphView ValidateAuthoringGraph(WorldGenerationGraphView graph)
