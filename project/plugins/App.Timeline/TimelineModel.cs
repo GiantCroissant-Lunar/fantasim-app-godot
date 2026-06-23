@@ -84,12 +84,13 @@ public static class TimelineModel
         long step = RulerStepTicks(viewStartTick, viewEndTick, targetMarkCount);
         long first = AlignUp(viewStartTick, step);
         double span = viewEndTick - viewStartTick;
+        var scale = SelectTimeLadderScale(viewStartTick, viewEndTick, step);
         var marks = new List<TimelineRulerMark>();
 
         for (long tick = first; tick <= viewEndTick; tick += step)
         {
             double fraction = (tick - viewStartTick) / span;
-            marks.Add(new TimelineRulerMark(tick, fraction, TimelineTimeFormatter.ForTick(tick)));
+            marks.Add(new TimelineRulerMark(tick, fraction, TimelineTimeFormatter.ForTick(tick, scale)));
             if (long.MaxValue - tick < step) break;
         }
 
@@ -112,7 +113,7 @@ public static class TimelineModel
     private static IEnumerable<long> RulerStepCandidates()
     {
         var candidates = new SortedSet<long> { 1L };
-        foreach (double unitTicks in TimeLadderUnitTicks())
+        foreach (var (_, unitTicks) in TimeLadderUnits())
         {
             foreach (int multiplier in NiceMultipliers)
             {
@@ -144,7 +145,7 @@ public static class TimelineModel
         if (value > 0L) set.Add(value);
     }
 
-    private static IReadOnlyList<double> TimeLadderUnitTicks()
+    private static IReadOnlyList<(string Symbol, double UnitTicks)> TimeLadderUnits()
     {
         var profile = BaselineScaleProfiles.GeospherePlateTime;
         var ladder = new List<(string Symbol, double Cumulative)> { (profile.Steps[0].FromScaleSymbol, 1.0) };
@@ -156,8 +157,28 @@ public static class TimelineModel
 
         var anchor = ladder.Single(entry => entry.Symbol == profile.AnchorScaleSymbol).Cumulative;
         return ladder
-            .Select(entry => UnitConverter.TicksPerMegaAnnum * entry.Cumulative / anchor)
+            .Select(entry => (entry.Symbol, UnitConverter.TicksPerMegaAnnum * entry.Cumulative / anchor))
             .ToArray();
+    }
+
+    internal static string SelectTimeLadderScale(long viewStartTick, long viewEndTick, long stepTick)
+    {
+        var viewSpan = Math.Abs((double)viewEndTick - viewStartTick);
+        var maxMagnitude = Math.Max(viewSpan, Math.Abs((double)stepTick));
+        var units = TimeLadderUnits();
+        if (maxMagnitude <= 0)
+            return BaselineScaleProfiles.GeospherePlateTime.AnchorScaleSymbol;
+
+        var selected = units[0].Symbol;
+        foreach (var (symbol, unitTicks) in units)
+        {
+            if (maxMagnitude >= unitTicks)
+                selected = symbol;
+            else
+                break;
+        }
+
+        return selected;
     }
 
     private static long AlignUp(long value, long step)
@@ -178,11 +199,23 @@ public static class TimelineModel
 public static class TimelineTimeFormatter
 {
     public static string ForTick(long tick)
+        => ForTick(tick, targetScaleSymbol: null);
+
+    public static string ForViewRange(long viewStartTick, long viewEndTick, long stepTick)
+    {
+        var scale = TimelineModel.SelectTimeLadderScale(viewStartTick, viewEndTick, stepTick);
+        string viewRange = $"view {ForTick(viewStartTick, scale)} - {ForTick(viewEndTick, scale)}";
+        return stepTick > 0
+            ? $"{viewRange} | step {ForTick(stepTick, scale)}"
+            : viewRange;
+    }
+
+    internal static string ForTick(long tick, string? targetScaleSymbol)
     {
         double anchorAmount = tick / (double)UnitConverter.TicksPerMegaAnnum;
         return CanonicalDisplayFormatter.Format(
             anchorAmount,
             BaselineScaleProfiles.GeospherePlateTimeV1,
-            new CanonicalFormatterOptions { IncludeUnitSuffix = true });
+            new CanonicalFormatterOptions { IncludeUnitSuffix = true, TargetScaleSymbol = targetScaleSymbol });
     }
 }

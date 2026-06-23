@@ -34,6 +34,8 @@ public partial class TimelineFace : Control
     private long _viewEndTick;
     private readonly double _ticksPerSecond = 5_000_000.0;
     private const long MinViewSpanTicks = 1L;
+    private const float RegimeBandHeight = 24f;
+    private const float TrackHeight = 22f;
 
     [Export]
     public double InternalTick
@@ -304,13 +306,13 @@ public partial class TimelineFace : Control
         foreach (var band in _geosphereBands)
         {
             band.Button.Position = new Vector2((float)(band.Start * width), 0);
-            band.Button.Size = new Vector2((float)(band.Width * width), 32);
+            band.Button.Size = new Vector2((float)(band.Width * width), RegimeBandHeight);
         }
 
         foreach (var band in _atmosphereBands)
         {
             band.Button.Position = new Vector2((float)(band.Start * width), 0);
-            band.Button.Size = new Vector2((float)(band.Width * width), 32);
+            band.Button.Size = new Vector2((float)(band.Width * width), RegimeBandHeight);
         }
 
         UpdateUI();
@@ -374,9 +376,9 @@ public partial class TimelineFace : Control
         var tracks = TimelineModel.Tracks(schedule, _ctl.Tick);
         foreach (var t in tracks)
         {
-            var trackControl = new PanelContainer { CustomMinimumSize = new Vector2(0, 24) };
+            var trackControl = new PanelContainer { CustomMinimumSize = new Vector2(0, TrackHeight) };
             var label = new Label { Text = $"  {t.LayerId}", VerticalAlignment = VerticalAlignment.Center };
-            label.AddThemeFontSizeOverride("font_size", 13);
+            label.AddThemeFontSizeOverride("font_size", 12);
             trackControl.AddChild(label);
 
             var style = new StyleBoxFlat { BgColor = new Color(0.12f, 0.15f, 0.18f, 0.5f) };
@@ -413,16 +415,8 @@ public partial class TimelineFace : Control
         _playPauseButton.Text = _isPlaying ? "Pause" : "Play";
         if (_zoomLabel is not null)
         {
-            string viewRange = $"view {TimelineTimeFormatter.ForTick(_viewStartTick)} - {TimelineTimeFormatter.ForTick(_viewEndTick)}";
-            if (_viewEndTick > _viewStartTick)
-            {
-                long step = TimelineModel.RulerStepTicks(_viewStartTick, _viewEndTick);
-                _zoomLabel.Text = $"{viewRange} | step {TimelineTimeFormatter.ForTick(step)}";
-            }
-            else
-            {
-                _zoomLabel.Text = viewRange;
-            }
+            long step = TimelineModel.RulerStepTicks(_viewStartTick, _viewEndTick);
+            _zoomLabel.Text = TimelineTimeFormatter.ForViewRange(_viewStartTick, _viewEndTick, step);
         }
 
         var span = Math.Max(1L, _viewEndTick - _viewStartTick);
@@ -467,7 +461,7 @@ public partial class TimelineFace : Control
         var baseline = new ColorRect
         {
             Color = new Color(1f, 1f, 1f, 0.28f),
-            Position = new Vector2(0f, 25f),
+            Position = new Vector2(0f, 19f),
             Size = new Vector2(width, 1f),
             MouseFilter = MouseFilterEnum.Ignore
         };
@@ -479,8 +473,8 @@ public partial class TimelineFace : Control
             var tick = new ColorRect
             {
                 Color = new Color(1f, 1f, 1f, 0.45f),
-                Position = new Vector2(x, 13f),
-                Size = new Vector2(1f, 12f),
+                Position = new Vector2(x, 10f),
+                Size = new Vector2(1f, 9f),
                 MouseFilter = MouseFilterEnum.Ignore
             };
             _rulerRoot.AddChild(tick);
@@ -489,12 +483,12 @@ public partial class TimelineFace : Control
             {
                 Text = mark.Label,
                 Position = new Vector2(Math.Clamp(x - 34f, 0f, Math.Max(0f, width - 68f)), 0f),
-                Size = new Vector2(68f, 13f),
+                Size = new Vector2(68f, 11f),
                 ClipText = true,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 MouseFilter = MouseFilterEnum.Ignore
             };
-            label.AddThemeFontSizeOverride("font_size", 10);
+            label.AddThemeFontSizeOverride("font_size", 9);
             _rulerRoot.AddChild(label);
         }
     }

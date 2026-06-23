@@ -210,11 +210,11 @@ void light() {
         var sun = new DirectionalLight3D
         {
             Name = "Sun",
-            LightEnergy = 1.6f,
+            LightEnergy = 1.85f,
             ShadowEnabled = false,
         };
         AddChild(sun);
-        sun.Position = new Vector3(1.1f, 1.9f, 7.5f);
+        sun.Position = new Vector3(5.2f, 2.2f, 4.3f);
         sun.LookAt(Vector3.Zero, Vector3.Up);
 
         // A little ambient/sky fill so shadowed (night-side) relief is not pure black.
@@ -503,20 +503,38 @@ void light() {
             || _thermalSourceUnavailable)
         {
             _mantleMaterial.AlbedoColor = DefaultMantleAlbedo;
+            _mantleMaterial.EmissionEnabled = false;
+            _mantleMaterial.Emission = Colors.Black;
+            _mantleMaterial.EmissionEnergyMultiplier = 1.0f;
             return;
         }
 
         try
         {
             var temperature = _magmaSurfaceTemperatureKAt(tick);
-            _mantleMaterial.AlbedoColor = temperature is null
-                ? DefaultMantleAlbedo
-                : MagmaAlbedoForTemperature(temperature.Value);
+            if (temperature is null)
+            {
+                _mantleMaterial.AlbedoColor = DefaultMantleAlbedo;
+                _mantleMaterial.EmissionEnabled = false;
+                _mantleMaterial.Emission = Colors.Black;
+                _mantleMaterial.EmissionEnergyMultiplier = 1.0f;
+                return;
+            }
+
+            var tint = MagmaAlbedoForTemperature(temperature.Value);
+            var glow = MagmaGlowForTemperature(temperature.Value);
+            _mantleMaterial.AlbedoColor = tint;
+            _mantleMaterial.EmissionEnabled = glow > 0f;
+            _mantleMaterial.Emission = tint;
+            _mantleMaterial.EmissionEnergyMultiplier = glow;
         }
         catch (Exception ex)
         {
             _thermalSourceUnavailable = true;
             _mantleMaterial.AlbedoColor = DefaultMantleAlbedo;
+            _mantleMaterial.EmissionEnabled = false;
+            _mantleMaterial.Emission = Colors.Black;
+            _mantleMaterial.EmissionEnergyMultiplier = 1.0f;
             GD.PushWarning($"[GlobeView] magma thermal field fetch failed: {ex.Message}");
         }
     }
@@ -540,6 +558,14 @@ void light() {
         return t < 0.55f
             ? basalt.Lerp(ember, t / 0.55f)
             : ember.Lerp(lava, (t - 0.55f) / 0.45f);
+    }
+
+    private static float MagmaGlowForTemperature(double temperatureK)
+    {
+        const double coolK = 1300.0;
+        const double hotK = 2000.0;
+        var t = (float)Math.Clamp((temperatureK - coolK) / (hotK - coolK), 0.0, 1.0);
+        return t <= 0.05f ? 0.0f : 0.35f + (1.65f * t);
     }
 
 
@@ -575,8 +601,8 @@ void light() {
             BackgroundMode = Godot.Environment.BGMode.Color,
             BackgroundColor = new Color(0.02f, 0.02f, 0.04f),
             AmbientLightSource = Godot.Environment.AmbientSource.Color,
-            AmbientLightColor = new Color(0.45f, 0.50f, 0.60f),
-            AmbientLightEnergy = 0.85f,
+            AmbientLightColor = new Color(0.32f, 0.35f, 0.42f),
+            AmbientLightEnergy = 0.38f,
         };
         return env;
     }
@@ -591,7 +617,10 @@ void light() {
         => new()
         {
             AlbedoColor = DefaultMantleAlbedo,
-            Roughness = 1.0f,
+            Emission = Colors.Black,
+            EmissionEnabled = false,
+            EmissionEnergyMultiplier = 1.0f,
+            Roughness = 0.82f,
         };
 
     private static MeshInstance3D BuildMantle(StandardMaterial3D material) => new()

@@ -72,6 +72,50 @@ public class TimelineModelTests
     }
 
     [Fact]
+    public void ZoomReadout_UsesOneCanonicalScaleForRangeAndStep()
+    {
+        var readout = TimelineTimeFormatter.ForViewRange(
+            viewStartTick: 0,
+            viewEndTick: 120_000_000,
+            stepTick: 20_000_000);
+
+        Assert.Equal("view 0 kb - 1.20 kb | step 0.20 kb", readout);
+    }
+
+    [Fact]
+    public void ZoomReadout_SelectsSmallCanonicalScaleForTightRanges()
+    {
+        var readout = TimelineTimeFormatter.ForViewRange(
+            viewStartTick: 0,
+            viewEndTick: 8,
+            stepTick: 1);
+
+        Assert.Equal("view 0 jy - 80 jy | step 10 jy", readout);
+    }
+
+    [Fact]
+    public void ZoomReadout_SelectsScaleFromZoomSpan_NotEpochMagnitude()
+    {
+        var readout = TimelineTimeFormatter.ForViewRange(
+            viewStartTick: 100_000_000,
+            viewEndTick: 100_000_008,
+            stepTick: 1);
+
+        Assert.EndsWith("| step 10 jy", readout);
+        Assert.DoesNotContain("kb", readout);
+    }
+
+    [Fact]
+    public void Ruler_UsesOneCanonicalScaleForZoomSpan()
+    {
+        var marks = TimelineModel.Ruler(100_000_000, 100_000_008, targetMarkCount: 8);
+
+        Assert.NotEmpty(marks);
+        Assert.All(marks, mark => Assert.EndsWith("jy", mark.Label));
+        Assert.All(marks, mark => Assert.DoesNotContain("kb", mark.Label));
+    }
+
+    [Fact]
     public void Ruler_MinimumStep_RespectsIntegerCanonicalTicks()
     {
         long step = TimelineModel.RulerStepTicks(0, 8, targetMarkCount: 8);

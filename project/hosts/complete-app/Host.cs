@@ -26,7 +26,7 @@ public partial class Host : Node
     // Sub-project B: the Godot-free ECS cell model that derives per-cell elevation. Owned here so its
     // lifetime matches the host; the relief render (sub-project C) reads GetElevations() off it.
     private FantaSim.App.World.Cells.CellElevationModel? _cellElevation;
-    private IDisposable? _worldGraphTimelineBinding;
+    private WorldGenerationTimelineGraphBindingSlot? _worldGraphTimelineBinding;
     private FantaSim.App.Ui.Seam.ViewRenderer? _worldGraphRenderer;
     private FantaSim.App.Ui.NodeGraph.NodeGraphViewSource? _worldGraphView;
     private Control? _worldGraphUiRoot;
@@ -124,18 +124,15 @@ public partial class Host : Node
             return;
         }
 
-        if (ReadWorldGraphFollowTimeline())
+        var followTimeline = ReadWorldGraphFollowTimeline();
+        var timeline = followTimeline
+            ? _composition.Bootstrap.Registry.TryGet<FantaSim.App.World.Composition.ITimelineController>()
+            : null;
+        _worldGraphTimelineBinding ??= new WorldGenerationTimelineGraphBindingSlot();
+        _worldGraphTimelineBinding.Rebind(timeline, graphSource, followTimeline);
+        if (followTimeline && timeline is null)
         {
-            var timeline = _composition.Bootstrap.Registry.TryGet<FantaSim.App.World.Composition.ITimelineController>();
-            if (timeline is not null)
-            {
-                _worldGraphTimelineBinding?.Dispose();
-                _worldGraphTimelineBinding = WorldGenerationTimelineGraphBinding.BindGeosphere(timeline, graphSource);
-            }
-            else
-            {
-                GD.PushWarning("[graph] timeline follow requested, but no ITimelineController is registered.");
-            }
+            GD.PushWarning("[graph] timeline follow requested, but no ITimelineController is registered.");
         }
 
         // Tear down any previous world-graph view stack before rebinding so we do not leak

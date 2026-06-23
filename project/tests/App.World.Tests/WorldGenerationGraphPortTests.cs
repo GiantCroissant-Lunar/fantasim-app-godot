@@ -1078,6 +1078,31 @@ public sealed class WorldGenerationGraphPortTests
         Assert.Equal(onset + 1, source.ActiveTick);
     }
 
+    [Fact]
+    public void TimelineGraphBindingSlot_DisposesPreviousBinding_WhenFollowIsDisabled()
+    {
+        var timeline = new FakeTimelineController(
+            SphereRegimeScheduleDefaults.GeosphereDefault,
+            SphereRegimeScheduleDefaults.AtmosphereFor(SphereRegimeScheduleDefaults.PlateOnsetTick));
+        var source = WorldGenerationGraphFamilySource.ForRegime(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildFamily(),
+            WorldRegimeScheduleKinds.Sphere,
+            "mobile-plate",
+            SphereRegimeScheduleDefaults.PlateOnsetTick,
+            WorldGenerationGraphDefaults.GeosphereSphereId);
+        using var slot = new WorldGenerationTimelineGraphBindingSlot();
+
+        slot.Rebind(timeline, source, followTimeline: true);
+        Assert.Equal(WorldGenerationGraphDefaults.GeosphereMagmaOceanGraphId, source.ActiveGraphId);
+
+        slot.Rebind(timeline, source, followTimeline: false);
+        timeline.PushTick(SphereRegimeScheduleDefaults.PlateOnsetTick);
+
+        Assert.Equal(WorldGenerationGraphDefaults.GeosphereMagmaOceanGraphId, source.ActiveGraphId);
+        Assert.Equal(0, source.ActiveTick);
+    }
+
     private static WorldGenerationGraphView MakeView(string graphId, string label)
     {
         var source = new WorldGenerationGraphNode(
