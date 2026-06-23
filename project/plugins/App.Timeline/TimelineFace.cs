@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using Godot;
 using FantaSim.App.World.Composition;
-using FantaSim.World.Contracts.Quantities;
-using FantaSim.World.Contracts.Units;
 
 namespace FantaSim.App.Timeline;
 
@@ -16,7 +14,12 @@ public partial class TimelineFace : Control
     private AnimationNodeStateMachinePlayback? _playback;
 
     private Button? _playPauseButton;
+    private Button? _zoomOutButton;
+    private Button? _fitButton;
+    private Button? _zoomInButton;
     private Label? _statusLabel;
+    private Label? _zoomLabel;
+    private Control? _rulerRoot;
     private Control? _lanesContainer;
     private ColorRect? _playheadLine;
 
@@ -27,7 +30,10 @@ public partial class TimelineFace : Control
     private double _internalTick;
     private long _lastPushedTick = -1;
     private bool _isPlaying;
+    private long _viewStartTick;
+    private long _viewEndTick;
     private readonly double _ticksPerSecond = 5_000_000.0;
+    private const long MinViewSpanTicks = 1L;
 
     [Export]
     public double InternalTick
@@ -57,11 +63,22 @@ public partial class TimelineFace : Control
         }
 
         _playPauseButton = GetNode<Button>("VBoxContainer/Header/PlayPauseButton");
+        _zoomOutButton = GetNode<Button>("VBoxContainer/Header/ZoomOutButton");
+        _fitButton = GetNode<Button>("VBoxContainer/Header/FitButton");
+        _zoomInButton = GetNode<Button>("VBoxContainer/Header/ZoomInButton");
         _statusLabel = GetNode<Label>("VBoxContainer/Header/StatusLabel");
+        _zoomLabel = GetNode<Label>("VBoxContainer/Header/ZoomLabel");
+        _rulerRoot = GetNode<Control>("VBoxContainer/Ruler");
         _lanesContainer = GetNode<Control>("VBoxContainer/LanesContainer");
         _playheadLine = GetNode<ColorRect>("VBoxContainer/LanesContainer/PlayheadLine");
 
+        _viewStartTick = 0L;
+        _viewEndTick = _ctl.MaxTick;
+
         _playPauseButton.Pressed += OnPlayPausePressed;
+        _zoomOutButton.Pressed += OnZoomOutPressed;
+        _fitButton.Pressed += OnFitPressed;
+        _zoomInButton.Pressed += OnZoomInPressed;
         _lanesContainer.GuiInput += OnLanesGuiInput;
         Resized += OnLanesResized;
 
@@ -70,6 +87,7 @@ public partial class TimelineFace : Control
         SetupAnimationSystem();
 
         SeekTo(_ctl.Tick);
+        UpdateLayout();
     }
 
     public override void _ExitTree()
@@ -81,6 +99,18 @@ public partial class TimelineFace : Control
         if (_playPauseButton is not null)
         {
             _playPauseButton.Pressed -= OnPlayPausePressed;
+        }
+        if (_zoomOutButton is not null)
+        {
+            _zoomOutButton.Pressed -= OnZoomOutPressed;
+        }
+        if (_fitButton is not null)
+        {
+            _fitButton.Pressed -= OnFitPressed;
+        }
+        if (_zoomInButton is not null)
+        {
+            _zoomInButton.Pressed -= OnZoomInPressed;
         }
         if (_lanesContainer is not null)
         {
@@ -236,13 +266,29 @@ public partial class TimelineFace : Control
         if (totalWidth <= 0) return;
 
         var fraction = localX / totalWidth;
-        var tick = (long)Math.Clamp(fraction * _ctl.MaxTick, 0.0, _ctl.MaxTick);
+        var tick = (long)Math.Clamp(_viewStartTick + (fraction * (_viewEndTick - _viewStartTick)), _viewStartTick, _viewEndTick);
         _ctl.SeekTo(tick);
     }
 
     private void OnBandPressed(long startTick)
     {
         _ctl?.SeekTo(startTick);
+    }
+
+    private void OnZoomOutPressed()
+    {
+        ZoomAroundCurrentTick(2.0);
+    }
+
+    private void OnFitPressed()
+    {
+        if (_ctl is null) return;
+        SetViewRange(0L, _ctl.MaxTick);
+    }
+
+    private void OnZoomInPressed()
+    {
+        ZoomAroundCurrentTick(0.5);
     }
 
     private void OnLanesResized()
@@ -268,6 +314,7 @@ public partial class TimelineFace : Control
         }
 
         UpdateUI();
+        UpdateRuler();
     }
 
     private void BuildLanes()
@@ -299,7 +346,7 @@ public partial class TimelineFace : Control
         List<(Button Button, double Start, double Width)> bandList,
         string sphere)
     {
-        var bands = TimelineModel.Bands(schedule, _ctl!.MaxTick, _ctl.Tick);
+        var bands = TimelineModel.Bands(schedule, _ctl!.MaxTick, _ctl.Tick, _viewStartTick, _viewEndTick);
         foreach (var b in bands)
         {
             var btn = new Button
@@ -316,8 +363,7 @@ public partial class TimelineFace : Control
             btn.AddThemeStyleboxOverride("hover", normalStyle);
             btn.AddThemeStyleboxOverride("pressed", normalStyle);
 
-            long seekTick = schedule.Regimes.FirstOrDefault(r => r.RegimeId == b.RegimeId)?.StartTick ?? 0L;
-            btn.Pressed += () => OnBandPressed(seekTick);
+            btn.Pressed += () => OnBandPressed(b.StartTick);
 
             regimesRoot.AddChild(btn);
             bandList.Add((btn, b.StartFraction, b.WidthFraction));
@@ -357,15 +403,20 @@ public partial class TimelineFace : Control
         if (_ctl is null || _statusLabel is null || _playPauseButton is null || _playheadLine is null || _lanesContainer is null) return;
 
         var tick = _ctl.Tick;
-        double kaAmount = (double)tick / UnitConverter.TicksPerMegaAnnum;
-        var timeLabel = CanonicalDisplayFormatter.Format(kaAmount, BaselineScaleProfiles.GeospherePlateTimeV1, new CanonicalFormatterOptions(IncludeUnitSuffix: true));
+        var timeLabel = TimelineTimeFormatter.ForTick(tick);
 
         var playState = _isPlaying ? "playing" : "paused";
         var geoRegime = _ctl.GeosphereSchedule.RegimeAt(tick)?.RegimeId ?? "-";
         _statusLabel.Text = $"{playState} : {geoRegime} : {timeLabel}";
         _playPauseButton.Text = _isPlaying ? "Pause" : "Play";
+        if (_zoomLabel is not null)
+        {
+            long step = TimelineModel.RulerStepTicks(_viewStartTick, _viewEndTick);
+            _zoomLabel.Text = $"view {TimelineTimeFormatter.ForTick(_viewStartTick)} - {TimelineTimeFormatter.ForTick(_viewEndTick)} | step {TimelineTimeFormatter.ForTick(step)}";
+        }
 
-        var fraction = (double)tick / _ctl.MaxTick;
+        var span = Math.Max(1L, _viewEndTick - _viewStartTick);
+        var fraction = Math.Clamp((tick - _viewStartTick) / (double)span, 0.0, 1.0);
         _playheadLine.Position = new Vector2((float)(fraction * _lanesContainer.Size.X), 0);
         _playheadLine.Size = new Vector2(2, _lanesContainer.Size.Y);
 
@@ -392,6 +443,80 @@ public partial class TimelineFace : Control
 
             track.Control.Modulate = isActive ? new Color(1, 1, 1, 1f) : new Color(1, 1, 1, 0.3f);
         }
+    }
+
+    private void UpdateRuler()
+    {
+        if (_rulerRoot is null) return;
+
+        ClearChildren(_rulerRoot);
+        var width = _rulerRoot.Size.X;
+        if (width <= 0) return;
+
+        var baseline = new ColorRect
+        {
+            Color = new Color(1f, 1f, 1f, 0.28f),
+            Position = new Vector2(0f, 25f),
+            Size = new Vector2(width, 1f),
+            MouseFilter = MouseFilterEnum.Ignore
+        };
+        _rulerRoot.AddChild(baseline);
+
+        foreach (var mark in TimelineModel.Ruler(_viewStartTick, _viewEndTick))
+        {
+            float x = (float)(mark.Fraction * width);
+            var tick = new ColorRect
+            {
+                Color = new Color(1f, 1f, 1f, 0.45f),
+                Position = new Vector2(x, 13f),
+                Size = new Vector2(1f, 12f),
+                MouseFilter = MouseFilterEnum.Ignore
+            };
+            _rulerRoot.AddChild(tick);
+
+            var label = new Label
+            {
+                Text = mark.Label,
+                Position = new Vector2(Math.Clamp(x - 34f, 0f, Math.Max(0f, width - 68f)), 0f),
+                Size = new Vector2(68f, 13f),
+                ClipText = true,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                MouseFilter = MouseFilterEnum.Ignore
+            };
+            label.AddThemeFontSizeOverride("font_size", 10);
+            _rulerRoot.AddChild(label);
+        }
+    }
+
+    private void ZoomAroundCurrentTick(double factor)
+    {
+        if (_ctl is null) return;
+        long span = _viewEndTick - _viewStartTick;
+        long nextSpan = (long)Math.Clamp(span * factor, MinViewSpanTicks, _ctl.MaxTick);
+        long anchor = Math.Clamp(_ctl.Tick, _viewStartTick, _viewEndTick);
+        double anchorFraction = span > 0 ? (anchor - _viewStartTick) / (double)span : 0.5;
+        long nextStart = anchor - (long)(nextSpan * anchorFraction);
+        SetViewRange(nextStart, nextStart + nextSpan);
+    }
+
+    private void SetViewRange(long startTick, long endTick)
+    {
+        if (_ctl is null) return;
+        long span = Math.Max(MinViewSpanTicks, endTick - startTick);
+        if (span >= _ctl.MaxTick)
+        {
+            _viewStartTick = 0L;
+            _viewEndTick = _ctl.MaxTick;
+        }
+        else
+        {
+            long start = Math.Clamp(startTick, 0L, _ctl.MaxTick - span);
+            _viewStartTick = start;
+            _viewEndTick = start + span;
+        }
+
+        BuildLanes();
+        UpdateLayout();
     }
 
     private static void ClearChildren(Node node)
