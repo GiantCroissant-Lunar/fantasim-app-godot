@@ -312,6 +312,68 @@ public sealed class WorldGenerationGraphPortTests
     }
 
     [Fact]
+    public void DefaultFamily_DefinesResolvableLayerSubgraphs()
+    {
+        var family = WorldGenerationGraphDefaults.BuildFamily();
+        var graphIds = family.Graphs
+            .Select(graph => graph.GraphId)
+            .Append(family.BaseGraph.GraphId)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Contains(WorldGenerationGraphDefaults.MobilePlateLayerGraphId, graphIds);
+        Assert.Contains(WorldGenerationGraphDefaults.GeospherePlateLayerGraphId, graphIds);
+        Assert.Contains(WorldGenerationGraphDefaults.GeosphereCrustLayerGraphId, graphIds);
+        Assert.All(family.SubgraphBindings!, binding => Assert.Contains(binding.SubgraphId, graphIds));
+
+        var layerIndex = family.Graphs.Single(graph => graph.GraphId == WorldGenerationGraphDefaults.MobilePlateLayerGraphId);
+        Assert.Equal(new[] { "plate_layer", "crust_layer" }, layerIndex.OutputNodeIds);
+        Assert.Equal(WorldGenerationGraphAnnotationKinds.GroupBoundary, layerIndex.Annotations![0].Kind);
+
+        var subgraphs = WorldGenerationGraphFamilyComposer.ListSubgraphs(
+            family,
+            WorldGenerationGraphDefaults.MobilePlateLayerGraphId);
+
+        Assert.Equal(2, subgraphs.Count);
+        Assert.Contains(subgraphs, binding => binding.SubgraphId == WorldGenerationGraphDefaults.GeospherePlateLayerGraphId);
+        Assert.Contains(subgraphs, binding => binding.SubgraphId == WorldGenerationGraphDefaults.GeosphereCrustLayerGraphId);
+    }
+
+    [Theory]
+    [InlineData("magma-ocean", WorldGenerationGraphDefaults.GeosphereMagmaOceanGraphId)]
+    [InlineData("stagnant-lid", WorldGenerationGraphDefaults.GeosphereStagnantLidGraphId)]
+    [InlineData("mobile-plate", WorldGenerationGraphDefaults.GeosphereGraphId)]
+    public void DefaultFamily_ResolvesLiveGeosphereRegimeGraphs(string regimeId, string expectedGraphId)
+    {
+        var graph = WorldGenerationGraphFamilyComposer.ResolveRegimeGraph(
+            WorldGenerationGraphDefaults.BuildFamily(),
+            WorldRegimeScheduleKinds.Sphere,
+            regimeId,
+            WorldGenerationGraphDefaults.GeosphereSphereId);
+
+        Assert.Equal(expectedGraphId, graph.GraphId);
+    }
+
+    [Fact]
+    public async Task LayerScopeRegimeGraph_RunsThroughGenericExecutor()
+    {
+        var source = WorldGenerationGraphFamilySource.ForRegime(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildFamily(),
+            WorldRegimeScheduleKinds.Sphere,
+            "magma-ocean",
+            tick: 0,
+            sphereId: WorldGenerationGraphDefaults.GeosphereSphereId);
+
+        var compiled = source.CompileForExecution();
+        var result = await new GraphExecutor(new[] { new WorldFunctionProvider() }).ExecuteAsync(compiled.Document);
+        var layer = Assert.IsType<JsonObject>(result["layer"]);
+
+        Assert.Equal(WorldFunctionProvider.LayerScope, result["function"]?.GetValue<string>());
+        Assert.Equal("geosphere.magma-ocean", layer["layerId"]?.GetValue<string>());
+        Assert.Equal("magma-ocean", layer["regimeId"]?.GetValue<string>());
+    }
+
+    [Fact]
     public void ScopeKeyAndProductAddress_KeepCacheIdentitySeparateFromProductPath()
     {
         var key = new WorldGenerationGraphExecutionScopeKey(
@@ -342,11 +404,14 @@ public sealed class WorldGenerationGraphPortTests
     public void NodeCatalog_ContainsCurrentExecutableWorldGraphNodes()
     {
         var options = WorldGenerationNodeCatalog.Find(WorldFunctionProvider.WorldOptions);
+        var layerScope = WorldGenerationNodeCatalog.Find(WorldFunctionProvider.LayerScope);
         var crust = WorldGenerationNodeCatalog.Find(WorldFunctionProvider.CrustGenerate);
 
         Assert.NotNull(options);
+        Assert.NotNull(layerScope);
         Assert.NotNull(crust);
         Assert.Equal("options", options!.Outputs[0].PortId);
+        Assert.Equal("layer", layerScope!.Outputs[0].PortId);
         Assert.Equal("options", crust!.Inputs[0].PortId);
         Assert.True(crust.IsExpensive);
     }

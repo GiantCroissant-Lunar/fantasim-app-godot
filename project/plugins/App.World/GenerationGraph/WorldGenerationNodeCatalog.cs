@@ -30,6 +30,23 @@ public static class WorldGenerationNodeCatalog
             }),
 
         new WorldGenerationNodeSchema(
+            TypeId: WorldFunctionProvider.LayerScope,
+            Label: "Layer Scope",
+            Category: "source",
+            IsSideEffect: false,
+            IsExpensive: false,
+            Inputs: Array.Empty<WorldGenerationGraphPort>(),
+            Outputs: new[] { new WorldGenerationGraphPort("layer", "Layer", "world/layer_scope", Required: false) },
+            Summary: "Declares the sphere, regime, and layer represented by a regime or layer subgraph.",
+            Parameters: new[]
+            {
+                new WorldGenerationGraphParameter("sphereId", "Sphere", WorldGenerationGraphDefaults.GeosphereSphereId, "string"),
+                new WorldGenerationGraphParameter("regimeId", "Regime", "mobile-plate", "string"),
+                new WorldGenerationGraphParameter("layerId", "Layer", "geosphere.crust", "string"),
+                new WorldGenerationGraphParameter("role", "Role", "layer", "string"),
+            }),
+
+        new WorldGenerationNodeSchema(
             TypeId: WorldFunctionProvider.CrustGenerate,
             Label: "Crust Generation",
             Category: "geosphere",

@@ -35,6 +35,9 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
     /// <summary>Function id for a source node that packages authored world-generation options.</summary>
     public const string WorldOptions = "world.options";
 
+    /// <summary>Function id for a source node that packages regime/layer graph metadata.</summary>
+    public const string LayerScope = "world.layer-scope";
+
     /// <summary>Function id for the crust-evolution pipeline run.</summary>
     public const string CrustGenerate = "crust.generate";
 
@@ -73,6 +76,7 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         return functionId switch
         {
             WorldOptions => PackageWorldOptions(payload),
+            LayerScope => PackageLayerScope(payload),
             CrustGenerate => await GenerateCrustAsync(payload, cancellationToken).ConfigureAwait(false),
             _ => throw new InvalidOperationException(
                 $"WorldFunctionProvider has no handler for function '{functionId}'."),
@@ -83,6 +87,13 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         => new()
         {
             ["options"] = payload.DeepClone(),
+        };
+
+    private static JsonObject PackageLayerScope(JsonObject payload)
+        => new()
+        {
+            ["function"] = LayerScope,
+            ["layer"] = payload.DeepClone(),
         };
 
     // ---------------------------------------------------------------- crust.generate
