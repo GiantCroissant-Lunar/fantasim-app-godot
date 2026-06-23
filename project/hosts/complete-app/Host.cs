@@ -1,9 +1,12 @@
 using System;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FantaSim.App.Common;
+using FantaSim.App.World;
 using FantaSim.App.World.Composition;
+using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Globe;
 using FantaSim.App.World.Seam;
 using Godot;
@@ -106,9 +109,16 @@ public partial class Host : Node
         if (System.Environment.GetEnvironmentVariable("FANTASIM_SHOW_WORLD_GRAPH") != "1") return;
         var logger = _composition!.Bootstrap.LoggerFactory.CreateLogger("WorldGraph");
 
-        var graphSource = new FantaSim.App.World.GenerationGraph.WorldGenerationGraphSource(
-            "world-generation",
-            FantaSim.App.World.GenerationGraph.WorldGenerationGraphDefaults.BuildCrustGraph());
+        WorldGenerationGraphFamilySource graphSource;
+        try
+        {
+            graphSource = CreateWorldGenerationGraphSource();
+        }
+        catch (Exception ex)
+        {
+            GD.PushError($"[graph] world-generation graph selection failed: {ex.Message}");
+            return;
+        }
 
         var client = _composition.Bootstrap.Registry.Get<FantaSim.App.Command.IClient>();
         var view = new FantaSim.App.Ui.NodeGraph.NodeGraphViewSource(
@@ -122,7 +132,7 @@ public partial class Host : Node
                     PayloadJson: payload));
                 return JsonSerializer.SerializeToNode(result)?.AsObject() ?? new JsonObject();
             },
-            title: "world generation graph");
+            title: $"world generation graph - {graphSource.Graph.Label}");
 
         var uiRoot = new Control { Name = "WorldGraphRoot" };
         uiRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
@@ -130,7 +140,52 @@ public partial class Host : Node
 
         var renderer = new FantaSim.App.Ui.Seam.ViewRenderer(uiRoot, () => view, _ => null, logger);
         renderer.Bind();
-        GD.Print($"[graph] world-generation graph view mounted: {view.Nodes.Count} nodes, {view.Wires.Count} wires.");
+        if (graphSource.CompositionWarnings.Count > 0)
+            GD.PushWarning($"[graph] world-generation graph warnings: {string.Join("; ", graphSource.CompositionWarnings)}");
+        GD.Print($"[graph] world-generation graph view mounted: graph={graphSource.ActiveGraphId}, tick={graphSource.ActiveTick}, subgraphs={graphSource.ActiveSubgraphs.Count}, {view.Nodes.Count} nodes, {view.Wires.Count} wires.");
+    }
+
+    private static WorldGenerationGraphFamilySource CreateWorldGenerationGraphSource()
+    {
+        var family = WorldGenerationGraphDefaults.BuildFamily();
+        var scheduleKind = ReadWorldGraphEnv("FANTASIM_WORLD_GRAPH_SCHEDULE", WorldRegimeScheduleKinds.Sphere);
+        var defaultRegime = string.Equals(scheduleKind, WorldRegimeScheduleKinds.BodyFormation, StringComparison.Ordinal)
+            ? "planetesimal-swarm"
+            : "mobile-plate";
+        var regimeId = ReadWorldGraphEnv("FANTASIM_WORLD_GRAPH_REGIME", defaultRegime);
+        var sphereId = System.Environment.GetEnvironmentVariable("FANTASIM_WORLD_GRAPH_SPHERE");
+        if (string.IsNullOrWhiteSpace(sphereId)
+            && string.Equals(scheduleKind, WorldRegimeScheduleKinds.Sphere, StringComparison.Ordinal))
+        {
+            sphereId = WorldGenerationGraphDefaults.GeosphereSphereId;
+        }
+
+        return WorldGenerationGraphFamilySource.ForRegime(
+            "world-generation",
+            family,
+            scheduleKind,
+            regimeId,
+            ReadWorldGraphTick(),
+            string.IsNullOrWhiteSpace(sphereId) ? null : sphereId);
+    }
+
+    private static string ReadWorldGraphEnv(string key, string fallback)
+    {
+        var value = System.Environment.GetEnvironmentVariable(key);
+        return string.IsNullOrWhiteSpace(value) ? fallback : value;
+    }
+
+    private static long ReadWorldGraphTick()
+    {
+        var value = System.Environment.GetEnvironmentVariable("FANTASIM_WORLD_GRAPH_TICK");
+        if (string.IsNullOrWhiteSpace(value))
+            return 0;
+
+        if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tick))
+            return tick;
+
+        GD.PushWarning($"[graph] invalid FANTASIM_WORLD_GRAPH_TICK '{value}', using 0.");
+        return 0;
     }
 
     // pipeline.run_text_to_3d via the composed iii axis (env-guarded demo). The graph is authored in
@@ -173,8 +228,11 @@ public partial class Host : Node
         var client = _composition!.Bootstrap.Registry.Get<FantaSim.App.Command.IClient>();
         try
         {
-            var graph = FantaSim.App.World.GenerationGraph.WorldGenerationGraphDefaults.BuildCrustGraph();
-            var compiled = FantaSim.App.World.GenerationGraph.WorldGenerationGraphCompiler.Compile(graph);
+            var graphSource = CreateWorldGenerationGraphSource();
+            GD.Print($"[graph] selected world-generation graph: graph={graphSource.ActiveGraphId}, tick={graphSource.ActiveTick}, subgraphs={graphSource.ActiveSubgraphs.Count}");
+            if (graphSource.CompositionWarnings.Count > 0)
+                GD.PushWarning($"[graph] world-generation graph warnings: {string.Join("; ", graphSource.CompositionWarnings)}");
+            var compiled = graphSource.CompileForExecution();
             var payload = JsonSerializer.Serialize(compiled.Document);
             var result = await client.CommandAsync(new FantaSim.App.Command.CommandRequest(
                 Command: RunWorldGenerationGraphCommand,

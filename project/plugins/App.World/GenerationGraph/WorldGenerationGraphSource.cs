@@ -41,15 +41,7 @@ public sealed class WorldGenerationGraphSource : IGraphSource
 
         lock (_gate)
         {
-            var next = edit switch
-            {
-                GraphEdit.AddNode add => AddNode(Graph, add.Node),
-                GraphEdit.RemoveNode remove => RemoveNode(Graph, remove.NodeId),
-                GraphEdit.AddWire add => AddWire(Graph, add.Wire),
-                GraphEdit.RemoveWire remove => RemoveWire(Graph, remove),
-                GraphEdit.SetParam set => SetParam(Graph, set.NodeId, set.Key, set.Value),
-                _ => throw new NotSupportedException($"Unsupported graph edit '{edit.GetType().Name}'."),
-            };
+            var next = ApplyEdit(Graph, edit);
 
             Graph = next;
             Document = CompileForAuthoring(next);
@@ -62,6 +54,22 @@ public sealed class WorldGenerationGraphSource : IGraphSource
     /// <summary>Compile with full execution validation. Use this before running the graph.</summary>
     public CompiledWorldGenerationGraph CompileForExecution(string? sinkNodeId = null)
         => WorldGenerationGraphCompiler.Compile(Graph, sinkNodeId);
+
+    internal static WorldGenerationGraphView ApplyEdit(WorldGenerationGraphView graph, GraphEdit edit)
+    {
+        ArgumentNullException.ThrowIfNull(graph);
+        ArgumentNullException.ThrowIfNull(edit);
+
+        return edit switch
+        {
+            GraphEdit.AddNode add => AddNode(graph, add.Node),
+            GraphEdit.RemoveNode remove => RemoveNode(graph, remove.NodeId),
+            GraphEdit.AddWire add => AddWire(graph, add.Wire),
+            GraphEdit.RemoveWire remove => RemoveWire(graph, remove),
+            GraphEdit.SetParam set => SetParam(graph, set.NodeId, set.Key, set.Value),
+            _ => throw new NotSupportedException($"Unsupported graph edit '{edit.GetType().Name}'."),
+        };
+    }
 
     private static GraphDocument CompileForAuthoring(WorldGenerationGraphView graph)
         => WorldGenerationGraphCompiler.Compile(graph, validateRequiredInputs: false).Document;

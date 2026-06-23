@@ -39,7 +39,7 @@ public sealed class WorldGenerationGraphPortTests
                     WorldRegimeScheduleKinds.Sphere,
                     "mobile-plate",
                     geosphereGraph.GraphId,
-                    SphereId: "primary"),
+                    SphereId: WorldGenerationGraphDefaults.GeosphereSphereId),
             },
             GraphOverrides: Array.Empty<WorldGenerationGraphScopedOverride>(),
             LegacyOverrides: Array.Empty<WorldGenerationGraphOverride>(),
@@ -196,6 +196,119 @@ public sealed class WorldGenerationGraphPortTests
         Assert.Equal("42", inactive.Graph.Nodes[0].Parameters![0].Value);
         Assert.Single(subgraphs);
         Assert.Equal("formation.detail", subgraphs[0].SubgraphId);
+    }
+
+    [Fact]
+    public void FamilySource_SelectsRegimeGraph_ComposesTickOverrides_AndListsSubgraphs()
+    {
+        var family = WorldGenerationGraphDefaults.BuildFamily() with
+        {
+            GraphOverrides = new[]
+            {
+                new WorldGenerationGraphScopedOverride(
+                    "fast_geosphere",
+                    WorldGenerationGraphDefaults.GeosphereGraphId,
+                    "Fast geosphere",
+                    new WorldGenerationTickRange(10, 20),
+                    0,
+                    new[]
+                    {
+                        new WorldGenerationGraphEdit(
+                            "set-param",
+                            NodeId: "options",
+                            ParamKey: "frequency",
+                            ParamValue: "5"),
+                    }),
+            },
+        };
+
+        var source = WorldGenerationGraphFamilySource.ForRegime(
+            "world-generation",
+            family,
+            WorldRegimeScheduleKinds.Sphere,
+            "mobile-plate",
+            tick: 12,
+            sphereId: WorldGenerationGraphDefaults.GeosphereSphereId);
+
+        Assert.Equal(WorldGenerationGraphDefaults.GeosphereGraphId, source.ActiveGraphId);
+        Assert.Equal(12, source.ActiveTick);
+        Assert.Empty(source.CompositionWarnings);
+        Assert.Single(source.ActiveSubgraphs);
+        Assert.Equal("geosphere.mobile-plate.layers", source.ActiveSubgraphs[0].SubgraphId);
+        Assert.Equal(5, source.Document.Nodes.Single(node => node.Id == "options").Params["frequency"]!.GetValue<int>());
+
+        source.SetTick(9);
+
+        Assert.Equal(3, source.Document.Nodes.Single(node => node.Id == "options").Params["frequency"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task FamilySource_AppliesEditsToAuthoredGraph_ThenRecomposesEffectiveGraph()
+    {
+        var family = WorldGenerationGraphDefaults.BuildFamily() with
+        {
+            GraphOverrides = new[]
+            {
+                new WorldGenerationGraphScopedOverride(
+                    "fast_geosphere",
+                    WorldGenerationGraphDefaults.GeosphereGraphId,
+                    "Fast geosphere",
+                    new WorldGenerationTickRange(10, 20),
+                    0,
+                    new[]
+                    {
+                        new WorldGenerationGraphEdit(
+                            "set-param",
+                            NodeId: "options",
+                            ParamKey: "frequency",
+                            ParamValue: "5"),
+                    }),
+            },
+        };
+        var source = WorldGenerationGraphFamilySource.ForRegime(
+            "world-generation",
+            family,
+            WorldRegimeScheduleKinds.Sphere,
+            "mobile-plate",
+            tick: 12,
+            sphereId: WorldGenerationGraphDefaults.GeosphereSphereId);
+        var changed = 0;
+        source.Changed += () => changed++;
+
+        await source.ApplyEditAsync(new GraphEdit.SetParam("options", "frequency", JsonValue.Create(4)));
+
+        var authoredParam = source.Family.Graphs.Single(graph => graph.GraphId == WorldGenerationGraphDefaults.GeosphereGraphId)
+            .Nodes.Single(node => node.NodeId == "options")
+            .Parameters!.Single(parameter => parameter.Key == "frequency");
+
+        Assert.Equal(1, changed);
+        Assert.Equal(family.Revision + 1, source.Family.Revision);
+        Assert.Equal("4", authoredParam.Value);
+        Assert.Equal(5, source.Document.Nodes.Single(node => node.Id == "options").Params["frequency"]!.GetValue<int>());
+
+        source.SetTick(9);
+
+        Assert.Equal(4, source.Document.Nodes.Single(node => node.Id == "options").Params["frequency"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task FamilySource_CompilesSelectedRegimeGraphThroughGenericExecutor()
+    {
+        var source = WorldGenerationGraphFamilySource.ForRegime(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildFamily(),
+            WorldRegimeScheduleKinds.Sphere,
+            "mobile-plate",
+            tick: 0,
+            sphereId: WorldGenerationGraphDefaults.GeosphereSphereId);
+
+        var compiled = source.CompileForExecution();
+        var result = await new GraphExecutor(new[] { new WorldFunctionProvider() }).ExecuteAsync(compiled.Document);
+
+        Assert.Equal(WorldGenerationGraphDefaults.GeosphereGraphId, source.Graph.GraphId);
+        Assert.Equal("Mobile Plate Geosphere", source.Graph.Label);
+        Assert.Equal(WorldFunctionProvider.CrustGenerate, result["function"]?.GetValue<string>());
+        Assert.Equal(3, result["frequency"]?.GetValue<int>());
     }
 
     [Fact]

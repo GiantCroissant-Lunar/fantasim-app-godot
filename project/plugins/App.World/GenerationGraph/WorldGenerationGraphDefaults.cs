@@ -11,6 +11,7 @@ public static class WorldGenerationGraphDefaults
     public const string BaseGraphId = "world.base";
     public const string FormationGraphId = "formation.planetesimal-swarm";
     public const string GeosphereGraphId = "geosphere.mobile-plate";
+    public const string GeosphereSphereId = "geosphere";
 
     public static WorldGenerationGraphFamilyDocument BuildFamily()
     {
@@ -34,7 +35,7 @@ public static class WorldGenerationGraphDefaults
                     WorldRegimeScheduleKinds.Sphere,
                     "mobile-plate",
                     GeosphereGraphId,
-                    SphereId: "primary"),
+                    SphereId: GeosphereSphereId),
             },
             GraphOverrides: Array.Empty<WorldGenerationGraphScopedOverride>(),
             LegacyOverrides: Array.Empty<WorldGenerationGraphOverride>(),
