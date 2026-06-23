@@ -542,6 +542,30 @@ public sealed class WorldGenerationGraphPortTests
     }
 
     [Fact]
+    public async Task RegimeFieldSampler_UsesGraphHandoffForMagmaOceanTemperature()
+    {
+        var source = WorldGenerationGraphFamilySource.ForRegime(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildFamily(),
+            WorldRegimeScheduleKinds.BodyFormation,
+            "planetesimal-swarm",
+            tick: 0);
+
+        var run = await new WorldGenerationGraphRunner(new[] { new WorldFunctionProvider() })
+            .RunAsync(source.CompileForExecution().Document);
+        var handoff = Assert.IsType<SphereHandoff>(run.SphereHandoff);
+        var sampler = new WorldGenerationRegimeFieldSampler();
+        var graphTemperature = sampler.ResolveMagmaOceanSurfaceTemperatureK(tick: 0, handoff);
+        var fallbackTemperature = sampler.ResolveMagmaOceanSurfaceTemperatureK(tick: 0, sphereHandoff: null);
+        var lowerHeatTemperature = sampler.ResolveMagmaOceanSurfaceTemperatureK(
+            tick: 0,
+            handoff with { RetainedHeatJ = handoff.RetainedHeatJ * 0.1 });
+
+        Assert.Equal(fallbackTemperature, graphTemperature);
+        Assert.True(lowerHeatTemperature < graphTemperature);
+    }
+
+    [Fact]
     public void ScopeKeyAndProductAddress_KeepCacheIdentitySeparateFromProductPath()
     {
         var key = new WorldGenerationGraphExecutionScopeKey(

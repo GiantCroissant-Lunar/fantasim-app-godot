@@ -140,8 +140,10 @@ void light() {
     private readonly Func<long, string> _formatTick;
     private readonly Func<long, byte[]>? _classifyAt;
     private readonly Func<long, double[]>? _elevationsAt;
+    private readonly Func<long, double?>? _magmaSurfaceTemperatureKAt;
 
     private ShaderMaterial? _material;
+    private StandardMaterial3D? _mantleMaterial;
     private Image? _typeImage;
     private ImageTexture? _typeTexture;
     private long _tick;
@@ -150,6 +152,7 @@ void light() {
     // (i.e. the ECS world was disposed during shutdown). Once set, UpdateCaps skips the fetch
     // silently — no further PushWarning spam for a condition that is expected at teardown.
     private bool _elevationSourceUnavailable;
+    private bool _thermalSourceUnavailable;
 
     // Regime state — set by RegimeTimelineTransport (or SetTick callers) via SetRegime.
     // When _showsPlateFeatures = false (magma-ocean / stagnant-lid), cap geometry is hidden and
@@ -175,13 +178,15 @@ void light() {
         GlobePlateSurfaces surfaces,
         Func<long, string>? formatTick = null,
         Func<long, byte[]>? classifyAt = null,
-        Func<long, double[]>? elevationsAt = null)
+        Func<long, double[]>? elevationsAt = null,
+        Func<long, double?>? magmaSurfaceTemperatureKAt = null)
     {
         _snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
         _surfaces = surfaces ?? throw new ArgumentNullException(nameof(surfaces));
         _formatTick = formatTick ?? (t => t.ToString(System.Globalization.CultureInfo.InvariantCulture));
         _classifyAt = classifyAt;
         _elevationsAt = elevationsAt;
+        _magmaSurfaceTemperatureKAt = magmaSurfaceTemperatureKAt;
         _maxTick = 100L * snapshot.TicksPerAnchor; // conservative default; Host calls SetMaxTick with the real range
         Name = "GlobeView";
     }
@@ -191,7 +196,8 @@ void light() {
         _material = BuildMaterial(_snapshot);
         InitCellTypeTexture(_snapshot.CellCount);
 
-        AddChild(BuildMantle()); // base sphere under the plate shell: divergent gaps reveal mantle
+        _mantleMaterial = BuildMantleMaterial();
+        AddChild(BuildMantle(_mantleMaterial)); // base sphere under the plate shell: divergent gaps reveal mantle
 
         // Root holding one MeshInstance3D per plate cap; scaled ×2 like the old single globe instance.
         _capRoot = new Node3D { Name = "Globe", Scale = Vector3.One * 2.0f };
@@ -277,6 +283,7 @@ void light() {
         _material?.SetShaderParameter("u_tick", (float)tick);
         UpdateCellTypes(tick);
         UpdateCaps(tick);
+        UpdateRegimeThermalTint(tick);
     }
 
     public long Tick => _tick;
@@ -327,6 +334,7 @@ void light() {
 
         if (visibilityChanged)
             QueueCapVisibilityRefresh();
+        UpdateRegimeThermalTint(_tick);
     }
 
     /// <summary>Schedules a cap-visibility refresh on the next available frame (deferred so it
@@ -486,6 +494,47 @@ void light() {
         _typeTexture.Update(_typeImage);
     }
 
+    private void UpdateRegimeThermalTint(long tick)
+    {
+        if (_mantleMaterial is null) return;
+
+        if (!string.Equals(_currentRegimeId, "magma-ocean", StringComparison.Ordinal)
+            || _magmaSurfaceTemperatureKAt is null
+            || _thermalSourceUnavailable)
+        {
+            _mantleMaterial.AlbedoColor = DefaultMantleAlbedo;
+            return;
+        }
+
+        try
+        {
+            var temperature = _magmaSurfaceTemperatureKAt(tick);
+            _mantleMaterial.AlbedoColor = temperature is null
+                ? DefaultMantleAlbedo
+                : MagmaAlbedoForTemperature(temperature.Value);
+        }
+        catch (Exception ex)
+        {
+            _thermalSourceUnavailable = true;
+            _mantleMaterial.AlbedoColor = DefaultMantleAlbedo;
+            GD.PushWarning($"[GlobeView] magma thermal field fetch failed: {ex.Message}");
+        }
+    }
+
+    private static Color MagmaAlbedoForTemperature(double temperatureK)
+    {
+        const double coolK = 1300.0;
+        const double hotK = 2700.0;
+        var t = (float)Math.Clamp((temperatureK - coolK) / (hotK - coolK), 0.0, 1.0);
+
+        var basalt = new Color(0.22f, 0.10f, 0.08f);
+        var ember = new Color(0.72f, 0.16f, 0.04f);
+        var lava = new Color(1.00f, 0.46f, 0.08f);
+        return t < 0.55f
+            ? basalt.Lerp(ember, t / 0.55f)
+            : ember.Lerp(lava, (t - 0.55f) / 0.45f);
+    }
+
 
     private static long ParseEnvLong(string name, long fallback)
     {
@@ -529,16 +578,21 @@ void light() {
     // |elev|·exaggeration can reach ≈0.82 at the widest elevation range) or it occludes the sunken ocean
     // floor and reads as a dark void. Radius 0.78 keeps it hidden under the relief except true plate
     // gaps; lit (not unshaded) so it tones with the sun instead of punching black.
-    private static MeshInstance3D BuildMantle() => new()
+    private static readonly Color DefaultMantleAlbedo = new(0.10f, 0.14f, 0.26f);
+
+    private static StandardMaterial3D BuildMantleMaterial()
+        => new()
+        {
+            AlbedoColor = DefaultMantleAlbedo,
+            Roughness = 1.0f,
+        };
+
+    private static MeshInstance3D BuildMantle(StandardMaterial3D material) => new()
     {
         Name = "Mantle",
         Mesh = new SphereMesh { Radius = 0.78f, Height = 1.56f, RadialSegments = 48, Rings = 24 },
         Scale = Vector3.One * 2.0f,
-        MaterialOverride = new StandardMaterial3D
-        {
-            AlbedoColor = new Color(0.10f, 0.14f, 0.26f),
-            Roughness = 1.0f,
-        },
+        MaterialOverride = material,
     };
 
     private static Vector3 ToV3(CartesianPoint3 p) => new Vector3((float)p.X, (float)p.Y, (float)p.Z);

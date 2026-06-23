@@ -449,13 +449,19 @@ public partial class Host : Node
         // the seam rebuilds heights per tick. Replaces the old loose-tile (1 tri/cell, unshared corners)
         // mesh + GPU-compute relief displacement.
         var plateSurfaces = new FantaSim.App.World.Globe.GlobePlateSurfaces(snapshot);
+        var sphereHandoff = TryBuildDefaultSphereHandoff(composition);
+        var regimeFieldSampler = new WorldGenerationRegimeFieldSampler();
+        Func<long, double?>? magmaSurfaceTemperatureAt = sphereHandoff is null
+            ? null
+            : tick => regimeFieldSampler.ResolveMagmaOceanSurfaceTemperatureK(tick, sphereHandoff);
 
         var view = new FantaSim.App.World.Seam.GlobeView(
             snapshot,
             plateSurfaces,
             tick => FantaSim.App.World.Globe.CanonicalTimeLabel.ForTick(tick, snapshot.TicksPerAnchor),
             featuresAt,
-            elevationsAt);
+            elevationsAt,
+            magmaSurfaceTemperatureAt);
         // Extend the scrubber to cover the full transport range so the user can drag to onset and beyond.
         view.SetMaxTick(maxTransportTick);
         GetTree().Root.CallDeferred("add_child", view);
@@ -478,6 +484,39 @@ public partial class Host : Node
         GD.Print($"[Host] World view: globe mounted ({snapshot.CellCount} cells, {snapshot.PlateCount} plates, " +
                  $"{snapshotTicks.Count} feature snapshots, elevationFeed={(elevationsAt is not null)}, watertight caps, " +
                  $"onset={onsetTick:N0}, seed={WorldSeed}, freq={TessellationFrequency}); ITimelineController registered");
+    }
+
+    private static SphereHandoff? TryBuildDefaultSphereHandoff(AppComposition composition)
+    {
+        try
+        {
+            var graphSource = WorldGenerationGraphFamilySource.ForRegime(
+                "world-generation",
+                WorldGenerationGraphDefaults.BuildFamily(),
+                WorldRegimeScheduleKinds.BodyFormation,
+                "planetesimal-swarm",
+                tick: 0);
+
+            var providers = composition.Bootstrap.Registry
+                .GetAll<FantaSim.App.NodeGraph.INodeFunctionProvider>()
+                .ToArray();
+            var run = new WorldGenerationGraphRunner(providers)
+                .RunAsync(graphSource.CompileForExecution().Document)
+                .GetAwaiter()
+                .GetResult();
+
+            if (run.SphereHandoff is not null)
+            {
+                GD.Print($"[Host] World graph handoff: retainedHeatJ={run.SphereHandoff.RetainedHeatJ:E3}, products={run.Products.Count}");
+            }
+
+            return run.SphereHandoff;
+        }
+        catch (Exception ex)
+        {
+            GD.PushWarning($"[Host] World graph handoff unavailable: {ex.Message}");
+            return null;
+        }
     }
 
     // Sub-project B (ECS cell model + elevation derivation): model each globe cell as an ECS entity
