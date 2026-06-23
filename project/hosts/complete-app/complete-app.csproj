@@ -27,5 +27,17 @@
     <ProjectReference Include="..\..\plugins\App.GpuCompute.Seam\App.GpuCompute.Seam.csproj" />
     <ProjectReference Include="..\..\plugins\App.GpuShader\App.GpuShader.csproj" />
     <ProjectReference Include="..\..\plugins\App.GpuShader.Seam\App.GpuShader.Seam.csproj" />
+    <ProjectReference Include="..\..\plugins\App.Audio\App.Audio.csproj" />
+    <!-- Virtual-camera service: T3 (App.Camera, engine-agnostic orchestrator) + T4 (App.Camera.Seam,
+         the Godot camera rig over the vendored phantom-camera addon). -->
+    <ProjectReference Include="..\..\plugins\App.Camera\App.Camera.csproj" />
+    <ProjectReference Include="..\..\plugins\App.Camera.Seam\App.Camera.Seam.csproj" />
+  </ItemGroup>
+
+  <!-- Vendored phantom-camera addon (v0.11.0.2, GDScript at runtime). Its bundled C# wrapper sources
+       are compiled into the App.Camera SEAM (App.Camera.Seam pulls them via Compile Include), not the
+       host assembly - exclude them here so the types exist exactly once. -->
+  <ItemGroup>
+    <Compile Remove="addons\phantom_camera\**\*.cs" />
   </ItemGroup>
 </Project>
