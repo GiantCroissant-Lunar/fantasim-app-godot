@@ -31,6 +31,9 @@
     <PackageVersion Include="BoomHud.Godot.Runtime" Version="0.1.18" />
     <PackageVersion Include="UnifyEcs.Core" Version="0.1.1" />
     <PackageVersion Include="UnifyEcs.Runtime.Arch" Version="0.1.1" />
+    <!-- Activity ledger persistence (LiteDB-backed document store). -->
+    <PackageVersion Include="UnifyStorage.Abstractions" Version="0.1.0" />
+    <PackageVersion Include="UnifyStorage.Runtime.LiteDb" Version="0.1.0" />
     <!-- FantaSim world-lib packages (local feed). 0.1.5 carries the relative boundary classifier
          (Transform = shear-dominated, not absolute-near-zero normal) atop 0.1.4's rad/tick engine. -->
     <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Contracts" Version="0.1.5" />

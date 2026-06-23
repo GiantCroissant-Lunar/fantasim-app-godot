@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.Ui.Activity</RootNamespace>
+    <AssemblyName>FantaSim.App.Ui.Activity</AssemblyName>
+    <!-- A collectible UI bundle: PURE C# (no Godot). Loaded from activity.pck into its own ALC
+         by the Resource service; its [Plugin] registers the surface source into the shared kernel.
+         Only FantaSim.App.Ui.Activity.dll is packed into the bundle; App.Ui.Contracts /
+         App.Activity.Contracts / CrosscutFoundation.Messaging / BoomHud resolve from the resident
+         parent ALC, so do NOT copy their dlls into project/bundles/activity/. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\contracts\App.Ui\App.Ui.csproj" />
+    <ProjectReference Include="..\..\contracts\App.Activity\App.Activity.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BoomHud.Foundation" />
+    <PackageReference Include="GiantCroissant.ServiceArchi.Contracts" />
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" />
+    <PackageReference Include="GiantCroissant.PluginArchi.SourceGenerators" PrivateAssets="all" />
+    <PackageReference Include="GiantCroissant.CrosscutFoundation.Messaging.Contracts" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+
+</Project>

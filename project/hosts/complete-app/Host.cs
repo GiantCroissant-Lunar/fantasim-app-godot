@@ -54,9 +54,10 @@ public partial class Host : Node
         // World view (the T4 relief render) is composed AFTER the cell-elevation model and the GPU
         // compute service so it can feed per-cell elevation through the compute displacement path.
         ComposeWorldView(_composition);
+        ComposeActivity(_composition);
         ComposeUi(_composition);
 
-        GD.Print("[Host] composed services: Resource, SceneFlow, Ecs, World, Command, Iii, Gpu, GpuShader, Ui");
+        GD.Print("[Host] composed services: Resource, SceneFlow, Ecs, World, Command, Iii, Gpu, GpuShader, Activity, Ui");
         GD.Print("[Host] composition activated.");
         GD.Print($"[Host] iii bridge: IiiClient registered = {ClassDB.ClassExists("IiiClient")}");
 
@@ -752,6 +753,17 @@ public partial class Host : Node
             });
 
         GD.Print("[Host] registered: Iii (bridge, function provider, orchestration, 2 commands)");
+    }
+
+    private void ComposeActivity(AppComposition composition)
+    {
+        var activity = new FantaSim.App.Activity.Services.Service(
+            composition.Bootstrap.Registry.Get<CrosscutFoundation.Messaging.IMessageBus>(),
+            composition.Bootstrap.LoggerFactory);
+        composition.Bootstrap.Registry.Register<FantaSim.App.Activity.IService>(
+            activity,
+            new ServiceRegistration { Tags = new[] { "activity" }, Description = "Activity ledger service" });
+        GD.Print("[Host] registered: Activity");
     }
 
     private void ComposeUi(AppComposition composition)

@@ -12,6 +12,10 @@
     {
       "bundleId": "timeline",
       "pluginAssembly": "FantaSim.App.Timeline.dll"
+    },
+    {
+      "bundleId": "activity",
+      "pluginAssembly": "FantaSim.App.Ui.Activity.dll"
     }
   ]
 }

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.Activity</RootNamespace>
+    <AssemblyName>FantaSim.App.Activity.Contracts</AssemblyName>
+    <PackageId>GiantCroissant.FantaSim.App.Activity.Contracts</PackageId>
+    <ServiceArchiTier>T1</ServiceArchiTier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" />
+    <PackageReference Include="GiantCroissant.ServiceArchi.Contracts" />
+    <PackageReference Include="GiantCroissant.ServiceArchi.SourceGen" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

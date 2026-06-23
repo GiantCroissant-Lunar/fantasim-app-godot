@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.Activity</RootNamespace>
+    <AssemblyName>FantaSim.App.Activity</AssemblyName>
+    <ServiceArchiTier>T3</ServiceArchiTier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\contracts\App.Activity\App.Activity.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="GiantCroissant.CrosscutFoundation.Messaging.Contracts" />
+    <PackageReference Include="UnifyStorage.Abstractions" />
+    <PackageReference Include="UnifyStorage.Runtime.LiteDb" />
+  </ItemGroup>
+
+</Project>

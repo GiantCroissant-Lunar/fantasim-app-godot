@@ -1,0 +1,9 @@
+{
+  "bundleId": "activity",
+  "displayName": "Activity Ledger",
+  "version": "0.1.0",
+  "pluginAssembly": "FantaSim.App.Ui.Activity.dll",
+  "metadata": {
+    "bundleType": "ui-view"
+  }
+}

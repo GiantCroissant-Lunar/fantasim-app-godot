@@ -17,6 +17,7 @@
     <ProjectReference Include="..\..\plugins\App.World.FieldView\App.World.FieldView.csproj" />
     <ProjectReference Include="..\..\plugins\App.Ui\App.Ui.csproj" />
     <ProjectReference Include="..\..\plugins\App.Ui.Seam\App.Ui.Seam.csproj" />
+    <ProjectReference Include="..\..\plugins\App.Activity\App.Activity.csproj" />
     <ProjectReference Include="..\..\plugins\App.NodeGraph\App.NodeGraph.csproj" />
     <ProjectReference Include="..\..\plugins\App.Ui.NodeGraph\App.Ui.NodeGraph.csproj" />
     <ProjectReference Include="..\..\plugins\App.Iii\App.Iii.csproj" />

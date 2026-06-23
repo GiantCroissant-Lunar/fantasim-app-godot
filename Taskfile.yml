@@ -64,7 +64,7 @@ tasks:
 
   build:godot:
     desc: Export the Godot app for all configured platforms via UnifyBuild
-    deps: [restore, build]
+    deps: [restore, build, artifacts:latest]
     cmds:
       - '{{.UNIFY}} BuildGodot'
     env:
@@ -72,7 +72,7 @@ tasks:
 
   build:godot:desktop:
     desc: Export the Godot app for desktop platforms only via UnifyBuild
-    deps: [restore, build]
+    deps: [restore, build, artifacts:latest]
     cmds:
       - '{{.UNIFY}} BuildGodotDesktop'
     env:
@@ -84,6 +84,14 @@ tasks:
     cmds:
       - ln -sfn ../../bundles {{.CONTENT_PROJECT}}/bundles  # idempotent: -f replace, -n don't deref existing symlink
 
+  artifacts:latest:
+    desc: Repoint build/_artifacts/latest at the current GitVersion build dir
+    run: once  # depended on by every artifact-producing task; one idempotent symlink update per invocation
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}
+      # relative target (just the version dir name) so latest survives _artifacts being moved/copied
+      - ln -sfn {{.GITVERSION_MAJORMINORPATCH}} {{.BUILD_DIR}}/_artifacts/latest  # -f replace, -n don't deref existing symlink
+
   bundle:stage:build:
     desc: Build the App.Stage tier assembly and stage its DLL into the bundle source dir
     cmds:
@@ -92,7 +100,7 @@ tasks:
 
   bundle:stage:
     desc: Build the stage tier DLL + export the collectible stage bundle PCK (manifest + scene + dll)
-    deps: [bundle:link, bundle:stage:build]
+    deps: [bundle:link, bundle:stage:build, artifacts:latest]
     cmds:
       - mkdir -p {{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles
       - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "stage PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles/stage.pck'
@@ -105,7 +113,7 @@ tasks:
 
   bundle:assist:
     desc: Build the assist tier DLL + export the collectible assist bundle PCK (manifest + dll, no scene)
-    deps: [bundle:link, bundle:assist:build]
+    deps: [bundle:link, bundle:assist:build, artifacts:latest]
     cmds:
       - mkdir -p {{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles
       - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "assist PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles/assist.pck'
@@ -119,17 +127,31 @@ tasks:
 
   bundle:timeline:
     desc: Build the timeline hud-view DLL + export the collectible timeline bundle PCK (manifest + dll, no scene)
-    deps: [bundle:link, bundle:timeline:build]
+    deps: [bundle:link, bundle:timeline:build, artifacts:latest]
     cmds:
       - mkdir -p {{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles
       - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "timeline PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles/timeline.pck'
 
+  bundle:activity:build:
+    desc: Build the App.Ui.Activity bundle assembly and stage its DLL into the bundle source dir
+    cmds:
+      - dotnet build project/plugins/App.Ui.Activity/App.Ui.Activity.csproj -c Debug -v q -nologo
+      - cp project/plugins/App.Ui.Activity/bin/Debug/net8.0/FantaSim.App.Ui.Activity.dll project/bundles/activity/FantaSim.App.Ui.Activity.dll
+
+  bundle:activity:
+    desc: Build the activity ledger UI bundle DLL + export the collectible activity bundle PCK (manifest + dll, no scene)
+    deps: [bundle:link, bundle:activity:build, artifacts:latest]
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles
+      - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "activity PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles/activity.pck'
+
   bundles:
-    desc: Export all collectible bundle PCKs (stage + assist + timeline)
-    deps: [bundle:stage, bundle:assist, bundle:timeline]
+    desc: Export all collectible bundle PCKs (stage + assist + timeline + activity)
+    deps: [bundle:stage, bundle:assist, bundle:timeline, bundle:activity]
 
   bundle:install:
     desc: Copy exported bundle PCKs next to the exported app exe so the windowed app resolves them
+    deps: [artifacts:latest]
     vars:
       MACOS: '{{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/osx/{{.ASSEMBLY}}.app/Contents/MacOS'
       PCKS: '{{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles'
@@ -138,6 +160,7 @@ tasks:
       - cp "{{.PCKS}}/stage.pck" "{{.MACOS}}/bundles/stage.pck"
       - cp "{{.PCKS}}/assist.pck" "{{.MACOS}}/bundles/assist.pck"
       - cp "{{.PCKS}}/timeline.pck" "{{.MACOS}}/bundles/timeline.pck"
+      - cp "{{.PCKS}}/activity.pck" "{{.MACOS}}/bundles/activity.pck"
 
   run:exported:
     desc: Launch the exported WINDOWED app (with console) so bundle load is observable; never headless
