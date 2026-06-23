@@ -13,7 +13,7 @@
   "residentScripts": [
     {
       "nodePath": ".",
-      "residentType": "FantaSim.App.Timeline.TimelineFace"
+      "residentType": "FantaSim.App.Timeline.Seam.TimelineFace"
     }
   ]
 }
