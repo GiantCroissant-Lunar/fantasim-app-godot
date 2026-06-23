@@ -11,6 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\contracts\App.Ui\App.Ui.csproj" />
     <ProjectReference Include="..\..\contracts\App.Resource\App.Resource.csproj" />
+    <ProjectReference Include="..\..\contracts\App.Command\App.Command.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="GiantCroissant.CrosscutFoundation.Messaging.Contracts" />

@@ -4,7 +4,7 @@ using FantaSim.App.Command.Orchestration;
 using FantaSim.App.Ui;
 using Microsoft.Extensions.Logging;
 
-namespace FantaSim.App.Common.Entry;
+namespace FantaSim.App.Ui;
 
 public sealed class RuntimeStatusViewSource : IViewSource
 {
