@@ -593,6 +593,42 @@ public sealed class WorldGenerationGraphPortTests
     }
 
     [Fact]
+    public async Task WorldGenerationGraphRunner_CapturesMobilePlateCrustProduct()
+    {
+        var source = WorldGenerationGraphFamilySource.ForRegime(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildFamily(),
+            WorldRegimeScheduleKinds.Sphere,
+            "mobile-plate",
+            tick: 0,
+            sphereId: WorldGenerationGraphDefaults.GeosphereSphereId);
+
+        var compiled = source.CompileForExecution();
+        var scopeKey = source.TryBuildExecutionScopeKey();
+        var run = await new WorldGenerationGraphRunner(new[] { new WorldFunctionProvider() })
+            .RunAsync(
+                compiled.Document,
+                new JsonObject { ["canonicalTick"] = source.ActiveTick, ["tick"] = source.ActiveTick },
+                scopeKey);
+
+        var product = Assert.Single(run.Products);
+        Assert.Equal("crust", product.NodeId);
+        Assert.Equal(WorldFunctionProvider.CrustGenerate, product.FunctionId);
+        Assert.Equal("/base/main/geosphere/crust@0", product.ProductAddress);
+        Assert.Equal(scopeKey!.ToCacheKey(), product.ExecutionScopeKey!.ToCacheKey());
+
+        var generationRequest = WorldGenerationGraphRunner.ToGenerationRequest(run, worldId: "graph-world");
+
+        Assert.Equal(1, generationRequest.Parameters["productCount"]);
+        Assert.Equal(
+            new[] { "/base/main/geosphere/crust@0" },
+            Assert.IsType<string[]>(generationRequest.Parameters["productAddresses"]));
+        Assert.Equal(WorldRegimeScheduleKinds.Sphere, generationRequest.Parameters["lifecycleKind"]);
+        Assert.Equal("mobile-plate", generationRequest.Parameters["regimeId"]);
+        Assert.Equal(WorldGenerationGraphDefaults.GeosphereGraphId, generationRequest.Parameters["graphId"]);
+    }
+
+    [Fact]
     public void DefaultFamily_DefinesResolvableLayerSubgraphs()
     {
         var family = WorldGenerationGraphDefaults.BuildFamily();

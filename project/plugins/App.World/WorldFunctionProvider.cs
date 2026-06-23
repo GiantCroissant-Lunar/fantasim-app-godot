@@ -306,9 +306,17 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         if (result.StateByTick.TryGetValue(snapshotTick, out var state) && state.Count > 0)
             peakOrogenic = state.Values.Max(s => s.OrogenicPressure);
 
+        var productAddress = new WorldGenerationProductAddress(
+            Variant: "base",
+            Branch: "main",
+            Domain: "geosphere",
+            Product: "crust",
+            Tick: canonicalTick).ToPath();
+
         return new JsonObject
         {
             ["function"] = functionId,
+            ["productAddress"] = productAddress,
             ["frequency"] = frequency,
             ["ticks"] = canonicalTick,
             ["canonicalTick"] = canonicalTick,
