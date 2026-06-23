@@ -27,6 +27,9 @@ public partial class Host : Node
     // lifetime matches the host; the relief render (sub-project C) reads GetElevations() off it.
     private FantaSim.App.World.Cells.CellElevationModel? _cellElevation;
     private IDisposable? _worldGraphTimelineBinding;
+    private FantaSim.App.Ui.Seam.ViewRenderer? _worldGraphRenderer;
+    private FantaSim.App.Ui.NodeGraph.NodeGraphViewSource? _worldGraphView;
+    private Control? _worldGraphUiRoot;
 
     public override void _Ready()
     {
@@ -135,8 +138,14 @@ public partial class Host : Node
             }
         }
 
+        // Tear down any previous world-graph view stack before rebinding so we do not leak
+        // timeline -> graphSource -> view -> renderer subscriptions.
+        _worldGraphRenderer?.Dispose();
+        _worldGraphView?.Dispose();
+        _worldGraphUiRoot?.QueueFree();
+
         var client = _composition.Bootstrap.Registry.Get<FantaSim.App.Command.IClient>();
-        var view = new FantaSim.App.Ui.NodeGraph.NodeGraphViewSource(
+        _worldGraphView = new FantaSim.App.Ui.NodeGraph.NodeGraphViewSource(
             graphSource,
             runAsync: async () =>
             {
@@ -152,15 +161,15 @@ public partial class Host : Node
             },
             title: "world generation graph");
 
-        var uiRoot = new Control { Name = "WorldGraphRoot" };
-        uiRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        GetTree().Root.AddChild(uiRoot);
+        _worldGraphUiRoot = new Control { Name = "WorldGraphRoot" };
+        _worldGraphUiRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        GetTree().Root.AddChild(_worldGraphUiRoot);
 
-        var renderer = new FantaSim.App.Ui.Seam.ViewRenderer(uiRoot, () => view, _ => null, logger);
-        renderer.Bind();
+        _worldGraphRenderer = new FantaSim.App.Ui.Seam.ViewRenderer(_worldGraphUiRoot, () => _worldGraphView, _ => null, logger);
+        _worldGraphRenderer.Bind();
         if (graphSource.CompositionWarnings.Count > 0)
             GD.PushWarning($"[graph] world-generation graph warnings: {string.Join("; ", graphSource.CompositionWarnings)}");
-        GD.Print($"[graph] world-generation graph view mounted: graph={graphSource.ActiveGraphId}, tick={graphSource.ActiveTick}, subgraphs={graphSource.ActiveSubgraphs.Count}, uiSubgraphs={view.Subgraphs.Count}, {view.Nodes.Count} nodes, {view.Wires.Count} wires.");
+        GD.Print($"[graph] world-generation graph view mounted: graph={graphSource.ActiveGraphId}, tick={graphSource.ActiveTick}, subgraphs={graphSource.ActiveSubgraphs.Count}, uiSubgraphs={_worldGraphView.Subgraphs.Count}, {_worldGraphView.Nodes.Count} nodes, {_worldGraphView.Wires.Count} wires.");
     }
 
     private static WorldGenerationGraphFamilySource CreateWorldGenerationGraphSource()
@@ -753,6 +762,15 @@ public partial class Host : Node
     {
         if (what == NotificationWMCloseRequest || what == NotificationExitTree)
         {
+            _worldGraphRenderer?.Dispose();
+            _worldGraphRenderer = null;
+            _worldGraphView?.Dispose();
+            _worldGraphView = null;
+            _worldGraphUiRoot?.QueueFree();
+            _worldGraphUiRoot = null;
+            _worldGraphTimelineBinding?.Dispose();
+            _worldGraphTimelineBinding = null;
+
             _cellElevation?.Dispose();
             _composition?.Dispose();
         }
