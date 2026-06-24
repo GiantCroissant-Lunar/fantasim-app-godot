@@ -1,36 +1,23 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using FantaSim.App.SceneFlow;                   // ISceneActivator, ISceneActivation
-using Microsoft.Extensions.DependencyInjection; // ServiceCollection, GetRequiredService
-using Microsoft.Extensions.Logging;             // ILoggerFactory
-using ServiceArchi.Contracts;                   // IRegistry
+using FantaSim.App.SceneFlow;                   // SceneActivatorBase
+using Microsoft.Extensions.DependencyInjection; // IServiceCollection, AddSingleton, GetRequiredService
 
 namespace FantaSim.App.Assist;
 
 /// <summary>
-/// Activates the App.Assist tier under a <b>dynamic</b> parent (stage). It forwards the parent scene's
-/// shared kernel (registry + logger factory) — which stage itself forwarded from app-root — into a
-/// plain child <see cref="ServiceCollection"/>, registers the assist <see cref="Bootstrap"/>, builds
-/// the child provider, and runs Bootstrap. So assist shares the one app kernel through the parent
-/// chain, across two collectible ALCs.
+/// Activates the App.Assist tier under a dynamic parent (stage). The shared-kernel forwarding and the
+/// child-scope build/teardown live in <see cref="SceneActivatorBase"/>; this scene only registers and
+/// runs its own <see cref="Bootstrap"/>. Assist shares the one app kernel through the parent chain.
 /// </summary>
-public sealed class AssistActivator : ISceneActivator
+public sealed class AssistActivator : SceneActivatorBase
 {
-    public string SceneId => "assist";
+    public override string SceneId => "assist";
 
-    public async Task<ISceneActivation> ActivateAsync(IServiceProvider parent, CancellationToken cancellationToken = default)
-    {
-        if (parent is null) throw new ArgumentNullException(nameof(parent));
+    protected override void Configure(IServiceCollection services, IServiceProvider parent)
+        => services.AddSingleton<Bootstrap>();
 
-        var services = new ServiceCollection();
-        services.AddSingleton(parent.GetRequiredService<IRegistry>());
-        services.AddSingleton(parent.GetRequiredService<ILoggerFactory>());
-        services.AddSingleton<Bootstrap>();
-
-        var child = services.BuildServiceProvider();
-        await child.GetRequiredService<Bootstrap>().RunAsync(cancellationToken).ConfigureAwait(false);
-
-        return new AssistActivation(SceneId, child);
-    }
+    protected override Task OnActivatedAsync(IServiceProvider services, CancellationToken cancellationToken)
+        => services.GetRequiredService<Bootstrap>().RunAsync(cancellationToken);
 }

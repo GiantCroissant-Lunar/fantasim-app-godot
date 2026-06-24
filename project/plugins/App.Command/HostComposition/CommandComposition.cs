@@ -53,6 +53,27 @@ public static class CommandComposition
                 return result.ToJsonString();
             });
 
+        commands.Register(
+            new FantaSim.App.Command.CommandDescriptor(
+                Id: "resource.reload_bundle",
+                Title: "Reload bundle",
+                Description: "Unloads and hot-reloads a collectible bundle's ALC by id. Payload: {\"bundleId\":\"stage|assist|timeline\"}.",
+                Category: "resource"),
+            async (payloadJson, ct) =>
+            {
+                var bundleId = ParseBundleId(payloadJson);
+                if (string.IsNullOrWhiteSpace(bundleId))
+                    return JsonSerializer.Serialize(new { ok = false, error = "missing 'bundleId'" });
+
+                var resource = registry.TryGet<FantaSim.App.Resource.IService>();
+                if (resource is null)
+                    return JsonSerializer.Serialize(new { ok = false, error = "resource service not registered" });
+
+                await resource.ReloadAsync(bundleId, ct).ConfigureAwait(false);
+                log.LogInformation("resource.reload_bundle: reloaded '{BundleId}'.", bundleId);
+                return JsonSerializer.Serialize(new { ok = true, bundleId });
+            });
+
         var health = orchestration.HealthAsync().GetAwaiter().GetResult();
         log.LogInformation($"[Host] registered: Command (orchestration {(health.Ok ? "healthy" : "degraded")}, {health.Commands} commands)");
     }
@@ -70,5 +91,20 @@ public static class CommandComposition
             registry.TryGet<FantaSim.App.Ecs.IService>()?.UpdateAll(0f);
 
         return generation;
+    }
+
+    private static string? ParseBundleId(string? payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+            return null;
+        try
+        {
+            var node = JsonNode.Parse(payloadJson);
+            return node?["bundleId"]?.GetValue<string>() ?? node?["id"]?.GetValue<string>();
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

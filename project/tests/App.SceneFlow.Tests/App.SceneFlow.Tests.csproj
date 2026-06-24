@@ -7,7 +7,8 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
-
+    <PackageReference Include="GiantCroissant.ServiceArchi.Core" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\plugins\App.SceneFlow\App.SceneFlow.csproj" />

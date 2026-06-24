@@ -76,19 +76,23 @@ public sealed class BundleHost
 
     public async Task UnloadAsync(string bundleId, CancellationToken cancellationToken = default)
     {
+        PluginUnloadResult? unloadResult;
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await UnloadCoreAsync(bundleId, detachScene: true, cancellationToken).ConfigureAwait(false);
+            unloadResult = await UnloadCoreAsync(bundleId, detachScene: true, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             _gate.Release();
         }
+
+        await VerifyOldContextCollectedAsync(bundleId, unloadResult, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task ReloadAsync(string bundleId, CancellationToken cancellationToken = default)
     {
+        PluginUnloadResult? unloadResult = null;
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -99,17 +103,21 @@ public sealed class BundleHost
             }
 
             var pckPath = bundle.PckPath;
-            await UnloadCoreAsync(bundleId, detachScene: true, cancellationToken).ConfigureAwait(false);
+            unloadResult = await UnloadCoreAsync(bundleId, detachScene: true, cancellationToken).ConfigureAwait(false);
             await LoadCoreAsync(pckPath, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             _gate.Release();
         }
+
+        await VerifyOldContextCollectedAsync(bundleId, unloadResult, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task ReloadByPckPathAsync(string pckPath, CancellationToken cancellationToken = default)
     {
+        PluginUnloadResult? unloadResult = null;
+        string? reloadedBundleId = null;
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -124,13 +132,17 @@ public sealed class BundleHost
             }
 
             var bundleId = match.BundleId;
-            await UnloadCoreAsync(bundleId, detachScene: true, cancellationToken).ConfigureAwait(false);
+            reloadedBundleId = bundleId;
+            unloadResult = await UnloadCoreAsync(bundleId, detachScene: true, cancellationToken).ConfigureAwait(false);
             await LoadCoreAsync(pckPath, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             _gate.Release();
         }
+
+        if (reloadedBundleId is not null)
+            await VerifyOldContextCollectedAsync(reloadedBundleId, unloadResult, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task UnloadAllAsync(CancellationToken cancellationToken = default)
@@ -226,16 +238,22 @@ public sealed class BundleHost
         }
     }
 
-    private async Task UnloadCoreAsync(string bundleId, bool detachScene, CancellationToken cancellationToken)
+    private async Task<PluginUnloadResult?> UnloadCoreAsync(string bundleId, bool detachScene, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!_loaded.TryGetValue(bundleId, out _))
-            return;
+            return null;
 
+        PluginUnloadResult? unloadResult = null;
         try
         {
-            await _pluginHost.RemoveGroupAsync(bundleId).ConfigureAwait(false);
+            // Prefer the diagnostic unload so we get a weak-only probe of the old ALC; fall back to the
+            // plain unload when the host doesn't implement it (older PluginArchi). Same unload either way.
+            if (_pluginHost is IPluginHostDiagnostics diagnostics)
+                unloadResult = await diagnostics.RemoveGroupWithDiagnosticsAsync(bundleId).ConfigureAwait(false);
+            else
+                await _pluginHost.RemoveGroupAsync(bundleId).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -245,6 +263,42 @@ public sealed class BundleHost
         _sceneHost.RemoveScene(bundleId, detachScene);
         _loaded.Remove(bundleId);
         _logger.LogInformation("Bundle unloaded: {BundleId}", bundleId);
+        return unloadResult;
+    }
+
+    private async Task VerifyOldContextCollectedAsync(
+        string bundleId,
+        PluginUnloadResult? unloadResult,
+        CancellationToken cancellationToken)
+    {
+        // No diagnostic available (older host) or nothing was unloaded -> nothing to verify.
+        if (unloadResult is null || !unloadResult.UnloadInitiated)
+            return;
+
+        // The SOUND "bundle unloaded" signal is the old collectible ALC being GC-collected -- NOT a
+        // successful Directory.Delete (on macOS/Linux, unlinking a still-mapped DLL succeeds even while
+        // the ALC is alive). A resident holder typically drops its ref a few frames after unload
+        // (cross-alc-rules R4), so poll on a bounded cadence and force a GC only on the final check.
+        // The retry loop lives HERE in the host -- PluginArchi never loops (no stop-the-world GC in shared code).
+        const int maxAttempts = 8;
+        const int delayMs = 50;
+
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            var isFinal = attempt == maxAttempts - 1;
+            if (unloadResult.IsCollected(forceGc: isFinal))
+            {
+                _logger.LogInformation("Hot-reload: old ALC collected for bundle {BundleId}", bundleId);
+                return;
+            }
+
+            if (!isFinal)
+                await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
+        }
+
+        _logger.LogWarning(
+            "Hot-reload: old ALC still pinned for bundle {BundleId} after unload (reload degraded -- a strong ref is holding the collectible context)",
+            bundleId);
     }
 }
 

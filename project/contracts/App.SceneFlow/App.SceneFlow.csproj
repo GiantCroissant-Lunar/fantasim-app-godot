@@ -12,5 +12,8 @@
     <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" />
     <PackageReference Include="GiantCroissant.ServiceArchi.Contracts" />
     <PackageReference Include="GiantCroissant.ServiceArchi.SourceGen" PrivateAssets="all" />
+    <!-- SceneActivatorBase builds child DI scopes and forwards the shared kernel (IRegistry + ILoggerFactory). -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 </Project>

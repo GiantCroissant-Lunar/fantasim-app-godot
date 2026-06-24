@@ -16,8 +16,8 @@
     <ProjectReference Include="..\App.Common\App.Common.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" Version="0.1.5" />
-    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Hosting" Version="0.1.5" />
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" Version="0.1.6" />
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Hosting" Version="0.1.6" />
     <PackageReference Include="GiantCroissant.RegistryArchi.Contracts" Version="0.1.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
   </ItemGroup>

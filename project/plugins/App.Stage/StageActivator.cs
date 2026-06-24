@@ -1,40 +1,23 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using FantaSim.App.SceneFlow;                   // ISceneActivator, ISceneActivation
-using Microsoft.Extensions.DependencyInjection; // ServiceCollection, GetRequiredService
-using Microsoft.Extensions.Logging;             // ILoggerFactory
-using ServiceArchi.Contracts;                   // IRegistry
+using FantaSim.App.SceneFlow;                   // SceneActivatorBase
+using Microsoft.Extensions.DependencyInjection; // IServiceCollection, AddSingleton, GetRequiredService
 
 namespace FantaSim.App.Stage;
 
 /// <summary>
-/// Activates the App.Stage tier under a <b>dynamic</b> parent. It forwards the parent's shared kernel
-/// (registry + logger factory) into a plain child <see cref="ServiceCollection"/>, registers the
-/// stage's <see cref="Bootstrap"/>, builds the child provider, and runs Bootstrap. Same scene, any
-/// parent — no compile-time scope parent. This is the app-side FieldValueResolver assembly point's
-/// scene-tier analogue: world-lib types never leak through here.
+/// Activates the App.Stage tier under a dynamic parent. The shared-kernel forwarding and the
+/// child-scope build/teardown live in <see cref="SceneActivatorBase"/>; this scene only registers
+/// and runs its own <see cref="Bootstrap"/>.
 /// </summary>
-public sealed class StageActivator : ISceneActivator
+public sealed class StageActivator : SceneActivatorBase
 {
-    public string SceneId => "stage";
+    public override string SceneId => "stage";
 
-    public async Task<ISceneActivation> ActivateAsync(IServiceProvider parent, CancellationToken cancellationToken = default)
-    {
-        if (parent is null) throw new ArgumentNullException(nameof(parent));
+    protected override void Configure(IServiceCollection services, IServiceProvider parent)
+        => services.AddSingleton<Bootstrap>();
 
-        var services = new ServiceCollection();
-
-        // Forward the shared kernel from the dynamic parent (the app-root provider exposes both;
-        // a parent scene that forwarded them works too). MEDI does not dispose AddSingleton(instance)
-        // singletons, so tearing down this child scope on unload never disposes the shared kernel.
-        services.AddSingleton(parent.GetRequiredService<IRegistry>());
-        services.AddSingleton(parent.GetRequiredService<ILoggerFactory>());
-        services.AddSingleton<Bootstrap>();
-
-        var child = services.BuildServiceProvider();
-        await child.GetRequiredService<Bootstrap>().RunAsync(cancellationToken).ConfigureAwait(false);
-
-        return new StageActivation(SceneId, child);
-    }
+    protected override Task OnActivatedAsync(IServiceProvider services, CancellationToken cancellationToken)
+        => services.GetRequiredService<Bootstrap>().RunAsync(cancellationToken);
 }
