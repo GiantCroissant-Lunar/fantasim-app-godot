@@ -156,6 +156,19 @@ public class WorldRuntimeTests
         }
     }
 
+    [Fact]
+    public void Actor_truth_writer_receive_handlers_await_store_io()
+    {
+        // Akka.NET ReceiveAsync suspends the actor until the handler task completes; keep
+        // truth-store I/O on that path instead of blocking the dispatcher with sync waits.
+        var source = File.ReadAllText(ProjectFile("project/plugins/App.World/Services/ActorTruthEventWriter.cs"));
+
+        Assert.Contains("ReceiveAsync<AppendTruthEvents>", source);
+        Assert.Contains("ReceiveAsync<GetTruthHead>", source);
+        Assert.DoesNotContain("_store.AppendAsync(message.Stream, message.Drafts).GetAwaiter().GetResult()", source);
+        Assert.DoesNotContain("_store.GetHeadAsync(message.Stream).GetAwaiter().GetResult()", source);
+    }
+
     // ---------------------------------------------------------------------
     // Behavior 6: GetFieldValues maps the composed catalog onto the DTO by
     // field id, returning the descriptor's unit/kind/reducer for known fields
@@ -239,6 +252,21 @@ public class WorldRuntimeTests
                     return;
             } while (Interlocked.CompareExchange(ref _maxConcurrentAppends, active, snapshot) != snapshot);
         }
+    }
+
+    private static string ProjectFile(string relativePath)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, relativePath);
+            if (File.Exists(candidate))
+                return candidate;
+
+            dir = dir.Parent;
+        }
+
+        throw new FileNotFoundException($"Could not find project file '{relativePath}'.");
     }
 }
 #endif

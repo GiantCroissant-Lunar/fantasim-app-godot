@@ -71,21 +71,24 @@ internal sealed class TruthEventWriterActor : ReceiveActor
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
 
-        Receive<AppendTruthEvents>(message =>
-            Reply(() => _store.AppendAsync(message.Stream, message.Drafts).GetAwaiter().GetResult()));
-        Receive<GetTruthHead>(message =>
-            Reply(() => new TruthHeadResult(_store.GetHeadAsync(message.Stream).GetAwaiter().GetResult())));
+        ReceiveAsync<AppendTruthEvents>(message =>
+            ReplyAsync(() => _store.AppendAsync(message.Stream, message.Drafts)));
+        ReceiveAsync<GetTruthHead>(message =>
+            ReplyAsync(async () => new TruthHeadResult(
+                await _store.GetHeadAsync(message.Stream).ConfigureAwait(false))));
     }
 
-    private void Reply<T>(Func<T> operation)
+    private async Task ReplyAsync<T>(Func<Task<T>> operation)
     {
+        var replyTo = Sender;
+        var self = Self;
         try
         {
-            Sender.Tell(operation(), Self);
+            replyTo.Tell(await operation().ConfigureAwait(false), self);
         }
         catch (Exception ex)
         {
-            Sender.Tell(new Status.Failure(ex), Self);
+            replyTo.Tell(new Status.Failure(ex), self);
         }
     }
 }
