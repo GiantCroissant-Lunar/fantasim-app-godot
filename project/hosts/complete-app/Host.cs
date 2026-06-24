@@ -48,10 +48,6 @@ public partial class Host : Node
         _collectibleBundles = LoadCollectibleBundles();
         _composition.Bootstrap.BuildPluginHost(_collectibleBundles);
 
-        // Static handoff (locked Q2): give the world bundle plugin the Godot SceneTree before the
-        // plugin host initializes. WorldPlugin reads this to mount GlobeView in InitializeAsync.
-        FantaSim.App.World.Seam.WorldPlugin.PendingSceneTree = GetTree();
-
         _ = _composition.Bootstrap.RunAsync();
 
         // Each domain's composition body lives in its owning plugin project as a static

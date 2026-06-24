@@ -108,7 +108,17 @@ public sealed class Bootstrap
             })
             .WithParentContext(hostContext)
             .WithSharedPolicy(new SharedAssemblyPolicy(
-                exactMatches: Array.Empty<string>(),
+                exactMatches: new[]
+                {
+                    // Each name is shared WITH resident code; the tag is the forcing resident consumer.
+                    "FantaSim.World.Fields.Contracts",   // App.Ecs
+                    "FantaSim.World.Fields.Core",         // App.Ecs
+                    "FantaSim.World.Shared.Contracts",   // App.Timeline
+                    "UnifyMaths",                         // contracts/App.World; keeps .Numerics collectible
+                    "UnifyStorage.Abstractions",          // App.Activity
+                    "UnifyStorage.Runtime.LiteDb",        // App.Activity
+                    "Arch",                               // transitive of shared UnifyEcs.Runtime.Arch
+                },
                 prefixes: new[]
                 {
                     "System.",
@@ -127,11 +137,12 @@ public sealed class Bootstrap
                     "ReactiveUI",
                     "DynamicData",
                     "FantaSim.App.",
-                    "FantaSim.World.",
                     "FantaSim.App.World.",
                     "FantaSim.App.Command.",
                     "Akka",
                     "Newtonsoft.Json",
+                    "UnifyEcs.",   // App.Ecs
+                    "TimeDete.",   // transitive via Timeline/Ecs
                 },
                 excludedExactMatches: collectibleBundles.AssemblyNames.ToArray()))
             .Build();

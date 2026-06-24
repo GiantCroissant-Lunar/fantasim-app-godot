@@ -1,0 +1,9 @@
+{
+  "bundleId": "world",
+  "displayName": "World",
+  "version": "0.1.0",
+  "pluginAssembly": "FantaSim.App.World.dll",
+  "metadata": {
+    "bundleType": "domain-bundle"
+  }
+}

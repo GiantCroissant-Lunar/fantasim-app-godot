@@ -1,33 +1,32 @@
 using System;
 using System.Linq;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using FantaSim.App.Common;
-using FantaSim.App.World.Cells;
 using FantaSim.App.World.GenerationGraph;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PluginArchi.Extensibility.Abstractions;
 using ServiceArchi.Contracts;
 
-namespace FantaSim.App.World.Seam;
+namespace FantaSim.App.World;
 
-[Plugin("app.world", Name = "World Bundle", Description = "Composes the world service graph and globe view under stage.", Tags = "scene-tier")]
+/// <summary>
+/// Data-bundle entry for the world domain. Loaded from world.pck into its collectible ALC; composes
+/// the world service graph (IService + FieldView + node provider) via <see cref="WorldComposition"/>
+/// and self-registers the <c>world.run_generation_graph</c> command against the resident App.Command
+/// service. Pure C# (no Godot): the globe/view composition stays dormant here and is revived by a
+/// follow-up bundle once the Environment scene-tree handoff is in place.
+/// </summary>
+[Plugin("app.world", Name = "World", Description = "Composes the world data service graph and the world.run_generation_graph command.", Tags = "domain-bundle")]
 public sealed partial class WorldPlugin : ILifecyclePlugin
 {
     private const string RunWorldGenerationGraphCommand = "world.run_generation_graph";
 
     private IDisposable? _worldCompositionHandle;
-    private CellElevationModel? _cellElevation;
     private IRegistry? _registry;
     private ILogger? _log;
-
-    // Static handoff (locked Q2): Host.cs sets this before plugin host init so InitializeAsync
-    // can pass the Godot SceneTree to WorldViewComposition. Phase 2 moves this to the Environment
-    // entry scene's _Ready.
-    public static Godot.SceneTree? PendingSceneTree;
 
     public ValueTask InitializeAsync(IPluginContext context, CancellationToken ct = default)
     {
@@ -37,36 +36,19 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
         _log = loggerFactory.CreateLogger("WorldPlugin");
 
         var ctx = new HostCompositionContext(registry, loggerFactory);
-
         _worldCompositionHandle = WorldComposition.ComposeWorld(ctx);
 
-        var (cellElevation, renderOptions) = CellElevationComposition.ComposeCellElevation(ctx);
-        _cellElevation = cellElevation;
-
-        var tree = PendingSceneTree;
-        if (tree is not null)
-        {
-            WorldViewComposition.ComposeWorldView(ctx, tree, cellElevation, renderOptions);
-        }
-        else
-        {
-            _log.LogWarning("WorldPlugin: no PendingSceneTree set; GlobeView will not mount.");
-        }
-
-        // The command service is registered by CommandComposition which runs AFTER plugin init in
-        // the host composition sequence. Defer registration to the next idle frame.
-        Godot.Callable.From(() => RegisterWorldCommand(registry)).CallDeferred();
+        RegisterWorldCommand(registry);
 
         return ValueTask.CompletedTask;
     }
 
     public ValueTask ShutdownAsync(CancellationToken ct = default)
     {
-        _cellElevation?.Dispose();
-        _cellElevation = null;
         _worldCompositionHandle?.Dispose();
         _worldCompositionHandle = null;
-        PendingSceneTree = null;
+        _registry = null;
+        _log = null;
         return ValueTask.CompletedTask;
     }
 

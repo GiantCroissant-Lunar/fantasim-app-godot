@@ -145,9 +145,26 @@ tasks:
       - mkdir -p {{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles
       - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "activity PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles/activity.pck'
 
+  bundle:world:build:
+    desc: Build the App.World data-bundle assemblies and stage their DLLs into the bundle source dir
+    cmds:
+      - dotnet build project/plugins/App.World/App.World.csproj -c Debug -v q -nologo
+      - dotnet build project/plugins/App.World.Composition/App.World.Composition.csproj -c Debug -v q -nologo
+      - dotnet build project/plugins/App.World.FieldView/App.World.FieldView.csproj -c Debug -v q -nologo
+      - cp project/plugins/App.World/bin/Debug/net8.0/FantaSim.App.World.dll project/bundles/world/FantaSim.App.World.dll
+      - cp project/plugins/App.World.Composition/bin/Debug/net8.0/FantaSim.App.World.Composition.dll project/bundles/world/FantaSim.App.World.Composition.dll
+      - cp project/plugins/App.World.FieldView/bin/Debug/net8.0/FantaSim.App.World.FieldView.dll project/bundles/world/FantaSim.App.World.FieldView.dll
+
+  bundle:world:
+    desc: Build the world data-bundle DLLs + export the collectible world bundle PCK (manifest + dlls, no scene)
+    deps: [bundle:link, bundle:world:build, artifacts:latest]
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles
+      - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "world PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles/world.pck'
+
   bundles:
-    desc: Export all collectible bundle PCKs (stage + assist + timeline + activity)
-    deps: [bundle:stage, bundle:assist, bundle:timeline, bundle:activity]
+    desc: Export all collectible bundle PCKs (stage + assist + timeline + activity + world)
+    deps: [bundle:stage, bundle:assist, bundle:timeline, bundle:activity, bundle:world]
 
   bundle:install:
     desc: Copy exported bundle PCKs next to the exported app exe so the windowed app resolves them
@@ -161,6 +178,7 @@ tasks:
       - cp "{{.PCKS}}/assist.pck" "{{.MACOS}}/bundles/assist.pck"
       - cp "{{.PCKS}}/timeline.pck" "{{.MACOS}}/bundles/timeline.pck"
       - cp "{{.PCKS}}/activity.pck" "{{.MACOS}}/bundles/activity.pck"
+      - cp "{{.PCKS}}/world.pck" "{{.MACOS}}/bundles/world.pck"
 
   run:exported:
     desc: Launch the exported WINDOWED app (with console) so bundle load is observable; never headless

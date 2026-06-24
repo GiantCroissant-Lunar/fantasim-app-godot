@@ -4,6 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>FantaSim.App.World.Composition</RootNamespace>
+    <AssemblyName>FantaSim.App.World.Composition</AssemblyName>
     <ServiceArchiTier>T3</ServiceArchiTier>
   </PropertyGroup>
   <ItemGroup>

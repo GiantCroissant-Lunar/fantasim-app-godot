@@ -16,6 +16,15 @@
     {
       "bundleId": "activity",
       "pluginAssembly": "FantaSim.App.Ui.Activity.dll"
+    },
+    {
+      "bundleId": "world",
+      "pluginAssembly": "FantaSim.App.World.dll",
+      "assemblyNames": [
+        "FantaSim.App.World",
+        "FantaSim.App.World.FieldView",
+        "FantaSim.App.World.Composition"
+      ]
     }
   ]
 }

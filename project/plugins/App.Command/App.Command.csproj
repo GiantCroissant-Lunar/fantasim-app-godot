@@ -23,11 +23,12 @@
   <!--
     T3 command orchestrator. App-side T1 contracts are always referenced. The iii native
     bridge (Rust/Hermes) is deferred behind the IiiBridgeOrchestrator stub; this project
-    does not reference App.Agent, App.Stage, or any Hermes/Python bridge.
+    does not reference App.Agent, App.Stage, or any Hermes/Python bridge. Resident Command
+    resolves App.World only through the contract (FantaSim.App.World.Contracts): the impl
+    now travels in the collectible world bundle, and LocalOrchestrator tolerates its absence.
   -->
   <ItemGroup>
     <ProjectReference Include="..\App.Common\App.Common.csproj" />
-    <ProjectReference Include="..\App.World\App.World.csproj" />
     <ProjectReference Include="..\..\contracts\App.Command\App.Command.csproj" />
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
     <ProjectReference Include="..\..\contracts\App.Ecs\App.Ecs.csproj" />
