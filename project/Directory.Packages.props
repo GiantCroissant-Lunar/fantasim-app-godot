@@ -27,6 +27,13 @@
     <PackageVersion Include="GiantCroissant.CrosscutFoundation.Logging.Console" Version="0.2.2" />
     <PackageVersion Include="GiantCroissant.CrosscutFoundation.Logging.Console.ServiceArchi" Version="0.2.2" />
     <PackageVersion Include="GiantCroissant.CrosscutFoundation.Logging.ServiceArchi" Version="0.2.2" />
+    <PackageVersion Include="GiantCroissant.CrosscutFoundation.Config.Contracts" Version="0.2.2" />
+    <PackageVersion Include="GiantCroissant.CrosscutFoundation.Config.Core" Version="0.2.2" />
+    <PackageVersion Include="GiantCroissant.CrosscutFoundation.Config.Json" Version="0.2.2" />
+    <PackageVersion Include="GiantCroissant.CrosscutFoundation.Config.Json.ServiceArchi" Version="0.2.2" />
+    <PackageVersion Include="GiantCroissant.CrosscutFoundation.Config.Env" Version="0.2.2" />
+    <PackageVersion Include="GiantCroissant.CrosscutFoundation.Config.Env.ServiceArchi" Version="0.2.2" />
+    <PackageVersion Include="GiantCroissant.CrosscutFoundation.Config.ServiceArchi" Version="0.2.2" />
     <PackageVersion Include="BoomHud.Foundation" Version="0.1.18" />
     <PackageVersion Include="BoomHud.Godot.Runtime" Version="0.1.18" />
     <PackageVersion Include="UnifyEcs.Core" Version="0.1.1" />

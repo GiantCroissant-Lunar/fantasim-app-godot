@@ -12,7 +12,8 @@ public static class RemoteComposition
         ArgumentNullException.ThrowIfNull(registry);
         loggerFactory ??= NullLoggerFactory.Instance;
 
-        var options = RemoteOptions.FromEnvironment();
+        var config = registry.Get<CrosscutFoundation.Config.IService>();
+        var options = RemoteOptions.FromConfig(config);
         if (!options.Enabled)
             return;
 

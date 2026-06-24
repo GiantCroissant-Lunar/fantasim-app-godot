@@ -26,7 +26,7 @@ public partial class Host : Node
     // RenderingDevice path works in the windowed app. Mirrors the FANTASIM_GLOBE_CAPTURE pattern.
     private async void RunGpuSmoke()
     {
-        if (System.Environment.GetEnvironmentVariable("FANTASIM_GPU_SMOKE") != "1") return;
+        if (_config?.GetValue("gpu:smoke", false) != true) return;
 
         try
         {
@@ -103,7 +103,7 @@ public partial class Host : Node
     // Shader-resource inspection path works in the windowed app. Mirrors RunGpuSmoke.
     private async void RunGpuShaderSmoke()
     {
-        if (System.Environment.GetEnvironmentVariable("FANTASIM_GPUSHADER_SMOKE") != "1") return;
+        if (_config?.GetValue("gpu:shaderSmoke", false) != true) return;
 
         try
         {
