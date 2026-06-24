@@ -1,4 +1,5 @@
 #if USE_PROJECT_REFERENCES
+using Akka.Actor;
 using FantaSim.App.Ecs;
 using FantaSim.App.World.Dto;
 using FantaSim.App.World.Services;
@@ -116,30 +117,43 @@ public class WorldRuntimeTests
     }
 
     // ---------------------------------------------------------------------
-    // Behavior 5: The app runtime is the single-writer boundary for generation
-    // commits. Concurrent callers may enter RunGeneration, but only one truth
-    // append may be in flight at a time for the shared app stream.
+    // Behavior 5: The actor-backed truth writer is the single-writer boundary
+    // for generation commits. Concurrent callers may enter RunGeneration, but
+    // only one truth append may be in flight at a time for the shared app stream.
     // ---------------------------------------------------------------------
     [Fact]
-    public async Task RunGeneration_serializes_truth_stream_appends()
+    public async Task RunGeneration_serializes_truth_stream_appends_through_writer_actor()
     {
-        // Given a composed runtime with a truth-store probe that observes overlapping appends
+        // Given a composed runtime whose truth writes go through a dedicated actor
         var registry = NewRegistry();
+        var actorSystem = ActorSystem.Create("world-truth-writer-tests");
         var truthStore = new ConcurrentAppendProbeTruthEventStore(TimeSpan.FromMilliseconds(75));
-        using var runtime = new WorldRuntime(registry, descriptors: null, truthStore);
+        try
+        {
+            using var truthWriter = ActorTruthEventWriter.Start(
+                actorSystem,
+                truthStore,
+                actorName: $"truth-writer-{Guid.NewGuid():N}",
+                askTimeout: TimeSpan.FromSeconds(5));
+            using var runtime = new WorldRuntime(registry, descriptors: null, truthWriter);
 
-        // When multiple callers ask generation to append concurrently
-        var tasks = Enumerable.Range(0, 12)
-            .Select(i => Task.Run(() => runtime.RunGeneration(new WorldGenerationRequest(
-                WorldId: $"w{i}",
-                GenerationSpec: $"spec-{i}",
-                Parameters: new()))))
-            .ToArray();
-        await Task.WhenAll(tasks);
+            // When multiple callers ask generation to append concurrently
+            var tasks = Enumerable.Range(0, 12)
+                .Select(i => Task.Run(() => runtime.RunGeneration(new WorldGenerationRequest(
+                    WorldId: $"w{i}",
+                    GenerationSpec: $"spec-{i}",
+                    Parameters: new()))))
+                .ToArray();
+            await Task.WhenAll(tasks);
 
-        // Then the runtime has serialized the appends before they reach the store
-        Assert.Equal(12, truthStore.AppendCount);
-        Assert.Equal(1, truthStore.MaxConcurrentAppends);
+            // Then the writer actor has serialized the appends before they reach the store
+            Assert.Equal(12, truthStore.AppendCount);
+            Assert.Equal(1, truthStore.MaxConcurrentAppends);
+        }
+        finally
+        {
+            await actorSystem.Terminate();
+        }
     }
 
     // ---------------------------------------------------------------------

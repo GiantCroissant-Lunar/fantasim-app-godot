@@ -1,3 +1,7 @@
+#if USE_PROJECT_REFERENCES
+using Akka.Actor;
+using FantaSim.World.TruthStream.Core;
+#endif
 using System.Globalization;
 using System.Text.Json;
 using FantaSim.App.World.Dto;
@@ -34,10 +38,21 @@ public sealed class Service : IService, IDisposable
     private Exception? _lastSubscriberError;
     private bool _disposed;
 
+#if USE_PROJECT_REFERENCES
+    public Service(IRegistry registry, ActorSystem? actorSystem = null)
+#else
     public Service(IRegistry registry)
+#endif
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
+#if USE_PROJECT_REFERENCES
+        var truthWriter = actorSystem is null
+            ? null
+            : ActorTruthEventWriter.Start(actorSystem, new InMemoryTruthEventStore());
+        _runtime = WorldRuntimeFactory.Create(registry, truthWriter);
+#else
         _runtime = WorldRuntimeFactory.Create(registry);
+#endif
         var loggerFactory = registry.TryGet<ILoggerFactory>();
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<Service>();
     }

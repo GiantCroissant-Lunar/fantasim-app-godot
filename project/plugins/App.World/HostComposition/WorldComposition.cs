@@ -9,7 +9,13 @@ public static class WorldComposition
     public static void ComposeWorld(HostCompositionContext ctx)
     {
         var log = ctx.LoggerFactory.CreateLogger("HostComposition.World");
+#if USE_PROJECT_REFERENCES
+        var world = new FantaSim.App.World.Services.Service(
+            ctx.Registry,
+            ctx.Composition.Bootstrap.ActorSystem);
+#else
         var world = new FantaSim.App.World.Services.Service(ctx.Registry);
+#endif
         ctx.Registry.Register<FantaSim.App.World.IService>(
             world,
             new ServiceRegistration { Tags = new[] { "world" }, Description = "World service" });

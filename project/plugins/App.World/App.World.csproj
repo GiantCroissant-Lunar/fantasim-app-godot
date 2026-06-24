@@ -65,6 +65,7 @@
     <NoWarn>$(NoWarn);NU1603</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Akka" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <!-- The ECS itself: CellElevationModel constructs an ArchSystemRunner directly (Godot-free,
          unit-testable) — same UnifyEcs+Arch stack App.Ecs uses; no second ECS, no hand-rolled world. -->

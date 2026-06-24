@@ -15,7 +15,7 @@ namespace FantaSim.App.World.Services;
 /// <item><see cref="CompositeFieldCatalog"/> + <see cref="FieldReducerRegistry"/> +
 ///       <see cref="DefaultReducers"/> + <see cref="CatalogValidator"/> validate the field
 ///       system at startup (duplicate FieldId or an unregistered reducer fails fast).</item>
-/// <item><see cref="InMemoryTruthEventStore"/> backs generation appends so
+/// <item><see cref="ITruthEventWriter"/> backs generation appends so
 ///       <see cref="RunGeneration"/> exercises the truth-stream primitives.</item>
 /// </list>
 /// World-lib types never cross this boundary; every method maps onto the app-side DTOs.
@@ -24,9 +24,8 @@ internal sealed class WorldRuntime : IWorldRuntime
 {
     private readonly IFieldCatalog _catalog;
     private readonly IFieldReducerRegistry _reducers;
-    private readonly ITruthEventStore _truthStore;
+    private readonly ITruthEventWriter _truthWriter;
     private readonly TruthStreamIdentity _streamId;
-    private readonly object _truthCommitGate = new();
 
     // Composed at construction. The descriptor seed is intentionally minimal here (one
     // continuous field driven by the built-in WeightedAverage reducer); Task 7 will expand the
@@ -37,12 +36,12 @@ internal sealed class WorldRuntime : IWorldRuntime
     {
     }
 
-    // Test hook: lets App.World.Tests inject explicit descriptor/store dependencies to prove
+    // Test hook: lets App.World.Tests inject explicit descriptor/writer dependencies to prove
     // startup validation and app-side truth-stream coordination without touching fantasim-world.
     internal WorldRuntime(
         IRegistry registry,
         IReadOnlyList<FieldDescriptor>? descriptors,
-        ITruthEventStore? truthStore = null)
+        ITruthEventWriter? truthWriter = null)
     {
         _reducers = new FieldReducerRegistry();
         DefaultReducers.RegisterAll(_reducers);
@@ -63,7 +62,7 @@ internal sealed class WorldRuntime : IWorldRuntime
         _catalog = new CompositeFieldCatalog(seed);
         CatalogValidator.Validate(_catalog, _reducers);
 
-        _truthStore = truthStore ?? new InMemoryTruthEventStore();
+        _truthWriter = truthWriter ?? new DirectTruthEventWriter(new InMemoryTruthEventStore());
         _streamId = new TruthStreamIdentity(
             VariantId: "app",
             BranchId: "main",
@@ -74,7 +73,7 @@ internal sealed class WorldRuntime : IWorldRuntime
 
     public WorldOverview GetOverview()
     {
-        var head = _truthStore.GetHeadAsync(_streamId).GetAwaiter().GetResult();
+        var head = _truthWriter.GetHeadAsync(_streamId).GetAwaiter().GetResult();
         return new WorldOverview(
             WorldId: _streamId.ToStreamKey(),
             Name: "FantaSimWorld",
@@ -121,10 +120,7 @@ internal sealed class WorldRuntime : IWorldRuntime
             EventType: "world.generation",
             Payload: payload,
             Tick: CanonicalTick.Genesis);
-        lock (_truthCommitGate)
-        {
-            _truthStore.AppendAsync(_streamId, new ITruthEventDraft[] { draft }).GetAwaiter().GetResult();
-        }
+        _truthWriter.AppendAsync(_streamId, new ITruthEventDraft[] { draft }).GetAwaiter().GetResult();
 
         return new WorldGenerationResult(
             Success: true,
@@ -132,7 +128,7 @@ internal sealed class WorldRuntime : IWorldRuntime
             ResultWorldId: request.WorldId);
     }
 
-    public void Dispose() { }
+    public void Dispose() => _truthWriter.Dispose();
 }
 
 /// <summary>Concrete draft implementation for appending generation events.</summary>

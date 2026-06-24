@@ -25,12 +25,11 @@ internal interface IWorldRuntime : IDisposable
 /// </summary>
 internal static class WorldRuntimeFactory
 {
-    public static IWorldRuntime Create(IRegistry registry)
-    {
 #if USE_PROJECT_REFERENCES
-        return new WorldRuntime(registry);
+    public static IWorldRuntime Create(IRegistry registry, ITruthEventWriter? truthWriter = null)
+        => new WorldRuntime(registry, descriptors: null, truthWriter);
 #else
-        return new StubWorldRuntime();
+    public static IWorldRuntime Create(IRegistry registry)
+        => new StubWorldRuntime();
 #endif
-    }
 }
