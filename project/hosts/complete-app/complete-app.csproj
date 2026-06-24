@@ -36,6 +36,10 @@
          the Godot timeline face). -->
     <ProjectReference Include="..\..\plugins\App.Timeline\App.Timeline.csproj" />
     <ProjectReference Include="..\..\plugins\App.Timeline.Seam\App.Timeline.Seam.csproj" />
+    <!-- Remote command ingress: T3 (App.Remote, HTTP transport over the command IClient) + T4
+         (App.Remote.Seam, the Godot main-thread bridge node). Gated by FANTASIM_REMOTE_ENABLED=1. -->
+    <ProjectReference Include="..\..\plugins\App.Remote\App.Remote.csproj" />
+    <ProjectReference Include="..\..\plugins\App.Remote.Seam\App.Remote.Seam.csproj" />
   </ItemGroup>
 
   <!-- Vendored phantom-camera addon (v0.11.0.2, GDScript at runtime). Its bundled C# wrapper sources

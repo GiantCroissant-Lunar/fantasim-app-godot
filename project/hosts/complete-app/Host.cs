@@ -10,6 +10,7 @@ using FantaSim.App.Ecs;
 using FantaSim.App.GpuCompute.Seam;
 using FantaSim.App.GpuShader.Seam;
 using FantaSim.App.Iii.Seam;
+using FantaSim.App.Remote.Seam;
 using FantaSim.App.Resource.Bundle;
 using FantaSim.App.SceneFlow;
 using FantaSim.App.Timeline.Seam;
@@ -76,6 +77,7 @@ public partial class Host : Node
         TimelineComposition.ComposeTimeline(ctx);
         ActivityComposition.ComposeActivity(ctx);
         UiComposition.ComposeUi(ctx, tree);
+        RemoteIngressComposition.ComposeRemoteIngress(ctx, this);
 
         GD.Print("[Host] composition activated.");
         GD.Print($"[Host] iii bridge: IiiClient registered = {ClassDB.ClassExists("IiiClient")}");

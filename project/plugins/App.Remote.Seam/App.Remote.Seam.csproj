@@ -1,0 +1,20 @@
+<Project Sdk="Godot.NET.Sdk/4.7.0">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.Remote.Seam</RootNamespace>
+    <AssemblyName>FantaSim.App.Remote.Seam</AssemblyName>
+    <ServiceArchiTier>T4</ServiceArchiTier>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\App.Remote\App.Remote.csproj" />
+    <ProjectReference Include="..\App.Common\App.Common.csproj" />
+  </ItemGroup>
+
+</Project>
