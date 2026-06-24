@@ -49,7 +49,14 @@ public sealed class Service : IService, IDisposable
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
 #if USE_PROJECT_REFERENCES
         var config = registry.TryGet<CrosscutFoundation.Config.IService>();
-        _truthStoreHandle = WorldTruthEventStoreFactory.Create(WorldTruthStoreOptions.FromConfig(config));
+        var truthStoreOptions = WorldTruthStoreOptions.FromConfig(config);
+        if (truthStoreOptions.Backend == WorldTruthStoreBackend.SurrealDb && actorSystem is null)
+        {
+            throw new InvalidOperationException(
+                "SurrealDB world truth store requires an ActorSystem so writes go through the single writer actor.");
+        }
+
+        _truthStoreHandle = WorldTruthEventStoreFactory.Create(truthStoreOptions);
         ITruthEventWriter truthWriter = actorSystem is null
             ? new DirectTruthEventWriter(_truthStoreHandle.EventStore)
             : ActorTruthEventWriter.Start(actorSystem, _truthStoreHandle.EventStore);

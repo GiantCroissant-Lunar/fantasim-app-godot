@@ -13,7 +13,11 @@
     "graphSphere": null,
     "graphTick": null,
     "followTimeline": false,
-    "graphTest": false
+    "graphTest": false,
+    "truthStore": {
+      "backend": "inmemory",
+      "connectionString": null
+    }
   },
   "iii": {
     "ping": false
