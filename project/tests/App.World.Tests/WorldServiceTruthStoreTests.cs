@@ -1,4 +1,6 @@
 #if USE_PROJECT_REFERENCES
+using Akka.Actor;
+using FantaSim.App.World.Dto;
 using FantaSim.App.World.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Primitives;
@@ -11,6 +13,35 @@ namespace FantaSim.App.World.Tests;
 
 public sealed class WorldServiceTruthStoreTests
 {
+    [Fact]
+    public async Task Service_runs_generation_with_surrealdb_truth_store_when_actor_system_is_supplied()
+    {
+        var ns = $"app_{Guid.NewGuid():N}";
+        var registry = NewRegistry(
+            ("world:truthStore:backend", "surrealdb"),
+            ("world:truthStore:connectionString", $"Endpoint=mem://;Namespace={ns};Database=world"));
+
+        var actorSystem = ActorSystem.Create($"world-truth-tests-{Guid.NewGuid():N}");
+        try
+        {
+            using var service = new Service(registry, actorSystem);
+
+            Assert.False(service.GetOverviewAsync().IsDirty);
+
+            var result = service.RunGenerationAsync(new WorldGenerationRequest(
+                WorldId: "test-world",
+                GenerationSpec: "world.generate",
+                Parameters: new Dictionary<string, object>(StringComparer.Ordinal)));
+
+            Assert.True(result.Success);
+            Assert.True(service.GetOverviewAsync().IsDirty);
+        }
+        finally
+        {
+            await actorSystem.Terminate();
+        }
+    }
+
     [Fact]
     public void Service_requires_actor_system_when_surrealdb_truth_store_is_enabled()
     {
