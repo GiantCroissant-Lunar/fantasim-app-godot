@@ -1,0 +1,6 @@
+{
+  "directories": [
+    "../../../build/_artifacts/latest/godot/bundles",
+    "system_bundles"
+  ]
+}

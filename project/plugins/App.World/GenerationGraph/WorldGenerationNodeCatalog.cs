@@ -5,8 +5,9 @@ using System.Linq;
 namespace FantaSim.App.World.GenerationGraph;
 
 /// <summary>
-/// World-generation node schemas backed by handlers in <see cref="WorldFunctionProvider"/>.
-/// This is intentionally smaller than the reference catalog until each node has a current-app handler.
+/// World-generation node schemas backed by local handlers or projected external-tool manifests.
+/// This is intentionally smaller than the reference catalog until each node has a current-app handler
+/// or an explicit external-tool bridge.
 /// </summary>
 public static class WorldGenerationNodeCatalog
 {
@@ -78,7 +79,9 @@ public static class WorldGenerationNodeCatalog
             Inputs: new[] { new WorldGenerationGraphPort("options", "Options", "world/options", Required: true) },
             Outputs: new[] { new WorldGenerationGraphPort("result", "Result", "world/crust_summary", Required: false) },
             Summary: "Runs the current crust-generation pipeline and returns a JSON world summary."),
-    };
+    }
+    .Concat(ExternalToolNodeSchemaProjector.Project(VplanetExternalToolManifest.Build()))
+    .ToList();
 
     public static IReadOnlyList<WorldGenerationNodeSchema> All => Schemas;
 

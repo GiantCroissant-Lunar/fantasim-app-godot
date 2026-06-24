@@ -10,7 +10,7 @@ namespace FantaSim.App.Iii;
 
 /// <summary>
 /// The iii axis as a node-function provider: claims the iii capability function families
-/// (comfy.*, blender.*, asset.*, test.echo) and invokes them through <see cref="IIiiInvoker"/>.
+/// (comfy.*, blender.*, asset.*, vplanet.*, test.echo) and invokes them through <see cref="IIiiInvoker"/>.
 /// This is how iii plugs into the general node-graph paradigm -- it provides node functions, not
 /// a graph engine. The <see cref="GraphExecutor"/> resolves these by function id.
 /// </summary>
@@ -29,6 +29,7 @@ public sealed class IiiFunctionProvider : INodeFunctionProvider
         => functionId.StartsWith("comfy.", StringComparison.Ordinal)
            || functionId.StartsWith("blender.", StringComparison.Ordinal)
            || functionId.StartsWith("asset.", StringComparison.Ordinal)
+           || functionId.StartsWith("vplanet.", StringComparison.Ordinal)
            || functionId == "test.echo"
            || functionId == "ping";
 

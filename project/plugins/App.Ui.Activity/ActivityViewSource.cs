@@ -80,6 +80,9 @@ public sealed class ActivityViewSource : IViewSource, IDisposable
             foreach (var e in entries)
             {
                 children.Add(Label(FormatEntry(e)));
+                var payloadDetails = FormatPayloadDetails(e);
+                if (!string.IsNullOrWhiteSpace(payloadDetails))
+                    children.Add(Label($"        {payloadDetails}"));
                 if (!string.IsNullOrWhiteSpace(e.Error))
                     children.Add(Label($"        ⚠ {e.Error}"));
                 else if (!string.IsNullOrWhiteSpace(e.Outcome))
@@ -129,6 +132,79 @@ public sealed class ActivityViewSource : IViewSource, IDisposable
         var actor = string.IsNullOrEmpty(e.Actor?.Id) ? e.Actor?.Kind ?? "?" : $"{e.Actor!.Kind}:{e.Actor.Id}";
         var category = string.IsNullOrWhiteSpace(e.Category) ? "" : $"  ·  {e.Category}";
         return $"{time}  [{KindTag(e.Kind)}]  {e.Name}  ·  {actor}{category}";
+    }
+
+    private static string? FormatPayloadDetails(ActivityEntry entry)
+    {
+        if (!string.Equals(entry.Category, "external-tool", StringComparison.Ordinal)
+            && !string.Equals(entry.Name, "external-tool.inspect", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(entry.PayloadJson))
+            return null;
+
+        try
+        {
+            if (JsonNode.Parse(entry.PayloadJson) is not JsonObject payload)
+                return null;
+
+            var parts = new List<string>();
+            AddPart(parts, "tool", ReadString(payload, "title"));
+            AddPart(parts, "job", ReadString(payload, "jobId"));
+            AddPart(parts, "body", ReadString(payload, "bodyName"));
+            if (ReadInt(payload, "rowCount") is { } rowCount)
+                parts.Add($"rows: {rowCount}");
+
+            var sourcePath = ReadString(payload, "sourcePath");
+            if (!string.IsNullOrWhiteSpace(sourcePath))
+                parts.Add($"source: {CompactPath(sourcePath)}");
+
+            return parts.Count == 0 ? null : string.Join("  ·  ", parts);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static void AddPart(List<string> parts, string key, string value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+            parts.Add($"{key}: {value}");
+    }
+
+    private static string ReadString(JsonObject payload, string key)
+    {
+        if (!payload.TryGetPropertyValue(key, out var value) || value is null)
+            return string.Empty;
+        if (value is JsonValue jsonValue && jsonValue.TryGetValue<string>(out var text))
+            return text ?? string.Empty;
+        return value.ToString();
+    }
+
+    private static int? ReadInt(JsonObject payload, string key)
+    {
+        if (!payload.TryGetPropertyValue(key, out var value) || value is not JsonValue jsonValue)
+            return null;
+        if (jsonValue.TryGetValue<int>(out var intValue))
+            return intValue;
+        if (jsonValue.TryGetValue<long>(out var longValue))
+            return (int)longValue;
+        if (jsonValue.TryGetValue<string>(out var text) && int.TryParse(text, out var parsed))
+            return parsed;
+        return null;
+    }
+
+    private static string CompactPath(string path)
+    {
+        var normalized = path.Replace('\\', '/');
+        var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length <= 2)
+            return normalized;
+
+        return $".../{segments[^2]}/{segments[^1]}";
     }
 
     private static string KindTag(ActivityEntryKind kind) => kind switch

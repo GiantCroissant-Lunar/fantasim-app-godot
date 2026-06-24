@@ -174,7 +174,7 @@ tasks:
       - cargo build --manifest-path project/Cargo.toml -p iii-bridge
       - cp project/target/debug/libiii_bridge.dylib project/hosts/complete-app/bin/gdext/iii/libiii_bridge.dylib
 
-  # --- iii workers (Python: ComfyUI + Blender text->3D pipeline) ------------
+  # --- iii workers (Python: ComfyUI + Blender text->3D pipeline + VPLanet) --
   workers:setup:
     desc: Create the Python iii-worker venv and install iii-sdk
     cmds:
@@ -186,14 +186,107 @@ tasks:
     cmds:
       - iii --use-default-config --no-update-check
 
+  workers:vplanet:test:
+    desc: Run VPLanet worker contract tests without requiring iii or a VPLanet install
+    cmds:
+      - PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s project/workers/vplanet-worker -p 'test_*.py'
+
+  workers:vplanet:run:
+    desc: 'Run only the VPLanet iii worker (engine must be up; VPLANET_BIN optional)'
+    vars:
+      PY: project/workers/.venv/bin/python
+    cmds:
+      - '{{.PY}} project/workers/vplanet-worker/worker.py'
+
+  workers:vplanet:smoke:
+    desc: 'Live smoke VPLanet iii functions build -> run -> parse (engine and worker must be up)'
+    vars:
+      JOB_ID: '{{.JOB_ID | default "vplanet-live-smoke"}}'
+      SYSTEM_NAME: '{{.SYSTEM_NAME | default "solar_system"}}'
+      STAR_BODY: '{{.STAR_BODY | default "sun"}}'
+      PLANET_BODY: '{{.PLANET_BODY | default "earth"}}'
+      STOP_TIME_YEARS: '{{.STOP_TIME_YEARS | default "1000000"}}'
+      OUTPUT_TIME_YEARS: '{{.OUTPUT_TIME_YEARS | default "100000"}}'
+    cmds:
+      - |
+        set -eu
+        build_payload="$(mktemp)"
+        build_json="$(mktemp)"
+        run_payload="$(mktemp)"
+        run_json="$(mktemp)"
+        parse_payload="$(mktemp)"
+        parse_json="$(mktemp)"
+        trap 'rm -f "$build_payload" "$build_json" "$run_payload" "$run_json" "$parse_payload" "$parse_json"' EXIT
+
+        JOB_ID='{{.JOB_ID}}' \
+        SYSTEM_NAME='{{.SYSTEM_NAME}}' \
+        STAR_BODY='{{.STAR_BODY}}' \
+        PLANET_BODY='{{.PLANET_BODY}}' \
+        STOP_TIME_YEARS='{{.STOP_TIME_YEARS}}' \
+        OUTPUT_TIME_YEARS='{{.OUTPUT_TIME_YEARS}}' \
+        python3 - <<'PY' "$build_payload"
+        import json, os, sys
+
+        json.dump({
+            "job_id": os.environ["JOB_ID"],
+            "systemName": os.environ["SYSTEM_NAME"],
+            "starBodyName": os.environ["STAR_BODY"],
+            "planetBodyName": os.environ["PLANET_BODY"],
+            "stopTimeYears": float(os.environ["STOP_TIME_YEARS"]),
+            "outputTimeYears": float(os.environ["OUTPUT_TIME_YEARS"]),
+        }, open(sys.argv[1], "w", encoding="utf-8"))
+        PY
+
+        iii trigger vplanet.input.build --json "$(cat "$build_payload")" --timeout-ms 30000 > "$build_json"
+        python3 - <<'PY' "$build_json" "$run_payload"
+        import json, sys
+
+        build = json.load(open(sys.argv[1], encoding="utf-8"))
+        json.dump({
+            "job_id": build["job_id"],
+            "inputBundle": build["inputBundle"],
+        }, open(sys.argv[2], "w", encoding="utf-8"))
+        PY
+
+        iii trigger vplanet.run --json "$(cat "$run_payload")" --timeout-ms 30000 > "$run_json"
+        python3 - <<'PY' "$run_json" "$parse_payload" '{{.PLANET_BODY}}'
+        import json, sys
+
+        run = json.load(open(sys.argv[1], encoding="utf-8"))
+        json.dump({
+            "job_id": run["job_id"],
+            "runResult": run["runResult"],
+            "bodyName": sys.argv[3],
+        }, open(sys.argv[2], "w", encoding="utf-8"))
+        PY
+
+        iii trigger vplanet.output.parse --json "$(cat "$parse_payload")" --timeout-ms 30000 > "$parse_json"
+        python3 - <<'PY' "$build_json" "$run_json" "$parse_json"
+        import json, sys
+
+        build = json.load(open(sys.argv[1], encoding="utf-8"))
+        run = json.load(open(sys.argv[2], encoding="utf-8"))
+        parsed = json.load(open(sys.argv[3], encoding="utf-8"))
+        run_result = run["runResult"]
+        table = parsed["outputTable"]
+        print("job_id", build["job_id"])
+        print("rootPath", build["inputBundle"]["rootPath"])
+        print("fallback", run_result["fallback"])
+        print("returnCode", run_result["returnCode"])
+        print("bodyName", table["bodyName"])
+        print("columns", ",".join(table["columns"]))
+        print("rowCount", len(table["rows"]))
+        PY
+
   workers:run:
-    desc: 'Run the comfy + blender + pipeline iii workers (engine must be up; needs ComfyUI @ :8188 + Blender)'
+    desc: 'Run comfy + blender + pipeline + VPLanet iii workers (engine must be up; text->3D needs ComfyUI @ :8188 + Blender)'
     vars:
       PY: project/workers/.venv/bin/python
     cmds:
       - '{{.PY}} project/workers/comfy-worker/worker.py &'
       - '{{.PY}} project/workers/blender-worker/worker.py &'
       - '{{.PY}} project/workers/pipeline-worker/worker.py &'
+      - '{{.PY}} project/workers/vplanet-worker/worker.py &'
       - wait
 
   pipeline:test:

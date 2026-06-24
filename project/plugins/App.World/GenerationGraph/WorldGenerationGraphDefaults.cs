@@ -16,6 +16,7 @@ public static class WorldGenerationGraphDefaults
     public const string MobilePlateLayerGraphId = "geosphere.mobile-plate.layers";
     public const string GeospherePlateLayerGraphId = "geosphere.plate.layer";
     public const string GeosphereCrustLayerGraphId = "geosphere.crust.layer";
+    public const string VplanetEarthGraphId = "external.vplanet.earth";
     public const string GeosphereSphereId = "geosphere";
 
     public static WorldGenerationGraphFamilyDocument BuildFamily(DateTimeOffset? updatedUtc = null)
@@ -48,6 +49,7 @@ public static class WorldGenerationGraphDefaults
             "mobile-plate",
             "geosphere.crust",
             "field-layer");
+        var vplanetEarthGraph = BuildVplanetEarthGraph();
 
         return new WorldGenerationGraphFamilyDocument(
             DocumentId: DocumentId,
@@ -63,6 +65,7 @@ public static class WorldGenerationGraphDefaults
                 mobilePlateLayersGraph,
                 plateLayerGraph,
                 crustLayerGraph,
+                vplanetEarthGraph,
             },
             RegimeGraphBindings: new[]
             {
@@ -148,6 +151,37 @@ public static class WorldGenerationGraphDefaults
                     Color: "#6ea8fe"),
             },
             OutputNodeIds: new[] { "crust" });
+    }
+
+    public static WorldGenerationGraphView BuildVplanetEarthGraph()
+    {
+        var status = NodeFromSchema("vplanet_status", "vplanet.status");
+        var input = NodeFromSchema("vplanet_input", "vplanet.input.build");
+        var run = NodeFromSchema("vplanet_run", "vplanet.run");
+        var parse = NodeFromSchema("vplanet_parse", "vplanet.output.parse");
+
+        return new WorldGenerationGraphView(
+            GraphId: VplanetEarthGraphId,
+            Label: "VPLanet Earth Template",
+            Description: "External science template: builds an Earth/Sun VPLanet input bundle, runs VPLanet through iii, and parses outputs for later world-side conversion.",
+            Nodes: new[] { status, input, run, parse },
+            Wires: new[]
+            {
+                new WorldGenerationGraphWire("vplanet_input", "inputBundle", "vplanet_run", "inputBundle", "vplanet/input-bundle"),
+                new WorldGenerationGraphWire("vplanet_run", "runResult", "vplanet_parse", "runResult", "vplanet/run-result"),
+            },
+            Annotations: new[]
+            {
+                new WorldGenerationGraphAnnotation(
+                    AnnotationId: "comment_vplanet_earth",
+                    Kind: WorldGenerationGraphAnnotationKinds.CommentBoundary,
+                    Label: "VPLanet Earth template",
+                    Bounds: new WorldGenerationGraphBounds(-80, -80, 780, 300),
+                    NodeIds: new[] { "vplanet_status", "vplanet_input", "vplanet_run", "vplanet_parse" },
+                    Text: "Availability check plus Earth/Sun VPLanet workflow. The final parsed table remains external data until a world-side converter maps it into topology, fields, or truth.",
+                    Color: "#b689d6"),
+            },
+            OutputNodeIds: new[] { "vplanet_parse" });
     }
 
     public static WorldGenerationGraphView BuildMobilePlateLayersGraph()

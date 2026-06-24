@@ -15,6 +15,7 @@ using FantaSim.App.Resource.Bundle;
 using FantaSim.App.SceneFlow;
 using FantaSim.App.Timeline.Seam;
 using FantaSim.App.Ui;
+using FantaSim.App.Ui.ExternalTools;
 using FantaSim.App.Ui.Seam;
 using FantaSim.App.World;
 using FantaSim.App.World.Composition;
@@ -47,6 +48,9 @@ public partial class Host : Node
     private FantaSim.App.Ui.Seam.ViewRenderer? _worldGraphRenderer;
     private FantaSim.App.Ui.NodeGraph.NodeGraphViewSource? _worldGraphView;
     private Control? _worldGraphUiRoot;
+    private FantaSim.App.Ui.Seam.ViewRenderer? _toolPreviewRenderer;
+    private ExternalToolResultViewSource? _toolPreviewView;
+    private Control? _toolPreviewUiRoot;
 
     public override void _Ready()
     {
@@ -55,6 +59,7 @@ public partial class Host : Node
         _composition = AppComposition.Activate();
         _log = _composition.Bootstrap.LoggerFactory.CreateLogger("Host");
         _config = _composition.Bootstrap.Registry.Get<CrosscutFoundation.Config.IService>();
+        ApplyInitialWindowSize();
 
         _collectibleBundles = LoadCollectibleBundles();
         _composition.Bootstrap.BuildPluginHost(_collectibleBundles);
@@ -95,6 +100,135 @@ public partial class Host : Node
         Callable.From(RunWorldGraphTest).CallDeferred();
         Callable.From(ShowIiiGraph).CallDeferred();
         Callable.From(ShowWorldGraph).CallDeferred();
+        Callable.From(ShowExternalToolPreview).CallDeferred();
+        Callable.From(ShowActivityViewPreview).CallDeferred();
+    }
+
+    private void ShowExternalToolPreview()
+    {
+        if (_config?.GetValue("toolPreview:show", false) != true) return;
+        var logger = _composition!.Bootstrap.LoggerFactory.CreateLogger("ExternalToolPreview");
+
+        _toolPreviewRenderer?.Dispose();
+        _toolPreviewUiRoot?.QueueFree();
+
+        _toolPreviewView = ExternalToolResultViewSource.CreateVplanetSmokePreview();
+        _toolPreviewUiRoot = new Control
+        {
+            Name = "ExternalToolPreviewRoot",
+            Scale = Vector2.One,
+            ZIndex = 100,
+        };
+        _toolPreviewUiRoot.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+        _toolPreviewUiRoot.Position = new Vector2(32, 32);
+        _toolPreviewUiRoot.Size = new Vector2(760, 640);
+        GetTree().Root.AddChild(_toolPreviewUiRoot);
+
+        _toolPreviewRenderer = new FantaSim.App.Ui.Seam.ViewRenderer(_toolPreviewUiRoot, () => _toolPreviewView, _ => null, logger);
+        _toolPreviewRenderer.Bind();
+        RecordExternalToolPreviewActivity(_toolPreviewView);
+        _log.LogInformation("external-tool preview mounted: {ViewId}.", _toolPreviewView.ViewId);
+    }
+
+    private void ShowActivityViewPreview()
+    {
+        if (_config?.GetValue("activity:show", false) != true) return;
+
+        var ui = _composition!.Bootstrap.Registry.TryGet<FantaSim.App.Ui.IService>();
+        if (ui is null)
+        {
+            _log.LogWarning("activity view skipped: UI service is not registered.");
+            return;
+        }
+
+        _toolPreviewRenderer?.Dispose();
+        _toolPreviewRenderer = null;
+        _toolPreviewUiRoot?.QueueFree();
+        _toolPreviewUiRoot = null;
+
+        _ = ShowActivityViewPreviewAsync(ui);
+    }
+
+    private async Task ShowActivityViewPreviewAsync(FantaSim.App.Ui.IService ui)
+    {
+        try
+        {
+            await ui.ShowAsync("activity").ConfigureAwait(false);
+            _log.LogInformation("activity view requested.");
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "activity view request failed.");
+        }
+    }
+
+    private void ApplyInitialWindowSize()
+    {
+        // Godot's docs recommend Window.Size for runtime window sizing; this keeps exported macOS
+        // launches from depending on editor history or command-line --resolution overrides.
+        // Source: https://docs.godotengine.org/en/stable/classes/class_displayserver.html#class-displayserver-method-window-set-size
+        const int defaultWidth = 2400;
+        const int defaultHeight = 1350;
+        const int defaultMinWidth = 1280;
+        const int defaultMinHeight = 720;
+
+        var target = new Vector2I(
+            ReadConfigInt("window:initialWidth", defaultWidth),
+            ReadConfigInt("window:initialHeight", defaultHeight));
+        var minSize = new Vector2I(
+            ReadConfigInt("window:minWidth", defaultMinWidth),
+            ReadConfigInt("window:minHeight", defaultMinHeight));
+
+        var window = GetWindow();
+        window.MinSize = minSize;
+        window.Size = target;
+
+        var screen = DisplayServer.WindowGetCurrentScreen();
+        var screenSize = DisplayServer.ScreenGetSize(screen);
+        if (screenSize.X > target.X && screenSize.Y > target.Y)
+        {
+            DisplayServer.WindowSetPosition(new Vector2I(
+                (screenSize.X - target.X) / 2,
+                (screenSize.Y - target.Y) / 2));
+        }
+
+        _log.LogInformation("initial window size requested: {Width}x{Height}, min={MinWidth}x{MinHeight}.", target.X, target.Y, minSize.X, minSize.Y);
+    }
+
+    private int ReadConfigInt(string key, int fallback)
+    {
+        var value = _config?.Get(key);
+        if (string.IsNullOrWhiteSpace(value))
+            return fallback;
+        if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0)
+            return parsed;
+        _log.LogWarning("invalid {Key} '{Value}', using {Fallback}.", key, value, fallback);
+        return fallback;
+    }
+
+    private void RecordExternalToolPreviewActivity(ExternalToolResultViewSource view)
+    {
+        var activity = _composition!.Bootstrap.Registry.TryGet<FantaSim.App.Activity.IService>();
+        if (activity is null)
+        {
+            _log.LogWarning("external-tool preview activity skipped: Activity service is not registered.");
+            return;
+        }
+
+        var payload = view.BuildActivityPayload();
+        var now = DateTimeOffset.UtcNow;
+        var entry = new ActivityEntry(
+            EntryId: $"external-tool.inspect.{view.ViewId}.{now.ToUnixTimeMilliseconds()}",
+            Kind: ActivityEntryKind.UiOperation,
+            Timestamp: now,
+            Actor: new ActivityActor("user", "godot"),
+            Name: "external-tool.inspect",
+            Category: "external-tool",
+            PayloadJson: payload.ToJsonString(),
+            CorrelationId: payload["jobId"]?.GetValue<string>(),
+            Outcome: $"inspector mounted for {view.Title}");
+        activity.Append(entry);
+        _log.LogInformation("external-tool preview activity recorded: {EntryId}.", entry.EntryId);
     }
 
     // Mount the iii text->3D graph as a BoomHud nodeGraph (env-guarded demo). Uses the GENERAL

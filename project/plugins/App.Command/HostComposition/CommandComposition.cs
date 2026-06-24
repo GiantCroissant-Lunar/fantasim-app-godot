@@ -2,6 +2,8 @@ using FantaSim.App.Common;
 using FantaSim.App.World.GenerationGraph;
 using Microsoft.Extensions.Logging;
 using ServiceArchi.Contracts;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
@@ -69,7 +71,22 @@ public static class CommandComposition
                 if (resource is null)
                     return JsonSerializer.Serialize(new { ok = false, error = "resource service not registered" });
 
-                await resource.ReloadAsync(bundleId, ct).ConfigureAwait(false);
+                var sceneFlow = registry.TryGet<FantaSim.App.SceneFlow.IService>();
+                var target = sceneFlow?.ActiveScenes.FirstOrDefault(s => s.SceneId == bundleId);
+                if (sceneFlow is not null && target is not null)
+                {
+                    // Scene-tier reload via Exit->Enter so the old ALC's SceneFlow pin is released.
+                    // ExitAsync cascades to descendant scenes, so capture the subtree (root + all
+                    // transitive descendants, in ActiveScenes entry order) and re-Enter it after.
+                    var subtree = CollectSubtree(sceneFlow.ActiveScenes, bundleId);
+                    await sceneFlow.ExitAsync(bundleId, ct).ConfigureAwait(false);
+                    foreach (var node in subtree)
+                        await sceneFlow.EnterAsync(new FantaSim.App.SceneFlow.SceneRequest(node.SceneId, node.ParentSceneId), ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    await resource.ReloadAsync(bundleId, ct).ConfigureAwait(false); // plugin-only bundle, or no SceneFlow
+                }
                 log.LogInformation("resource.reload_bundle: reloaded '{BundleId}'.", bundleId);
                 return JsonSerializer.Serialize(new { ok = true, bundleId });
             });
@@ -106,5 +123,35 @@ public static class CommandComposition
         {
             return null;
         }
+    }
+
+    private static List<FantaSim.App.SceneFlow.SceneSession> CollectSubtree(
+        IReadOnlyList<FantaSim.App.SceneFlow.SceneSession> active,
+        string rootSceneId)
+    {
+        var reachable = new HashSet<string> { rootSceneId };
+        var changed = true;
+        while (changed)
+        {
+            changed = false;
+            foreach (var s in active)
+            {
+                if (reachable.Contains(s.SceneId))
+                    continue;
+                if (s.ParentSceneId is not null && reachable.Contains(s.ParentSceneId))
+                {
+                    reachable.Add(s.SceneId);
+                    changed = true;
+                }
+            }
+        }
+
+        var result = new List<FantaSim.App.SceneFlow.SceneSession>(reachable.Count);
+        foreach (var s in active)
+        {
+            if (reachable.Contains(s.SceneId))
+                result.Add(s);
+        }
+        return result;
     }
 }

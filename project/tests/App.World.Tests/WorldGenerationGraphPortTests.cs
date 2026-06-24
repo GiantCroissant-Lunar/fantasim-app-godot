@@ -894,6 +894,40 @@ public sealed class WorldGenerationGraphPortTests
     }
 
     [Fact]
+    public void NodeCatalog_ContainsVplanetNodes()
+    {
+        Assert.NotNull(WorldGenerationNodeCatalog.Find("vplanet.status"));
+        Assert.NotNull(WorldGenerationNodeCatalog.Find("vplanet.input.build"));
+        Assert.NotNull(WorldGenerationNodeCatalog.Find("vplanet.run"));
+        Assert.NotNull(WorldGenerationNodeCatalog.Find("vplanet.output.parse"));
+    }
+
+    [Fact]
+    public void VplanetRunNodeSchema_HasExpectedPortsParamsAndFlags()
+    {
+        var run = WorldGenerationNodeCatalog.Find("vplanet.run")!;
+
+        Assert.Equal("Run VPLanet", run.Label);
+        Assert.Equal("external/science", run.Category);
+        Assert.True(run.IsSideEffect);
+        Assert.True(run.IsExpensive);
+        Assert.Contains(run.Inputs, p => p.PortId == "inputBundle" && p.KindHint == "vplanet/input-bundle" && p.Required);
+        Assert.Contains(run.Outputs, p => p.PortId == "runResult" && p.KindHint == "vplanet/run-result");
+        Assert.Contains(run.Parameters!, p => p.Key == "timeoutSeconds" && p.KindHint == "int" && p.Value == "300");
+    }
+
+    [Fact]
+    public void VplanetRunNode_CreatedFromSchema()
+    {
+        var node = WorldGenerationGraphDefaults.NodeFromSchema("vplanet_run", "vplanet.run");
+
+        Assert.Equal("vplanet.run", node.TypeId);
+        Assert.Equal("Run VPLanet", node.Label);
+        Assert.Single(node.Inputs);
+        Assert.Single(node.Outputs);
+    }
+
+    [Fact]
     public async Task DefaultWorldGraphSource_CompilesAndRunsThroughGenericExecutor()
     {
         var source = new WorldGenerationGraphSource(
