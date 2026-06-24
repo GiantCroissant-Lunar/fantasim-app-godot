@@ -169,10 +169,10 @@ tasks:
 
   # --- Rust (cargo): iii gdext bridge ---------------------------------------
   bridge:build:
-    desc: Build the gdext iii bridge (debug) and stage it into res://bin for the complete-app
+    desc: Build the gdext iii bridge (debug) and stage it into res://bin/gdext/iii for the complete-app
     cmds:
       - cargo build --manifest-path project/Cargo.toml -p iii-bridge
-      - cp project/target/debug/libiii_bridge.dylib project/hosts/complete-app/bin/libiii_bridge.dylib
+      - cp project/target/debug/libiii_bridge.dylib project/hosts/complete-app/bin/gdext/iii/libiii_bridge.dylib
 
   # --- iii workers (Python: ComfyUI + Blender text->3D pipeline) ------------
   workers:setup:
