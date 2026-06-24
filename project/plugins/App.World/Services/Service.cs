@@ -56,11 +56,26 @@ public sealed class Service : IService, IDisposable
                 "SurrealDB world truth store requires an ActorSystem so writes go through the single writer actor.");
         }
 
-        _truthStoreHandle = WorldTruthEventStoreFactory.Create(truthStoreOptions);
-        ITruthEventWriter truthWriter = actorSystem is null
-            ? new DirectTruthEventWriter(_truthStoreHandle.EventStore)
-            : ActorTruthEventWriter.Start(actorSystem, _truthStoreHandle.EventStore);
-        _runtime = WorldRuntimeFactory.Create(registry, truthWriter);
+        var truthStoreHandle = WorldTruthEventStoreFactory.Create(truthStoreOptions);
+        ITruthEventWriter? truthWriter = null;
+        try
+        {
+            truthWriter = actorSystem is null
+                ? new DirectTruthEventWriter(truthStoreHandle.EventStore)
+                : ActorTruthEventWriter.Start(
+                    actorSystem,
+                    truthStoreHandle.EventStore,
+                    actorName: NewTruthWriterActorName());
+            _runtime = WorldRuntimeFactory.Create(registry, truthWriter);
+            _truthStoreHandle = truthStoreHandle;
+            truthWriter = null;
+        }
+        catch
+        {
+            truthWriter?.Dispose();
+            truthStoreHandle.Dispose();
+            throw;
+        }
 #else
         _runtime = WorldRuntimeFactory.Create(registry);
 #endif
@@ -162,6 +177,11 @@ public sealed class Service : IService, IDisposable
         => request.Parameters is not null
            && request.Parameters.TryGetValue("source", out var source)
            && string.Equals(source?.ToString(), GenerationGraphSource, StringComparison.Ordinal);
+
+#if USE_PROJECT_REFERENCES
+    private static string NewTruthWriterActorName()
+        => $"world-truth-writer-{Guid.NewGuid():N}";
+#endif
 
     private static int ReadInt(IReadOnlyDictionary<string, object> parameters, string key, int fallback)
     {
@@ -325,10 +345,16 @@ public sealed class Service : IService, IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        _runtime.Dispose();
-#if USE_PROJECT_REFERENCES
-        _truthStoreHandle.Dispose();
-#endif
         _disposed = true;
+        try
+        {
+            _runtime.Dispose();
+        }
+        finally
+        {
+#if USE_PROJECT_REFERENCES
+            _truthStoreHandle.Dispose();
+#endif
+        }
     }
 }

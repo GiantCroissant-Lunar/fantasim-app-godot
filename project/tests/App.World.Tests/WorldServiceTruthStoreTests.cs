@@ -43,6 +43,49 @@ public sealed class WorldServiceTruthStoreTests
     }
 
     [Fact]
+    public async Task Service_allows_multiple_surrealdb_instances_on_same_actor_system()
+    {
+        var actorSystem = ActorSystem.Create($"world-truth-tests-{Guid.NewGuid():N}");
+        try
+        {
+            using var first = NewSurrealDbService(actorSystem);
+            using var second = NewSurrealDbService(actorSystem);
+
+            var firstResult = first.RunGenerationAsync(new WorldGenerationRequest(
+                WorldId: "first-world",
+                GenerationSpec: "world.generate:first",
+                Parameters: new Dictionary<string, object>(StringComparer.Ordinal)));
+            var secondResult = second.RunGenerationAsync(new WorldGenerationRequest(
+                WorldId: "second-world",
+                GenerationSpec: "world.generate:second",
+                Parameters: new Dictionary<string, object>(StringComparer.Ordinal)));
+
+            Assert.True(firstResult.Success);
+            Assert.True(secondResult.Success);
+            Assert.True(first.GetOverviewAsync().IsDirty);
+            Assert.True(second.GetOverviewAsync().IsDirty);
+        }
+        finally
+        {
+            await actorSystem.Terminate();
+        }
+    }
+
+    [Fact]
+    public async Task Service_dispose_is_safe_after_actor_system_has_terminated()
+    {
+        var actorSystem = ActorSystem.Create($"world-truth-tests-{Guid.NewGuid():N}");
+        var service = NewSurrealDbService(actorSystem);
+
+        await actorSystem.Terminate();
+
+        var ex = Record.Exception(service.Dispose);
+
+        Assert.Null(ex);
+        service.Dispose();
+    }
+
+    [Fact]
     public void Service_requires_actor_system_when_surrealdb_truth_store_is_enabled()
     {
         var registry = NewRegistry(
@@ -52,6 +95,16 @@ public sealed class WorldServiceTruthStoreTests
         var ex = Assert.Throws<InvalidOperationException>(() => new Service(registry));
 
         Assert.Contains("ActorSystem", ex.Message);
+    }
+
+    private static Service NewSurrealDbService(ActorSystem actorSystem)
+    {
+        var ns = $"app_{Guid.NewGuid():N}";
+        return new Service(
+            NewRegistry(
+                ("world:truthStore:backend", "surrealdb"),
+                ("world:truthStore:connectionString", $"Endpoint=mem://;Namespace={ns};Database=world")),
+            actorSystem);
     }
 
     private static IRegistry NewRegistry(params (string Key, string? Value)[] values)
