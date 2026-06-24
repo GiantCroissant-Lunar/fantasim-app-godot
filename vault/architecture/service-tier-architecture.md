@@ -2,6 +2,8 @@
 
 **Status:** PROPOSED. Distilled from the ref-projects `lunar-horse-002/ref-projects/fantasim-app-godot` architecture (confirmed 2026-06-10) combined with the Akka.NET integration discussion (2026-06-19), and extended for the iii-graph runtime as a peer orchestration axis (2026-06-19). Supersedes the plain-class-only T3 model where actor benefits are warranted.
 
+> **Orthogonal axis:** tier (T1–T4) is the *vertical* axis (Godot-coupling). The *horizontal* axis — which scope (resident `App.Common` vs collectible Stage/Assist/Timeline) owns each service's lifetime, and the resident↔collectible reference rules — lives in [service-scope-ownership.md](service-scope-ownership.md). Every service has one answer on each axis.
+
 ## Three-layer model
 
 The app is understood as three orthogonal layers (see [node-graph-paradigm.md](node-graph-paradigm.md) for the full treatment):
