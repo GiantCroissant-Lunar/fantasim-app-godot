@@ -26,6 +26,7 @@ internal sealed class WorldRuntime : IWorldRuntime
     private readonly IFieldReducerRegistry _reducers;
     private readonly ITruthEventStore _truthStore;
     private readonly TruthStreamIdentity _streamId;
+    private readonly object _truthCommitGate = new();
 
     // Composed at construction. The descriptor seed is intentionally minimal here (one
     // continuous field driven by the built-in WeightedAverage reducer); Task 7 will expand the
@@ -36,9 +37,12 @@ internal sealed class WorldRuntime : IWorldRuntime
     {
     }
 
-    // Test hook: lets App.World.Tests inject an explicit descriptor seed (e.g. a duplicate
-    // FieldId) to prove the startup validation contract without touching fantasim-world.
-    internal WorldRuntime(IRegistry registry, IReadOnlyList<FieldDescriptor>? descriptors)
+    // Test hook: lets App.World.Tests inject explicit descriptor/store dependencies to prove
+    // startup validation and app-side truth-stream coordination without touching fantasim-world.
+    internal WorldRuntime(
+        IRegistry registry,
+        IReadOnlyList<FieldDescriptor>? descriptors,
+        ITruthEventStore? truthStore = null)
     {
         _reducers = new FieldReducerRegistry();
         DefaultReducers.RegisterAll(_reducers);
@@ -59,7 +63,7 @@ internal sealed class WorldRuntime : IWorldRuntime
         _catalog = new CompositeFieldCatalog(seed);
         CatalogValidator.Validate(_catalog, _reducers);
 
-        _truthStore = new InMemoryTruthEventStore();
+        _truthStore = truthStore ?? new InMemoryTruthEventStore();
         _streamId = new TruthStreamIdentity(
             VariantId: "app",
             BranchId: "main",
@@ -117,7 +121,10 @@ internal sealed class WorldRuntime : IWorldRuntime
             EventType: "world.generation",
             Payload: payload,
             Tick: CanonicalTick.Genesis);
-        _truthStore.AppendAsync(_streamId, new ITruthEventDraft[] { draft }).GetAwaiter().GetResult();
+        lock (_truthCommitGate)
+        {
+            _truthStore.AppendAsync(_streamId, new ITruthEventDraft[] { draft }).GetAwaiter().GetResult();
+        }
 
         return new WorldGenerationResult(
             Success: true,

@@ -4,6 +4,8 @@ using FantaSim.App.World.Dto;
 using FantaSim.App.World.Services;
 using FantaSim.World.Fields;
 using FantaSim.World.Fields.Core;
+using FantaSim.World.TruthStream;
+using FantaSim.World.TruthStream.Core;
 using ServiceArchi.Contracts;
 using ServiceArchi.Core;
 using Xunit;
@@ -114,7 +116,34 @@ public class WorldRuntimeTests
     }
 
     // ---------------------------------------------------------------------
-    // Behavior 5: GetFieldValues maps the composed catalog onto the DTO by
+    // Behavior 5: The app runtime is the single-writer boundary for generation
+    // commits. Concurrent callers may enter RunGeneration, but only one truth
+    // append may be in flight at a time for the shared app stream.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public async Task RunGeneration_serializes_truth_stream_appends()
+    {
+        // Given a composed runtime with a truth-store probe that observes overlapping appends
+        var registry = NewRegistry();
+        var truthStore = new ConcurrentAppendProbeTruthEventStore(TimeSpan.FromMilliseconds(75));
+        using var runtime = new WorldRuntime(registry, descriptors: null, truthStore);
+
+        // When multiple callers ask generation to append concurrently
+        var tasks = Enumerable.Range(0, 12)
+            .Select(i => Task.Run(() => runtime.RunGeneration(new WorldGenerationRequest(
+                WorldId: $"w{i}",
+                GenerationSpec: $"spec-{i}",
+                Parameters: new()))))
+            .ToArray();
+        await Task.WhenAll(tasks);
+
+        // Then the runtime has serialized the appends before they reach the store
+        Assert.Equal(12, truthStore.AppendCount);
+        Assert.Equal(1, truthStore.MaxConcurrentAppends);
+    }
+
+    // ---------------------------------------------------------------------
+    // Behavior 6: GetFieldValues maps the composed catalog onto the DTO by
     // field id, returning the descriptor's unit/kind/reducer for known fields
     // and omitting unknown ones.
     // ---------------------------------------------------------------------
@@ -133,6 +162,69 @@ public class WorldRuntimeTests
         // Then the known field is present and the unknown field is absent
         Assert.True(values.FieldValues.ContainsKey("app.elevation-m"));
         Assert.False(values.FieldValues.ContainsKey("app.does-not-exist"));
+    }
+
+    private sealed class ConcurrentAppendProbeTruthEventStore : ITruthEventStore
+    {
+        private readonly InMemoryTruthEventStore _inner = new();
+        private readonly TimeSpan _appendDelay;
+        private int _activeAppends;
+        private int _appendCount;
+        private int _maxConcurrentAppends;
+
+        public ConcurrentAppendProbeTruthEventStore(TimeSpan appendDelay)
+        {
+            _appendDelay = appendDelay;
+        }
+
+        public int AppendCount => Volatile.Read(ref _appendCount);
+        public int MaxConcurrentAppends => Volatile.Read(ref _maxConcurrentAppends);
+
+        public async Task<StreamHead> AppendAsync(
+            TruthStreamIdentity stream,
+            IReadOnlyList<ITruthEventDraft> drafts,
+            CancellationToken ct = default)
+        {
+            EnterAppend();
+            try
+            {
+                await Task.Delay(_appendDelay, ct);
+                return await _inner.AppendAsync(stream, drafts, ct);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeAppends);
+            }
+        }
+
+        public Task<StreamHead> AppendIfHeadAsync(
+            TruthStreamIdentity stream,
+            IReadOnlyList<ITruthEventDraft> drafts,
+            StreamHead? expectedHead,
+            CancellationToken ct = default)
+            => _inner.AppendIfHeadAsync(stream, drafts, expectedHead, ct);
+
+        public IAsyncEnumerable<ITruthEvent> ReadAsync(
+            TruthStreamIdentity stream,
+            long fromSequence = 0,
+            CancellationToken ct = default)
+            => _inner.ReadAsync(stream, fromSequence, ct);
+
+        public Task<StreamHead?> GetHeadAsync(TruthStreamIdentity stream, CancellationToken ct = default)
+            => _inner.GetHeadAsync(stream, ct);
+
+        private void EnterAppend()
+        {
+            Interlocked.Increment(ref _appendCount);
+            var active = Interlocked.Increment(ref _activeAppends);
+            int snapshot;
+            do
+            {
+                snapshot = Volatile.Read(ref _maxConcurrentAppends);
+                if (active <= snapshot)
+                    return;
+            } while (Interlocked.CompareExchange(ref _maxConcurrentAppends, active, snapshot) != snapshot);
+        }
     }
 }
 #endif
