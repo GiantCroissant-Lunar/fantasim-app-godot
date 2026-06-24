@@ -64,12 +64,30 @@ public sealed class CollectibleBundles
                 }
 
                 var pluginAssembly = pluginAssemblyProp.GetString()!;
-                assemblyNames.Add(pluginAssembly.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
-                    ? pluginAssembly[..^4]
-                    : pluginAssembly);
+                assemblyNames.Add(StripDll(pluginAssembly));
+
+                // Optional companion impl assemblies that must also load into the bundle's collectible
+                // ALC (e.g. a multi-assembly domain bundle like "world": the plugin assembly carries the
+                // [Plugin], but its sibling impl assemblies must be excluded from the shared parent too).
+                if (entry.TryGetProperty("assemblyNames", out var extraProp)
+                    && extraProp.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var extra in extraProp.EnumerateArray())
+                    {
+                        if (extra.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(extra.GetString()))
+                        {
+                            throw new InvalidOperationException($"Collectible bundle config from {source} has a non-string/empty assemblyNames entry for bundle '{bundleIdProp.GetString()}'.");
+                        }
+
+                        assemblyNames.Add(StripDll(extra.GetString()!));
+                    }
+                }
             }
 
             return new CollectibleBundles(assemblyNames);
         }
     }
+
+    private static string StripDll(string assembly)
+        => assembly.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? assembly[..^4] : assembly;
 }

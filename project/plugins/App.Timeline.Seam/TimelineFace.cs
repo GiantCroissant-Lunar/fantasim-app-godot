@@ -127,6 +127,8 @@ public partial class TimelineFace : Control, ITimelineFace
         {
             _ctl.UnregisterPlayback();
         }
+        _ctl = null;
+        ResidentController = null;
         if (_playPauseButton is not null)
         {
             _playPauseButton.Pressed -= OnPlayPausePressed;

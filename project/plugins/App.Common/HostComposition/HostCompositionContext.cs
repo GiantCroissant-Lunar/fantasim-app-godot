@@ -17,14 +17,30 @@ namespace FantaSim.App.Common;
 /// </remarks>
 public sealed class HostCompositionContext
 {
+    private readonly IRegistry? _registryOverride;
+    private readonly ILoggerFactory? _loggerFactoryOverride;
+
     public HostCompositionContext(AppComposition composition)
     {
         Composition = composition ?? throw new ArgumentNullException(nameof(composition));
     }
 
-    public AppComposition Composition { get; }
+    /// <summary>
+    /// Plugin-friendly constructor: used by bundle plugins (e.g. <c>WorldPlugin</c>) that resolve
+    /// the kernel from <see cref="IPluginContext.Services"/> and do not have access to
+    /// <see cref="AppComposition"/>. The <see cref="Composition"/> property is null in this mode;
+    /// composition modules must resolve host-owned services (e.g. ActorSystem) from
+    /// <see cref="Registry"/> instead.
+    /// </summary>
+    public HostCompositionContext(IRegistry registry, ILoggerFactory loggerFactory)
+    {
+        _registryOverride = registry ?? throw new ArgumentNullException(nameof(registry));
+        _loggerFactoryOverride = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+    }
 
-    public IRegistry Registry => Composition.Bootstrap.Registry;
+    public AppComposition? Composition { get; }
 
-    public ILoggerFactory LoggerFactory => Composition.Bootstrap.LoggerFactory;
+    public IRegistry Registry => _registryOverride ?? Composition!.Bootstrap.Registry;
+
+    public ILoggerFactory LoggerFactory => _loggerFactoryOverride ?? Composition!.Bootstrap.LoggerFactory;
 }

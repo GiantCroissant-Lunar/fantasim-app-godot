@@ -1,5 +1,4 @@
 using FantaSim.App.Common;
-using FantaSim.App.World.GenerationGraph;
 using Microsoft.Extensions.Logging;
 using ServiceArchi.Contracts;
 using System.Collections.Generic;
@@ -34,26 +33,6 @@ public static class CommandComposition
         registry.Register<FantaSim.App.Command.IClient>(
             client,
             new ServiceRegistration { Tags = new[] { "command", "client" }, Description = "In-process command client" });
-
-        commands.Register(
-            new FantaSim.App.Command.CommandDescriptor(
-                Id: "world.run_generation_graph",
-                Title: "Run world generation graph",
-                Description: "Executes a compiled App.NodeGraph world-generation graph through registered node providers.",
-                Category: "world"),
-            async (payloadJson, ct) =>
-            {
-                var request = WorldGenerationGraphExecutionPayload.Deserialize(payloadJson ?? string.Empty);
-
-                var providers = registry.GetAll<FantaSim.App.NodeGraph.INodeFunctionProvider>().ToArray();
-                var runner = new WorldGenerationGraphRunner(providers);
-                var run = await runner.RunAsync(request.Graph, request.SharedParams, request.ExecutionScopeKey, ct);
-                var result = WorldGenerationGraphRunner.ToCommandResult(run);
-                var generation = PublishWorldGenerationGraphRun(registry, run);
-                if (generation is not null)
-                    result["generation"] = JsonSerializer.SerializeToNode(generation);
-                return result.ToJsonString();
-            });
 
         commands.Register(
             new FantaSim.App.Command.CommandDescriptor(
@@ -93,21 +72,6 @@ public static class CommandComposition
 
         var health = orchestration.HealthAsync().GetAwaiter().GetResult();
         log.LogInformation($"[Host] registered: Command (orchestration {(health.Ok ? "healthy" : "degraded")}, {health.Commands} commands)");
-    }
-
-    private static FantaSim.App.World.Dto.WorldGenerationResult? PublishWorldGenerationGraphRun(
-        IRegistry registry,
-        WorldGenerationGraphRunOutput run)
-    {
-        var world = registry.TryGet<FantaSim.App.World.IService>();
-        if (world is null)
-            return null;
-
-        var generation = world.RunGenerationAsync(WorldGenerationGraphRunner.ToGenerationRequest(run));
-        if (generation.Success)
-            registry.TryGet<FantaSim.App.Ecs.IService>()?.UpdateAll(0f);
-
-        return generation;
     }
 
     private static string? ParseBundleId(string? payloadJson)

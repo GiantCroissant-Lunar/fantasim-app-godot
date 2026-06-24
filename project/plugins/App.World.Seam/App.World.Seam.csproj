@@ -24,5 +24,9 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="GiantCroissant.CrosscutFoundation.Config.Contracts" VersionOverride="0.2.2" />
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" Version="0.1.6" />
+    <PackageReference Include="GiantCroissant.PluginArchi.SourceGenerators" Version="0.1.6" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.1" />
   </ItemGroup>
 </Project>
