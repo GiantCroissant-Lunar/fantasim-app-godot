@@ -1,8 +1,11 @@
+using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using FantaSim.App.Command;
 using FantaSim.App.Command.Orchestration;
 using FantaSim.App.Ui;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -47,10 +50,16 @@ public sealed class RuntimeStatusViewSourceTests
     }
 
     [Fact]
-    public void Dispatch_DoesNotThrow()
+    public void Dispatch_LogsTheActionAndComponentId()
     {
-        var src = new RuntimeStatusViewSource(new FakeOrchestration(healthy: true), NullLogger.Instance);
-        src.Dispatch("any-action", "any-component");
+        var logger = new CapturingLogger();
+        var src = new RuntimeStatusViewSource(new FakeOrchestration(healthy: true), logger);
+
+        src.Dispatch("refresh", "panel-1");
+
+        var message = Assert.Single(logger.Messages);
+        Assert.Contains("refresh", message);
+        Assert.Contains("panel-1", message);
     }
 
     [Fact]
@@ -79,5 +88,22 @@ public sealed class RuntimeStatusViewSourceTests
             => throw new System.NotImplementedException();
         public Task<CommandHealth> HealthAsync(CancellationToken cancellationToken = default)
             => throw new System.NotImplementedException();
+    }
+
+    private sealed class CapturingLogger : ILogger
+    {
+        public List<string> Messages { get; } = new();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+            => Messages.Add(formatter(state, exception));
     }
 }
