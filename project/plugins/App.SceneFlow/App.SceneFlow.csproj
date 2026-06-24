@@ -9,6 +9,7 @@
     <CompilerVisibleProperty Include="ServiceArchiTier" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\App.Common\App.Common.csproj" />
     <ProjectReference Include="..\..\contracts\App.SceneFlow\App.SceneFlow.csproj" />
     <ProjectReference Include="..\..\contracts\App.Resource\App.Resource.csproj" />
   </ItemGroup>

@@ -3,8 +3,18 @@ using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FantaSim.App.Activity;
+using FantaSim.App.Command;
 using FantaSim.App.Common;
+using FantaSim.App.Ecs;
+using FantaSim.App.GpuCompute.Seam;
+using FantaSim.App.GpuShader.Seam;
+using FantaSim.App.Iii.Seam;
+using FantaSim.App.Resource.Bundle;
+using FantaSim.App.SceneFlow;
+using FantaSim.App.Timeline.Seam;
 using FantaSim.App.Ui;
+using FantaSim.App.Ui.Seam;
 using FantaSim.App.World;
 using FantaSim.App.World.Composition;
 using FantaSim.App.World.GenerationGraph;
@@ -27,7 +37,9 @@ public partial class Host : Node
     // Sub-project B: the Godot-free ECS cell model that derives per-cell elevation. Owned here so its
     // lifetime matches the host; the relief render (sub-project C) reads GetElevations() off it.
     private FantaSim.App.World.Cells.CellElevationModel? _cellElevation;
-    private WorldGenerationRenderOptions? _worldRenderOptions;
+
+    // World-graph demo view state (env-guarded entry points below). Host-owned because they touch
+    // the scene tree + quit the app; they are NOT composition modules.
     private WorldGenerationTimelineGraphBindingSlot? _worldGraphTimelineBinding;
     private FantaSim.App.Ui.Seam.ViewRenderer? _worldGraphRenderer;
     private FantaSim.App.Ui.NodeGraph.NodeGraphViewSource? _worldGraphView;
@@ -43,23 +55,28 @@ public partial class Host : Node
         _composition.Bootstrap.BuildPluginHost(_collectibleBundles);
         _ = _composition.Bootstrap.RunAsync();
 
-        ComposeResource(_composition);
-        ComposeSceneFlow(_composition);
-        ComposeEcs(_composition);
-        ComposeWorld(_composition);
-        ComposeCellElevation(_composition);
-        ComposeCommand(_composition);
-        ComposeIii(_composition);
-        ComposeGpu(_composition);
-        ComposeGpuShader(_composition);
-        // World view (the T4 relief render) is composed AFTER the cell-elevation model and the GPU
-        // compute service so it can feed per-cell elevation through the compute displacement path.
-        ComposeWorldView(_composition);
-        ComposeTimeline(_composition);
-        ComposeActivity(_composition);
-        ComposeUi(_composition);
+        // Each domain's composition body lives in its owning plugin project as a static
+        // HostComposition class; Host only orchestrates the fixed order and threads host-owned
+        // handles as locals (no shared mutable state bag - App.Common cannot reference the domain
+        // plugins, so handles flow as return values + explicit parameters).
+        var ctx = new HostCompositionContext(_composition);
+        var tree = GetTree();
 
-        GD.Print("[Host] composed services: Resource, SceneFlow, Ecs, World, Command, Iii, Gpu, GpuShader, Activity, Ui");
+        ResourceComposition.ComposeResource(ctx, this, _collectibleBundles);
+        SceneFlowComposition.ComposeSceneFlow(ctx);
+        (_ecs, _ecsWorldReady) = EcsComposition.ComposeEcs(ctx);
+        WorldComposition.ComposeWorld(ctx);
+        var (cellElevation, renderOptions) = CellElevationComposition.ComposeCellElevation(ctx);
+        CommandComposition.ComposeCommand(ctx);
+        IiiComposition.ComposeIii(ctx, tree, this);
+        _gpuComputeService = GpuComposition.ComposeGpu(ctx);
+        _gpuShaderService = GpuShaderComposition.ComposeGpuShader(ctx);
+        WorldViewComposition.ComposeWorldView(ctx, tree, cellElevation, renderOptions);
+        _cellElevation = cellElevation;
+        TimelineComposition.ComposeTimeline(ctx);
+        ActivityComposition.ComposeActivity(ctx);
+        UiComposition.ComposeUi(ctx, tree);
+
         GD.Print("[Host] composition activated.");
         GD.Print($"[Host] iii bridge: IiiClient registered = {ClassDB.ClassExists("IiiClient")}");
 
@@ -331,7 +348,7 @@ public partial class Host : Node
             GD.Print($"[Host] entered scene '{assist.SceneId}' under '{assist.ParentSceneId}'; bundleLoaded={resource.IsLoaded("assist")}; activeScenes={sceneFlow.ActiveScenes.Count}");
 
             // Enter the timeline bundle under stage. ITimelineController is already registered
-            // (ComposeWorldView ran sync in _Ready before this deferred call). SceneFlowProvider
+            // (WorldViewComposition ran sync in _Ready before this deferred call). SceneFlowProvider
             // loads the PCK first, then calls ActivateAsync — so IsLoaded("timeline") is true
             // by the time TimelinePlugin.InitializeAsync resolves the controller and mounts the view.
             var timeline = await sceneFlow.EnterAsync(new FantaSim.App.SceneFlow.SceneRequest("timeline", "stage"));
@@ -356,493 +373,6 @@ public partial class Host : Node
             return CollectibleBundles.Empty;
         var json = Godot.FileAccess.GetFileAsString(configPath);
         return CollectibleBundles.ParseJson(json);
-    }
-
-    private void ComposeResource(AppComposition composition)
-    {
-        var loggerFactory = composition.Bootstrap.LoggerFactory;
-        var providerRegistry = new RegistryArchi.Core.Registry();
-        providerRegistry.Register<FantaSim.App.Resource.Providers.IProvider>(
-            new FantaSim.App.Resource.Bundle.BundleProvider(
-                this, composition.Bootstrap.PluginHost, loggerFactory,
-                _collectibleBundles!.ContainsAssembly));
-
-        var resource = new FantaSim.App.Resource.Services.Service(
-            providerRegistry,
-            new FantaSim.App.Resource.Bundle.GodotBundleDirectoryResolver(),
-            loggerFactory);
-        composition.Bootstrap.Registry.Register<FantaSim.App.Resource.IService>(
-            resource,
-            new ServiceRegistration { Tags = new[] { "resource" }, Description = "Resource (bundle) service" });
-        GD.Print("[Host] registered: Resource");
-    }
-
-    private void ComposeSceneFlow(AppComposition composition)
-    {
-        var sceneFlow = new FantaSim.App.SceneFlow.Services.Service(
-            composition.RootServices,
-            composition.Bootstrap.Registry,
-            composition.Bootstrap.LoggerFactory);
-        composition.Bootstrap.Registry.Register<FantaSim.App.SceneFlow.IService>(
-            sceneFlow,
-            new ServiceRegistration { Tags = new[] { "scene-flow" }, Description = "SceneFlow service" });
-        GD.Print("[Host] registered: SceneFlow");
-    }
-
-    private void ComposeEcs(AppComposition composition)
-    {
-        var ecs = new FantaSim.App.Ecs.Services.Service(
-            composition.Bootstrap.ActorSystem,
-            composition.Bootstrap.LoggerFactory);
-        composition.Bootstrap.Registry.Register<FantaSim.App.Ecs.IService>(
-            ecs,
-            new ServiceRegistration { Tags = new[] { "ecs" }, Description = "ECS service" });
-        _ecs = ecs;
-        try
-        {
-            ecs.CreateWorld(new FantaSim.App.Ecs.EcsWorldSpec("main"));
-            ecs.InitializeWorld("main");
-            _ecsWorldReady = true;
-            GD.Print("[Host] ECS world 'main' created + initialized");
-        }
-        catch (Exception ex)
-        {
-            _ecsWorldReady = false;
-            GD.PushError($"[Host] ECS bootstrap failed: {ex.Message}");
-        }
-        GD.Print("[Host] registered: Ecs");
-    }
-
-    private void ComposeWorld(AppComposition composition)
-    {
-        var world = new FantaSim.App.World.Services.Service(composition.Bootstrap.Registry);
-        composition.Bootstrap.Registry.Register<FantaSim.App.World.IService>(
-            world,
-            new ServiceRegistration { Tags = new[] { "world" }, Description = "World service" });
-        GD.Print("[Host] registered: World");
-
-        var projection = new FantaSim.App.World.FieldView.Services.FieldViewService(
-            world,
-            new[] { "app.elevation-m" },
-            new[] { "app.elevation-m" });
-        composition.Bootstrap.Registry.Register<FantaSim.App.World.FieldView.Services.FieldViewService>(
-            projection,
-            new ServiceRegistration { Tags = new[] { "world", "projection" }, Description = "Field view service" });
-        GD.Print("[Host] World detail: projection registered");
-
-        // Register the World axis as a node-function provider (mirrors how ComposeIii registers the iii
-        // provider). It claims the world/geosphere/crust function families; the general App.NodeGraph
-        // GraphExecutor resolves crust.generate to it. Pure C# (no Godot rendering yet).
-        var worldProvider = new FantaSim.App.World.WorldFunctionProvider(composition.Bootstrap.LoggerFactory);
-        composition.Bootstrap.Registry.Register<FantaSim.App.NodeGraph.INodeFunctionProvider>(
-            worldProvider,
-            new ServiceRegistration { Tags = new[] { "world", "nodegraph-provider" }, Description = "World node-function provider (crust pipeline)" });
-        GD.Print("[Host] World detail: crust function provider registered");
-    }
-
-    // World view (T4 seam): mount the geodesic plate globe as the real 3D world surface. The T3
-    // GlobeReconstructor (onset-aware, via FromOnsetRoster) builds the seeded snapshot (Godot-free);
-    // the GlobeView seam turns it into GPU-rotated ArrayMeshes. The RegimeTimelineTransport drives
-    // tick playback + regime threading (SetTick + SetRegime on GlobeView). Always-on (not env-guarded).
-    //
-    private void ComposeWorldView(AppComposition composition)
-    {
-        // PLAN4-TASK4: onset-aware path — replaces new GlobeReconstructor() (parameterless legacy).
-        long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
-        var renderOptions = GetWorldRenderOptions();
-        var roster = OnsetRoster.Build(renderOptions.Seed, onsetTick, renderOptions.TessellationFrequency);
-        var schedule = SphereRegimeScheduleDefaults.GeosphereDefault;
-        var model = GlobeReconstructor.FromOnsetRoster(roster, onsetTick, schedule, renderOptions.TessellationFrequency);
-
-        // Build the base snapshot at onset (full N-plate globe used for topology caching).
-        // GlobePlateSurfaces caches watertight topology from this snapshot — since plate count/cell
-        // assignment is fixed, one topology build covers all ticks (including pre-onset lid ticks
-        // where caps are hidden by SetRegime(showsPlateFeatures=false)).
-        var snapshot = model.BuildGlobeAt(onsetTick);
-
-        // Precompute crust features at evenly-spaced snapshots (one pipeline run); the scrubber snaps
-        // to the nearest so dragging stays instant. Features accumulate, so a mountain grows in over ticks.
-        // Range: [0, 120 anchors] at every 5 anchors — covers pre-onset (all-zero, gated) + mobile-plate.
-        long maxTransportTick = onsetTick + 20_000_000L; // ~20 Ma past onset (well into mobile-plate)
-        var snapshotTicks = new System.Collections.Generic.List<long>();
-        for (long anchor = 0; anchor <= 120; anchor += 5) snapshotTicks.Add(anchor * snapshot.TicksPerAnchor);
-        var featuresByTick = model.RunCrustFeatures(snapshotTicks);
-        System.Func<long, byte[]> featuresAt = tick =>
-        {
-            long best = snapshotTicks[0];
-            foreach (var s in snapshotTicks)
-                if (System.Math.Abs(s - tick) < System.Math.Abs(best - tick)) best = s;
-            return featuresByTick[best];
-        };
-
-        // Per-cell elevation feed for the watertight caps: drive sub-project B's CellElevationModel to
-        // the tick and hand the seam a per-cell double[] (indexed by cell id). The seam folds it into the
-        // T3 GlobePlateSurfaces, which builds one WATERTIGHT per-plate cap per tick via cartography.
-        var elevationModel = _cellElevation;
-        System.Func<long, double[]>? elevationsAt = elevationModel is null ? null : tick =>
-        {
-            elevationModel.UpdateForTick(tick);
-            return elevationModel.GetElevations();
-        };
-
-        // T3 (Godot-free) un-shattering: cache the per-plate watertight topology once from the snapshot;
-        // the seam rebuilds heights per tick. Replaces the old loose-tile (1 tri/cell, unshared corners)
-        // mesh + GPU-compute relief displacement.
-        var plateSurfaces = new FantaSim.App.World.Globe.GlobePlateSurfaces(snapshot);
-        var sphereHandoff = TryBuildDefaultSphereHandoff(composition);
-        var regimeFieldSampler = new WorldGenerationRegimeFieldSampler();
-        Func<long, double?>? magmaSurfaceTemperatureAt = sphereHandoff is null
-            ? null
-            : tick => regimeFieldSampler.ResolveMagmaOceanSurfaceTemperatureK(tick, sphereHandoff);
-
-        var view = new FantaSim.App.World.Seam.GlobeView(
-            snapshot,
-            plateSurfaces,
-            tick => FantaSim.App.World.Globe.CanonicalTimeLabel.ForTick(tick, snapshot.TicksPerAnchor),
-            featuresAt,
-            elevationsAt,
-            magmaSurfaceTemperatureAt);
-        // Extend the scrubber to cover the full transport range so the user can drag to onset and beyond.
-        view.SetMaxTick(maxTransportTick);
-        SubscribeWorldGenerationRefresh(composition, view);
-        GetTree().Root.CallDeferred("add_child", view);
-
-
-        // Build the atmosphere schedule (same onset tick) so the timeline HUD can show both spheres.
-        var atmosphereSchedule = SphereRegimeScheduleDefaults.AtmosphereFor(onsetTick);
-
-        // Register the resident ITimelineController adapter. Must happen here (sync, before any
-        // deferred EnterAsync calls) so the timeline bundle can resolve it during ActivateAsync.
-        var controller = new FantaSim.App.World.Seam.TimelineController(
-            view, schedule, atmosphereSchedule, maxTransportTick);
-        composition.Bootstrap.Registry.Register<FantaSim.App.World.Composition.ITimelineController>(controller);
-
-        // Seed the initial regime so GlobeView starts in the correct state before the first tick fires.
-        var initialRegime = schedule.RegimeAt(0);
-        if (initialRegime is not null)
-            view.SetRegime(initialRegime.RegimeId, initialRegime.ShowsPlateFeatures, initialRegime.DefaultColorByField);
-
-        GD.Print($"[Host] World view: globe mounted ({snapshot.CellCount} cells, {snapshot.PlateCount} plates, " +
-                 $"{snapshotTicks.Count} feature snapshots, elevationFeed={(elevationsAt is not null)}, watertight caps, " +
-                 $"onset={onsetTick:N0}, seed={renderOptions.Seed}, freq={renderOptions.TessellationFrequency}); ITimelineController registered");
-    }
-
-    private WorldGenerationRenderOptions GetWorldRenderOptions()
-        => _worldRenderOptions ??= ResolveWorldRenderOptions();
-
-    private static WorldGenerationRenderOptions ResolveWorldRenderOptions()
-    {
-        var source = WorldGenerationGraphFamilySource.ForRegime(
-            "world-generation",
-            WorldGenerationGraphDefaults.BuildFamily(),
-            WorldRegimeScheduleKinds.Sphere,
-            "mobile-plate",
-            SphereRegimeScheduleDefaults.PlateOnsetTick,
-            WorldGenerationGraphDefaults.GeosphereSphereId);
-
-        return WorldGenerationRenderOptions.Resolve(source.Graph);
-    }
-
-    private void SubscribeWorldGenerationRefresh(AppComposition composition, GlobeView view)
-    {
-        var world = composition.Bootstrap.Registry.TryGet<FantaSim.App.World.IService>();
-        if (world is null)
-            return;
-
-        world.SubscribeGenerationChanged(evt =>
-        {
-            if (!WorldGenerationRefreshPolicy.ShouldRefreshGlobe(evt))
-                return;
-
-            Callable.From(() =>
-            {
-                if (!view.IsInsideTree())
-                    return;
-
-                var tick = view.Tick;
-                view.SetTick(tick);
-                GD.Print($"[Host] World view refreshed after generation change at tick={tick:N0}; detail={evt.Detail}");
-            }).CallDeferred();
-        });
-    }
-
-    private static SphereHandoff? TryBuildDefaultSphereHandoff(AppComposition composition)
-    {
-        try
-        {
-            var graphSource = WorldGenerationGraphFamilySource.ForRegime(
-                "world-generation",
-                WorldGenerationGraphDefaults.BuildFamily(),
-                WorldRegimeScheduleKinds.BodyFormation,
-                "planetesimal-swarm",
-                tick: 0);
-
-            var providers = composition.Bootstrap.Registry
-                .GetAll<FantaSim.App.NodeGraph.INodeFunctionProvider>()
-                .ToArray();
-            var run = new WorldGenerationGraphRunner(providers)
-                .RunAsync(graphSource.CompileForExecution().Document)
-                .GetAwaiter()
-                .GetResult();
-
-            if (run.SphereHandoff is not null)
-            {
-                GD.Print($"[Host] World graph handoff: retainedHeatJ={run.SphereHandoff.RetainedHeatJ:E3}, products={run.Products.Count}");
-            }
-
-            return run.SphereHandoff;
-        }
-        catch (Exception ex)
-        {
-            GD.PushWarning($"[Host] World graph handoff unavailable: {ex.Message}");
-            return null;
-        }
-    }
-
-    // Sub-project B (ECS cell model + elevation derivation): model each globe cell as an ECS entity
-    // carrying its crust fields and derive a per-cell elevation via CellElevationSystem. Godot-free,
-    // fully unit-testable; the relief render (sub-project C) consumes GetElevations() to upload to the
-    // GPU. No rendering here. CellElevationSystem is registered (via ArchSystemRunner.Register) into the
-    // model's own ECS world — the same mechanism EcsWorldActor uses for ReduceFieldsSystem — and that
-    // world is the load-bearing one C reads from. The actor "main" heartbeat world is left untouched
-    // (registering there would need IService surface it does not expose, and isn't what C consumes).
-    //
-    // PLAN4-TASK4: onset-aware path — replaces new GlobeReconstructor() (parameterless legacy).
-    // Uses the same graph-resolved render options as ComposeWorldView so both share the same
-    // deterministic plate geometry.
-    private void ComposeCellElevation(AppComposition composition)
-    {
-        try
-        {
-            long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
-            var renderOptions = GetWorldRenderOptions();
-            var roster = OnsetRoster.Build(renderOptions.Seed, onsetTick, renderOptions.TessellationFrequency);
-            var schedule = SphereRegimeScheduleDefaults.GeosphereDefault;
-            var reconstructor = GlobeReconstructor.FromOnsetRoster(roster, onsetTick, schedule, renderOptions.TessellationFrequency);
-
-            // Build snapshot at onset (the full N-plate mesh) to get TicksPerAnchor for the cadence.
-            var snapshot = reconstructor.BuildGlobeAt(onsetTick);
-
-            // Same anchor cadence the world view uses (120 anchors, every 5), so the cell model and
-            // the feature scrubber sample the same crust run. Pre-onset ticks get empty states (gated
-            // by ShowsPlateFeatures — RunCrustEvolution short-circuits them).
-            var snapshotTicks = new System.Collections.Generic.List<long>();
-            for (long anchor = 0; anchor <= 120; anchor += 5) snapshotTicks.Add(anchor * snapshot.TicksPerAnchor);
-
-            // Build populates one ECS entity per cell and registers CellElevationSystem into the model's
-            // ArchSystemRunner (mirrors how ReduceFieldsSystem registers into EcsWorldActor's runner).
-            _cellElevation = FantaSim.App.World.Cells.CellElevationModel.Build(reconstructor, snapshotTicks);
-
-            // Populate/derive for the onset tick (first active tick — pre-onset would be empty)
-            // and report the relief extent C will upload.
-            _cellElevation.UpdateForTick(onsetTick);
-            var elevations = _cellElevation.GetElevations();
-            double min = double.MaxValue, max = double.MinValue;
-            foreach (var e in elevations) { if (e < min) min = e; if (e > max) max = e; }
-            GD.Print($"[Host] Cell elevation: {elevations.Length} cells derived (onset tick={onsetTick:N0}), range [{min:F1}, {max:F1}]");
-        }
-        catch (Exception ex)
-        {
-            GD.PushError($"[Host] Cell elevation model failed: {ex.Message}");
-        }
-    }
-
-    private void ComposeCommand(AppComposition composition)
-    {
-        var loggerFactory = composition.Bootstrap.LoggerFactory;
-        var registry = composition.Bootstrap.Registry;
-
-        var orchestration = new FantaSim.App.Command.Orchestration.LocalOrchestrator(registry, loggerFactory);
-        registry.Register<FantaSim.App.Command.Orchestration.IWorldOrchestration>(
-            orchestration,
-            new ServiceRegistration { Tags = new[] { "command", "orchestration" }, Description = "World orchestration seam (local in-process)" });
-
-        var dispatcher = new FantaSim.App.Command.Providers.ImmediateMainThreadDispatcher();
-        var commands = new FantaSim.App.Command.Services.Service(dispatcher, registry, loggerFactory, orchestration);
-        registry.Register<FantaSim.App.Command.IService>(
-            commands,
-            new ServiceRegistration { Tags = new[] { "command" }, Description = "Command service" });
-
-        var client = new FantaSim.App.Command.Clients.InProcessClient(commands, loggerFactory);
-        registry.Register<FantaSim.App.Command.IClient>(
-            client,
-            new ServiceRegistration { Tags = new[] { "command", "client" }, Description = "In-process command client" });
-
-        commands.Register(
-            new FantaSim.App.Command.CommandDescriptor(
-                Id: RunWorldGenerationGraphCommand,
-                Title: "Run world generation graph",
-                Description: "Executes a compiled App.NodeGraph world-generation graph through registered node providers.",
-                Category: "world"),
-            async (payloadJson, ct) =>
-            {
-                var request = WorldGenerationGraphExecutionPayload.Deserialize(payloadJson ?? string.Empty);
-
-                var providers = registry.GetAll<FantaSim.App.NodeGraph.INodeFunctionProvider>().ToArray();
-                var runner = new WorldGenerationGraphRunner(providers);
-                var run = await runner.RunAsync(request.Graph, request.SharedParams, request.ExecutionScopeKey, ct);
-                var result = WorldGenerationGraphRunner.ToCommandResult(run);
-                var generation = PublishWorldGenerationGraphRun(registry, run);
-                if (generation is not null)
-                    result["generation"] = JsonSerializer.SerializeToNode(generation);
-                return result.ToJsonString();
-            });
-
-        var health = orchestration.HealthAsync().GetAwaiter().GetResult();
-        GD.Print($"[Host] registered: Command (orchestration {(health.Ok ? "healthy" : "degraded")}, {health.Commands} commands)");
-    }
-
-    private static FantaSim.App.World.Dto.WorldGenerationResult? PublishWorldGenerationGraphRun(
-        IRegistry registry,
-        WorldGenerationGraphRunOutput run)
-    {
-        var world = registry.TryGet<FantaSim.App.World.IService>();
-        if (world is null)
-            return null;
-
-        var generation = world.RunGenerationAsync(WorldGenerationGraphRunner.ToGenerationRequest(run));
-        if (generation.Success)
-            registry.TryGet<FantaSim.App.Ecs.IService>()?.UpdateAll(0f);
-
-        return generation;
-    }
-
-    private void ComposeIii(AppComposition composition)
-    {
-        var loggerFactory = composition.Bootstrap.LoggerFactory;
-        var registry = composition.Bootstrap.Registry;
-
-        var bridge = new FantaSim.App.Iii.Seam.IiiBridge();
-        bridge.Name = "IiiBridge";
-        AddChild(bridge);
-        registry.Register<FantaSim.App.Iii.IIiiInvoker>(
-            bridge,
-            new ServiceRegistration { Tags = new[] { "iii", "invoker" }, Description = "iii bridge invoker (gdext)" });
-
-        var provider = new FantaSim.App.Iii.IiiFunctionProvider(bridge, loggerFactory);
-        registry.Register<FantaSim.App.NodeGraph.INodeFunctionProvider>(
-            provider,
-            new ServiceRegistration { Tags = new[] { "iii", "nodegraph-provider" }, Description = "iii node-function provider" });
-
-        var orchestration = new FantaSim.App.Iii.IiiOrchestrator(
-            new[] { (FantaSim.App.NodeGraph.INodeFunctionProvider)provider },
-            bridge,
-            loggerFactory);
-        registry.Register<FantaSim.App.Command.Orchestration.IIiiOrchestration>(
-            orchestration,
-            new ServiceRegistration { Tags = new[] { "iii", "orchestration" }, Description = "iii orchestration seam" });
-
-        var commandService = registry.Get<FantaSim.App.Command.IService>();
-        commandService.Register(
-            new FantaSim.App.Command.CommandDescriptor(
-                Id: FantaSim.App.Iii.IiiOrchestrator.WellKnownCommands.RunTextTo3d,
-                Title: "Run text to 3D", Description: "Executes the text to 3D iii pipeline graph.", Category: "pipeline"),
-            async (payload, ct) =>
-            {
-                var r = await orchestration.TriggerAsync(new FantaSim.App.Command.CommandRequest(
-                    Command: FantaSim.App.Iii.IiiOrchestrator.WellKnownCommands.RunTextTo3d, PayloadJson: payload), ct);
-                return JsonSerializer.Serialize(r);
-            });
-        commandService.Register(
-            new FantaSim.App.Command.CommandDescriptor(
-                Id: FantaSim.App.Iii.IiiOrchestrator.WellKnownCommands.Ping,
-                Title: "Ping iii", Description: "Round-trips test.echo through the iii bridge.", Category: "iii"),
-            async (payload, ct) =>
-            {
-                var r = await orchestration.TriggerAsync(new FantaSim.App.Command.CommandRequest(
-                    Command: FantaSim.App.Iii.IiiOrchestrator.WellKnownCommands.Ping, PayloadJson: payload), ct);
-                return JsonSerializer.Serialize(r);
-            });
-
-        GD.Print("[Host] registered: Iii (bridge, function provider, orchestration, 2 commands)");
-    }
-
-    // ComposeTimeline: the resident T4 TimelineFace + the T3 timeline Service orchestrator.
-    // The face is a Godot Control (Node-backed seam exception - it needs _Ready/_ExitTree for
-    // the AnimationPlayer lifecycle). The T3 Service is pure C# and registered into the kernel
-    // IRegistry so other plugins can resolve IService. The face resolves ITimelineController
-    // from the static set here (the controller was registered by ComposeWorldView above).
-    // Ordered AFTER ComposeWorldView (ITimelineController must exist) and BEFORE the deferred
-    // EnterInitialScenes (the timeline bundle's scene instantiates the face, which reads
-    // ResidentController).
-    private void ComposeTimeline(AppComposition composition)
-    {
-        var registry = composition.Bootstrap.Registry;
-        var controller = registry.TryGet<FantaSim.App.World.Composition.ITimelineController>();
-        if (controller is null)
-        {
-            GD.PushWarning("[Host] Timeline: no ITimelineController registered; timeline service will be inert.");
-            return;
-        }
-
-        // Build the deferred face proxy and set the resident statics the T4 face reads in _Ready.
-        var deferredFace = new FantaSim.App.Timeline.Seam.DeferredTimelineFace();
-        FantaSim.App.Timeline.Seam.TimelineFace.ResidentController = controller;
-        FantaSim.App.Timeline.Seam.TimelineFace.ResidentProxy = deferredFace;
-
-        // Build the T3 service with the controller's schedules. The T3 Service drives the face
-        // via ITimelineFace; the face also calls back into the controller (PushTick) during
-        // animation playback.
-        var timelineService = new FantaSim.App.Timeline.Services.Service(
-            deferredFace,
-            controller.GeosphereSchedule,
-            controller.AtmosphereSchedule,
-            controller.MaxTick,
-            composition.Bootstrap.LoggerFactory);
-        registry.Register<FantaSim.App.Timeline.IService>(
-            timelineService,
-            new ServiceRegistration { Tags = new[] { "timeline" }, Description = "Timeline playback service" });
-
-        GD.Print("[Host] registered: Timeline (IService + resident TimelineFace)");
-    }
-
-    private void ComposeActivity(AppComposition composition)
-    {
-        var activity = new FantaSim.App.Activity.Services.Service(
-            composition.Bootstrap.Registry.Get<CrosscutFoundation.Messaging.IMessageBus>(),
-            composition.Bootstrap.LoggerFactory);
-        composition.Bootstrap.Registry.Register<FantaSim.App.Activity.IService>(
-            activity,
-            new ServiceRegistration { Tags = new[] { "activity" }, Description = "Activity ledger service" });
-        GD.Print("[Host] registered: Activity");
-    }
-
-    private void ComposeUi(AppComposition composition)
-    {
-        var uiRoot = new Control { Name = "UiRoot" };
-        uiRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        GetTree().Root.CallDeferred("add_child", uiRoot);
-
-        var viewHost = new FantaSim.App.Ui.Seam.ViewHost(
-            uiRoot,
-            composition.Bootstrap.Registry,
-            composition.Bootstrap.Registry.Get<FantaSim.App.Resource.IService>(),
-            composition.Bootstrap.LoggerFactory);
-
-        var orchestration = composition.Bootstrap.Registry.Get<FantaSim.App.Command.Orchestration.IWorldOrchestration>();
-        var runtimeSource = new RuntimeStatusViewSource(
-            orchestration,
-            composition.Bootstrap.LoggerFactory.CreateLogger<RuntimeStatusViewSource>());
-        composition.Bootstrap.Registry.Register<FantaSim.App.Ui.IViewSource>(
-            runtimeSource,
-            new ServiceRegistration { Tags = new[] { "ui", "runtime-status" }, Description = "Runtime status view source" });
-
-        // Register IViewHost so bundle plugins (e.g. TimelinePlugin) can resolve it and call
-        // Mount() directly without going through IService.ShowAsync — which would re-enter the
-        // BundleHost gate and deadlock when called from within a plugin's InitializeAsync.
-        composition.Bootstrap.Registry.Register<FantaSim.App.Ui.Providers.IViewHost>(
-            viewHost,
-            new ServiceRegistration { Tags = new[] { "ui" }, Description = "UI view host" });
-
-        var ui = new FantaSim.App.Ui.Services.Service(
-            viewHost,
-            composition.Bootstrap.Registry.Get<FantaSim.App.Resource.IService>(),
-            composition.Bootstrap.Registry.Get<CrosscutFoundation.Messaging.IMessageBus>(),
-            composition.Bootstrap.LoggerFactory);
-        composition.Bootstrap.Registry.Register<FantaSim.App.Ui.IService>(
-            ui,
-            new ServiceRegistration { Tags = new[] { "ui" }, Description = "UI view service" });
-        GD.Print("[Host] registered: Ui (IViewHost + IService)");
     }
 
     public override void _Notification(int what)

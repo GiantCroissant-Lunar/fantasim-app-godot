@@ -13,5 +13,8 @@
   -->
   <ItemGroup>
     <ProjectReference Include="..\App.Iii\App.Iii.csproj" />
+    <ProjectReference Include="..\App.Common\App.Common.csproj" />
+    <ProjectReference Include="..\App.Command\App.Command.csproj" />
+    <ProjectReference Include="..\App.NodeGraph\App.NodeGraph.csproj" />
   </ItemGroup>
 </Project>

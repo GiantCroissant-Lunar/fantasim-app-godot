@@ -3,7 +3,6 @@ using System.Linq;
 using FantaSim.App.Common;
 using FantaSim.App.GpuCompute;
 using Godot;
-using ServiceArchi.Contracts;
 
 namespace FantaSim.App.Common.Entry;
 
@@ -19,39 +18,6 @@ public partial class Host : Node
 
     private FantaSim.App.GpuCompute.Services.Service? _gpuComputeService;
     private FantaSim.App.GpuShader.Services.Service? _gpuShaderService;
-
-    // Compose the reusable GPU compute service. The T3 service is engine-agnostic; the resident Godot
-    // seam owns the local RenderingDevice and all shader/buffer RIDs. Shader assets may hot-reload
-    // through PCK/resource replacement, but this seam stays resident. (Mirrors ComposeWorld/ComposeIii.)
-    private void ComposeGpu(AppComposition composition)
-    {
-        var registry = composition.Bootstrap.Registry;
-        var loggerFactory = composition.Bootstrap.LoggerFactory;
-
-        var backend = new FantaSim.App.GpuCompute.Seam.GodotComputeBackend(loggerFactory);
-        _gpuComputeService = new FantaSim.App.GpuCompute.Services.Service(backend, loggerFactory);
-        registry.Register<FantaSim.App.GpuCompute.IService>(
-            _gpuComputeService,
-            new ServiceRegistration { Tags = new[] { "gpu-compute", "gpu", "compute" }, Description = "GPU compute shader service" });
-        GD.Print("[Host] registered: Gpu (compute service, resident RenderingDevice seam)");
-    }
-
-    // Compose the reusable GPU shader-graph authoring service (sub-project A.2). The T3 service is
-    // engine-agnostic: it edits/validates shader-graph DTOs and never touches Godot Shader types. The
-    // resident Godot seam loads Shader resources (incl. bundle PCK content) and reports DTO descriptions.
-    // It coexists as a registry service alongside ComposeGpu; it does NOT plug into a node-graph executor.
-    private void ComposeGpuShader(AppComposition composition)
-    {
-        var registry = composition.Bootstrap.Registry;
-        var loggerFactory = composition.Bootstrap.LoggerFactory;
-
-        var backend = new FantaSim.App.GpuShader.Seam.ShaderGraphBackend(loggerFactory);
-        _gpuShaderService = new FantaSim.App.GpuShader.Services.Service(backend, loggerFactory);
-        registry.Register<FantaSim.App.GpuShader.IService>(
-            _gpuShaderService,
-            new ServiceRegistration { Tags = new[] { "gpu-shader", "gpu", "shader" }, Description = "GPU shader-graph authoring service" });
-        GD.Print("[Host] registered: GpuShader (authoring service, resident Godot Shader seam)");
-    }
 
     // GPU smoke (inert unless FANTASIM_GPU_SMOKE=1): dispatch compute_double.glsl over a small uint
     // storage buffer [1,2,3,4] through the composed App.GpuCompute service, read back, and assert each

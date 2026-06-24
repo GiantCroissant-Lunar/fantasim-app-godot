@@ -13,6 +13,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\contracts\App.Resource\App.Resource.csproj" />
     <ProjectReference Include="..\App.Resource\App.Resource.csproj" />
+    <ProjectReference Include="..\App.Common\App.Common.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" Version="0.1.5" />

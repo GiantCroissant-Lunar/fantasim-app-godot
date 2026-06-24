@@ -26,6 +26,8 @@
     does not reference App.Agent, App.Stage, or any Hermes/Python bridge.
   -->
   <ItemGroup>
+    <ProjectReference Include="..\App.Common\App.Common.csproj" />
+    <ProjectReference Include="..\App.World\App.World.csproj" />
     <ProjectReference Include="..\..\contracts\App.Command\App.Command.csproj" />
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
     <ProjectReference Include="..\..\contracts\App.Ecs\App.Ecs.csproj" />

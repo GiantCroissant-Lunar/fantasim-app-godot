@@ -29,6 +29,7 @@
     <ProjectReference Include="..\..\generators\Cross.SourceGenerators\Cross.SourceGenerators.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\contracts\Cross.Abstractions\Cross.Abstractions.csproj" />
+    <ProjectReference Include="..\App.Common\App.Common.csproj" />
   </ItemGroup>
 
   <ItemGroup>
