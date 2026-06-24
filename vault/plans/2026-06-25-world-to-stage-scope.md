@@ -108,6 +108,42 @@ stage; **nothing resident strong-references World impl.** Assemblies stay reside
 
 ---
 
+## Phase 2 — dependency-closure audit RESOLVED (2026-06-25)
+
+Full audit: [`world-dep-closure-audit.glm.md`](../../.agent/run/dispatch/world-dep-closure-audit.glm.md)
+(GLM, validated against the csprojs). **51 assemblies in World's closure: 19 SHARED (forced by resident
+use), 32 COLLECTIBLE.** Classification is clean; the policy edit is small. The gating work is two
+validated reference-conflict blockers.
+
+**Policy edit — `App.Common/Bootstrap.cs` `SharedAssemblyPolicy` (line 110):**
+- **Remove** prefix `"FantaSim.World."` (line 130) — too broad; forces World-only engine resident.
+- **Add** prefixes `"UnifyEcs."`, `"TimeDete."` (resident App.Ecs / transitive via Timeline).
+- **Add** `exactMatches` (currently `Array.Empty`): `FantaSim.World.Fields.Contracts`,
+  `FantaSim.World.Fields.Core` (App.Ecs), `FantaSim.World.Shared.Contracts` (App.Timeline),
+  `UnifyMaths` (base; keeps `.Numerics` collectible), `UnifyStorage.Abstractions`,
+  `UnifyStorage.Runtime.LiteDb` (App.Activity), `Arch`.
+
+**`collectible-bundles.json` `world` entry:** `pluginAssembly: FantaSim.App.World.dll`;
+`assemblyNames: [FantaSim.App.World, FantaSim.App.World.FieldView, FantaSim.App.World.Composition]`
+(only these 3 need explicit exclusion — the other 29 match no shared prefix after the removal and
+auto-load into the World ALC).
+
+**Blockers (the real work) — all validated:**
+- **E.1** `App.World.Composition.dll` lacks a `FantaSim.` prefix (no `<AssemblyName>`). Fix:
+  `App.World.Composition.csproj` add `<AssemblyName>FantaSim.App.World.Composition</AssemblyName>`.
+- **E.3** `App.Command.csproj:30` project-refs World **impl**; `LocalOrchestrator` only uses the
+  *contract* (verified). Fix: drop line 30, keep the contract ref (line 32).
+- **E.2 (largest)** `App.World.Seam` is resident, refs World impl, and `Host.cs:53` sets
+  `PendingSceneTree` → resident→collectible pin. For the **data bundle**: remove `App.World.Seam` from
+  `complete-app.csproj:23`, delete `Host.cs:53`, and move `WorldPlugin` from `App.World.Seam` →
+  `App.World` (pure C#, data + command only, no globe; globe stays dormant for its own follow-up).
+- **E.4** Akka truth-writer actor (SurrealDb only; default `inmemory` = none) must `GracefulStop` on
+  unload. **E.6** build the bundle in the same `UseProjectReferences` mode the host runs in.
+
+**Remaining to finish the data bundle:** (1) the policy + json + E.1/E.3 edits, (2) the
+`WorldPlugin`→`App.World` restructure (E.2), (3) packaging (`Taskfile bundle:world` + manifest +
+content-app export preset, mirroring `activity`), (4) windowed `old ALC collected` verify.
+
 ## Reference audit (union of both models)
 
 | Resident holder | File:line | Ref | Severance |
