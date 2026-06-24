@@ -29,6 +29,11 @@ public sealed class Bootstrap
         _log.LogInformation(
             "Assist tier active — sharing the app kernel registry #{Kernel}.",
             RuntimeHelpers.GetHashCode(_kernel));
+
+        var smoke = new GpuSmokeChecks(_kernel, _log);
+        _ = smoke.RunComputeSmokeAsync(cancellationToken);
+        _ = smoke.RunShaderSmokeAsync(cancellationToken);
+
         return Task.CompletedTask;
     }
 }

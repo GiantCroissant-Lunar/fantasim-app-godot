@@ -72,8 +72,8 @@ public partial class Host : Node
         var (cellElevation, renderOptions) = CellElevationComposition.ComposeCellElevation(ctx);
         CommandComposition.ComposeCommand(ctx);
         IiiComposition.ComposeIii(ctx, tree, this);
-        _gpuComputeService = GpuComposition.ComposeGpu(ctx);
-        _gpuShaderService = GpuShaderComposition.ComposeGpuShader(ctx);
+        GpuComposition.ComposeGpu(ctx);
+        GpuShaderComposition.ComposeGpuShader(ctx);
         WorldViewComposition.ComposeWorldView(ctx, tree, cellElevation, renderOptions);
         _cellElevation = cellElevation;
         TimelineComposition.ComposeTimeline(ctx);
@@ -93,8 +93,6 @@ public partial class Host : Node
         Callable.From(RunWorldGraphTest).CallDeferred();
         Callable.From(ShowIiiGraph).CallDeferred();
         Callable.From(ShowWorldGraph).CallDeferred();
-        Callable.From(RunGpuSmoke).CallDeferred();
-        Callable.From(RunGpuShaderSmoke).CallDeferred();
     }
 
     // Mount the iii text->3D graph as a BoomHud nodeGraph (env-guarded demo). Uses the GENERAL
