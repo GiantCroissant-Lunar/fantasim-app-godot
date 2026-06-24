@@ -20,6 +20,13 @@
     <PackageReference Include="GiantCroissant.CrosscutFoundation.Logging.Console" />
     <PackageReference Include="GiantCroissant.CrosscutFoundation.Logging.Console.ServiceArchi" />
     <PackageReference Include="GiantCroissant.CrosscutFoundation.Logging.ServiceArchi" />
+    <PackageReference Include="GiantCroissant.CrosscutFoundation.Config.Contracts" />
+    <PackageReference Include="GiantCroissant.CrosscutFoundation.Config.Core" />
+    <PackageReference Include="GiantCroissant.CrosscutFoundation.Config.Json" />
+    <PackageReference Include="GiantCroissant.CrosscutFoundation.Config.Json.ServiceArchi" />
+    <PackageReference Include="GiantCroissant.CrosscutFoundation.Config.Env" />
+    <PackageReference Include="GiantCroissant.CrosscutFoundation.Config.Env.ServiceArchi" />
+    <PackageReference Include="GiantCroissant.CrosscutFoundation.Config.ServiceArchi" />
     <PackageReference Include="GiantCroissant.RegistryArchi.Core" />
     <PackageReference Include="GiantCroissant.RegistryArchi.Contracts" />
     <PackageReference Include="Akka" />

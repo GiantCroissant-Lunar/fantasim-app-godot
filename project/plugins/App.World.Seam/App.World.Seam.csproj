@@ -22,4 +22,7 @@
     <ProjectReference Include="..\App.NodeGraph\App.NodeGraph.csproj" />
     <ProjectReference Include="..\App.Command\App.Command.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="GiantCroissant.CrosscutFoundation.Config.Contracts" VersionOverride="0.2.2" />
+  </ItemGroup>
 </Project>

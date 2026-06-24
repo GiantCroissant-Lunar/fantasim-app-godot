@@ -70,6 +70,7 @@ public static class WorldViewComposition
 
         var view = new GlobeView(
             ctx.LoggerFactory,
+            ctx.Registry.Get<CrosscutFoundation.Config.IService>(),
             snapshot,
             plateSurfaces,
             tick => CanonicalTimeLabel.ForTick(tick, snapshot.TicksPerAnchor),

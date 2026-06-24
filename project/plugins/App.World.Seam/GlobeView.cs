@@ -143,6 +143,7 @@ void light() {
     private readonly Func<long, double[]>? _elevationsAt;
     private readonly Func<long, double?>? _magmaSurfaceTemperatureKAt;
 
+    private readonly CrosscutFoundation.Config.IService _config;
     private readonly ILogger _log;
 
     private ShaderMaterial? _material;
@@ -169,15 +170,16 @@ void light() {
     private Node3D? _capRoot;
     private readonly List<MeshInstance3D> _capInstances = new();
 
-    // Verification utility (inert unless FANTASIM_GLOBE_CAPTURE=<png path>): after a few frames,
+    // Verification utility (inert unless globe:capturePath set): after a few frames,
     // save the rendered viewport and quit. Not part of normal runtime.
     private int _frames;
-    private readonly string? _capturePath = System.Environment.GetEnvironmentVariable("FANTASIM_GLOBE_CAPTURE");
+    private readonly string? _capturePath;
 
     private long _maxTick;
 
     public GlobeView(
         ILoggerFactory loggerFactory,
+        CrosscutFoundation.Config.IService configService,
         WorldGlobeSnapshot snapshot,
         GlobePlateSurfaces surfaces,
         Func<long, string>? formatTick = null,
@@ -186,6 +188,7 @@ void light() {
         Func<long, double?>? magmaSurfaceTemperatureKAt = null)
     {
         _log = loggerFactory?.CreateLogger("World.Globe") ?? throw new ArgumentNullException(nameof(loggerFactory));
+        _config = configService ?? throw new ArgumentNullException(nameof(configService));
         _snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
         _surfaces = surfaces ?? throw new ArgumentNullException(nameof(surfaces));
         _formatTick = formatTick ?? (t => t.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -193,6 +196,7 @@ void light() {
         _elevationsAt = elevationsAt;
         _magmaSurfaceTemperatureKAt = magmaSurfaceTemperatureKAt;
         _maxTick = 100L * snapshot.TicksPerAnchor; // conservative default; Host calls SetMaxTick with the real range
+        _capturePath = _config.Get("globe:capturePath");
         Name = "GlobeView";
     }
 
@@ -231,9 +235,9 @@ void light() {
         AddChild(camera);
         camera.LookAt(Vector3.Zero, Vector3.Up); // after AddChild — LookAt needs the node in-tree
 
-        // Colour view: default biome (0); FANTASIM_GLOBE_COLORMODE=1 selects the tectonic feature view.
-        SetColorMode((int)ParseEnvLong("FANTASIM_GLOBE_COLORMODE", 0));
-        long initialTick = ParseEnvLong("FANTASIM_GLOBE_TICK", 0);
+        // Colour view: default biome (0); globe:colorMode=1 selects the tectonic feature view.
+        SetColorMode(_config.GetValue("globe:colorMode", 0));
+        long initialTick = _config.GetValue("globe:tick", 0L);
         SetTick(initialTick);
         _log.LogInformation(
             "globe built: {CellCount} cells, {PlateCount} plates, {CapCount} watertight caps, t0={InitialTick}.",
@@ -582,13 +586,6 @@ void light() {
         return t <= 0.05f ? 0.0f : 0.35f + (1.65f * t);
     }
 
-
-    private static long ParseEnvLong(string name, long fallback)
-    {
-        var raw = System.Environment.GetEnvironmentVariable(name);
-        return long.TryParse(raw, System.Globalization.NumberStyles.Integer,
-            System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : fallback;
-    }
 
     private static ShaderMaterial BuildMaterial(WorldGlobeSnapshot s)
     {

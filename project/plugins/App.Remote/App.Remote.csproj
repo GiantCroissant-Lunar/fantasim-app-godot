@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <PackageReference Include="GiantCroissant.ServiceArchi.Contracts" />
+    <PackageReference Include="GiantCroissant.CrosscutFoundation.Config.Contracts" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 

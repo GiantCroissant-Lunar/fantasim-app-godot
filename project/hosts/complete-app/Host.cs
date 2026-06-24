@@ -33,6 +33,7 @@ public partial class Host : Node
 
     private AppComposition? _composition;
     private ILogger _log = null!;
+    private CrosscutFoundation.Config.IService? _config;
     private CollectibleBundles? _collectibleBundles;
     private FantaSim.App.Ecs.IService? _ecs;
     private bool _ecsWorldReady;
@@ -53,6 +54,7 @@ public partial class Host : Node
 
         _composition = AppComposition.Activate();
         _log = _composition.Bootstrap.LoggerFactory.CreateLogger("Host");
+        _config = _composition.Bootstrap.Registry.Get<CrosscutFoundation.Config.IService>();
 
         _collectibleBundles = LoadCollectibleBundles();
         _composition.Bootstrap.BuildPluginHost(_collectibleBundles);
@@ -100,9 +102,9 @@ public partial class Host : Node
     // other demos. No per-domain view-source duplication.
     private void ShowIiiGraph()
     {
-        if (System.Environment.GetEnvironmentVariable("FANTASIM_SHOW_GRAPH") != "1") return;
+        if (_config?.GetValue("graph:show", false) != true) return;
         var logger = _composition!.Bootstrap.LoggerFactory.CreateLogger("IiiGraph");
-        var prompt = System.Environment.GetEnvironmentVariable("FANTASIM_GRAPH_PROMPT") ?? "a small red toy cube";
+        var prompt = _config.Get("graph:prompt") ?? "a small red toy cube";
 
         var graph = FantaSim.App.Iii.Recipes.TextTo3dGraph.Build(prompt);
         var graphSource = new FantaSim.App.NodeGraph.ReadOnlyGraphSource("iii-text-to-3d", graph);
@@ -133,7 +135,7 @@ public partial class Host : Node
     // the live edited graph and routes execution through App.Command.
     private void ShowWorldGraph()
     {
-        if (System.Environment.GetEnvironmentVariable("FANTASIM_SHOW_WORLD_GRAPH") != "1") return;
+        if (_config?.GetValue("world:showGraph", false) != true) return;
         var logger = _composition!.Bootstrap.LoggerFactory.CreateLogger("WorldGraph");
 
         WorldGenerationGraphFamilySource graphSource;
@@ -202,12 +204,12 @@ public partial class Host : Node
     private WorldGenerationGraphFamilySource CreateWorldGenerationGraphSource()
     {
         var family = WorldGenerationGraphDefaults.BuildFamily();
-        var scheduleKind = ReadWorldGraphEnv("FANTASIM_WORLD_GRAPH_SCHEDULE", WorldRegimeScheduleKinds.Sphere);
+        var scheduleKind = ReadWorldGraphEnv("world:graphSchedule", WorldRegimeScheduleKinds.Sphere);
         var defaultRegime = string.Equals(scheduleKind, WorldRegimeScheduleKinds.BodyFormation, StringComparison.Ordinal)
             ? "planetesimal-swarm"
             : "mobile-plate";
-        var regimeId = ReadWorldGraphEnv("FANTASIM_WORLD_GRAPH_REGIME", defaultRegime);
-        var sphereId = System.Environment.GetEnvironmentVariable("FANTASIM_WORLD_GRAPH_SPHERE");
+        var regimeId = ReadWorldGraphEnv("world:graphRegime", defaultRegime);
+        var sphereId = _config?.Get("world:graphSphere");
         if (string.IsNullOrWhiteSpace(sphereId)
             && string.Equals(scheduleKind, WorldRegimeScheduleKinds.Sphere, StringComparison.Ordinal))
         {
@@ -223,30 +225,33 @@ public partial class Host : Node
             string.IsNullOrWhiteSpace(sphereId) ? null : sphereId);
     }
 
-    private static string ReadWorldGraphEnv(string key, string fallback)
+    private string ReadWorldGraphEnv(string key, string fallback)
     {
-        var value = System.Environment.GetEnvironmentVariable(key);
+        var value = _config?.Get(key);
         return string.IsNullOrWhiteSpace(value) ? fallback : value;
     }
 
     private long ReadWorldGraphTick()
     {
-        var value = System.Environment.GetEnvironmentVariable("FANTASIM_WORLD_GRAPH_TICK");
+        var value = _config?.Get("world:graphTick");
         if (string.IsNullOrWhiteSpace(value))
             return 0;
 
         if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tick))
             return tick;
 
-        _log.LogWarning("invalid FANTASIM_WORLD_GRAPH_TICK '{Value}', using 0.", value);
+        _log.LogWarning("invalid world:graphTick '{Value}', using 0.", value);
         return 0;
     }
 
-    private static bool ReadWorldGraphFollowTimeline()
+    private bool ReadWorldGraphFollowTimeline()
     {
-        var value = System.Environment.GetEnvironmentVariable("FANTASIM_WORLD_GRAPH_FOLLOW_TIMELINE");
+        var value = _config?.Get("world:followTimeline");
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
         return !string.Equals(value, "0", StringComparison.Ordinal)
-               && !string.Equals(value, "false", StringComparison.OrdinalIgnoreCase);
+               && !string.Equals(value, "false", StringComparison.OrdinalIgnoreCase)
+               && !string.Equals(value, "False", StringComparison.OrdinalIgnoreCase);
     }
 
     private static JsonObject WorldGraphSharedParams(long tick)
@@ -261,8 +266,8 @@ public partial class Host : Node
     // provider. Quits when done so the windowed verification run terminates.
     private async void RunGraphTest()
     {
-        if (System.Environment.GetEnvironmentVariable("FANTASIM_GRAPH_TEST") != "1") return;
-        var prompt = System.Environment.GetEnvironmentVariable("FANTASIM_GRAPH_PROMPT") ?? "a small red toy cube";
+        if (_config?.GetValue("graph:test", false) != true) return;
+        var prompt = _config?.Get("graph:prompt") ?? "a small red toy cube";
         _log.LogInformation("executing text->3D graph via iii axis (prompt=\"{Prompt}\")...", prompt);
 
         var client = _composition!.Bootstrap.Registry.Get<FantaSim.App.Command.IClient>();
@@ -290,7 +295,7 @@ public partial class Host : Node
     // quits when done.
     private async void RunWorldGraphTest()
     {
-        if (System.Environment.GetEnvironmentVariable("FANTASIM_WORLD_GRAPH_TEST") != "1") return;
+        if (_config?.GetValue("world:graphTest", false) != true) return;
         _log.LogInformation("executing world-generation graph via world axis...");
 
         var client = _composition!.Bootstrap.Registry.Get<FantaSim.App.Command.IClient>();
@@ -331,7 +336,7 @@ public partial class Host : Node
     // inline bridge instantiation.
     private async void PingIiiBridge()
     {
-        if (System.Environment.GetEnvironmentVariable("FANTASIM_III_PING") != "1") return;
+        if (_config?.GetValue("iii:ping", false) != true) return;
         if (!ClassDB.ClassExists("IiiClient"))
         {
             _log.LogError("IiiClient not registered");

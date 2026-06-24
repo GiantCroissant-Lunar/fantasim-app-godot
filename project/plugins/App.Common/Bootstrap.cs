@@ -2,6 +2,7 @@ using Akka;
 using Akka.Actor;
 using System.Runtime.CompilerServices;
 using System.Runtime.Loader;
+using CrosscutFoundation.Config;
 using CrosscutFoundation.Logging;
 using CrosscutFoundation.Messaging;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,6 +43,22 @@ public sealed class Bootstrap
         _registry.Register<ILoggerFactory>(
             LoggerFactory,
             new ServiceRegistration { Tags = new[] { "logging" }, Description = "ILoggerFactory (crosscut console LoggingService)" });
+
+        // Layered app config: JSON base (priority 50) + environment variable override (priority 90),
+        // surfaced as CrosscutFoundation.Config.IService and re-registered under that interface with
+        // the "config" tag so the rest of the app resolves it from the registry.
+        _registry.RegisterJsonConfig(
+            Path.Combine(AppContext.BaseDirectory, "config", "app.json"),
+            optional: true,
+            reloadOnChange: true,
+            priority: 50);
+        _registry.RegisterEnvConfig(priority: 90);
+        _registry.RegisterConfigService();
+        var configService = (CrosscutFoundation.Config.IService)_registry.Get<CrosscutFoundation.Config.IService>();
+        _registry.Register<CrosscutFoundation.Config.IService>(
+            configService,
+            new ServiceRegistration { Tags = new[] { "config" }, Description = "Crosscut config (json + env)" });
+
         _registry.RegisterMessagePipeMessageBus();
 
         _actorSystem = ActorSystem.Create("fantasim", @"

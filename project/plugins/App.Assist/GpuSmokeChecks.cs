@@ -37,7 +37,7 @@ internal sealed class GpuSmokeChecks
     // RenderingDevice path works in the windowed app. Mirrors the former FANTASIM_GLOBE_CAPTURE pattern.
     public async Task RunComputeSmokeAsync(CancellationToken cancellationToken = default)
     {
-        if (System.Environment.GetEnvironmentVariable("FANTASIM_GPU_SMOKE") != "1") return;
+        if (_config?.GetValue("gpu:smoke", false) != true) return;
 
         try
         {
@@ -108,7 +108,7 @@ internal sealed class GpuSmokeChecks
     // "spatial". Prints a clear GPUSHADER-SMOKE PASS/FAIL line, then exits. Mirrors RunComputeSmokeAsync.
     public async Task RunShaderSmokeAsync(CancellationToken cancellationToken = default)
     {
-        if (System.Environment.GetEnvironmentVariable("FANTASIM_GPUSHADER_SMOKE") != "1") return;
+        if (_config?.GetValue("gpu:shaderSmoke", false) != true) return;
 
         try
         {
