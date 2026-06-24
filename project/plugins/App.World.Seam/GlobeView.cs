@@ -5,6 +5,7 @@ using FantaSim.App.World.Globe;
 using FantaSim.Cartography.Globe;
 using FantaSim.Cartography.Shared;
 using Godot;
+using Microsoft.Extensions.Logging;
 
 namespace FantaSim.App.World.Seam;
 
@@ -142,6 +143,8 @@ void light() {
     private readonly Func<long, double[]>? _elevationsAt;
     private readonly Func<long, double?>? _magmaSurfaceTemperatureKAt;
 
+    private readonly ILogger _log;
+
     private ShaderMaterial? _material;
     private StandardMaterial3D? _mantleMaterial;
     private Image? _typeImage;
@@ -174,6 +177,7 @@ void light() {
     private long _maxTick;
 
     public GlobeView(
+        ILoggerFactory loggerFactory,
         WorldGlobeSnapshot snapshot,
         GlobePlateSurfaces surfaces,
         Func<long, string>? formatTick = null,
@@ -181,6 +185,7 @@ void light() {
         Func<long, double[]>? elevationsAt = null,
         Func<long, double?>? magmaSurfaceTemperatureKAt = null)
     {
+        _log = loggerFactory?.CreateLogger("World.Globe") ?? throw new ArgumentNullException(nameof(loggerFactory));
         _snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
         _surfaces = surfaces ?? throw new ArgumentNullException(nameof(surfaces));
         _formatTick = formatTick ?? (t => t.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -230,8 +235,12 @@ void light() {
         SetColorMode((int)ParseEnvLong("FANTASIM_GLOBE_COLORMODE", 0));
         long initialTick = ParseEnvLong("FANTASIM_GLOBE_TICK", 0);
         SetTick(initialTick);
-        GD.Print($"[GlobeView] globe built: {_snapshot.CellCount} cells, {_snapshot.PlateCount} plates, " +
-                 $"{_capInstances.Count} watertight caps, t0={_formatTick(initialTick)}.");
+        _log.LogInformation(
+            "globe built: {CellCount} cells, {PlateCount} plates, {CapCount} watertight caps, t0={InitialTick}.",
+            _snapshot.CellCount,
+            _snapshot.PlateCount,
+            _capInstances.Count,
+            _formatTick(initialTick));
     }
 
     public override void _Process(double delta)
@@ -251,16 +260,16 @@ void light() {
             if (image is not null)
             {
                 image.SavePng(_capturePath);
-                GD.Print($"[GlobeView] verification capture -> {_capturePath}");
+                _log.LogInformation("verification capture -> {CapturePath}", _capturePath);
             }
             else
             {
-                GD.Print("[GlobeView] verification capture skipped (no image; headless?)");
+                _log.LogInformation("verification capture skipped (no image; headless?)");
             }
         }
         catch (Exception ex)
         {
-            GD.PushWarning($"[GlobeView] capture failed: {ex.Message}");
+            _log.LogWarning("capture failed: {Message}", ex.Message);
         }
         GetTree().Quit();
     }
@@ -373,7 +382,7 @@ void light() {
             }
             catch (Exception ex)
             {
-                GD.PushWarning($"[GlobeView] elevation fetch failed: {ex.Message}");
+                _log.LogWarning("elevation fetch failed: {Message}", ex.Message);
                 elevByCell = Array.Empty<double>();
             }
         }
@@ -391,8 +400,13 @@ void light() {
         {
             double emin = double.MaxValue, emax = double.MinValue;
             foreach (var e in elevByCell) { if (e < emin) emin = e; if (e > emax) emax = e; }
-            GD.Print($"[GlobeView] relief extent @tick {tick}: elevation [{emin:F1}, {emax:F1}] m -> radial displace " +
-                     $"[{emin * DisplacementExaggeration:F4}, {emax * DisplacementExaggeration:F4}] (×2 scale -> world ×2).");
+            _log.LogInformation(
+                "relief extent @tick {Tick}: elevation [{Emin:F1}, {Emax:F1}] m -> radial displace [{DispMin:F4}, {DispMax:F4}] (x2 scale -> world x2).",
+                tick,
+                emin,
+                emax,
+                emin * DisplacementExaggeration,
+                emax * DisplacementExaggeration);
         }
 
         EnsureCapInstances(caps.Count);
@@ -535,7 +549,7 @@ void light() {
             _mantleMaterial.EmissionEnabled = false;
             _mantleMaterial.Emission = Colors.Black;
             _mantleMaterial.EmissionEnergyMultiplier = 1.0f;
-            GD.PushWarning($"[GlobeView] magma thermal field fetch failed: {ex.Message}");
+            _log.LogWarning("magma thermal field fetch failed: {Message}", ex.Message);
         }
     }
 

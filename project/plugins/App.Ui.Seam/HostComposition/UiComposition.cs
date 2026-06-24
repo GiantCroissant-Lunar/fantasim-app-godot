@@ -9,6 +9,7 @@ public static class UiComposition
 {
     public static void ComposeUi(HostCompositionContext ctx, Godot.SceneTree tree)
     {
+        var log = ctx.LoggerFactory.CreateLogger("HostComposition.Ui");
         var uiRoot = new Godot.Control { Name = "UiRoot" };
         uiRoot.SetAnchorsPreset(Godot.Control.LayoutPreset.FullRect);
         tree.Root.CallDeferred("add_child", uiRoot);
@@ -42,6 +43,6 @@ public static class UiComposition
         ctx.Registry.Register<FantaSim.App.Ui.IService>(
             ui,
             new ServiceRegistration { Tags = new[] { "ui" }, Description = "UI view service" });
-        Godot.GD.Print("[Host] registered: Ui (IViewHost + IService)");
+        log.LogInformation("registered: Ui (IViewHost + IService)");
     }
 }

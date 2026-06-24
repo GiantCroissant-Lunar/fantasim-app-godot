@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FantaSim.App.Common;
+using Microsoft.Extensions.Logging;
 using ServiceArchi.Contracts;
 
 namespace FantaSim.App.Iii.Seam;
@@ -10,8 +11,9 @@ public static class IiiComposition
     {
         var loggerFactory = ctx.LoggerFactory;
         var registry = ctx.Registry;
+        var log = loggerFactory.CreateLogger("HostComposition.Iii");
 
-        var bridge = new FantaSim.App.Iii.Seam.IiiBridge();
+        var bridge = new FantaSim.App.Iii.Seam.IiiBridge(loggerFactory);
         bridge.Name = "IiiBridge";
         hostNode.AddChild(bridge);
         registry.Register<FantaSim.App.Iii.IIiiInvoker>(
@@ -53,6 +55,6 @@ public static class IiiComposition
                 return JsonSerializer.Serialize(r);
             });
 
-        Godot.GD.Print("[Host] registered: Iii (bridge, function provider, orchestration, 2 commands)");
+        log.LogInformation("registered: Iii (bridge, function provider, orchestration, 2 commands)");
     }
 }

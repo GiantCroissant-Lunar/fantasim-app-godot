@@ -32,6 +32,7 @@ public partial class Host : Node
     private const string RunWorldGenerationGraphCommand = "world.run_generation_graph";
 
     private AppComposition? _composition;
+    private ILogger _log = null!;
     private CollectibleBundles? _collectibleBundles;
     private FantaSim.App.Ecs.IService? _ecs;
     private bool _ecsWorldReady;
@@ -51,6 +52,7 @@ public partial class Host : Node
         GD.Print("[Host] composition root starting...");
 
         _composition = AppComposition.Activate();
+        _log = _composition.Bootstrap.LoggerFactory.CreateLogger("Host");
 
         _collectibleBundles = LoadCollectibleBundles();
         _composition.Bootstrap.BuildPluginHost(_collectibleBundles);
@@ -79,8 +81,8 @@ public partial class Host : Node
         UiComposition.ComposeUi(ctx, tree);
         RemoteIngressComposition.ComposeRemoteIngress(ctx, this);
 
-        GD.Print("[Host] composition activated.");
-        GD.Print($"[Host] iii bridge: IiiClient registered = {ClassDB.ClassExists("IiiClient")}");
+        _log.LogInformation("composition activated.");
+        _log.LogInformation("iii bridge: IiiClient registered = {IiiClientRegistered}", ClassDB.ClassExists("IiiClient"));
 
         // Enter the root scene tier and KEEP it loaded (the correct flow — re-entry/teardown is a
         // test concern, not the running app). Deferred so _Ready stays non-blocking and the bundle's
@@ -125,7 +127,7 @@ public partial class Host : Node
 
         var renderer = new FantaSim.App.Ui.Seam.ViewRenderer(uiRoot, () => view, _ => null, logger);
         renderer.Bind();
-        GD.Print($"[graph] iii-graph view mounted: {view.Nodes.Count} nodes, {view.Wires.Count} wires.");
+        _log.LogInformation("iii-graph view mounted: {NodeCount} nodes, {WireCount} wires.", view.Nodes.Count, view.Wires.Count);
     }
 
     // Mount the current world-generation graph as a BoomHud nodeGraph (env-guarded demo). Uses the
@@ -143,7 +145,7 @@ public partial class Host : Node
         }
         catch (Exception ex)
         {
-            GD.PushError($"[graph] world-generation graph selection failed: {ex.Message}");
+            _log.LogError("world-generation graph selection failed: {Message}", ex.Message);
             return;
         }
 
@@ -155,7 +157,7 @@ public partial class Host : Node
         _worldGraphTimelineBinding.Rebind(timeline, graphSource, followTimeline);
         if (followTimeline && timeline is null)
         {
-            GD.PushWarning("[graph] timeline follow requested, but no ITimelineController is registered.");
+            _log.LogWarning("timeline follow requested, but no ITimelineController is registered.");
         }
 
         // Tear down any previous world-graph view stack before rebinding so we do not leak
@@ -188,11 +190,18 @@ public partial class Host : Node
         _worldGraphRenderer = new FantaSim.App.Ui.Seam.ViewRenderer(_worldGraphUiRoot, () => _worldGraphView, _ => null, logger);
         _worldGraphRenderer.Bind();
         if (graphSource.CompositionWarnings.Count > 0)
-            GD.PushWarning($"[graph] world-generation graph warnings: {string.Join("; ", graphSource.CompositionWarnings)}");
-        GD.Print($"[graph] world-generation graph view mounted: graph={graphSource.ActiveGraphId}, tick={graphSource.ActiveTick}, subgraphs={graphSource.ActiveSubgraphs.Count}, uiSubgraphs={_worldGraphView.Subgraphs.Count}, {_worldGraphView.Nodes.Count} nodes, {_worldGraphView.Wires.Count} wires.");
+            _log.LogWarning("world-generation graph warnings: {Warnings}", string.Join("; ", graphSource.CompositionWarnings));
+        _log.LogInformation(
+            "world-generation graph view mounted: graph={GraphId}, tick={Tick}, subgraphs={Subgraphs}, uiSubgraphs={UiSubgraphs}, {NodeCount} nodes, {WireCount} wires.",
+            graphSource.ActiveGraphId,
+            graphSource.ActiveTick,
+            graphSource.ActiveSubgraphs.Count,
+            _worldGraphView.Subgraphs.Count,
+            _worldGraphView.Nodes.Count,
+            _worldGraphView.Wires.Count);
     }
 
-    private static WorldGenerationGraphFamilySource CreateWorldGenerationGraphSource()
+    private WorldGenerationGraphFamilySource CreateWorldGenerationGraphSource()
     {
         var family = WorldGenerationGraphDefaults.BuildFamily();
         var scheduleKind = ReadWorldGraphEnv("FANTASIM_WORLD_GRAPH_SCHEDULE", WorldRegimeScheduleKinds.Sphere);
@@ -222,7 +231,7 @@ public partial class Host : Node
         return string.IsNullOrWhiteSpace(value) ? fallback : value;
     }
 
-    private static long ReadWorldGraphTick()
+    private long ReadWorldGraphTick()
     {
         var value = System.Environment.GetEnvironmentVariable("FANTASIM_WORLD_GRAPH_TICK");
         if (string.IsNullOrWhiteSpace(value))
@@ -231,7 +240,7 @@ public partial class Host : Node
         if (long.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tick))
             return tick;
 
-        GD.PushWarning($"[graph] invalid FANTASIM_WORLD_GRAPH_TICK '{value}', using 0.");
+        _log.LogWarning("invalid FANTASIM_WORLD_GRAPH_TICK '{Value}', using 0.", value);
         return 0;
     }
 
@@ -256,7 +265,7 @@ public partial class Host : Node
     {
         if (System.Environment.GetEnvironmentVariable("FANTASIM_GRAPH_TEST") != "1") return;
         var prompt = System.Environment.GetEnvironmentVariable("FANTASIM_GRAPH_PROMPT") ?? "a small red toy cube";
-        GD.Print($"[graph] executing text->3D graph via iii axis (prompt=\"{prompt}\")...");
+        _log.LogInformation("executing text->3D graph via iii axis (prompt=\"{Prompt}\")...", prompt);
 
         var client = _composition!.Bootstrap.Registry.Get<FantaSim.App.Command.IClient>();
         try
@@ -266,15 +275,15 @@ public partial class Host : Node
                 PayloadJson: $"{{\"prompt\":\"{prompt}\"}}"));
             Callable.From(() =>
             {
-                if (result.Ok) GD.Print($"[graph] DONE — {result.ResultJson}");
-                else GD.PushError($"[graph] failed: {result.Error?.Message}");
+                if (result.Ok) _log.LogInformation("text->3D graph DONE — {ResultJson}", result.ResultJson);
+                else _log.LogError("text->3D graph failed: {Message}", result.Error?.Message);
                 GetTree().Quit();
             }).CallDeferred();
         }
         catch (Exception ex)
         {
             var msg = ex.Message;
-            Callable.From(() => { GD.PushError($"[graph] execution failed: {msg}"); GetTree().Quit(); }).CallDeferred();
+            Callable.From(() => { _log.LogError("text->3D graph execution failed: {Message}", msg); GetTree().Quit(); }).CallDeferred();
         }
     }
 
@@ -284,15 +293,19 @@ public partial class Host : Node
     private async void RunWorldGraphTest()
     {
         if (System.Environment.GetEnvironmentVariable("FANTASIM_WORLD_GRAPH_TEST") != "1") return;
-        GD.Print("[graph] executing world-generation graph via world axis...");
+        _log.LogInformation("executing world-generation graph via world axis...");
 
         var client = _composition!.Bootstrap.Registry.Get<FantaSim.App.Command.IClient>();
         try
         {
             var graphSource = CreateWorldGenerationGraphSource();
-            GD.Print($"[graph] selected world-generation graph: graph={graphSource.ActiveGraphId}, tick={graphSource.ActiveTick}, subgraphs={graphSource.ActiveSubgraphs.Count}");
+            _log.LogInformation(
+                "selected world-generation graph: graph={GraphId}, tick={Tick}, subgraphs={Subgraphs}",
+                graphSource.ActiveGraphId,
+                graphSource.ActiveTick,
+                graphSource.ActiveSubgraphs.Count);
             if (graphSource.CompositionWarnings.Count > 0)
-                GD.PushWarning($"[graph] world-generation graph warnings: {string.Join("; ", graphSource.CompositionWarnings)}");
+                _log.LogWarning("world-generation graph warnings: {Warnings}", string.Join("; ", graphSource.CompositionWarnings));
             var compiled = graphSource.CompileForExecution();
             var payload = WorldGenerationGraphExecutionPayload.Serialize(
                 compiled.Document,
@@ -303,15 +316,15 @@ public partial class Host : Node
                 PayloadJson: payload));
             Callable.From(() =>
             {
-                if (result.Ok) GD.Print($"[graph] WORLD DONE - {result.ResultJson}");
-                else GD.PushError($"[graph] world generation failed: {result.Error?.Message}");
+                if (result.Ok) _log.LogInformation("world-generation graph DONE - {ResultJson}", result.ResultJson);
+                else _log.LogError("world generation failed: {Message}", result.Error?.Message);
                 GetTree().Quit();
             }).CallDeferred();
         }
         catch (Exception ex)
         {
             var msg = ex.Message;
-            Callable.From(() => { GD.PushError($"[graph] world generation execution failed: {msg}"); GetTree().Quit(); }).CallDeferred();
+            Callable.From(() => { _log.LogError("world generation execution failed: {Message}", msg); GetTree().Quit(); }).CallDeferred();
         }
     }
 
@@ -321,13 +334,17 @@ public partial class Host : Node
     private async void PingIiiBridge()
     {
         if (System.Environment.GetEnvironmentVariable("FANTASIM_III_PING") != "1") return;
-        if (!ClassDB.ClassExists("IiiClient")) { GD.PushError("[iii] IiiClient not registered"); return; }
+        if (!ClassDB.ClassExists("IiiClient"))
+        {
+            _log.LogError("IiiClient not registered");
+            return;
+        }
 
         var client = _composition!.Bootstrap.Registry.Get<FantaSim.App.Command.IClient>();
         var result = await client.CommandAsync(new FantaSim.App.Command.CommandRequest(
             Command: "iii.ping",
             PayloadJson: "{\"hello\":\"bridge\"}"));
-        GD.Print($"[iii] ping result ok={result.Ok} payload={result.ResultJson}");
+        _log.LogInformation("iii ping result ok={Ok} payload={Payload}", result.Ok, result.ResultJson);
     }
 
     // Boot the real scene flow: enter the "stage" tier under app-root. SceneFlow finds no resident
@@ -342,23 +359,37 @@ public partial class Host : Node
             var resource = registry.Get<FantaSim.App.Resource.IService>();
 
             var stage = await sceneFlow.EnterAsync(new FantaSim.App.SceneFlow.SceneRequest("stage"));
-            GD.Print($"[Host] entered scene '{stage.SceneId}'; bundleLoaded={resource.IsLoaded("stage")}; activeScenes={sceneFlow.ActiveScenes.Count}");
+            _log.LogInformation(
+                "entered scene '{SceneId}'; bundleLoaded={StageLoaded}; activeScenes={ActiveScenes}",
+                stage.SceneId,
+                resource.IsLoaded("stage"),
+                sceneFlow.ActiveScenes.Count);
 
             // Enter assist UNDER stage — a nested dynamic parent. Assist shares the one app kernel
             // through stage's child provider, across two collectible ALCs (same kernel hash in the log).
             var assist = await sceneFlow.EnterAsync(new FantaSim.App.SceneFlow.SceneRequest("assist", "stage"));
-            GD.Print($"[Host] entered scene '{assist.SceneId}' under '{assist.ParentSceneId}'; bundleLoaded={resource.IsLoaded("assist")}; activeScenes={sceneFlow.ActiveScenes.Count}");
+            _log.LogInformation(
+                "entered scene '{SceneId}' under '{ParentSceneId}'; bundleLoaded={AssistLoaded}; activeScenes={ActiveScenes}",
+                assist.SceneId,
+                assist.ParentSceneId,
+                resource.IsLoaded("assist"),
+                sceneFlow.ActiveScenes.Count);
 
             // Enter the timeline bundle under stage. ITimelineController is already registered
             // (WorldViewComposition ran sync in _Ready before this deferred call). SceneFlowProvider
             // loads the PCK first, then calls ActivateAsync — so IsLoaded("timeline") is true
             // by the time TimelinePlugin.InitializeAsync resolves the controller and mounts the view.
             var timeline = await sceneFlow.EnterAsync(new FantaSim.App.SceneFlow.SceneRequest("timeline", "stage"));
-            GD.Print($"[Host] entered scene '{timeline.SceneId}' under '{timeline.ParentSceneId}'; bundleLoaded={resource.IsLoaded("timeline")}; activeScenes={sceneFlow.ActiveScenes.Count}");
+            _log.LogInformation(
+                "entered scene '{SceneId}' under '{ParentSceneId}'; bundleLoaded={TimelineLoaded}; activeScenes={ActiveScenes}",
+                timeline.SceneId,
+                timeline.ParentSceneId,
+                resource.IsLoaded("timeline"),
+                sceneFlow.ActiveScenes.Count);
         }
         catch (Exception ex)
         {
-            GD.PushError($"[Host] initial scene entry failed: {ex}");
+            _log.LogError("initial scene entry failed: {Exception}", ex);
         }
     }
 

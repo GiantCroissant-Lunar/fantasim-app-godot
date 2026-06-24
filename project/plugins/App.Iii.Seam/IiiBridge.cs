@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using FantaSim.App.Iii;
 using Godot;
+using Microsoft.Extensions.Logging;
 
 namespace FantaSim.App.Iii.Seam;
 
@@ -25,15 +26,20 @@ public sealed partial class IiiBridge : Node, IIiiInvoker
 {
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonObject>> _pending = new();
     private readonly string _url;
+    private readonly ILogger _log;
     private Node? _client;
 
-    public IiiBridge(string url = "ws://127.0.0.1:49134") => _url = url;
+    public IiiBridge(ILoggerFactory loggerFactory, string url = "ws://127.0.0.1:49134")
+    {
+        _log = loggerFactory?.CreateLogger("Iii.Bridge") ?? throw new ArgumentNullException(nameof(loggerFactory));
+        _url = url;
+    }
 
     public override void _Ready()
     {
         if (!ClassDB.ClassExists("IiiClient"))
         {
-            GD.PushError("[iii] IiiClient gdextension class not registered (build the bridge + godot --import).");
+            _log.LogError("IiiClient gdextension class not registered (build the bridge + godot --import).");
             return;
         }
         _client = ClassDB.Instantiate("IiiClient").As<Node>();
@@ -41,7 +47,7 @@ public sealed partial class IiiBridge : Node, IIiiInvoker
         AddChild(_client);                                  // child of this Node -> its process() drains responses
         _client.Call("set_url", _url);
         _client.Connect("response", Callable.From<string, string>(OnResponse));
-        GD.Print($"[iii] IiiBridge ready @ {_url}");
+        _log.LogInformation("IiiBridge ready @ {Url}", _url);
     }
 
     public Task<JsonObject> RequestAsync(string functionId, JsonObject payload, CancellationToken cancellationToken = default)

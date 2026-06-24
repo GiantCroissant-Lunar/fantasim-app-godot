@@ -3,6 +3,7 @@ using System.Linq;
 using FantaSim.App.Common;
 using FantaSim.App.GpuCompute;
 using Godot;
+using Microsoft.Extensions.Logging;
 
 namespace FantaSim.App.Common.Entry;
 
@@ -33,7 +34,11 @@ public partial class Host : Node
                 ?? throw new InvalidOperationException("GPU compute service not composed.");
 
             var caps = service.Capabilities;
-            GD.Print($"[gpu-smoke] backend={caps.BackendName} available={caps.IsAvailable} reason={caps.UnavailableReason}");
+            _log.LogInformation(
+                "gpu-smoke backend={BackendName} available={IsAvailable} reason={UnavailableReason}",
+                caps.BackendName,
+                caps.IsAvailable,
+                caps.UnavailableReason);
 
             uint[] input = { 1, 2, 3, 4 };
             uint[] expected = input.Select(v => v * 2u).ToArray();
@@ -78,17 +83,17 @@ public partial class Host : Node
             Callable.From(() =>
             {
                 if (verdict.StartsWith("GPU-SMOKE PASS", StringComparison.Ordinal))
-                    GD.Print(verdict);
+                    _log.LogInformation("{Verdict}", verdict);
                 else
-                    GD.PushError(verdict);
-                GD.Print(verdict); // ensure the verdict reaches stdout for log scraping even on the error path
+                    _log.LogError("{Verdict}", verdict);
+                _log.LogInformation("{Verdict}", verdict); // ensure the verdict reaches stdout for log scraping even on the error path
                 GetTree().Quit();
             }).CallDeferred();
         }
         catch (Exception ex)
         {
             var msg = $"GPU-SMOKE FAIL: {ex.Message}";
-            Callable.From(() => { GD.PushError(msg); GD.Print(msg); GetTree().Quit(); }).CallDeferred();
+            Callable.From(() => { _log.LogError("{Message}", msg); _log.LogInformation("{Message}", msg); GetTree().Quit(); }).CallDeferred();
         }
     }
 
@@ -124,17 +129,17 @@ public partial class Host : Node
             Callable.From(() =>
             {
                 if (verdict.StartsWith("GPUSHADER-SMOKE PASS", StringComparison.Ordinal))
-                    GD.Print(verdict);
+                    _log.LogInformation("{Verdict}", verdict);
                 else
-                    GD.PushError(verdict);
-                GD.Print(verdict); // ensure the verdict reaches stdout for log scraping even on the error path
+                    _log.LogError("{Verdict}", verdict);
+                _log.LogInformation("{Verdict}", verdict); // ensure the verdict reaches stdout for log scraping even on the error path
                 GetTree().Quit();
             }).CallDeferred();
         }
         catch (Exception ex)
         {
             var msg = $"GPUSHADER-SMOKE FAIL: {ex.Message}";
-            Callable.From(() => { GD.PushError(msg); GD.Print(msg); GetTree().Quit(); }).CallDeferred();
+            Callable.From(() => { _log.LogError("{Message}", msg); _log.LogInformation("{Message}", msg); GetTree().Quit(); }).CallDeferred();
         }
     }
 }

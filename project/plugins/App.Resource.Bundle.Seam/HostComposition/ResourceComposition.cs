@@ -1,6 +1,6 @@
-using Godot;
 using ServiceArchi.Contracts;
 using FantaSim.App.Common;
+using Microsoft.Extensions.Logging;
 
 namespace FantaSim.App.Resource.Bundle;
 
@@ -9,6 +9,7 @@ public static class ResourceComposition
     public static void ComposeResource(HostCompositionContext ctx, Godot.Node hostNode, FantaSim.App.Common.CollectibleBundles bundles)
     {
         var loggerFactory = ctx.LoggerFactory;
+        var log = loggerFactory.CreateLogger("HostComposition.Resource");
         var providerRegistry = new RegistryArchi.Core.Registry();
         providerRegistry.Register<FantaSim.App.Resource.Providers.IProvider>(
             new FantaSim.App.Resource.Bundle.BundleProvider(
@@ -22,6 +23,6 @@ public static class ResourceComposition
         ctx.Registry.Register<FantaSim.App.Resource.IService>(
             resource,
             new ServiceRegistration { Tags = new[] { "resource" }, Description = "Resource (bundle) service" });
-        GD.Print("[Host] registered: Resource");
+        log.LogInformation("registered: Resource");
     }
 }

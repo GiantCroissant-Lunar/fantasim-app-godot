@@ -5,6 +5,7 @@ using Godot;
 using FantaSim.App.World.Composition;
 using FantaSim.App.Timeline.Providers;
 using FantaSim.App.Timeline;
+using Microsoft.Extensions.Logging;
 
 namespace FantaSim.App.Timeline.Seam;
 
@@ -39,6 +40,8 @@ public partial class TimelineFace : Control, ITimelineFace
     private const float RegimeBandHeight = 24f;
     private const float TrackHeight = 22f;
 
+    private readonly ILogger _log;
+
     /// <summary>
     /// Set by Host.cs ComposeTimeline BEFORE the timeline bundle scene instantiates this face.
     /// The resident seam owns the reference; the collectible bundle's TimelinePlugin no longer
@@ -49,6 +52,18 @@ public partial class TimelineFace : Control, ITimelineFace
     public static ITimelineController? ResidentController { get; set; }
 
     public static DeferredTimelineFace? ResidentProxy;
+
+    /// <summary>
+    /// Shared factory set by TimelineComposition before the collectible bundle scene instantiates
+    /// this face. Required because Godot scene instantiation uses the parameterless constructor.
+    /// </summary>
+    public static ILoggerFactory? ResidentLoggerFactory { get; set; }
+
+    public TimelineFace()
+    {
+        _log = ResidentLoggerFactory?.CreateLogger("Timeline.Face")
+            ?? Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance.CreateLogger("Timeline.Face");
+    }
 
     [Export]
     public double InternalTick
@@ -72,7 +87,7 @@ public partial class TimelineFace : Control, ITimelineFace
         _ctl = ResidentController;
         if (_ctl is null)
         {
-            GD.PushWarning("[TimelineFace] No active ITimelineController found.");
+            _log.LogWarning("No active ITimelineController found.");
             SetProcess(false);
             return;
         }

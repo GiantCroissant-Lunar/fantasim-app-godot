@@ -8,6 +8,7 @@ using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Globe;
 using FantaSim.App.World.Seam;
 using Godot;
+using Microsoft.Extensions.Logging;
 
 namespace FantaSim.App.World.Seam;
 
@@ -19,6 +20,7 @@ public static class WorldViewComposition
         CellElevationModel? cellElevation,
         WorldGenerationRenderOptions renderOptions)
     {
+        var log = ctx.LoggerFactory.CreateLogger("HostComposition.World");
         // PLAN4-TASK4: onset-aware path — replaces new GlobeReconstructor() (parameterless legacy).
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
         var roster = OnsetRoster.Build(renderOptions.Seed, onsetTick, renderOptions.TessellationFrequency);
@@ -60,13 +62,14 @@ public static class WorldViewComposition
         // the seam rebuilds heights per tick. Replaces the old loose-tile (1 tri/cell, unshared corners)
         // mesh + GPU-compute relief displacement.
         var plateSurfaces = new GlobePlateSurfaces(snapshot);
-        var sphereHandoff = TryBuildDefaultSphereHandoff(ctx);
+        var sphereHandoff = TryBuildDefaultSphereHandoff(ctx, log);
         var regimeFieldSampler = new WorldGenerationRegimeFieldSampler();
         Func<long, double?>? magmaSurfaceTemperatureAt = sphereHandoff is null
             ? null
             : tick => regimeFieldSampler.ResolveMagmaOceanSurfaceTemperatureK(tick, sphereHandoff);
 
         var view = new GlobeView(
+            ctx.LoggerFactory,
             snapshot,
             plateSurfaces,
             tick => CanonicalTimeLabel.ForTick(tick, snapshot.TicksPerAnchor),
@@ -75,7 +78,7 @@ public static class WorldViewComposition
             magmaSurfaceTemperatureAt);
         // Extend the scrubber to cover the full transport range so the user can drag to onset and beyond.
         view.SetMaxTick(maxTransportTick);
-        SubscribeWorldGenerationRefresh(ctx, tree, view);
+        SubscribeWorldGenerationRefresh(ctx, tree, view, log);
         tree.Root.CallDeferred("add_child", view);
 
         // Build the atmosphere schedule (same onset tick) so the timeline HUD can show both spheres.
@@ -92,12 +95,18 @@ public static class WorldViewComposition
         if (initialRegime is not null)
             view.SetRegime(initialRegime.RegimeId, initialRegime.ShowsPlateFeatures, initialRegime.DefaultColorByField);
 
-        GD.Print($"[Host] World view: globe mounted ({snapshot.CellCount} cells, {snapshot.PlateCount} plates, " +
-                 $"{snapshotTicks.Count} feature snapshots, elevationFeed={(elevationsAt is not null)}, watertight caps, " +
-                 $"onset={onsetTick:N0}, seed={renderOptions.Seed}, freq={renderOptions.TessellationFrequency}); ITimelineController registered");
+        log.LogInformation(
+            "World view: globe mounted ({CellCount} cells, {PlateCount} plates, {FeatureSnapshots} feature snapshots, elevationFeed={ElevationFeed}, watertight caps, onset={OnsetTick:N0}, seed={Seed}, freq={TessellationFrequency}); ITimelineController registered",
+            snapshot.CellCount,
+            snapshot.PlateCount,
+            snapshotTicks.Count,
+            elevationsAt is not null,
+            onsetTick,
+            renderOptions.Seed,
+            renderOptions.TessellationFrequency);
     }
 
-    private static void SubscribeWorldGenerationRefresh(HostCompositionContext ctx, Godot.SceneTree tree, GlobeView view)
+    private static void SubscribeWorldGenerationRefresh(HostCompositionContext ctx, Godot.SceneTree tree, GlobeView view, ILogger log)
     {
         var world = ctx.Registry.TryGet<FantaSim.App.World.IService>();
         if (world is null)
@@ -115,12 +124,12 @@ public static class WorldViewComposition
 
                 var tick = view.Tick;
                 view.SetTick(tick);
-                GD.Print($"[Host] World view refreshed after generation change at tick={tick:N0}; detail={evt.Detail}");
+                log.LogInformation("World view refreshed after generation change at tick={Tick:N0}; detail={Detail}", tick, evt.Detail);
             }).CallDeferred();
         });
     }
 
-    private static SphereHandoff? TryBuildDefaultSphereHandoff(HostCompositionContext ctx)
+    private static SphereHandoff? TryBuildDefaultSphereHandoff(HostCompositionContext ctx, ILogger log)
     {
         try
         {
@@ -141,14 +150,17 @@ public static class WorldViewComposition
 
             if (run.SphereHandoff is not null)
             {
-                GD.Print($"[Host] World graph handoff: retainedHeatJ={run.SphereHandoff.RetainedHeatJ:E3}, products={run.Products.Count}");
+                log.LogInformation(
+                    "World graph handoff: retainedHeatJ={RetainedHeatJ:E3}, products={ProductsCount}",
+                    run.SphereHandoff.RetainedHeatJ,
+                    run.Products.Count);
             }
 
             return run.SphereHandoff;
         }
         catch (Exception ex)
         {
-            GD.PushWarning($"[Host] World graph handoff unavailable: {ex.Message}");
+            log.LogWarning("World graph handoff unavailable: {Message}", ex.Message);
             return null;
         }
     }
