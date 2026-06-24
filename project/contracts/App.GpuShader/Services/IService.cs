@@ -12,7 +12,6 @@ namespace FantaSim.App.GpuShader;
 /// resident T4 seams own Godot Shader, ShaderMaterial, resource, and RID lifetimes.
 /// </summary>
 [ServiceContract]
-[SelectionStrategy(SelectionMode.HighestPriority)]
 public interface IService
 {
     /// <summary>

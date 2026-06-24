@@ -11,7 +11,6 @@ namespace FantaSim.App.GpuCompute;
 /// T4 seam owns the Godot RenderingDevice, shader resources, buffers, and RID cleanup.
 /// </summary>
 [ServiceContract]
-[SelectionStrategy(SelectionMode.HighestPriority)]
 public interface IService
 {
     /// <summary>Current backend capability snapshot.</summary>

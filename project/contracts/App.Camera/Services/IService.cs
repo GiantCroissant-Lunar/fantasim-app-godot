@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using ServiceArchi.Contracts;            // SelectionMode
-using ServiceArchi.Contracts.Attributes; // ServiceContract, SelectionStrategy
+using ServiceArchi.Contracts;
+using ServiceArchi.Contracts.Attributes; // ServiceContract
 
 namespace FantaSim.App.Camera;
 
@@ -11,7 +11,6 @@ namespace FantaSim.App.Camera;
 /// T1 virtual-camera contract.
 /// </summary>
 [ServiceContract]
-[SelectionStrategy(SelectionMode.HighestPriority)]
 public interface IService
 {
     /// <summary>

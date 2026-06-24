@@ -10,7 +10,6 @@ namespace FantaSim.App.Activity;
 /// subscribes and appends; <see cref="Append"/> is the direct path.
 /// </summary>
 [ServiceContract]
-[SelectionStrategy(SelectionMode.HighestPriority)]
 public interface IService
 {
     /// <summary>Append an entry directly to the ledger.</summary>

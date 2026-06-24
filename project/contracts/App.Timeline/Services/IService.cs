@@ -12,7 +12,6 @@ namespace FantaSim.App.Timeline;
 /// (plugins/App.Timeline/Services/Service.cs) implements this; the T2 proxy forwards.
 /// </summary>
 [ServiceContract]
-[SelectionStrategy(SelectionMode.HighestPriority)]
 public interface IService
 {
     /// <summary>Current canonical tick.</summary>

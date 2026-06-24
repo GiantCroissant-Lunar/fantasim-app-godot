@@ -5,9 +5,10 @@ using ServiceArchi.Contracts.Attributes;
 namespace FantaSim.App.Activity.Services.Proxy;
 
 // Service-locator proxy for IService (ServiceArchi Tier 2). ServiceArchi.SourceGen generates the
-// forwarding partial that implements IService by resolving the active T3 from the registry (selection
-// strategy from the contract). Lives alongside the contract (T1) per this repo's layout.
+// forwarding partial that implements IService by resolving the active T3 from the registry.
+// Lives alongside the contract (T1) per this repo's layout.
 [RealizeService(typeof(IService))]
+[SelectionStrategy(SelectionMode.HighestPriority)]
 public sealed partial class Service
 {
     private readonly IRegistry _registry;

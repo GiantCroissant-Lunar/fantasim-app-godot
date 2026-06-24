@@ -8,6 +8,7 @@ namespace FantaSim.App.Timeline.Services.Proxy;
 // forwarding partial that implements IService by resolving the active T3 from the registry.
 // Lives alongside the contract (T1) per this repo's layout. Mirrors App.Camera/Services/Service.cs.
 [RealizeService(typeof(IService))]
+[SelectionStrategy(SelectionMode.HighestPriority)]
 public sealed partial class Service
 {
     private readonly IRegistry _registry;
