@@ -24,11 +24,15 @@ internal sealed class GpuSmokeChecks
 
     private readonly IRegistry _kernel;
     private readonly ILogger _log;
+    private readonly CrosscutFoundation.Config.IService? _config;
 
     public GpuSmokeChecks(IRegistry kernel, ILogger log)
     {
         _kernel = kernel ?? throw new ArgumentNullException(nameof(kernel));
         _log = log ?? throw new ArgumentNullException(nameof(log));
+        // Smoke flags come from the layered crosscut config (gpu:smoke / gpu:shaderSmoke in app.json,
+        // Env-overridable). Resolved from the shared kernel; null -> checks stay inert.
+        _config = kernel.TryGet<CrosscutFoundation.Config.IService>();
     }
 
     // GPU smoke (inert unless FANTASIM_GPU_SMOKE=1): dispatch compute_double.glsl over a small uint

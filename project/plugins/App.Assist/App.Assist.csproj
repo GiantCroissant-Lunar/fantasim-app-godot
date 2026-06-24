@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <PackageReference Include="GiantCroissant.ServiceArchi.Contracts" />
+    <PackageReference Include="GiantCroissant.CrosscutFoundation.Config.Contracts" />
     <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" />
     <PackageReference Include="GiantCroissant.PluginArchi.SourceGenerators" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
