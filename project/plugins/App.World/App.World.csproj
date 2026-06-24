@@ -5,9 +5,11 @@
     <RootNamespace>FantaSim.App.World</RootNamespace>
     <AssemblyName>FantaSim.App.World</AssemblyName>
     <ServiceArchiTier>T3</ServiceArchiTier>
+    <UnifyStorageBackends>SurrealDb</UnifyStorageBackends>
   </PropertyGroup>
   <ItemGroup>
     <CompilerVisibleProperty Include="ServiceArchiTier" />
+    <CompilerVisibleProperty Include="UnifyStorageBackends" />
   </ItemGroup>
 
   <!-- App.World.Tests constructs WorldRuntime with explicit descriptors to prove the startup
@@ -67,6 +69,12 @@
   <ItemGroup>
     <PackageReference Include="Akka" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="SurrealDb.Embedded.InMemory" />
+    <PackageReference Include="SurrealDb.Net" />
+    <PackageReference Include="UnifyStorage.Abstractions" />
+    <PackageReference Include="UnifyStorage.Generators" PrivateAssets="all" />
+    <PackageReference Include="UnifyStorage.Runtime.SurrealDb" />
     <!-- The ECS itself: CellElevationModel constructs an ArchSystemRunner directly (Godot-free,
          unit-testable) — same UnifyEcs+Arch stack App.Ecs uses; no second ECS, no hand-rolled world. -->
     <PackageReference Include="UnifyEcs.Core" />

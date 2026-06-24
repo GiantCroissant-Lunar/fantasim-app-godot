@@ -40,7 +40,11 @@
     <PackageVersion Include="UnifyEcs.Runtime.Arch" Version="0.1.1" />
     <!-- Activity ledger persistence (LiteDB-backed document store). -->
     <PackageVersion Include="UnifyStorage.Abstractions" Version="0.1.0" />
+    <PackageVersion Include="UnifyStorage.Generators" Version="0.1.0" PrivateAssets="all" />
     <PackageVersion Include="UnifyStorage.Runtime.LiteDb" Version="0.1.0" />
+    <PackageVersion Include="UnifyStorage.Runtime.SurrealDb" Version="0.1.0" />
+    <PackageVersion Include="SurrealDb.Net" Version="0.10.2" />
+    <PackageVersion Include="SurrealDb.Embedded.InMemory" Version="0.10.2" />
     <!-- FantaSim world-lib packages (local feed). 0.1.5 carries the relative boundary classifier
          (Transform = shear-dominated, not absolute-near-zero normal) atop 0.1.4's rad/tick engine. -->
     <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Contracts" Version="0.1.5" />
@@ -78,8 +82,8 @@
   <ItemGroup>
     <PackageVersion Include="Akka" Version="1.5.69" />
     <PackageVersion Include="Akka.TestKit.Xunit2" Version="1.5.69" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageVersion Include="xunit" Version="2.9.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />

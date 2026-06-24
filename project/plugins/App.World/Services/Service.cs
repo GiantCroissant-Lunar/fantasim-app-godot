@@ -1,6 +1,5 @@
 #if USE_PROJECT_REFERENCES
 using Akka.Actor;
-using FantaSim.World.TruthStream.Core;
 #endif
 using System.Globalization;
 using System.Text.Json;
@@ -30,6 +29,9 @@ public sealed class Service : IService, IDisposable
     private readonly IRegistry _registry;
     private readonly IWorldRuntime _runtime;
     private readonly ILogger _logger;
+#if USE_PROJECT_REFERENCES
+    private readonly WorldTruthEventStoreHandle _truthStoreHandle;
+#endif
     private readonly List<Action<WorldGenerationChangedEvent>> _subscribers = new();
     private readonly object _subscribersGate = new();
     private readonly object _generationProductsGate = new();
@@ -46,9 +48,11 @@ public sealed class Service : IService, IDisposable
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
 #if USE_PROJECT_REFERENCES
-        var truthWriter = actorSystem is null
-            ? null
-            : ActorTruthEventWriter.Start(actorSystem, new InMemoryTruthEventStore());
+        var config = registry.TryGet<CrosscutFoundation.Config.IService>();
+        _truthStoreHandle = WorldTruthEventStoreFactory.Create(WorldTruthStoreOptions.FromConfig(config));
+        ITruthEventWriter truthWriter = actorSystem is null
+            ? new DirectTruthEventWriter(_truthStoreHandle.EventStore)
+            : ActorTruthEventWriter.Start(actorSystem, _truthStoreHandle.EventStore);
         _runtime = WorldRuntimeFactory.Create(registry, truthWriter);
 #else
         _runtime = WorldRuntimeFactory.Create(registry);
@@ -315,6 +319,9 @@ public sealed class Service : IService, IDisposable
     {
         if (_disposed) return;
         _runtime.Dispose();
+#if USE_PROJECT_REFERENCES
+        _truthStoreHandle.Dispose();
+#endif
         _disposed = true;
     }
 }
