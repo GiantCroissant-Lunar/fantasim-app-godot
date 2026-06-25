@@ -1,5 +1,6 @@
 {
   "$schema": "./build.config.schema.json",
+  "artifactsVersion": "0.1.2",
   "versionEnv": "GITVERSION_MAJORMINORPATCH",
   "projectGroups": {},
   "godotBuild": {
