@@ -60,6 +60,14 @@ public sealed class Service : IService, IDisposable
             _handlers[descriptor.Id] = (descriptor, handler);
     }
 
+    public void Unregister(string commandId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandId);
+
+        lock (_handlerGate)
+            _handlers.Remove(commandId);
+    }
+
     public async Task<CommandResult> ExecuteAsync(CommandRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);

@@ -50,6 +50,17 @@ public static class CommandComposition
                 if (resource is null)
                     return JsonSerializer.Serialize(new { ok = false, error = "resource service not registered" });
 
+                // Drop the resident ViewHost reference to this bundle's IViewSource BEFORE unloading,
+                // so the old collectible ALC can be GC-collected. UnmountAndWaitAsync awaits the
+                // deferred unmount completion (ViewRenderer.Dispose nulls _source); a fire-and-forget
+                // Unmount would race the unload and leave the pin. Keyed off the ViewHost's own
+                // mounted set, so it covers both IService.ShowAsync-mounted views (e.g. "activity")
+                // and views mounted directly via IViewHost.Mount (e.g. "timeline", whose
+                // TimelinePlugin mounts it without going through IService).
+                var viewHost = registry.TryGet<FantaSim.App.Ui.Providers.IViewHost>();
+                var wasMounted = viewHost is not null
+                    && await viewHost.UnmountAndWaitAsync(bundleId, ct).ConfigureAwait(false);
+
                 var sceneFlow = registry.TryGet<FantaSim.App.SceneFlow.IService>();
                 var target = sceneFlow?.ActiveScenes.FirstOrDefault(s => s.SceneId == bundleId);
                 if (sceneFlow is not null && target is not null)
@@ -65,7 +76,14 @@ public static class CommandComposition
                 else
                 {
                     await resource.ReloadAsync(bundleId, ct).ConfigureAwait(false); // plugin-only bundle, or no SceneFlow
+
+                    // Scene-tier reloads re-mount the view via the re-entered scene's plugin; a
+                    // plugin-only reload has nothing to do so. Restore it here only in that case.
+                    // Mount is deferred and re-resolves the freshly-registered IViewSource.
+                    if (wasMounted)
+                        viewHost!.Mount(bundleId);
                 }
+
                 log.LogInformation("resource.reload_bundle: reloaded '{BundleId}'.", bundleId);
                 return JsonSerializer.Serialize(new { ok = true, bundleId });
             });

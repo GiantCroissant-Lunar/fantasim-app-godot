@@ -44,6 +44,35 @@ public sealed class ViewHost : IViewHost
 
     public void Unmount(string viewId) => Callable.From(() => UnmountImpl(viewId)).CallDeferred();
 
+    public Task<bool> UnmountAndWaitAsync(string viewId, CancellationToken cancellationToken = default)
+    {
+        // Scene-tree mutation must run on the Godot main thread, so the unmount is deferred. We
+        // complete the TCS only after UnmountImpl has run, so an awaiting caller knows the
+        // ViewRenderer (and its bundle-typed _source) is actually gone before it proceeds to unload
+        // the ALC -- a plain fire-and-forget Unmount() races that unload and leaves the pin in place.
+        // RunContinuationsAsynchronously keeps the awaiter's continuation off this main-thread callback.
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (cancellationToken.IsCancellationRequested)
+        {
+            tcs.TrySetCanceled(cancellationToken);
+            return tcs.Task;
+        }
+
+        Callable.From(() =>
+        {
+            try
+            {
+                tcs.TrySetResult(UnmountImpl(viewId));
+            }
+            catch (Exception ex)
+            {
+                tcs.TrySetException(ex);
+            }
+        }).CallDeferred();
+
+        return tcs.Task;
+    }
+
     private void MountImpl(string viewId)
     {
         if (_active.ContainsKey(viewId))
@@ -73,10 +102,10 @@ public sealed class ViewHost : IViewHost
         _logger.LogInformation("View mounted: {ViewId}", viewId);
     }
 
-    private void UnmountImpl(string viewId)
+    private bool UnmountImpl(string viewId)
     {
         if (!_active.TryGetValue(viewId, out var view))
-            return;
+            return false;
 
         _active.Remove(viewId);
         _resource.RuntimeChanged -= view.RuntimeChanged;
@@ -84,6 +113,7 @@ public sealed class ViewHost : IViewHost
         view.Renderer.Dispose();
         view.Mount.QueueFree();
         _logger.LogInformation("View unmounted: {ViewId}", viewId);
+        return true;
     }
 
     private static StyleBoxFlat ViewBackground()

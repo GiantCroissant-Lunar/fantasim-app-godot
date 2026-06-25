@@ -150,6 +150,15 @@ public partial class TimelineFace : Control, ITimelineFace
             _lanesContainer.GuiInput -= OnLanesGuiInput;
         }
         Resized -= OnLanesResized;
+
+        // Sever the resident-to-collectible-ALC bind so the old timeline bundle's ALC can
+        // collect on hot-reload. ResidentProxy holds a generated __crossTarget typed as
+        // ITimelineFace (defined in the collectible App.Timeline assembly); without unbinding,
+        // the static keeps the old ALC pinned. ResidentLoggerFactory is nulled for symmetry
+        // so every resident-set static is cleared on exit (it is repopulated before re-entry).
+        ResidentProxy?.UnbindCrossTarget();
+        ResidentProxy = null;
+        ResidentLoggerFactory = null;
     }
 
     private void SetupAnimationSystem()
