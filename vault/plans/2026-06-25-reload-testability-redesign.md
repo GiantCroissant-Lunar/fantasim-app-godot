@@ -84,7 +84,7 @@ collection probe is deferred via the `FrameProvider` to after the stack unwinds.
 | S1 collection harness | DONE | 2/2 pass (verified via `dotnet test`): held->pinned, dropped->collected |
 | S2a policy + gate test | DONE | `ReloadPolicy` + gate test green (verified `dotnet test`): frame-deferred probe reports collected |
 | S2b wire + Fix1 rework | after S3 host | wire ReloadPolicy into the seam; sync main-thread unmount; verified by the code-quality headless test |
-| S3 headless host | IN PROGRESS | `code-quality` Godot host scaffolded + boots headless (exit 0) [Step A done]; next: R3.Godot addon + real reload test |
+| S3 headless host | IN PROGRESS | code-quality boots headless + R3.Godot addon vendored; `GodotFrameProvider.Process` advances headless [Step A+B done]; next: Step C real reload-collection check |
 | S4 cleanup | not started | drop `FakeCommandService` (real Service is Godot-free) |
 
 ## S0 findings (RESOLVED 2026-06-25) — see `.agent/run/reports/s0-reload-scoping.md`

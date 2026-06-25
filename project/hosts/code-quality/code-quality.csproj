@@ -6,7 +6,12 @@
     <Nullable>enable</Nullable>
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
   </PropertyGroup>
-  <!-- Step A: minimal headless host (no app refs yet). Step B adds the projects under test
-       (App.Resource, App.Resource.Bundle.Seam, App.Ui.Seam, App.SceneFlow, PluginArchi, R3)
-       + the R3.Godot addon, and the real reload-collection integration check. -->
+  <ItemGroup>
+    <!-- R3 + the vendored R3.Godot addon (addons/R3.Godot) provide GodotFrameProvider.Process,
+         ticked each frame by the FrameProviderDispatcher autoload. ManagePackageVersionsCentrally
+         is false here, so the version is inline (matches the app CPM pin + the vendored 1.3.1). -->
+    <PackageReference Include="R3" Version="1.3.1" />
+  </ItemGroup>
+  <!-- Step B+ will add app ProjectReferences (App.Resource for ReloadPolicy, contracts/App.Ui,
+       PluginArchi.*) + the real reload-collection integration check. -->
 </Project>
