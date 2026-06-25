@@ -9,9 +9,24 @@
   <ItemGroup>
     <!-- R3 + the vendored R3.Godot addon (addons/R3.Godot) provide GodotFrameProvider.Process,
          ticked each frame by the FrameProviderDispatcher autoload. ManagePackageVersionsCentrally
-         is false here, so the version is inline (matches the app CPM pin + the vendored 1.3.1). -->
+         is false here, so every PackageReference carries an inline Version (copied from
+         project/Directory.Packages.props). -->
     <PackageReference Include="R3" Version="1.3.1" />
+    <!-- PluginUnloadResult (the weak-only ALC probe used by ReloadPolicy + the test harness). -->
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" Version="0.1.6" />
+    <!-- Roslyn emit for TestViewSourceFactory (mirrors App.Resource.Tests). -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
+    <!-- RuntimeSurfaceDocument via BoomHud.Abstractions.Runtime (transitive via BoomHud.Foundation). -->
+    <PackageReference Include="BoomHud.Foundation" Version="0.1.18" />
+    <!-- ILogger for ReloadPolicy ctor. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.1" />
   </ItemGroup>
-  <!-- Step B+ will add app ProjectReferences (App.Resource for ReloadPolicy, contracts/App.Ui,
-       PluginArchi.*) + the real reload-collection integration check. -->
+  <ItemGroup>
+    <!-- ReloadPolicy (pure net8.0 policy: unmount -> unloadReload -> NextFrame -> GC probe). -->
+    <ProjectReference Include="..\..\plugins\App.Resource\App.Resource.csproj" />
+    <!-- App.Resource contracts. -->
+    <ProjectReference Include="..\..\contracts\App.Resource\App.Resource.csproj" />
+    <!-- IViewSource + IViewHost (the two view seams ReloadPolicy exercises). -->
+    <ProjectReference Include="..\..\contracts\App.Ui\App.Ui.csproj" />
+  </ItemGroup>
 </Project>
