@@ -20,6 +20,10 @@ superpowers `writing-plans` / spec output should target `vault/plans` and `vault
   watch-reload → confirm `old ALC collected`). Full build + re-run only for changes **outside a
   collectible ALC** (resident/host code, T1 contracts, T4 seams, the native iii bridge, a new
   `collectible-bundles.json` registration).
+- [no-smoke-or-fake-production-code](.agent/rules/no-smoke-or-fake-production-code.md) — keep
+  smoke checks, fake/demo assets, and verification-only harnesses out of production runtime
+  composition; use tests/tools/harnesses for proofs, and keep app startup/config tied to real
+  product concepts.
 
 ## Skills — `.agent/skills/`
 
