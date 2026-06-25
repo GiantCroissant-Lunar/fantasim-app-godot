@@ -5,6 +5,12 @@
 (has the Status table) and the prior handover `vault/handover/2026-06-25-reload-gate-timing-and-mainthread.md`
 (the windowed-verify disproof that started this redesign).
 
+> **UPDATE (session 3, 2026-06-25):** S3 Step C + S4 are now DONE & green — committed at
+> `037296d` (S3C real reload-collection check in code-quality: `Collected=true` headless on the
+> REAL `GodotFrameProvider.Process`) and `1d075fa` (S4: real `Service` + `InProcessClient` in
+> `HttpTransportTests`, 4/4). **S2b is next** — wire `ReloadPolicy` into BundleHost/CommandComposition
+> + rework Fix-1 to a synchronous main-thread unmount. See the plan's Status table for live state.
+
 ## TL;DR — where we are
 The original "stuck reload" is NOT a missing DAG and NOT just reference pins. The real blockers
 (proven by a windowed verify) were **(1) gate-timing** — the collection check ran synchronously
@@ -95,9 +101,13 @@ unknowns are retired.
   deferred-TCS `UnmountAndWaitAsync` with `ConfigureAwait(false)` (that was the regression).
 - **Verify agent work yourself** — `exit 0` ≠ done (S1's first dispatch produced ZERO files). Always
   build + run the tests yourself.
-- **Delegation:** ollama-cloud dispatch = `ollama/glm-5.2:cloud` OR `ollama/kimi-k2.7-code:cloud`
-  ONLY. NEVER gemini/`agy` (user: expensive). `kimi` CLI is quota-dead. Use ABSOLUTE paths in
-  `opencode run` (a stray `cd` shifted cwd and broke relative `$(cat ...)`). See
+- **Delegation (CORRECTED 2026-06-25):** TWO separate things, do not conflate — (a) opencode's
+  Ollama-Cloud provider uses `ollama/glm-5.2:cloud` OR `ollama/kimi-k2.7-code:cloud` (NEVER a
+  gemini model via ollama); (b) the `agy` CLI natively runs Gemini 3.5 Flash Medium
+  (`--model gemini-3.5-flash`) and IS a fine/intended target. The ONLY ban is
+  gemini-as-a-model-via-opencode's-ollama, NOT the agy CLI. The standalone `kimi` CLI was
+  quota-dead, but the kimi MODEL via opencode (`ollama/kimi-k2.7-code:cloud`) works (S4 used it).
+  Use ABSOLUTE paths in `opencode run` (a stray `cd` broke relative `$(cat ...)`). See
   `.agent/skills/04-tooling/external-agent-delegation`.
 - **Concurrent session in the same tree** (vplanet / App.NodeGraph / App.World GenerationGraph) — its
   WIP is uncommitted and breaks `dotnet build FantaSim.sln`. PATH-SCOPE every commit; build ONLY the

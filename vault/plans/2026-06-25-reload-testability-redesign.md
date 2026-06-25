@@ -30,8 +30,11 @@ Godot-threading/GC bug. The pins are *managed references* and the gate is
   *window*. Export is a few minutes (not a blocker).
 - **R3 for frame scheduling.** Cysharp R3 is already in the app; its `FrameProvider`
   is the injectable seam (real Godot frames in prod; a simple manual ticker in tests).
-- **Delegation:** ollama-cloud dispatch uses **`ollama/glm-5.2:cloud`** or
-  **`ollama/kimi-k2.7-code:cloud`** ONLY. Do NOT use gemini/`agy` (expensive).
+- **Delegation (CORRECTED 2026-06-25):** TWO separate things — opencode's Ollama-Cloud
+  provider uses **`ollama/glm-5.2:cloud`** or **`ollama/kimi-k2.7-code:cloud`** (NEVER a gemini
+  model via ollama); the **`agy` CLI** natively runs **Gemini 3.5 Flash Medium**
+  (`--model gemini-3.5-flash`) and IS a fine/intended target. The only ban is
+  gemini-as-a-model-through-opencode's-ollama provider — NOT the agy CLI.
 
 ## Target architecture
 Extract the reload **policy** (pure C#) — `unmount → unload → next-frame(s) →
@@ -83,9 +86,9 @@ collection probe is deferred via the `FrameProvider` to after the stack unwinds.
 | S0 scoping | DONE | report `.agent/run/reports/s0-reload-scoping.md` (glm-5.2) |
 | S1 collection harness | DONE | 2/2 pass (verified via `dotnet test`): held->pinned, dropped->collected |
 | S2a policy + gate test | DONE | `ReloadPolicy` + gate test green (verified `dotnet test`): frame-deferred probe reports collected |
-| S2b wire + Fix1 rework | after S3 host | wire ReloadPolicy into the seam; sync main-thread unmount; verified by the code-quality headless test |
-| S3 headless host | IN PROGRESS | code-quality boots headless + R3.Godot addon vendored; `GodotFrameProvider.Process` advances headless [Step A+B done]; next: Step C real reload-collection check |
-| S4 cleanup | not started | drop `FakeCommandService` (real Service is Godot-free) |
+| S2b wire + Fix1 rework | NEXT (ready) | S3 instrument is green; wire `ReloadPolicy` into BundleHost/CommandComposition, rework Fix-1 to a SYNC main-thread unmount; verify via the code-quality headless check |
+| S3 headless host | DONE | Step C green @037296d: real reload-collection in code-quality on the REAL `GodotFrameProvider.Process` -> `Collected=true attempts=1` under `--headless`. Two Godot-runtime fixes vs the xUnit template: file-path Roslyn refs (game asms have empty `Assembly.Location`) + collectible-ALC `Resolving` share (Godot uses its own ALC, not Default). Step A+B prior. |
+| S4 cleanup | DONE | @1d075fa: `FakeCommandService` dropped; `HttpTransportTests` drives the real `Service` + `InProcessClient` via a `CapturingService` decorator (preserves request-forwarding asserts); 4/4 pass |
 
 ## S0 findings (RESOLVED 2026-06-25) — see `.agent/run/reports/s0-reload-scoping.md`
 - **R3 1.3.1** (CPM `Directory.Packages.props:8`). `R3.FrameProvider` is an abstract class;
