@@ -1,0 +1,12 @@
+<Project Sdk="Godot.NET.Sdk/4.7.0">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <RootNamespace>CodeQuality</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <!-- Step A: minimal headless host (no app refs yet). Step B adds the projects under test
+       (App.Resource, App.Resource.Bundle.Seam, App.Ui.Seam, App.SceneFlow, PluginArchi, R3)
+       + the R3.Godot addon, and the real reload-collection integration check. -->
+</Project>
