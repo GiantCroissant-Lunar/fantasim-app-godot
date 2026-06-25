@@ -4,8 +4,14 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using FantaSim.App.Command;
+using FantaSim.App.Command.Clients;
+using FantaSim.App.Command.Providers;
+using FantaSim.App.Command.Services;
 using Microsoft.Extensions.Logging.Abstractions;
+using ServiceArchi.Core;
 using Xunit;
+using CommandMainThreadDispatcher = FantaSim.App.Command.Providers.ImmediateMainThreadDispatcher;
+using RemoteMainThreadDispatcher = FantaSim.App.Remote.InlineMainThreadDispatcher;
 
 namespace FantaSim.App.Remote.Tests;
 
@@ -27,7 +33,6 @@ public sealed class HttpTransportTests
             "correlation-1",
             "caller",
             "agent");
-        fixture.Service.NextResult = new CommandResult("result-1", true, "{\"done\":true}");
 
         var response = await fixture.Http.PostAsync(
             "/command",
@@ -35,13 +40,14 @@ public sealed class HttpTransportTests
         var result = await ReadJsonAsync<CommandResult>(response);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(fixture.Service.NextResult, result);
-        Assert.NotNull(fixture.Service.LastRequest);
-        Assert.Equal("world.refresh", fixture.Service.LastRequest.Command);
-        Assert.Equal("{\"force\":true}", fixture.Service.LastRequest.PayloadJson);
-        Assert.Equal("correlation-1", fixture.Service.LastRequest.CorrelationId);
-        Assert.Equal("http", fixture.Service.LastRequest.ActorKind);
-        Assert.False(string.IsNullOrWhiteSpace(fixture.Service.LastRequest.ActorId));
+        Assert.True(result.Ok);
+        Assert.Equal("{\"done\":true}", result.ResultJson);
+        Assert.NotNull(fixture.CapturedRequest);
+        Assert.Equal("world.refresh", fixture.CapturedRequest.Command);
+        Assert.Equal("{\"force\":true}", fixture.CapturedRequest.PayloadJson);
+        Assert.Equal("correlation-1", fixture.CapturedRequest.CorrelationId);
+        Assert.Equal("http", fixture.CapturedRequest.ActorKind);
+        Assert.False(string.IsNullOrWhiteSpace(fixture.CapturedRequest.ActorId));
     }
 
     [Fact]
@@ -60,18 +66,18 @@ public sealed class HttpTransportTests
         Assert.Equal(2, health.Commands);
 
         Assert.Equal(HttpStatusCode.OK, statusResponse.StatusCode);
-        Assert.Equal("fantasim-test", status.App);
+        Assert.Equal("fantasim", status.App);
         Assert.Collection(
             status.Commands,
-            c => Assert.Equal("world.refresh", c.Id),
-            c => Assert.Equal("world.orchestrate", c.Id));
+            c => Assert.Equal("world.orchestrate", c.Id),
+            c => Assert.Equal("world.refresh", c.Id));
     }
 
     [Fact]
     public async Task TokenAuth_RejectsMissingOrWrongBearerAndAllowsCorrectBearer()
     {
         using var fixture = await TransportFixture.StartAsync(token: "secret-token");
-        var request = new CommandRequest("world.refresh");
+        var request = new CommandRequest("world.refresh", "{\"force\":true}");
 
         var missingResponse = await fixture.Http.PostAsync("/command", JsonContent(request));
         Assert.Equal(HttpStatusCode.Unauthorized, missingResponse.StatusCode);
@@ -88,16 +94,13 @@ public sealed class HttpTransportTests
 
         Assert.Equal(HttpStatusCode.OK, okResponse.StatusCode);
         Assert.True(result.Ok);
+        Assert.Equal("{\"done\":true}", result.ResultJson);
     }
 
     [Fact]
     public async Task CommandResultFailure_IsSurfacedUnchanged()
     {
         using var fixture = await TransportFixture.StartAsync();
-        fixture.Service.NextResult = new CommandResult(
-            "missing-1",
-            false,
-            Error: new CommandError("unknown-command", "Unknown command: missing.command"));
 
         var response = await fixture.Http.PostAsync(
             "/command",
@@ -105,7 +108,9 @@ public sealed class HttpTransportTests
         var result = await ReadJsonAsync<CommandResult>(response);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(fixture.Service.NextResult, result);
+        Assert.False(result.Ok);
+        Assert.NotNull(result.Error);
+        Assert.Equal("unknown-command", result.Error!.Type);
     }
 
     private static StringContent JsonContent<T>(T value)
@@ -124,11 +129,16 @@ public sealed class HttpTransportTests
 
     private sealed class TransportFixture : IDisposable
     {
-        private TransportFixture(HttpTransport transport, Uri baseUri, FakeCommandService service)
+        private TransportFixture(
+            HttpTransport transport,
+            Uri baseUri,
+            Service service,
+            CapturingService capturingService)
         {
             Transport = transport;
             BaseUri = baseUri;
             Service = service;
+            CapturingService = capturingService;
             Http = CreateClient();
         }
 
@@ -136,24 +146,44 @@ public sealed class HttpTransportTests
 
         public Uri BaseUri { get; }
 
-        public FakeCommandService Service { get; }
+        public Service Service { get; }
+
+        public CapturingService CapturingService { get; }
 
         public HttpClient Http { get; }
+
+        public CommandRequest? CapturedRequest => CapturingService.LastRequest;
 
         public static async Task<TransportFixture> StartAsync(string? token = null)
         {
             var port = GetFreeLoopbackPort();
             var bind = $"127.0.0.1:{port}";
-            var service = new FakeCommandService();
-            var client = new FakeCommandClient(service);
+
+            var registry = new ServiceRegistry();
+            var service = new Service(
+                new CommandMainThreadDispatcher(),
+                registry,
+                NullLoggerFactory.Instance);
+
+            service.Register(
+                new CommandDescriptor("world.refresh", "Refresh world", "test handler", "world"),
+                (payloadJson, ct) => Task.FromResult<string?>("{\"done\":true}"));
+
+            var capturingService = new CapturingService(service);
+            var client = new InProcessClient(capturingService, NullLoggerFactory.Instance);
             var transport = new HttpTransport(
                 new RemoteOptions(true, bind, token),
                 client,
-                new InlineMainThreadDispatcher(),
+                new RemoteMainThreadDispatcher(),
                 NullLoggerFactory.Instance);
 
             await transport.StartAsync(CancellationToken.None);
-            return new TransportFixture(transport, new Uri($"http://{bind}/"), service);
+
+            return new TransportFixture(
+                transport,
+                new Uri($"http://{bind}/"),
+                service,
+                capturingService);
         }
 
         public HttpClient CreateClient()
@@ -167,54 +197,35 @@ public sealed class HttpTransportTests
         }
     }
 
-    private sealed class FakeCommandService : IService
+    private sealed class CapturingService : IService, IDisposable
     {
-        private readonly List<CommandDescriptor> _commands =
-        [
-            new CommandDescriptor("world.refresh", "Refresh world", "Refreshes world state.", "world"),
-            new CommandDescriptor("world.orchestrate", "Orchestrate world", "Runs world orchestration.", "world"),
-        ];
+        private readonly Service _inner;
+
+        public CapturingService(Service inner)
+        {
+            _inner = inner;
+        }
 
         public CommandRequest? LastRequest { get; private set; }
 
-        public CommandResult NextResult { get; set; } = new("ok-1", true, "{\"ok\":true}");
-
-        public IReadOnlyList<CommandDescriptor> Commands => _commands;
+        public IReadOnlyList<CommandDescriptor> Commands => _inner.Commands;
 
         public void Register(CommandDescriptor descriptor, CommandHandler handler)
-        {
-            _commands.Add(descriptor);
-        }
+            => _inner.Register(descriptor, handler);
 
         public void Unregister(string commandId)
-        {
-            _commands.RemoveAll(command => string.Equals(command.Id, commandId, StringComparison.Ordinal));
-        }
+            => _inner.Unregister(commandId);
 
         public Task<CommandResult> ExecuteAsync(CommandRequest request, CancellationToken cancellationToken = default)
         {
             LastRequest = request;
-            return Task.FromResult(NextResult);
+            return _inner.ExecuteAsync(request, cancellationToken);
         }
-    }
 
-    private sealed class FakeCommandClient : IClient
-    {
-        private readonly FakeCommandService _service;
-
-        public FakeCommandClient(FakeCommandService service)
+        public void Dispose()
         {
-            _service = service;
+            _inner.Dispose();
         }
-
-        public Task<CommandHealth> HealthAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new CommandHealth(true, _service.Commands.Count));
-
-        public Task<CommandStatus> StatusAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new CommandStatus("fantasim-test", _service.Commands));
-
-        public Task<CommandResult> CommandAsync(CommandRequest request, CancellationToken cancellationToken = default)
-            => _service.ExecuteAsync(request, cancellationToken);
     }
 
     private static int GetFreeLoopbackPort()

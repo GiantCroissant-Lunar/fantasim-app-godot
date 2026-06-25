@@ -7,9 +7,11 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="GiantCroissant.ServiceArchi.Core" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\plugins\App.Remote\App.Remote.csproj" />
+    <ProjectReference Include="..\..\plugins\App.Command\App.Command.csproj" />
     <ProjectReference Include="..\..\contracts\App.Command\App.Command.csproj" />
   </ItemGroup>
 </Project>
