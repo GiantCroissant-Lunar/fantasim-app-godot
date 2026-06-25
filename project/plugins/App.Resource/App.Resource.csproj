@@ -13,6 +13,8 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="GiantCroissant.RegistryArchi.Contracts" />
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="R3" />
   </ItemGroup>
 </Project>

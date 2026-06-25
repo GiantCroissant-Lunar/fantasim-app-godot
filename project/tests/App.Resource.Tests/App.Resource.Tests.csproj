@@ -11,6 +11,8 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="BoomHud.Foundation" />
+    <PackageReference Include="R3" />
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\plugins\App.Resource\App.Resource.csproj" />

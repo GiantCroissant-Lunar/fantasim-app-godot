@@ -82,7 +82,7 @@ collection probe is deferred via the `FrameProvider` to after the stack unwinds.
 |---|---|---|
 | S0 scoping | DONE | report `.agent/run/reports/s0-reload-scoping.md` (glm-5.2) |
 | S1 collection harness | DONE | 2/2 pass (verified via `dotnet test`): held->pinned, dropped->collected |
-| S2a policy + gate test | DISPATCHED | pure `ReloadPolicy` + `FakeFrameProvider` plain-xUnit test (`App.Resource`) |
+| S2a policy + gate test | DONE | `ReloadPolicy` + gate test green (verified `dotnet test`): frame-deferred probe reports collected |
 | S2b wire + Fix1 rework | ON HOLD | gated on the S3 verification approach (user rethinking 2026-06-25) |
 | S3 R3 + headless | ON HOLD | user rethinking the headless / R3.Godot-addon approach (2026-06-25) |
 | S4 cleanup | not started | drop `FakeCommandService` (real Service is Godot-free) |
