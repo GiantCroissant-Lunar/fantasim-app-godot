@@ -12,6 +12,7 @@ public static class UiComposition
         var log = ctx.LoggerFactory.CreateLogger("HostComposition.Ui");
         var uiRoot = new Godot.Control { Name = "UiRoot" };
         uiRoot.SetAnchorsPreset(Godot.Control.LayoutPreset.FullRect);
+        uiRoot.SetOffsetsPreset(Godot.Control.LayoutPreset.FullRect);
         tree.Root.CallDeferred("add_child", uiRoot);
 
         var viewHost = new FantaSim.App.Ui.Seam.ViewHost(

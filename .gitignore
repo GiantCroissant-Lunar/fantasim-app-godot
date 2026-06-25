@@ -30,7 +30,7 @@ project/hosts/complete-app/bin/*
 
 # Tool outputs
 repomix-output.*
-CHANGELOG.md
+**/GeneratedOut/
 
 # Staged collectible-bundle plugin DLLs (copied from each tier's build output before PCK export).
 # Bundle sources (manifest.json + scenes) are tracked; the packed .dll is a build artifact.

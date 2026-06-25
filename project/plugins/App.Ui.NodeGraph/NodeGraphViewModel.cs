@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using FantaSim.App.NodeGraph;
 
 namespace FantaSim.App.Ui.NodeGraph;
 
@@ -25,7 +26,10 @@ public sealed record NodeItem(
     IReadOnlyList<ParameterItem>? Parameters = null,
     int PreviewWidth = 0,
     int PreviewHeight = 0,
-    byte[]? PreviewRgba = null);
+    byte[]? PreviewRgba = null,
+    FunctionProviderMetadata? ProviderMetadata = null,
+    FunctionExecutionTraits? ExecutionTraits = null,
+    GraphNodeRuntimeState? RuntimeState = null);
 
 public sealed record ParameterItem(string Key, string Label, string Value, string KindHint);
 

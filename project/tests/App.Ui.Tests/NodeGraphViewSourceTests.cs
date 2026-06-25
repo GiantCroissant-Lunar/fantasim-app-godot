@@ -240,6 +240,50 @@ public sealed class NodeGraphViewSourceTests
         Assert.Contains("world generation graph - Mobile Plate Geosphere", json);
     }
 
+    [Fact]
+    public void BuildDocument_projects_world_node_provider_metadata()
+    {
+        var source = new WorldGenerationGraphSource(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildVplanetEarthGraph());
+        var view = new NodeGraphViewSource(source, title: "world generation graph");
+
+        _ = view.BuildDocument();
+
+        var runNode = Assert.Single(view.Nodes, node => node.NodeId == "vplanet_run");
+        Assert.Equal("external/science", runNode.Category);
+        Assert.Equal(FunctionProviderKinds.Iii, runNode.ProviderMetadata?.ProviderKind);
+        Assert.Equal("vplanet-worker", runNode.ProviderMetadata?.ProviderId);
+        Assert.True(runNode.ExecutionTraits?.RequiresExternalProcess);
+        Assert.True(runNode.ExecutionTraits?.SupportsCancellation);
+    }
+
+    [Fact]
+    public async Task BuildDocument_projects_runtime_state()
+    {
+        var graph = new GraphDocument(
+            Nodes: new[] { new GraphNode("n", "fn", new JsonObject { ["seed"] = 7 }) },
+            Wires: Array.Empty<GraphWire>(),
+            SinkNodeId: "n");
+        var source = new EditableGraphSource("runtime", graph);
+        var tracker = new GraphRuntimeStateTracker();
+        var view = new NodeGraphViewSource(source, runtimeState: tracker);
+        var provider = new RuntimeProvider();
+
+        await new GraphExecutor(new[] { provider }, tracker.CreateRunContext("run-ui"))
+            .ExecuteAsync(graph, sharedParams: new JsonObject { ["job_id"] = "J1" });
+
+        var node = Assert.Single(view.Nodes);
+        Assert.Equal(GraphNodeRuntimeStatus.Completed, node.RuntimeState?.Status);
+        Assert.Contains("\"seed\":7", node.RuntimeState?.InputsJson);
+        Assert.Contains("\"result\":\"ok\"", node.RuntimeState?.OutputsJson);
+
+        var json = JsonSerializer.SerializeToNode(view.BuildDocument())?.ToJsonString();
+        Assert.Contains("run-ui", json);
+        Assert.Contains("Completed", json);
+        Assert.Contains("outputsJson", json);
+    }
+
     private sealed class AnnotatedGraphSource : IGraphSource, IGraphAnnotationSource
     {
         public AnnotatedGraphSource(
@@ -350,5 +394,13 @@ public sealed class NodeGraphViewSourceTests
 
             throw new ArgumentException($"Unknown graph '{graphId}'.", nameof(graphId));
         }
+    }
+
+    private sealed class RuntimeProvider : INodeFunctionProvider
+    {
+        public bool Supports(string functionId) => functionId == "fn";
+
+        public Task<JsonObject> InvokeAsync(string functionId, JsonObject payload, CancellationToken cancellationToken = default)
+            => Task.FromResult(new JsonObject { ["result"] = "ok", ["path"] = "user://artifact.glb" });
     }
 }

@@ -1,3 +1,4 @@
+using FantaSim.App.Activity;
 using FantaSim.App.Command.Orchestration;
 using FantaSim.App.Command.Providers;
 using Microsoft.Extensions.Logging;
@@ -73,26 +74,34 @@ public sealed class Service : IService, IDisposable
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Command);
 
+        var commandId = string.IsNullOrWhiteSpace(request.CorrelationId)
+            ? Guid.NewGuid().ToString("N")
+            : request.CorrelationId;
+
         (CommandDescriptor Descriptor, CommandHandler Handler) entry;
         lock (_handlerGate)
         {
             if (!_handlers.TryGetValue(request.Command, out entry))
-                return new CommandResult(
-                    Guid.NewGuid().ToString("N"),
+            {
+                var unknown = new CommandResult(
+                    commandId,
                     false,
                     Error: new CommandError("unknown-command", $"Unknown command: {request.Command}"));
+                RecordCommandResult(request, null, commandId, null, unknown);
+                return unknown;
+            }
         }
 
-        var commandId = string.IsNullOrWhiteSpace(request.CorrelationId)
-            ? Guid.NewGuid().ToString("N")
-            : request.CorrelationId;
+        var requestEntryId = RecordCommandRequest(request, entry.Descriptor, commandId);
 
         try
         {
             var resultJson = await _mainThread.InvokeAsync(
                 () => entry.Handler(request.PayloadJson, cancellationToken), cancellationToken);
 
-            return new CommandResult(commandId, true, ResultJson: resultJson);
+            var result = new CommandResult(commandId, true, ResultJson: resultJson);
+            RecordCommandResult(request, entry.Descriptor, commandId, requestEntryId, result);
+            return result;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -101,7 +110,9 @@ public sealed class Service : IService, IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Command {Command} failed: {Message}", request.Command, ex.Message);
-            return new CommandResult(commandId, false, Error: new CommandError(ex.GetType().Name, ex.Message));
+            var result = new CommandResult(commandId, false, Error: new CommandError(ex.GetType().Name, ex.Message));
+            RecordCommandResult(request, entry.Descriptor, commandId, requestEntryId, result);
+            return result;
         }
     }
 
@@ -134,6 +145,57 @@ public sealed class Service : IService, IDisposable
         catch
         {
             return null;
+        }
+    }
+
+    private string? RecordCommandRequest(CommandRequest request, CommandDescriptor descriptor, string correlationId)
+    {
+        var entryId = Guid.NewGuid().ToString("N");
+        AppendActivity(new ActivityEntry(
+            EntryId: entryId,
+            Kind: ActivityEntryKind.DomainCommand,
+            Timestamp: DateTimeOffset.UtcNow,
+            Actor: new ActivityActor(
+                string.IsNullOrWhiteSpace(request.ActorKind) ? "system" : request.ActorKind!,
+                request.ActorId),
+            Name: request.Command,
+            Category: descriptor.Category,
+            PayloadJson: request.PayloadJson,
+            CorrelationId: correlationId,
+            Outcome: "requested"));
+        return entryId;
+    }
+
+    private void RecordCommandResult(
+        CommandRequest request,
+        CommandDescriptor? descriptor,
+        string correlationId,
+        string? causationId,
+        CommandResult result)
+    {
+        AppendActivity(new ActivityEntry(
+            EntryId: Guid.NewGuid().ToString("N"),
+            Kind: ActivityEntryKind.CommandResult,
+            Timestamp: DateTimeOffset.UtcNow,
+            Actor: new ActivityActor("system", "command"),
+            Name: request.Command + ".result",
+            Category: descriptor?.Category ?? "command",
+            PayloadJson: result.ResultJson,
+            CausationId: causationId,
+            CorrelationId: correlationId,
+            Outcome: result.Ok ? "ok" : "failed",
+            Error: result.Error?.Message));
+    }
+
+    private void AppendActivity(ActivityEntry entry)
+    {
+        try
+        {
+            _registry.TryGet<FantaSim.App.Activity.IService>()?.Append(entry);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Activity ledger unavailable while recording command activity.");
         }
     }
 

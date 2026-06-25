@@ -8,6 +8,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\contracts\App.Ui\App.Ui.csproj" />
     <ProjectReference Include="..\..\contracts\App.Resource\App.Resource.csproj" />
+    <ProjectReference Include="..\..\contracts\App.NodeGraph\App.NodeGraph.csproj" />
     <ProjectReference Include="..\App.Ui\App.Ui.csproj" />
     <ProjectReference Include="..\App.Common\App.Common.csproj" />
     <ProjectReference Include="..\App.Command\App.Command.csproj" />

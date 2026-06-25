@@ -13,7 +13,7 @@ namespace FantaSim.App.World.GenerationGraph;
 /// Editable world-generation graph source backed by the typed world authoring model and projected
 /// into the generic node-graph document expected by the shared UI/executor.
 /// </summary>
-public sealed class WorldGenerationGraphSource : IGraphSource, IGraphAnnotationSource
+public sealed class WorldGenerationGraphSource : IGraphSource, IGraphAnnotationSource, IGraphNodeMetadataSource
 {
     private readonly object _gate = new();
 
@@ -58,6 +58,26 @@ public sealed class WorldGenerationGraphSource : IGraphSource, IGraphAnnotationS
     /// <summary>Compile with full execution validation. Use this before running the graph.</summary>
     public CompiledWorldGenerationGraph CompileForExecution(string? sinkNodeId = null)
         => WorldGenerationGraphCompiler.Compile(Graph, sinkNodeId);
+
+    public bool TryGetNodeTypeInfo(string typeId, out GraphNodeTypeInfo? info)
+    {
+        var schema = WorldGenerationNodeCatalog.Find(typeId);
+        if (schema is null)
+        {
+            info = null;
+            return false;
+        }
+
+        info = new GraphNodeTypeInfo(
+            schema.TypeId,
+            schema.Category,
+            schema.Summary,
+            schema.IsSideEffect,
+            schema.IsExpensive,
+            schema.ProviderMetadata,
+            schema.ExecutionTraits);
+        return true;
+    }
 
     internal static WorldGenerationGraphView ApplyEdit(WorldGenerationGraphView graph, GraphEdit edit)
     {

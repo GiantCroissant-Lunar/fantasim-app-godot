@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.fantasim.local/external-tools/vplanet/vplanet.status.response.schema.json",
+  "title": "VPLanet Status Response",
+  "type": "object",
+  "properties": {
+    "status": {
+      "type": "object",
+      "properties": {
+        "available": { "type": "boolean" },
+        "binPath": { "type": [ "string", "null" ] },
+        "version": { "type": [ "string", "null" ] },
+        "message": { "type": "string" }
+      },
+      "required": [ "available", "binPath", "version", "message" ],
+      "additionalProperties": false
+    },
+    "ok": { "type": "boolean" }
+  },
+  "required": [ "status", "ok" ],
+  "additionalProperties": false
+}

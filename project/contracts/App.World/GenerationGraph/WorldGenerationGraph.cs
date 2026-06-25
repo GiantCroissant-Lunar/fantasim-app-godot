@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FantaSim.App.NodeGraph;
 
 namespace FantaSim.App.World;
 
@@ -61,7 +62,9 @@ public sealed record WorldGenerationNodeSchema(
     IReadOnlyList<WorldGenerationGraphPort> Inputs,
     IReadOnlyList<WorldGenerationGraphPort> Outputs,
     string Summary,
-    IReadOnlyList<WorldGenerationGraphParameter>? Parameters = null);
+    IReadOnlyList<WorldGenerationGraphParameter>? Parameters = null,
+    FunctionProviderMetadata? ProviderMetadata = null,
+    FunctionExecutionTraits? ExecutionTraits = null);
 
 /// <summary>
 /// Authoring-only annotation kinds. These are intentionally not executable node types.

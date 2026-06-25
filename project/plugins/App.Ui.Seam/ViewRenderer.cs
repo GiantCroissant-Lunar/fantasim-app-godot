@@ -84,8 +84,13 @@ public sealed class ViewRenderer : IDisposable
             var mounted = TryMountShell(source, document) ?? _renderer.Mount(_parent, document, clearExistingChildren: true);
             if (mounted is Control control)
             {
+                control.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+                control.SetOffsetsPreset(Control.LayoutPreset.FullRect);
+                control.Position = Vector2.Zero;
+                control.Size = _parent.Size;
                 control.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
                 control.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+                control.SetDeferred(Control.PropertyName.Size, _parent.Size);
             }
 
             BindGraphIfPresent(mounted, source);

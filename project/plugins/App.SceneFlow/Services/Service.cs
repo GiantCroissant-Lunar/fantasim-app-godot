@@ -26,7 +26,7 @@ public sealed class Service : IService
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.WaitAsync(cancellationToken);
         try
         {
             var existing = _active.FirstOrDefault(scene => scene.SceneId == request.SceneId);
@@ -41,7 +41,7 @@ public sealed class Service : IService
                 return existing;
             }
 
-            var session = await _provider.LoadAsync(request, cancellationToken).ConfigureAwait(false);
+            var session = await _provider.LoadAsync(request, cancellationToken);
             _active.Add(session);
             _logger.LogInformation("Scene entered: {Scene}", session.SceneId);
             return session;
@@ -56,10 +56,10 @@ public sealed class Service : IService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sceneId);
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.WaitAsync(cancellationToken);
         try
         {
-            await ExitCoreAsync(sceneId, cancellationToken).ConfigureAwait(false);
+            await ExitCoreAsync(sceneId, cancellationToken);
         }
         finally
         {
@@ -71,9 +71,9 @@ public sealed class Service : IService
     {
         var children = _active.Where(scene => scene.ParentSceneId == sceneId).Select(scene => scene.SceneId).ToArray();
         foreach (var child in children)
-            await ExitCoreAsync(child, cancellationToken).ConfigureAwait(false);
+            await ExitCoreAsync(child, cancellationToken);
 
-        await _provider.UnloadAsync(sceneId, cancellationToken).ConfigureAwait(false);
+        await _provider.UnloadAsync(sceneId, cancellationToken);
         _active.RemoveAll(scene => scene.SceneId == sceneId);
         _logger.LogInformation("Scene exited: {Scene}", sceneId);
     }

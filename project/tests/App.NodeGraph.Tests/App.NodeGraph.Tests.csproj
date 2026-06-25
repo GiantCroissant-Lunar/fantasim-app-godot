@@ -7,10 +7,19 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\plugins\App.NodeGraph\App.NodeGraph.csproj" />
     <ProjectReference Include="..\..\contracts\App.NodeGraph\App.NodeGraph.csproj" />
     <ProjectReference Include="..\..\plugins\App.Iii\App.Iii.csproj" />
+    <ProjectReference Include="..\..\plugins\App.World\App.World.csproj" />
+    <ProjectReference Include="..\..\tools\App.ExternalTools.CodeGen\App.ExternalTools.CodeGen.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\contracts\App.NodeGraph\ExternalTools\Schemas\vplanet\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Schemas\vplanet\%(Filename)%(Extension)</Link>
+    </None>
   </ItemGroup>
 </Project>

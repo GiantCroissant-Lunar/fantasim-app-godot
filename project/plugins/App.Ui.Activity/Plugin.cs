@@ -1,8 +1,11 @@
 using System;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FantaSim.App.Ui;
+using FantaSim.App.Ui.Presentation;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using PluginArchi.Extensibility.Abstractions;
 using ServiceArchi.Contracts;
 
@@ -24,14 +27,35 @@ public sealed partial class ActivityPlugin : ILifecyclePlugin
 
     public ValueTask InitializeAsync(IPluginContext context, CancellationToken ct = default)
     {
+        var log = context.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Activity.Bootstrap");
         var registry = context.Services.GetRequiredService<IRegistry>();
-        var ledger = registry.TryGet<FantaSim.App.Activity.IService>();
-        var bus = registry.TryGet<CrosscutFoundation.Messaging.IMessageBus>();
-        _source = new ActivityViewSource(ledger, bus);
-        _registration = registry.RegisterOwned<IViewSource>(
-            _source,
-            new ServiceRegistration { Tags = new[] { "ui-view" }, Description = "activity-ledger UI view (bundle)" });
-        return ValueTask.CompletedTask;
+        log.LogInformation(
+            "Activity plugin initializing; IViewSource contract assembly={Assembly}.",
+            typeof(IViewSource).Assembly.FullName);
+
+        try
+        {
+            var ledger = registry.TryGet<FantaSim.App.Activity.IService>();
+            var bus = registry.TryGet<CrosscutFoundation.Messaging.IMessageBus>();
+            var templateJson = PresentationDocumentLoader.LoadText(
+                typeof(ActivityPlugin).Assembly,
+                fileName: "activity.presentation.json",
+                embeddedResourceSuffix: ".Presentation.activity.presentation.json");
+            _source = new ActivityViewSource(ledger, bus, templateJson);
+            _registration = registry.RegisterOwned<IViewSource>(
+                _source,
+                new ServiceRegistration { Tags = new[] { "ui-view" }, Description = "activity-ledger UI view (bundle)" });
+            log.LogInformation(
+                "Activity view source registered; matching view sources={Count}; source assembly={Assembly}.",
+                registry.GetAll<IViewSource>().Count(source => source.ViewId == "activity"),
+                _source.GetType().Assembly.FullName);
+            return ValueTask.CompletedTask;
+        }
+        catch (Exception ex)
+        {
+            log.LogError(ex, "Activity plugin initialization failed.");
+            throw;
+        }
     }
 
     public ValueTask ShutdownAsync(CancellationToken ct = default)

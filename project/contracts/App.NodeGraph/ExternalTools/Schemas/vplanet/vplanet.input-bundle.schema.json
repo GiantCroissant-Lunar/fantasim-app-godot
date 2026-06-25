@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.fantasim.local/external-tools/vplanet/vplanet.input-bundle.schema.json",
+  "title": "VPLanet Input Bundle",
+  "type": "object",
+  "properties": {
+    "job_id": { "type": "string" },
+    "rootPath": { "type": "string" },
+    "manifestPath": { "type": "string" },
+    "primaryPath": { "type": "string" },
+    "bodyPaths": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "systemName": { "type": "string" },
+    "starBodyName": { "type": "string" },
+    "planetBodyName": { "type": "string" }
+  },
+  "required": [ "job_id", "rootPath", "manifestPath", "primaryPath", "bodyPaths", "systemName", "starBodyName", "planetBodyName" ],
+  "additionalProperties": false
+}

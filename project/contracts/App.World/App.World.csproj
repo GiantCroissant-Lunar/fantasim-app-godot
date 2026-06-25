@@ -14,4 +14,7 @@
     <PackageReference Include="GiantCroissant.ServiceArchi.SourceGen" PrivateAssets="all" />
     <PackageReference Include="UnifyMaths" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\App.NodeGraph\App.NodeGraph.csproj" />
+  </ItemGroup>
 </Project>

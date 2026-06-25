@@ -26,7 +26,7 @@ internal sealed class SceneFlowProvider
             if (resource is not null)
             {
                 _logger.LogInformation("Loading scene bundle: {Scene}", request.SceneId);
-                await resource.LoadFromDirectoryAsync(request.SceneId, cancellationToken).ConfigureAwait(false);
+                await resource.LoadFromDirectoryAsync(request.SceneId, cancellationToken);
                 activator = _registry.GetAll<ISceneActivator>().FirstOrDefault(candidate => candidate.SceneId == request.SceneId);
             }
 
@@ -48,22 +48,27 @@ internal sealed class SceneFlowProvider
             throw new InvalidOperationException($"Parent scene '{request.ParentSceneId}' is not active.");
         }
 
-        var activation = await activator.ActivateAsync(parent, cancellationToken).ConfigureAwait(false);
+        var activation = await activator.ActivateAsync(parent, cancellationToken);
         var session = new SceneSession(request.SceneId, request.ParentSceneId);
         _active[request.SceneId] = (activation, session);
         return session;
     }
 
-    public async Task UnloadAsync(string sceneId, CancellationToken cancellationToken = default)
+    public Task UnloadAsync(string sceneId, CancellationToken cancellationToken = default)
     {
-        if (!_active.TryGetValue(sceneId, out var entry))
-            return;
-
-        _active.Remove(sceneId);
-        entry.Activation.Dispose();
+        if (!TryDisposeActivation(sceneId))
+            return Task.CompletedTask;
 
         var resource = _registry.TryGet<FantaSim.App.Resource.IService>();
-        if (resource is not null)
-            await resource.UnloadAsync(sceneId, cancellationToken).ConfigureAwait(false);
+        return resource?.UnloadAsync(sceneId, cancellationToken) ?? Task.CompletedTask;
+    }
+
+    private bool TryDisposeActivation(string sceneId)
+    {
+        if (!_active.Remove(sceneId, out var entry))
+            return false;
+
+        entry.Activation.Dispose();
+        return true;
     }
 }

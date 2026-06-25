@@ -22,4 +22,11 @@ public sealed class RunContext
 
     /// <summary>Called once after the sink resolves (only on a successful run).</summary>
     public Func<GraphDocument, CancellationToken, Task>? AfterRun { get; init; }
+
+    /// <summary>Called when a node invocation throws. Receives the node and the exception.
+    /// This hook fires before the exception is re-thrown so trackers can record the failure.</summary>
+    public Func<GraphNode, Exception, CancellationToken, Task>? OnNodeFailed { get; init; }
+
+    /// <summary>Called when the run fails before <see cref="AfterRun"/>. Receives the graph and exception.</summary>
+    public Func<GraphDocument, Exception, CancellationToken, Task>? OnRunFailed { get; init; }
 }

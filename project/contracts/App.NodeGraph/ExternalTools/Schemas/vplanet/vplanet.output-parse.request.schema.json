@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.fantasim.local/external-tools/vplanet/vplanet.output-parse.request.schema.json",
+  "title": "VPLanet Output Parse Request",
+  "type": "object",
+  "properties": {
+    "runResult": { "$ref": "vplanet.run-result.schema.json" },
+    "bodyName": { "type": "string" },
+    "job_id": { "type": "string" }
+  },
+  "required": [ "runResult", "bodyName" ],
+  "additionalProperties": false
+}

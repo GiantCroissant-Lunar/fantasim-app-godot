@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.fantasim.local/external-tools/vplanet/vplanet.run.request.schema.json",
+  "title": "VPLanet Run Request",
+  "type": "object",
+  "properties": {
+    "inputBundle": { "$ref": "vplanet.input-bundle.schema.json" },
+    "timeoutSeconds": { "type": "integer" },
+    "job_id": { "type": "string" }
+  },
+  "required": [ "inputBundle", "timeoutSeconds" ],
+  "additionalProperties": false
+}

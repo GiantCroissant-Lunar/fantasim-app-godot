@@ -2,6 +2,11 @@ using System.Collections;
 using System.Reflection;
 using Godot;
 using Microsoft.Extensions.Logging;
+using FunctionExecutionTraits = FantaSim.App.NodeGraph.FunctionExecutionTraits;
+using FunctionProviderDetailFormatter = FantaSim.App.NodeGraph.FunctionProviderDetailFormatter;
+using FunctionProviderMetadata = FantaSim.App.NodeGraph.FunctionProviderMetadata;
+using GraphNodeRuntimeState = FantaSim.App.NodeGraph.GraphNodeRuntimeState;
+using GraphNodeRuntimeStatus = FantaSim.App.NodeGraph.GraphNodeRuntimeStatus;
 
 namespace FantaSim.App.Ui.Seam;
 
@@ -133,10 +138,17 @@ internal static class GraphNodeVisualEnhancer
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
         });
 
+        var detailText = $"{node.Summary}\n{NodeFacts(node)}\n{PortKindSummary(node)}";
+        var extraLines = FunctionProviderDetailFormatter.Format(node.ProviderMetadata, node.ExecutionTraits);
+        if (extraLines.Count > 0)
+        {
+            detailText += "\n" + string.Join("\n", extraLines);
+        }
+
         var detail = new Label
         {
             Name = $"{MetadataPrefix}detail",
-            Text = $"{node.Summary}\n{NodeFacts(node)}\n{PortKindSummary(node)}",
+            Text = detailText,
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
             ClipText = false,
             CustomMinimumSize = new Vector2(NodeContentWidth, 0),
@@ -144,6 +156,8 @@ internal static class GraphNodeVisualEnhancer
         detail.AddThemeColorOverride("font_color", new Color(0.90f, 0.93f, 0.97f, 0.98f));
         detail.AddThemeFontSizeOverride("font_size", 11);
         graphNode.AddChild(detail);
+
+        AddRuntimeBody(graphNode, node);
 
         if (node.Subgraphs.Count > 0)
         {
@@ -206,6 +220,68 @@ internal static class GraphNodeVisualEnhancer
             }
         }
     }
+
+    private static void AddRuntimeBody(GraphNode graphNode, VisualNode node)
+    {
+        var state = node.RuntimeState;
+        if (state is null)
+            return;
+
+        var hasPayload = !string.IsNullOrWhiteSpace(state.InputsJson)
+                         || !string.IsNullOrWhiteSpace(state.OutputsJson)
+                         || !string.IsNullOrWhiteSpace(state.ArtifactsJson)
+                         || !string.IsNullOrWhiteSpace(state.LogsJson);
+        if (state.Status == GraphNodeRuntimeStatus.Pending && !hasPayload)
+            return;
+
+        var statusText = state.Progress > 0 && state.Progress < 1
+            ? $"state: {state.Status} {(int)(state.Progress * 100)}%"
+            : $"state: {state.Status}";
+        var status = new Label
+        {
+            Name = $"{MetadataPrefix}runtime_state",
+            Text = statusText,
+            AutowrapMode = TextServer.AutowrapMode.Off,
+            ClipText = true,
+            CustomMinimumSize = new Vector2(NodeContentWidth, 0),
+        };
+        status.AddThemeColorOverride("font_color", RuntimeColor(state.Status));
+        status.AddThemeFontSizeOverride("font_size", 11);
+        graphNode.AddChild(status);
+
+        AddRuntimeLine(graphNode, "in", state.InputsJson, new Color(0.68f, 0.86f, 1.00f, 0.95f));
+        AddRuntimeLine(graphNode, "out", state.OutputsJson, new Color(0.70f, 0.92f, 0.76f, 0.95f));
+        AddRuntimeLine(graphNode, "art", state.ArtifactsJson, new Color(1.00f, 0.82f, 0.48f, 0.95f));
+        AddRuntimeLine(graphNode, "log", state.LogsJson, new Color(1.00f, 0.62f, 0.58f, 0.95f));
+    }
+
+    private static void AddRuntimeLine(GraphNode graphNode, string prefix, string? value, Color color)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+
+        var label = new Label
+        {
+            Name = $"{MetadataPrefix}runtime_{prefix}",
+            Text = $"{prefix}: {Shorten(value, 52)}",
+            AutowrapMode = TextServer.AutowrapMode.Off,
+            ClipText = true,
+            CustomMinimumSize = new Vector2(NodeContentWidth, 0),
+        };
+        label.AddThemeColorOverride("font_color", color);
+        label.AddThemeFontSizeOverride("font_size", 10);
+        graphNode.AddChild(label);
+    }
+
+    private static Color RuntimeColor(GraphNodeRuntimeStatus status)
+        => status switch
+        {
+            GraphNodeRuntimeStatus.Running => new Color(0.52f, 0.78f, 1.00f, 0.98f),
+            GraphNodeRuntimeStatus.Completed => new Color(0.58f, 0.92f, 0.68f, 0.98f),
+            GraphNodeRuntimeStatus.Failed => new Color(1.00f, 0.46f, 0.40f, 0.98f),
+            GraphNodeRuntimeStatus.Cancelled => new Color(0.95f, 0.72f, 0.42f, 0.98f),
+            _ => new Color(0.78f, 0.80f, 0.86f, 0.92f),
+        };
 
     private static void RemoveMetadata(GraphNode graphNode)
     {
@@ -349,6 +425,10 @@ internal static class GraphNodeVisualEnhancer
             if (string.IsNullOrWhiteSpace(nodeId))
                 continue;
 
+            var metadata = item.GetType().GetProperty("ProviderMetadata")?.GetValue(item) as FunctionProviderMetadata;
+            var traits = item.GetType().GetProperty("ExecutionTraits")?.GetValue(item) as FunctionExecutionTraits;
+            var runtimeState = item.GetType().GetProperty("RuntimeState")?.GetValue(item) as GraphNodeRuntimeState;
+
             yield return new VisualNode(
                 nodeId,
                 ReadString(item, "TypeId") ?? nodeId,
@@ -363,7 +443,10 @@ internal static class GraphNodeVisualEnhancer
                 ReadInt(item, "PreviewWidth"),
                 ReadInt(item, "PreviewHeight"),
                 ReadByteArray(item, "PreviewRgba"),
-                subgraphsByNode.TryGetValue(nodeId, out var subgraphs) ? subgraphs : Array.Empty<VisualSubgraph>());
+                subgraphsByNode.TryGetValue(nodeId, out var subgraphs) ? subgraphs : Array.Empty<VisualSubgraph>(),
+                metadata,
+                traits,
+                runtimeState);
         }
     }
 
@@ -437,7 +520,10 @@ internal static class GraphNodeVisualEnhancer
         int PreviewWidth,
         int PreviewHeight,
         byte[]? PreviewRgba,
-        IReadOnlyList<VisualSubgraph> Subgraphs);
+        IReadOnlyList<VisualSubgraph> Subgraphs,
+        FunctionProviderMetadata? ProviderMetadata = null,
+        FunctionExecutionTraits? ExecutionTraits = null,
+        GraphNodeRuntimeState? RuntimeState = null);
 
     private sealed record VisualPort(string Label, string KindHint);
     private sealed record VisualSubgraph(string ParentNodeId, string SubgraphId, string Label);

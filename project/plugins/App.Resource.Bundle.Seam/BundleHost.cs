@@ -17,7 +17,7 @@ public sealed class BundleHost
     private static readonly System.Net.Http.HttpClient Http = new();
 
     private readonly BundleVfs _vfs;
-    private readonly DllExtractor _extractor;
+    private readonly BundleExtractor _extractor;
     private readonly BundleSceneHost _sceneHost;
     private readonly IPluginHost _pluginHost;
     private readonly ILogger _logger;
@@ -27,7 +27,7 @@ public sealed class BundleHost
 
     public BundleHost(
         BundleVfs vfs,
-        DllExtractor extractor,
+        BundleExtractor extractor,
         BundleSceneHost sceneHost,
         IPluginHost pluginHost,
         ILogger logger,
@@ -53,10 +53,10 @@ public sealed class BundleHost
 
     public async Task LoadAsync(string pckPath, CancellationToken cancellationToken = default)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.WaitAsync(cancellationToken);
         try
         {
-            await LoadCoreAsync(pckPath, cancellationToken).ConfigureAwait(false);
+            await LoadCoreAsync(pckPath, cancellationToken);
         }
         finally
         {
@@ -66,35 +66,35 @@ public sealed class BundleHost
 
     public async Task LoadRemoteAsync(string url, CancellationToken cancellationToken = default)
     {
-        var bytes = await Http.GetByteArrayAsync(url, cancellationToken).ConfigureAwait(false);
+        var bytes = await Http.GetByteArrayAsync(url, cancellationToken);
         var tempDir = Path.Combine(Path.GetTempPath(), "fantasim_bundles_remote");
         Directory.CreateDirectory(tempDir);
         var fileName = Path.GetFileName(new Uri(url).LocalPath);
         var tempPath = Path.Combine(tempDir, fileName);
-        await File.WriteAllBytesAsync(tempPath, bytes, cancellationToken).ConfigureAwait(false);
-        await LoadAsync(tempPath, cancellationToken).ConfigureAwait(false);
+        await File.WriteAllBytesAsync(tempPath, bytes, cancellationToken);
+        await LoadAsync(tempPath, cancellationToken);
     }
 
     public async Task UnloadAsync(string bundleId, CancellationToken cancellationToken = default)
     {
         PluginUnloadResult? unloadResult;
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.WaitAsync(cancellationToken);
         try
         {
-            unloadResult = await UnloadCoreAsync(bundleId, detachScene: true, cancellationToken).ConfigureAwait(false);
+            unloadResult = await UnloadCoreAsync(bundleId, detachScene: true, cancellationToken);
         }
         finally
         {
             _gate.Release();
         }
 
-        await VerifyOldContextCollectedAsync(bundleId, unloadResult, cancellationToken).ConfigureAwait(false);
+        await VerifyOldContextCollectedAsync(bundleId, unloadResult, cancellationToken);
     }
 
     public async Task ReloadAsync(string bundleId, CancellationToken cancellationToken = default)
     {
         PluginUnloadResult? unloadResult = null;
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.WaitAsync(cancellationToken);
         try
         {
             if (!_loaded.TryGetValue(bundleId, out var bundle))
@@ -104,22 +104,22 @@ public sealed class BundleHost
             }
 
             var pckPath = bundle.PckPath;
-            unloadResult = await UnloadCoreAsync(bundleId, detachScene: true, cancellationToken).ConfigureAwait(false);
-            await LoadCoreAsync(pckPath, cancellationToken).ConfigureAwait(false);
+            unloadResult = await UnloadCoreAsync(bundleId, detachScene: true, cancellationToken);
+            await LoadCoreAsync(pckPath, cancellationToken);
         }
         finally
         {
             _gate.Release();
         }
 
-        await VerifyOldContextCollectedAsync(bundleId, unloadResult, cancellationToken).ConfigureAwait(false);
+        await VerifyOldContextCollectedAsync(bundleId, unloadResult, cancellationToken);
     }
 
     public async Task ReloadByPckPathAsync(string pckPath, CancellationToken cancellationToken = default)
     {
         PluginUnloadResult? unloadResult = null;
         string? reloadedBundleId = null;
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.WaitAsync(cancellationToken);
         try
         {
             var match = _loaded.Values.FirstOrDefault(bundle =>
@@ -128,14 +128,14 @@ public sealed class BundleHost
 
             if (match is null)
             {
-                await LoadCoreAsync(pckPath, cancellationToken).ConfigureAwait(false);
+                await LoadCoreAsync(pckPath, cancellationToken);
                 return;
             }
 
             var bundleId = match.BundleId;
             reloadedBundleId = bundleId;
-            unloadResult = await UnloadCoreAsync(bundleId, detachScene: true, cancellationToken).ConfigureAwait(false);
-            await LoadCoreAsync(pckPath, cancellationToken).ConfigureAwait(false);
+            unloadResult = await UnloadCoreAsync(bundleId, detachScene: true, cancellationToken);
+            await LoadCoreAsync(pckPath, cancellationToken);
         }
         finally
         {
@@ -143,16 +143,16 @@ public sealed class BundleHost
         }
 
         if (reloadedBundleId is not null)
-            await VerifyOldContextCollectedAsync(reloadedBundleId, unloadResult, cancellationToken).ConfigureAwait(false);
+            await VerifyOldContextCollectedAsync(reloadedBundleId, unloadResult, cancellationToken);
     }
 
     public async Task UnloadAllAsync(CancellationToken cancellationToken = default)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.WaitAsync(cancellationToken);
         try
         {
             foreach (var bundleId in _loaded.Keys.ToArray())
-                await UnloadCoreAsync(bundleId, detachScene: false, cancellationToken).ConfigureAwait(false);
+                await UnloadCoreAsync(bundleId, detachScene: false, cancellationToken);
         }
         finally
         {
@@ -201,15 +201,29 @@ public sealed class BundleHost
             // its assembly is loaded -- so the assembly must come first or the binding silently no-ops.
             if (!string.IsNullOrWhiteSpace(pluginAssembly))
             {
-                var tempPath = _extractor.ExtractAllToTemp(bundleResPath, pluginAssembly);
-                if (!string.IsNullOrWhiteSpace(tempPath))
+                var extractionResult = _extractor.Extract(bundleResPath, pluginAssembly);
+                if (!string.IsNullOrWhiteSpace(extractionResult?.PluginAssemblyPath))
                 {
-                    pluginTempDir = Path.GetDirectoryName(tempPath);
+                    pluginTempDir = Path.GetDirectoryName(extractionResult!.PluginAssemblyPath);
                     if (!string.IsNullOrWhiteSpace(pluginTempDir))
                     {
-                        await _pluginHost.AddGroupAsync(bundleId, manifest?.DisplayName ?? bundleId, pluginTempDir).ConfigureAwait(false);
+                        _logger.LogInformation(
+                            "Bundle plugin extracted: {BundleId} assembly={Assembly} dir={Directory} dataFiles={DataFileCount}",
+                            bundleId,
+                            pluginAssembly,
+                            pluginTempDir,
+                            extractionResult.DataFiles.Count);
+                        await _pluginHost.AddGroupAsync(bundleId, manifest?.DisplayName ?? bundleId, pluginTempDir);
                         pluginGroupAdded = true;
                     }
+                }
+                else
+                {
+                    _logger.LogWarning(
+                        "Bundle plugin assembly was not extracted: {BundleId} expected={Assembly} bundleResPath={BundleResPath}",
+                        bundleId,
+                        pluginAssembly,
+                        bundleResPath);
                 }
             }
 
@@ -230,7 +244,7 @@ public sealed class BundleHost
         catch
         {
             if (pluginGroupAdded)
-                await _pluginHost.RemoveGroupAsync(bundleId).ConfigureAwait(false);
+                await _pluginHost.RemoveGroupAsync(bundleId);
 
             if (sceneRegistered)
                 _sceneHost.RemoveScene(bundleId, detachFromParent: true);
@@ -252,9 +266,9 @@ public sealed class BundleHost
             // Prefer the diagnostic unload so we get a weak-only probe of the old ALC; fall back to the
             // plain unload when the host doesn't implement it (older PluginArchi). Same unload either way.
             if (_pluginHost is IPluginHostDiagnostics diagnostics)
-                unloadResult = await diagnostics.RemoveGroupWithDiagnosticsAsync(bundleId).ConfigureAwait(false);
+                unloadResult = await diagnostics.RemoveGroupWithDiagnosticsAsync(bundleId);
             else
-                await _pluginHost.RemoveGroupAsync(bundleId).ConfigureAwait(false);
+                await _pluginHost.RemoveGroupAsync(bundleId);
         }
         catch (Exception ex)
         {
@@ -299,7 +313,7 @@ public sealed class BundleHost
             // Defer to the NEXT FRAME so the in-flight reload async machinery is released first --
             // the old gate probed synchronously inside the live reload stack and got a false negative.
             await Observable.NextFrame(ObservableSystem.DefaultFrameProvider, cancellationToken)
-                .FirstAsync(cancellationToken).ConfigureAwait(false);
+                .FirstAsync(cancellationToken);
 
             // forceGc every attempt -- matches ReloadPolicy (the probe is meaningless without a fresh
             // GC since IsCollected only reports true after the ALC is actually unreferenced+collected).

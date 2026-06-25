@@ -36,7 +36,7 @@ public abstract class SceneActivatorBase : ISceneActivator
         var child = services.BuildServiceProvider();
         try
         {
-            await OnActivatedAsync(child, cancellationToken).ConfigureAwait(false);
+            await OnActivatedAsync(child, cancellationToken);
         }
         catch
         {

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using FantaSim.App.NodeGraph;
 
 namespace FantaSim.App.World.GenerationGraph;
 
@@ -11,6 +12,13 @@ namespace FantaSim.App.World.GenerationGraph;
 /// </summary>
 public static class WorldGenerationNodeCatalog
 {
+    private static readonly FunctionProviderMetadata CSharpMetadata = new(FunctionProviderKinds.CSharp);
+
+    private static readonly FunctionExecutionTraits NativeExecutionTraits = new(
+        RequiresExternalProcess: false,
+        RequiresNetwork: false,
+        IsDeterministic: true);
+
     private static readonly IReadOnlyList<WorldGenerationNodeSchema> Schemas = new[]
     {
         new WorldGenerationNodeSchema(
@@ -28,7 +36,9 @@ public static class WorldGenerationNodeCatalog
                 new WorldGenerationGraphParameter("frequency", "Frequency", "3", "int"),
                 new WorldGenerationGraphParameter("canonicalTick", "Canonical Tick", "8000000", "long"),
                 new WorldGenerationGraphParameter("spinRateRadiansPerMegaAnnum", "Spin Rate", "0.02", "float"),
-            }),
+            },
+            ProviderMetadata: CSharpMetadata,
+            ExecutionTraits: NativeExecutionTraits),
 
         new WorldGenerationNodeSchema(
             TypeId: WorldFunctionProvider.BodyFormation,
@@ -51,7 +61,9 @@ public static class WorldGenerationNodeCatalog
                 new WorldGenerationGraphParameter("totalMassKg", "Total Mass Kg", "5.972e24", "double"),
                 new WorldGenerationGraphParameter("specificAccretionHeatJPerKg", "Accretion Heat J/Kg", "1.0e7", "double"),
                 new WorldGenerationGraphParameter("volatileMassFraction", "Volatile Mass Fraction", "0.02", "double"),
-            }),
+            },
+            ProviderMetadata: CSharpMetadata,
+            ExecutionTraits: NativeExecutionTraits),
 
         new WorldGenerationNodeSchema(
             TypeId: WorldFunctionProvider.LayerScope,
@@ -68,7 +80,9 @@ public static class WorldGenerationNodeCatalog
                 new WorldGenerationGraphParameter("regimeId", "Regime", "mobile-plate", "string"),
                 new WorldGenerationGraphParameter("layerId", "Layer", "geosphere.crust", "string"),
                 new WorldGenerationGraphParameter("role", "Role", "layer", "string"),
-            }),
+            },
+            ProviderMetadata: CSharpMetadata,
+            ExecutionTraits: NativeExecutionTraits),
 
         new WorldGenerationNodeSchema(
             TypeId: WorldFunctionProvider.CrustGenerate,
@@ -78,7 +92,9 @@ public static class WorldGenerationNodeCatalog
             IsExpensive: true,
             Inputs: new[] { new WorldGenerationGraphPort("options", "Options", "world/options", Required: true) },
             Outputs: new[] { new WorldGenerationGraphPort("result", "Result", "world/crust_summary", Required: false) },
-            Summary: "Runs the current crust-generation pipeline and returns a JSON world summary."),
+            Summary: "Runs the current crust-generation pipeline and returns a JSON world summary.",
+            ProviderMetadata: CSharpMetadata,
+            ExecutionTraits: NativeExecutionTraits),
     }
     .Concat(ExternalToolNodeSchemaProjector.Project(VplanetExternalToolManifest.Build()))
     .ToList();

@@ -35,6 +35,7 @@
     <ProjectReference Include="..\..\contracts\App.Resource\App.Resource.csproj" />
     <ProjectReference Include="..\..\contracts\App.SceneFlow\App.SceneFlow.csproj" />
     <ProjectReference Include="..\..\contracts\App.Ui\App.Ui.csproj" />
+    <ProjectReference Include="..\..\contracts\App.Activity\App.Activity.csproj" />
   </ItemGroup>
 
   <ItemGroup>

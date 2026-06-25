@@ -16,6 +16,10 @@ public sealed class GodotBundleDirectoryResolver : IDirectoryResolver
 
     public string ResolveResourcesDirectory()
     {
+        var envResolved = TryResolveFromEnvironment();
+        if (envResolved is not null)
+            return envResolved;
+
         var configResolved = TryResolveFromConfig();
         if (configResolved is not null)
             return configResolved;
@@ -25,6 +29,22 @@ public sealed class GodotBundleDirectoryResolver : IDirectoryResolver
 
         var exeDir = OS.GetExecutablePath().GetBaseDir();
         return Path.Combine(exeDir, "bundles");
+    }
+
+    private static string? TryResolveFromEnvironment()
+    {
+        var value = System.Environment.GetEnvironmentVariable("FANTASIM_BUNDLE_DIRS")
+            ?? System.Environment.GetEnvironmentVariable("FANTASIM_BUNDLE_DIR");
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        foreach (var entry in value.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (TryGetExistingDirectory(entry, out var resolved))
+                return resolved;
+        }
+
+        return null;
     }
 
     private static string? TryResolveFromConfig()

@@ -26,6 +26,7 @@ public class NodeGraphViewSource : IViewSource, IDisposable
     private const string CommentBoundaryKind = "comment-boundary";
 
     private readonly IGraphSource _source;
+    private readonly IGraphRuntimeStateSource? _runtimeState;
     private readonly Func<Task<JsonObject>>? _runAsync;
     private readonly string _title;
     private readonly Stack<string> _graphBackStack = new();
@@ -36,12 +37,19 @@ public class NodeGraphViewSource : IViewSource, IDisposable
     private int _revision;
     private bool _disposed;
 
-    public NodeGraphViewSource(IGraphSource source, Func<Task<JsonObject>>? runAsync = null, string? title = null)
+    public NodeGraphViewSource(
+        IGraphSource source,
+        Func<Task<JsonObject>>? runAsync = null,
+        string? title = null,
+        IGraphRuntimeStateSource? runtimeState = null)
     {
         _source = source ?? throw new ArgumentNullException(nameof(source));
+        _runtimeState = runtimeState;
         _runAsync = runAsync;
         _title = title ?? $"{source.SourceId} graph";
         _source.Changed += OnSourceChanged;
+        if (_runtimeState is not null)
+            _runtimeState.RuntimeStateChanged += OnRuntimeStateChanged;
         Populate();
         _expectedGraphId = _activeGraphId;
     }
@@ -54,6 +62,8 @@ public class NodeGraphViewSource : IViewSource, IDisposable
     {
         if (_disposed) return;
         _source.Changed -= OnSourceChanged;
+        if (_runtimeState is not null)
+            _runtimeState.RuntimeStateChanged -= OnRuntimeStateChanged;
         _disposed = true;
     }
 
@@ -473,6 +483,28 @@ public class NodeGraphViewSource : IViewSource, IDisposable
         Changed?.Invoke();
     }
 
+    private void OnRuntimeStateChanged()
+    {
+        // Refresh only the runtime-state slice of each node; the graph structure is unchanged.
+        var nodeStates = _runtimeState?.NodeStates;
+        if (nodeStates is null) return;
+
+        var changed = false;
+        for (var i = 0; i < Nodes.Count; i++)
+        {
+            var node = Nodes[i];
+            nodeStates.TryGetValue(node.NodeId, out var state);
+            if (!Equals(node.RuntimeState, state))
+            {
+                Nodes[i] = node with { RuntimeState = state };
+                changed = true;
+            }
+        }
+
+        if (changed)
+            Changed?.Invoke();
+    }
+
     private void Populate()
     {
         Nodes.Clear();
@@ -499,11 +531,35 @@ public class NodeGraphViewSource : IViewSource, IDisposable
         {
             var ins = inPorts[n.Id].Select(p => new PortItem(p, p, "data", true)).ToList();
             var outs = outPorts[n.Id].Select(p => new PortItem(p, p, "data", false)).ToList();
+
+            var category = "graph";
+            var summary = n.FunctionId;
+            var isSideEffect = true;
+            var isExpensive = false;
+            FunctionProviderMetadata? metadata = null;
+            FunctionExecutionTraits? traits = null;
+            if (_source is IGraphNodeMetadataSource metadataSource
+                && metadataSource.TryGetNodeTypeInfo(n.FunctionId, out var nodeType)
+                && nodeType is not null)
+            {
+                category = nodeType.Category;
+                summary = nodeType.Summary;
+                isSideEffect = nodeType.IsSideEffect;
+                isExpensive = nodeType.IsExpensive;
+                metadata = nodeType.ProviderMetadata;
+                traits = nodeType.ExecutionTraits;
+            }
+
+            GraphNodeRuntimeState? runtimeState = null;
+            _runtimeState?.NodeStates.TryGetValue(n.Id, out runtimeState);
+
             Nodes.Add(new NodeItem(
                 NodeId: n.Id, TypeId: n.FunctionId, InputCount: ins.Count, OutputCount: outs.Count,
-                Category: "graph", TypeKey: n.FunctionId, Summary: n.FunctionId,
-                Detail: n.Params.ToJsonString(), IsSideEffect: true, IsExpensive: false,
-                Inputs: ins, Outputs: outs));
+                Category: category, TypeKey: n.FunctionId, Summary: summary,
+                Detail: n.Params.ToJsonString(), IsSideEffect: isSideEffect, IsExpensive: isExpensive,
+                Inputs: ins, Outputs: outs,
+                ProviderMetadata: metadata, ExecutionTraits: traits,
+                RuntimeState: runtimeState));
         }
 
         foreach (var w in doc.Wires)
@@ -582,6 +638,7 @@ public class NodeGraphViewSource : IViewSource, IDisposable
                 ["outputs"] = BuildPorts(node.Outputs),
                 ["parameterLines"] = BuildStringArray(node.ParameterLines ?? Array.Empty<string>()),
                 ["parameters"] = BuildParameters(node.Parameters ?? Array.Empty<ParameterItem>()),
+                ["runtimeState"] = BuildNodeRuntimeState(node.RuntimeState),
             });
         }
 
@@ -645,6 +702,7 @@ public class NodeGraphViewSource : IViewSource, IDisposable
                 ["activeGraphId"] = _activeGraphId,
                 ["activeGraphLabel"] = _activeGraphLabel,
                 ["revision"] = _revision,
+                ["runState"] = BuildRunState(_runtimeState?.RunState),
                 ["nodes"] = nodes,
                 ["wires"] = wires,
                 ["annotations"] = annotations,
@@ -688,6 +746,40 @@ public class NodeGraphViewSource : IViewSource, IDisposable
         foreach (var (key, value) in values)
             result[key] = value;
         return result;
+    }
+
+    private static JsonObject? BuildRunState(GraphRunState? state)
+    {
+        if (state is null)
+            return null;
+
+        return new JsonObject
+        {
+            ["runId"] = state.RunId,
+            ["status"] = state.Status.ToString(),
+            ["startedAt"] = state.StartedAt?.ToString("O"),
+            ["endedAt"] = state.EndedAt?.ToString("O"),
+            ["errorMessage"] = state.ErrorMessage,
+        };
+    }
+
+    private static JsonObject? BuildNodeRuntimeState(GraphNodeRuntimeState? state)
+    {
+        if (state is null)
+            return null;
+
+        return new JsonObject
+        {
+            ["nodeId"] = state.NodeId,
+            ["status"] = state.Status.ToString(),
+            ["startedAt"] = state.StartedAt?.ToString("O"),
+            ["endedAt"] = state.EndedAt?.ToString("O"),
+            ["inputsJson"] = state.InputsJson,
+            ["outputsJson"] = state.OutputsJson,
+            ["logsJson"] = state.LogsJson,
+            ["artifactsJson"] = state.ArtifactsJson,
+            ["progress"] = state.Progress,
+        };
     }
 
     private static string SafeComponentId(string value)

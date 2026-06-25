@@ -24,7 +24,9 @@ public static class VplanetExternalToolManifest
                     IsExpensive: false,
                     Inputs: System.Array.Empty<ExternalToolPortManifest>(),
                     Outputs: new[] { new ExternalToolPortManifest("status", "Status", "vplanet/status", Required: false) },
-                    State: new ExternalToolStateManifest(Progress: false, Logs: true, Artifacts: false, Warnings: false)),
+                    State: new ExternalToolStateManifest(Progress: false, Logs: true, Artifacts: false, Warnings: false),
+                    ExecutionTraits: new FunctionExecutionTraits(
+                        RequiresExternalProcess: true)),
 
                 new ExternalToolFunctionManifest(
                     FunctionId: "vplanet.input.build",
@@ -43,7 +45,11 @@ public static class VplanetExternalToolManifest
                         new ExternalToolParameterManifest("stopTimeYears", "Stop Time Years", "double", "4.6e9"),
                         new ExternalToolParameterManifest("outputTimeYears", "Output Time Years", "double", "1.0e6"),
                     },
-                    State: new ExternalToolStateManifest(Progress: false, Logs: false, Artifacts: true, Warnings: false)),
+                    State: new ExternalToolStateManifest(Progress: false, Logs: false, Artifacts: true, Warnings: false),
+                    ExecutionTraits: new FunctionExecutionTraits(
+                        RequiresExternalProcess: false,
+                        IsDeterministic: true,
+                        ArtifactShape: "vplanet/input-bundle")),
 
                 new ExternalToolFunctionManifest(
                     FunctionId: "vplanet.run",
@@ -58,7 +64,13 @@ public static class VplanetExternalToolManifest
                     {
                         new ExternalToolParameterManifest("timeoutSeconds", "Timeout", "int", "300"),
                     },
-                    State: new ExternalToolStateManifest(Progress: true, Logs: true, Artifacts: true, Warnings: true)),
+                    State: new ExternalToolStateManifest(Progress: true, Logs: true, Artifacts: true, Warnings: true),
+                    ExecutionTraits: new FunctionExecutionTraits(
+                        RequiresExternalProcess: true,
+                        SupportsCancellation: true,
+                        DefaultTimeoutSeconds: 300,
+                        ArtifactShape: "vplanet/run-result",
+                        CommitEligibility: "adapter-gated")),
 
                 new ExternalToolFunctionManifest(
                     FunctionId: "vplanet.output.parse",
@@ -73,6 +85,16 @@ public static class VplanetExternalToolManifest
                     {
                         new ExternalToolParameterManifest("bodyName", "Body Name", "string", "sun"),
                     },
-                    State: new ExternalToolStateManifest(Progress: false, Logs: false, Artifacts: false, Warnings: false)),
-            });
+                    State: new ExternalToolStateManifest(Progress: false, Logs: false, Artifacts: false, Warnings: false),
+                    ExecutionTraits: new FunctionExecutionTraits(
+                        RequiresExternalProcess: false,
+                        IsDeterministic: true,
+                        ArtifactShape: "vplanet/output-table")),
+            },
+            ProviderMetadata: new FunctionProviderMetadata(
+                ProviderKind: FunctionProviderKinds.Iii,
+                ProviderId: "vplanet-worker",
+                RuntimeRequirement: "python3:vplanet>=2.5",
+                Determinism: "versioned",
+                TrustLevel: "external-service"));
 }

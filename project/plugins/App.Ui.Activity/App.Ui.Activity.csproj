@@ -23,6 +23,11 @@
     <PackageReference Include="GiantCroissant.PluginArchi.SourceGenerators" PrivateAssets="all" />
     <PackageReference Include="GiantCroissant.CrosscutFoundation.Messaging.Contracts" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\bundles\activity\activity.presentation.json" Link="Presentation\activity.presentation.json" />
   </ItemGroup>
 
 </Project>

@@ -40,61 +40,80 @@ public sealed class GraphExecutor
     {
         ArgumentNullException.ThrowIfNull(graph);
 
-        if (_hooks?.BeforeRun is not null)
-            await _hooks.BeforeRun(graph, cancellationToken).ConfigureAwait(false);
-
-        var order = TopologicalOrder(graph);
-        var incomingByNode = graph.Wires
-            .Where(w => w.Kind == WireKind.Data)
-            .GroupBy(w => w.ToNode, StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => (IReadOnlyList<GraphWire>)g.ToList(), StringComparer.Ordinal);
-
-        var outputs = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
-
-        foreach (var node in order)
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            if (_hooks?.BeforeRun is not null)
+                await _hooks.BeforeRun(graph, cancellationToken).ConfigureAwait(false);
 
-            var payload = new JsonObject();
-            if (sharedParams is not null)
-                foreach (var kv in sharedParams)
-                    payload[kv.Key] = kv.Value?.DeepClone();
-            foreach (var kv in node.Params)
-                payload[kv.Key] = kv.Value?.DeepClone();
+            var order = TopologicalOrder(graph);
+            var incomingByNode = graph.Wires
+                .Where(w => w.Kind == WireKind.Data)
+                .GroupBy(w => w.ToNode, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => (IReadOnlyList<GraphWire>)g.ToList(), StringComparer.Ordinal);
 
-            if (incomingByNode.TryGetValue(node.Id, out var incoming))
+            var outputs = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
+
+            foreach (var node in order)
             {
-                foreach (var wire in incoming)
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var payload = new JsonObject();
+                if (sharedParams is not null)
+                    foreach (var kv in sharedParams)
+                        payload[kv.Key] = kv.Value?.DeepClone();
+                foreach (var kv in node.Params)
+                    payload[kv.Key] = kv.Value?.DeepClone();
+
+                if (incomingByNode.TryGetValue(node.Id, out var incoming))
                 {
-                    if (!outputs.TryGetValue(wire.FromNode, out var upstream))
-                        throw new InvalidOperationException(
-                            $"Wire source '{wire.FromNode}' has no result for node '{node.Id}'.");
-                    payload[wire.ToPort] = upstream[wire.FromPort]?.DeepClone();
+                    foreach (var wire in incoming)
+                    {
+                        if (!outputs.TryGetValue(wire.FromNode, out var upstream))
+                            throw new InvalidOperationException(
+                                $"Wire source '{wire.FromNode}' has no result for node '{node.Id}'.");
+                        payload[wire.ToPort] = upstream[wire.FromPort]?.DeepClone();
+                    }
                 }
+
+                if (_hooks?.BeforeNode is not null)
+                    await _hooks.BeforeNode(node, payload, cancellationToken).ConfigureAwait(false);
+
+                JsonObject result;
+                try
+                {
+                    var provider = ResolveProvider(node.FunctionId);
+                    result = await provider
+                        .InvokeAsync(node.FunctionId, payload, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    if (_hooks?.OnNodeFailed is not null)
+                        await _hooks.OnNodeFailed(node, ex, cancellationToken).ConfigureAwait(false);
+                    throw;
+                }
+
+                if (_hooks?.AfterNode is not null)
+                    await _hooks.AfterNode(node, payload, result, cancellationToken).ConfigureAwait(false);
+
+                outputs[node.Id] = result;
             }
 
-            if (_hooks?.BeforeNode is not null)
-                await _hooks.BeforeNode(node, payload, cancellationToken).ConfigureAwait(false);
+            if (!outputs.TryGetValue(graph.SinkNodeId, out var sink))
+                throw new InvalidOperationException(
+                    $"Sink node '{graph.SinkNodeId}' not found in graph.");
 
-            var provider = ResolveProvider(node.FunctionId);
-            var result = await provider
-                .InvokeAsync(node.FunctionId, payload, cancellationToken)
-                .ConfigureAwait(false);
+            if (_hooks?.AfterRun is not null)
+                await _hooks.AfterRun(graph, cancellationToken).ConfigureAwait(false);
 
-            if (_hooks?.AfterNode is not null)
-                await _hooks.AfterNode(node, payload, result, cancellationToken).ConfigureAwait(false);
-
-            outputs[node.Id] = result;
+            return sink;
         }
-
-        if (!outputs.TryGetValue(graph.SinkNodeId, out var sink))
-            throw new InvalidOperationException(
-                $"Sink node '{graph.SinkNodeId}' not found in graph.");
-
-        if (_hooks?.AfterRun is not null)
-            await _hooks.AfterRun(graph, cancellationToken).ConfigureAwait(false);
-
-        return sink;
+        catch (Exception ex)
+        {
+            if (_hooks?.OnRunFailed is not null)
+                await _hooks.OnRunFailed(graph, ex, cancellationToken).ConfigureAwait(false);
+            throw;
+        }
     }
 
     private INodeFunctionProvider ResolveProvider(string functionId)

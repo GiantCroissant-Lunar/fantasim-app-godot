@@ -27,7 +27,7 @@ public sealed class BundleProvider : IProvider
         if (isCollectibleAssembly is null) throw new ArgumentNullException(nameof(isCollectibleAssembly));
 
         var vfs = new BundleVfs();
-        var extractor = new DllExtractor();
+        var extractor = new BundleExtractor();
         var sceneHost = new BundleSceneHost(sceneRoot, loggerFactory.CreateLogger("BundleSceneHost"));
         _host = new BundleHost(vfs, extractor, sceneHost, pluginHost, loggerFactory.CreateLogger("BundleHost"), isCollectibleAssembly);
     }

@@ -49,7 +49,7 @@ public sealed class Service : IService
 
             try
             {
-                await LoadAsync(pckFile, cancellationToken).ConfigureAwait(false);
+                await LoadAsync(pckFile, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -81,7 +81,7 @@ public sealed class Service : IService
 
     public async Task LoadAsync(string path, CancellationToken cancellationToken = default)
     {
-        await Provider.LoadAsync(path, cancellationToken).ConfigureAwait(false);
+        await Provider.LoadAsync(path, cancellationToken);
         OnRuntimeChanged();
     }
 
@@ -96,30 +96,30 @@ public sealed class Service : IService
             return;
         }
 
-        await LoadAsync(pckPath, cancellationToken).ConfigureAwait(false);
+        await LoadAsync(pckPath, cancellationToken);
     }
 
     public async Task LoadRemoteAsync(string url, CancellationToken cancellationToken = default)
     {
-        await Provider.LoadRemoteAsync(url, cancellationToken).ConfigureAwait(false);
+        await Provider.LoadRemoteAsync(url, cancellationToken);
         OnRuntimeChanged();
     }
 
     public async Task UnloadAsync(string id, CancellationToken cancellationToken = default)
     {
-        await Provider.UnloadAsync(id, cancellationToken).ConfigureAwait(false);
+        await Provider.UnloadAsync(id, cancellationToken);
         OnRuntimeChanged();
     }
 
     public async Task ReloadAsync(string id, CancellationToken cancellationToken = default)
     {
-        await Provider.ReloadAsync(id, cancellationToken).ConfigureAwait(false);
+        await Provider.ReloadAsync(id, cancellationToken);
         OnRuntimeChanged();
     }
 
     public async Task ReloadByPathAsync(string path, CancellationToken cancellationToken = default)
     {
-        await Provider.ReloadByPathAsync(path, cancellationToken).ConfigureAwait(false);
+        await Provider.ReloadByPathAsync(path, cancellationToken);
         OnRuntimeChanged();
     }
 
@@ -136,7 +136,7 @@ public sealed class Service : IService
 
     public async Task UnloadAllAsync(CancellationToken cancellationToken = default)
     {
-        await Provider.UnloadAllAsync(cancellationToken).ConfigureAwait(false);
+        await Provider.UnloadAllAsync(cancellationToken);
         OnRuntimeChanged();
     }
 
@@ -215,13 +215,13 @@ public sealed class Service : IService
         {
             try
             {
-                await Task.Delay(_debounce, cancellationToken).ConfigureAwait(false);
+                await Task.Delay(_debounce, cancellationToken);
                 if (Interlocked.Exchange(ref _reloadInProgress, 1) != 0)
                     return;
 
                 try
                 {
-                    await _service.ReloadAsync(_id, cancellationToken).ConfigureAwait(false);
+                    await _service.ReloadAsync(_id, cancellationToken);
                 }
                 finally
                 {

@@ -11,6 +11,29 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent.parent
 ARTIFACTS = ROOT / "build" / "_artifacts" / "generated"
 
+
+def _require_safe_segment(value, field_name):
+    """Reject values that could escape build/_artifacts/generated via path traversal.
+
+    Instead of silently sanitizing, we raise ValueError so callers know their
+    input was rejected. A safe segment is non-empty, not a reserved directory
+    alias, and contains no path separators.
+    """
+    if not isinstance(value, str):
+        raise ValueError(f"{field_name} must be a string, got {type(value).__name__}")
+    if value == "":
+        raise ValueError(f"{field_name} must not be empty")
+    if value in (".", ".."):
+        raise ValueError(f"{field_name} must not be '.' or '..'")
+    if "\x00" in value:
+        raise ValueError(f"{field_name} must not contain null bytes")
+    if "/" in value or os.sep in value:
+        raise ValueError(f"{field_name} must not contain path separators: {value!r}")
+    if os.altsep is not None and os.altsep in value:
+        raise ValueError(f"{field_name} must not contain path separators: {value!r}")
+    if "\\" in value:
+        raise ValueError(f"{field_name} must not contain path separators: {value!r}")
+
 def _resolve_vplanet_bin():
     vplanet_bin = os.environ.get("VPLANET_BIN")
     if not vplanet_bin:
@@ -59,7 +82,11 @@ async def input_build(payload=None):
     system_name = payload.get("systemName", "solarsystem")
     star_body_name = payload.get("starBodyName", "sun")
     planet_body_name = payload.get("planetBodyName", "earth")
-    
+
+    _require_safe_segment(system_name, "systemName")
+    _require_safe_segment(star_body_name, "starBodyName")
+    _require_safe_segment(planet_body_name, "planetBodyName")
+
     stop_time_years = payload.get("stopTimeYears")
     if stop_time_years is None:
         stop_time_years = 4.6e9
@@ -79,6 +106,8 @@ async def input_build(payload=None):
             output_time_years = 1.0e6
             
     job_id = payload.get("job_id")
+    if job_id is not None:
+        _require_safe_segment(job_id, "job_id")
     if not job_id:
         payload_str = json.dumps({
             "systemName": system_name,
@@ -88,7 +117,7 @@ async def input_build(payload=None):
             "outputTimeYears": output_time_years
         }, sort_keys=True)
         job_id = "vplanet_" + hashlib.sha256(payload_str.encode("utf-8")).hexdigest()[:8]
-        
+
     job_vplanet_dir = ARTIFACTS / job_id / "vplanet"
     job_vplanet_dir.mkdir(parents=True, exist_ok=True)
     
@@ -170,8 +199,15 @@ async def run(payload=None):
     payload = payload or {}
     input_bundle = payload.get("inputBundle", {})
     timeout_seconds = payload.get("timeoutSeconds", 300)
-    
-    job_id = payload.get("job_id") or input_bundle.get("job_id")
+
+    payload_job_id = payload.get("job_id")
+    bundle_job_id = input_bundle.get("job_id")
+    if payload_job_id is not None:
+        _require_safe_segment(payload_job_id, "job_id")
+    if bundle_job_id is not None:
+        _require_safe_segment(bundle_job_id, "job_id")
+
+    job_id = payload_job_id or bundle_job_id
     root_path_str = input_bundle.get("rootPath")
     if not job_id:
         if root_path_str:
@@ -193,7 +229,9 @@ async def run(payload=None):
     
     star_body_name = input_bundle.get("starBodyName", "sun")
     planet_body_name = input_bundle.get("planetBodyName", "earth")
-    
+    _require_safe_segment(star_body_name, "starBodyName")
+    _require_safe_segment(planet_body_name, "planetBodyName")
+
     if available:
         primary_path = input_bundle.get("primaryPath")
         if not primary_path:
@@ -267,8 +305,17 @@ async def output_parse(payload=None):
     payload = payload or {}
     run_result = payload.get("runResult", {})
     body_name = payload.get("bodyName", "sun")
-    
-    job_id = payload.get("job_id") or run_result.get("job_id")
+
+    _require_safe_segment(body_name, "bodyName")
+
+    payload_job_id = payload.get("job_id")
+    run_result_job_id = run_result.get("job_id")
+    if payload_job_id is not None:
+        _require_safe_segment(payload_job_id, "job_id")
+    if run_result_job_id is not None:
+        _require_safe_segment(run_result_job_id, "job_id")
+
+    job_id = payload_job_id or run_result_job_id
     if not job_id:
         root_path = run_result.get("rootPath")
         if root_path:

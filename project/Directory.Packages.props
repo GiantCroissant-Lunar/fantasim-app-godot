@@ -39,10 +39,10 @@
     <PackageVersion Include="UnifyEcs.Core" Version="0.1.1" />
     <PackageVersion Include="UnifyEcs.Runtime.Arch" Version="0.1.1" />
     <!-- Activity ledger persistence (LiteDB-backed document store). -->
-    <PackageVersion Include="UnifyStorage.Abstractions" Version="0.1.0" />
-    <PackageVersion Include="UnifyStorage.Generators" Version="0.1.0" PrivateAssets="all" />
+    <PackageVersion Include="UnifyStorage.Abstractions" Version="0.1.1" />
+    <PackageVersion Include="UnifyStorage.Generators" Version="0.1.1" PrivateAssets="all" />
     <PackageVersion Include="UnifyStorage.Runtime.LiteDb" Version="0.1.0" />
-    <PackageVersion Include="UnifyStorage.Runtime.SurrealDb" Version="0.1.0" />
+    <PackageVersion Include="UnifyStorage.Runtime.SurrealDb" Version="0.1.1" />
     <PackageVersion Include="SurrealDb.Net" Version="0.10.2" />
     <PackageVersion Include="SurrealDb.Embedded.InMemory" Version="0.10.2" />
     <!-- FantaSim world-lib packages (local feed). 0.1.5 carries the relative boundary classifier

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.fantasim.local/external-tools/vplanet/vplanet.output-table.schema.json",
+  "title": "VPLanet Output Table",
+  "type": "object",
+  "properties": {
+    "bodyName": { "type": "string" },
+    "columns": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "oneOf": [
+            { "type": "number" },
+            { "type": "string" }
+          ]
+        }
+      }
+    },
+    "sourcePath": { "type": "string" },
+    "fallback": { "type": "boolean" }
+  },
+  "required": [ "bodyName", "columns", "rows", "sourcePath", "fallback" ],
+  "additionalProperties": false
+}

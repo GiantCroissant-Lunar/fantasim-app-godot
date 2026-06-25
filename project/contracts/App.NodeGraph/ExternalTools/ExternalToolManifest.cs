@@ -2,16 +2,20 @@ using System.Collections.Generic;
 
 namespace FantaSim.App.NodeGraph;
 
-/// <summary>Generic manifest describing an iii-backed external tool and its node-graph capabilities.</summary>
+/// <summary>Generic manifest describing a provider-backed tool and its node-graph capabilities.
+/// The optional <see cref="ProviderMetadata"/> keeps execution origin as metadata rather than
+/// a separate node or data identity.</summary>
 public sealed record ExternalToolManifest(
     string ToolId,
     string ToolVersion,
     string Provider,
     string? License,
     string? SourceUrl,
-    IReadOnlyList<ExternalToolFunctionManifest> Functions);
+    IReadOnlyList<ExternalToolFunctionManifest> Functions,
+    FunctionProviderMetadata? ProviderMetadata = null);
 
-/// <summary>One function exposed by an external tool in the node graph.</summary>
+/// <summary>One function exposed by an external tool in the node graph.
+/// The optional <see cref="ExecutionTraits"/> carry scheduling and runtime policy.</summary>
 public sealed record ExternalToolFunctionManifest(
     string FunctionId,
     string Label,
@@ -22,7 +26,8 @@ public sealed record ExternalToolFunctionManifest(
     IReadOnlyList<ExternalToolPortManifest> Inputs,
     IReadOnlyList<ExternalToolPortManifest> Outputs,
     IReadOnlyList<ExternalToolParameterManifest>? Parameters = null,
-    ExternalToolStateManifest? State = null);
+    ExternalToolStateManifest? State = null,
+    FunctionExecutionTraits? ExecutionTraits = null);
 
 /// <summary>One input or output port on an external-tool function.</summary>
 public sealed record ExternalToolPortManifest(

@@ -17,6 +17,22 @@ public interface IGraphSource
     Task ApplyEditAsync(GraphEdit edit, CancellationToken cancellationToken = default);
 }
 
+/// <summary>Domain-neutral node type presentation metadata for graph authoring UIs.</summary>
+public sealed record GraphNodeTypeInfo(
+    string TypeId,
+    string Category,
+    string Summary,
+    bool IsSideEffect,
+    bool IsExpensive,
+    FunctionProviderMetadata? ProviderMetadata = null,
+    FunctionExecutionTraits? ExecutionTraits = null);
+
+/// <summary>Optional extension for sources that can describe node types in their active graph.</summary>
+public interface IGraphNodeMetadataSource
+{
+    bool TryGetNodeTypeInfo(string typeId, out GraphNodeTypeInfo? info);
+}
+
 /// <summary>Optional extension for sources that can expose non-executable graph annotations.</summary>
 public interface IGraphAnnotationSource
 {

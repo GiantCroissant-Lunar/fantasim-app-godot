@@ -208,6 +208,58 @@ public class GraphExecutorTests
 
         Assert.Equal(new[] { "before-run", "after-node:n1", "after-node:n2", "after-run" }, order);
     }
+
+    [Fact]
+    public async Task Runtime_tracker_records_node_inputs_outputs_and_run_status()
+    {
+        var provider = new FakeProvider(new()
+        {
+            ["a"] = new() { ["out"] = "A_OUT" },
+            ["b"] = new() { ["result"] = "B_DONE" },
+        });
+        var graph = new GraphDocument(
+            Nodes: new[] { Node("n1", "a"), Node("n2", "b") },
+            Wires: new[] { new GraphWire("n1", "out", "n2", "src") },
+            SinkNodeId: "n2");
+        var tracker = new GraphRuntimeStateTracker();
+
+        await new GraphExecutor(new[] { provider }, tracker.CreateRunContext("run-test"))
+            .ExecuteAsync(graph, sharedParams: new JsonObject { ["job_id"] = "J1" });
+
+        Assert.Equal(GraphRunStatus.Completed, tracker.RunState.Status);
+        Assert.Equal("run-test", tracker.RunState.RunId);
+        Assert.Equal(GraphNodeRuntimeStatus.Completed, tracker.NodeStates["n1"].Status);
+        Assert.Equal(GraphNodeRuntimeStatus.Completed, tracker.NodeStates["n2"].Status);
+        Assert.Contains("\"job_id\":\"J1\"", tracker.NodeStates["n1"].InputsJson);
+        Assert.Contains("\"src\":\"A_OUT\"", tracker.NodeStates["n2"].InputsJson);
+        Assert.Contains("\"result\":\"B_DONE\"", tracker.NodeStates["n2"].OutputsJson);
+    }
+
+    [Fact]
+    public async Task Runtime_tracker_records_node_and_run_failure()
+    {
+        var provider = new ThrowingProvider();
+        var graph = new GraphDocument(
+            Nodes: new[] { Node("bad", "boom") },
+            Wires: Array.Empty<GraphWire>(),
+            SinkNodeId: "bad");
+        var tracker = new GraphRuntimeStateTracker();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new GraphExecutor(new[] { provider }, tracker.CreateRunContext("run-fail")).ExecuteAsync(graph));
+
+        Assert.Equal(GraphRunStatus.Failed, tracker.RunState.Status);
+        Assert.Equal(GraphNodeRuntimeStatus.Failed, tracker.NodeStates["bad"].Status);
+        Assert.Contains("boom failed", tracker.NodeStates["bad"].LogsJson);
+    }
+
+    private sealed class ThrowingProvider : INodeFunctionProvider
+    {
+        public bool Supports(string functionId) => true;
+
+        public Task<JsonObject> InvokeAsync(string functionId, JsonObject payload, CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("boom failed");
+    }
 }
 
 public class ReadOnlyGraphSourceTests

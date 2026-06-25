@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.fantasim.local/external-tools/vplanet/vplanet.run.response.schema.json",
+  "title": "VPLanet Run Response",
+  "type": "object",
+  "properties": {
+    "runResult": { "$ref": "vplanet.run-result.schema.json" },
+    "job_id": { "type": "string" }
+  },
+  "required": [ "runResult", "job_id" ],
+  "additionalProperties": false
+}

@@ -14,7 +14,7 @@ Per-branch execution progress is tracked in `.git/sdd/progress.md` (not committe
 - [service-tier-architecture](architecture/service-tier-architecture.md) — T1–T4 service tiers (Godot only in T4 seams).
 - [cross-alc-rules](architecture/cross-alc-rules.md) — collectible-ALC / bundle isolation rules.
 - [render-surface-and-motion](architecture/render-surface-and-motion.md) · [rendering-and-lod](architecture/rendering-and-lod.md).
-- [node-graph-paradigm](architecture/node-graph-paradigm.md) · [iii-graph-runtime](architecture/iii-graph-runtime.md).
+- [node-graph-paradigm](architecture/node-graph-paradigm.md) · [iii-graph-runtime](architecture/iii-graph-runtime.md) · [unified-provider-function-surface](architecture/unified-provider-function-surface.md).
 - [world-generation-cartography-flow](architecture/world-generation-cartography-flow.md) · [akka-ecs-integration](architecture/akka-ecs-integration.md) · [multi-scene-di-scoping-review](architecture/multi-scene-di-scoping-review.md).
 
 ## Most recent feature (worked example of the spec → plan → handover flow)

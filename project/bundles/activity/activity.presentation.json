@@ -1,0 +1,132 @@
+{
+  "protocolVersion": "0.1",
+  "surfaceId": "activity",
+  "catalogId": "boomhud.runtime.basic.v1",
+  "root": {
+    "id": "root",
+    "type": "container",
+    "layout": {
+      "type": "vertical"
+    },
+    "children": [
+      {
+        "id": "activity-title",
+        "type": "label",
+        "properties": {
+          "text": {
+            "literal": "${activity.title}"
+          }
+        }
+      },
+      {
+        "id": "activity-refresh",
+        "type": "button",
+        "properties": {
+          "text": {
+            "literal": "Refresh"
+          }
+        },
+        "actions": [
+          {
+            "event": "pressed",
+            "command": "refresh"
+          }
+        ]
+      },
+      {
+        "id": "activity-spacer-top",
+        "type": "label",
+        "properties": {
+          "text": {
+            "literal": ""
+          }
+        }
+      },
+      {
+        "id": "activity-rows",
+        "type": "slot",
+        "slot": "activityRows"
+      },
+      {
+        "id": "activity-spacer-bottom",
+        "type": "label",
+        "properties": {
+          "text": {
+            "literal": ""
+          }
+        }
+      },
+      {
+        "id": "activity-hide",
+        "type": "button",
+        "properties": {
+          "text": {
+            "literal": "Hide"
+          }
+        },
+        "actions": [
+          {
+            "event": "pressed",
+            "command": "hide"
+          }
+        ]
+      }
+    ]
+  },
+  "activityTemplates": {
+    "unavailable": {
+      "id": "activity-unavailable",
+      "type": "label",
+      "properties": {
+        "text": {
+          "literal": "   (activity ledger unavailable)"
+        }
+      }
+    },
+    "empty": {
+      "id": "activity-empty",
+      "type": "label",
+      "properties": {
+        "text": {
+          "literal": "   (no activity recorded yet - entries appear as commands are dispatched)"
+        }
+      }
+    },
+    "entry": {
+      "id": "activity-entry-${row.id}",
+      "type": "label",
+      "properties": {
+        "text": {
+          "literal": "${row.text}"
+        }
+      }
+    },
+    "detail": {
+      "id": "activity-entry-${row.id}-detail",
+      "type": "label",
+      "properties": {
+        "text": {
+          "literal": "        ${row.detail}"
+        }
+      }
+    },
+    "error": {
+      "id": "activity-entry-${row.id}-error",
+      "type": "label",
+      "properties": {
+        "text": {
+          "literal": "        error: ${row.error}"
+        }
+      }
+    },
+    "outcome": {
+      "id": "activity-entry-${row.id}-outcome",
+      "type": "label",
+      "properties": {
+        "text": {
+          "literal": "        outcome: ${row.outcome}"
+        }
+      }
+    }
+  }
+}

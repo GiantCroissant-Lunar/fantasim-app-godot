@@ -71,6 +71,12 @@ public partial class Host : Node
 
         _log.LogInformation("composition activated.");
         _log.LogInformation("iii bridge: IiiClient registered = {IiiClientRegistered}", ClassDB.ClassExists("IiiClient"));
+        RecordActivity(
+            ActivityEntryKind.Log,
+            "app.composition.ready",
+            "system",
+            "app",
+            outcome: "composition activated");
 
         // Enter the root scene tier and KEEP it loaded (the correct flow — re-entry/teardown is a
         // test concern, not the running app). Deferred so _Ready stays non-blocking and the bundle's
@@ -132,46 +138,103 @@ public partial class Host : Node
     {
         try
         {
+            RecordActivity(
+                ActivityEntryKind.UiOperation,
+                "ui.activity.show.requested",
+                "system",
+                "ui",
+                payload: new JsonObject { ["viewId"] = "activity" },
+                outcome: "requested");
             await ui.ShowAsync("activity").ConfigureAwait(false);
             _log.LogInformation("activity view requested.");
+            RecordActivity(
+                ActivityEntryKind.UiOperation,
+                "ui.activity.show",
+                "system",
+                "ui",
+                payload: new JsonObject { ["viewId"] = "activity" },
+                outcome: "shown");
         }
         catch (Exception ex)
         {
             _log.LogError(ex, "activity view request failed.");
+            RecordActivity(
+                ActivityEntryKind.UiOperation,
+                "ui.activity.show.failed",
+                "system",
+                "ui",
+                payload: new JsonObject { ["viewId"] = "activity" },
+                outcome: "failed",
+                error: ex.Message);
         }
     }
 
     private void ApplyInitialWindowSize()
     {
-        // Godot's docs recommend Window.Size for runtime window sizing; this keeps exported macOS
-        // launches from depending on editor history or command-line --resolution overrides.
-        // Source: https://docs.godotengine.org/en/stable/classes/class_displayserver.html#class-displayserver-method-window-set-size
+        // Godot window sizes are pixels. On macOS Retina, DisplayServer.ScreenGetScale returns 2.0,
+        // so convert the configured desktop/logical size before applying Window.Size.
+        // Sources:
+        // https://docs.godotengine.org/en/stable/classes/class_displayserver.html#class-displayserver-method-window-set-size
+        // https://docs.godotengine.org/en/stable/classes/class_displayserver.html#class-displayserver-method-screen-get-scale
         const int defaultWidth = 2400;
         const int defaultHeight = 1350;
         const int defaultMinWidth = 1280;
         const int defaultMinHeight = 720;
 
-        var target = new Vector2I(
+        var requestedSize = new Vector2I(
             ReadConfigInt("window:initialWidth", defaultWidth),
             ReadConfigInt("window:initialHeight", defaultHeight));
-        var minSize = new Vector2I(
+        var requestedMinSize = new Vector2I(
             ReadConfigInt("window:minWidth", defaultMinWidth),
             ReadConfigInt("window:minHeight", defaultMinHeight));
+
+        var screen = DisplayServer.WindowGetCurrentScreen();
+        var screenScale = MathF.Max(1.0f, DisplayServer.ScreenGetScale(screen));
+        var target = ScaleWindowSize(requestedSize, screenScale);
+        var minSize = ScaleWindowSize(requestedMinSize, screenScale);
+        var usableRect = DisplayServer.ScreenGetUsableRect(screen);
+        if (usableRect.Size.X > 0 && usableRect.Size.Y > 0)
+            target = ClampWindowSize(target, minSize, usableRect.Size);
 
         var window = GetWindow();
         window.MinSize = minSize;
         window.Size = target;
 
-        var screen = DisplayServer.WindowGetCurrentScreen();
-        var screenSize = DisplayServer.ScreenGetSize(screen);
-        if (screenSize.X > target.X && screenSize.Y > target.Y)
+        if (usableRect.Size.X > target.X && usableRect.Size.Y > target.Y)
         {
             DisplayServer.WindowSetPosition(new Vector2I(
-                (screenSize.X - target.X) / 2,
-                (screenSize.Y - target.Y) / 2));
+                usableRect.Position.X + (usableRect.Size.X - target.X) / 2,
+                usableRect.Position.Y + (usableRect.Size.Y - target.Y) / 2));
         }
 
-        _log.LogInformation("initial window size requested: {Width}x{Height}, min={MinWidth}x{MinHeight}.", target.X, target.Y, minSize.X, minSize.Y);
+        _log.LogInformation(
+            "initial window size requested: {RequestedWidth}x{RequestedHeight} logical, applied={Width}x{Height} px, scale={Scale:0.##}, min={MinWidth}x{MinHeight} px.",
+            requestedSize.X,
+            requestedSize.Y,
+            target.X,
+            target.Y,
+            screenScale,
+            minSize.X,
+            minSize.Y);
+    }
+
+    private static Vector2I ScaleWindowSize(Vector2I size, float scale)
+    {
+        if (scale <= 1.0f)
+            return size;
+
+        return new Vector2I(
+            Math.Max(1, (int)MathF.Ceiling(size.X * scale)),
+            Math.Max(1, (int)MathF.Ceiling(size.Y * scale)));
+    }
+
+    private static Vector2I ClampWindowSize(Vector2I size, Vector2I minSize, Vector2I maxSize)
+    {
+        var maxWidth = Math.Max(minSize.X, maxSize.X);
+        var maxHeight = Math.Max(minSize.Y, maxSize.Y);
+        return new Vector2I(
+            Math.Clamp(size.X, minSize.X, maxWidth),
+            Math.Clamp(size.Y, minSize.Y, maxHeight));
     }
 
     private int ReadConfigInt(string key, int fallback)
@@ -210,6 +273,48 @@ public partial class Host : Node
         _log.LogInformation("external-tool preview activity recorded: {EntryId}.", entry.EntryId);
     }
 
+    private void RecordActivity(
+        ActivityEntryKind kind,
+        string name,
+        string actorKind,
+        string category,
+        JsonObject? payload = null,
+        string? correlationId = null,
+        string? outcome = null,
+        string? error = null,
+        string? causationId = null)
+    {
+        try
+        {
+            var activity = _composition?.Bootstrap.Registry.TryGet<FantaSim.App.Activity.IService>();
+            if (activity is null)
+                return;
+
+            activity.Append(new ActivityEntry(
+                EntryId: Guid.NewGuid().ToString("N"),
+                Kind: kind,
+                Timestamp: DateTimeOffset.UtcNow,
+                Actor: new ActivityActor(actorKind, actorKind == "user" ? "godot" : "app"),
+                Name: name,
+                Category: category,
+                PayloadJson: payload?.ToJsonString(),
+                CausationId: causationId,
+                CorrelationId: correlationId,
+                Outcome: outcome,
+                Error: error));
+        }
+        catch (Exception ex)
+        {
+            _log.LogDebug(ex, "Activity ledger unavailable while recording {Name}.", name);
+        }
+    }
+
+    private static void CopyIfPresent(JsonObject source, JsonObject target, string key)
+    {
+        if (source.TryGetPropertyValue(key, out var value) && value is not null)
+            target[key] = value.DeepClone();
+    }
+
     // Mount the iii text->3D graph as a BoomHud nodeGraph (env-guarded demo). Uses the GENERAL
     // App.Ui.NodeGraph view over a read-only graph source; RUN routes through App.Command like the
     // other demos. No per-domain view-source duplication.
@@ -218,29 +323,220 @@ public partial class Host : Node
         if (_config?.GetValue("graph:show", false) != true) return;
         var logger = _composition!.Bootstrap.LoggerFactory.CreateLogger("IiiGraph");
         var prompt = _config.Get("graph:prompt") ?? "a small red toy cube";
+        var recipe = _config.Get("graph:recipe") ?? "text-to-3d";
 
-        var graph = FantaSim.App.Iii.Recipes.TextTo3dGraph.Build(prompt);
+        var graph = string.Equals(recipe, "echo", StringComparison.OrdinalIgnoreCase)
+            ? new FantaSim.App.NodeGraph.GraphDocument(
+                Nodes: new[]
+                {
+                    new FantaSim.App.NodeGraph.GraphNode(
+                        "echo",
+                        "test.echo",
+                        new JsonObject { ["prompt"] = prompt, ["source"] = "graph-runtime-smoke" }),
+                },
+                Wires: Array.Empty<FantaSim.App.NodeGraph.GraphWire>(),
+                SinkNodeId: "echo")
+            : FantaSim.App.Iii.Recipes.TextTo3dGraph.Build(prompt);
         var graphSource = new FantaSim.App.NodeGraph.ReadOnlyGraphSource("iii-text-to-3d", graph);
-
-        var client = _composition.Bootstrap.Registry.Get<FantaSim.App.Command.IClient>();
+        var runtime = new FantaSim.App.NodeGraph.GraphRuntimeStateTracker();
         var view = new FantaSim.App.Ui.NodeGraph.NodeGraphViewSource(
             graphSource,
             runAsync: async () =>
             {
-                var result = await client.CommandAsync(new FantaSim.App.Command.CommandRequest(
-                    Command: "pipeline.run_text_to_3d",
-                    PayloadJson: $"{{\"prompt\":\"{prompt}\"}}"));
-                return JsonSerializer.SerializeToNode(result)?.AsObject() ?? new JsonObject();
+                var runId = Guid.NewGuid().ToString("N")[..8];
+                RecordActivity(
+                    ActivityEntryKind.UiOperation,
+                    "ui.graph.run",
+                    "user",
+                    "node-graph",
+                    payload: new JsonObject
+                    {
+                        ["runId"] = runId,
+                        ["recipe"] = recipe,
+                        ["nodeCount"] = graph.Nodes.Count,
+                        ["wireCount"] = graph.Wires.Count,
+                    },
+                    correlationId: runId,
+                    outcome: "run requested");
+                var providers = _composition.Bootstrap.Registry
+                    .GetAll<FantaSim.App.NodeGraph.INodeFunctionProvider>()
+                    .ToArray();
+                var executor = new FantaSim.App.NodeGraph.GraphExecutor(
+                    providers,
+                    CreateAuditedRunContext(runtime, runId, recipe));
+                var result = await executor.ExecuteAsync(
+                    graph,
+                    new JsonObject { ["job_id"] = runId });
+                _log.LogInformation(
+                    "iii graph runtime complete: run={RunId} state={RunState} nodes={NodeStates}",
+                    runId,
+                    runtime.RunState.Status,
+                    string.Join(", ", runtime.NodeStates.Select(kv => $"{kv.Key}:{kv.Value.Status}")));
+                return result;
             },
-            title: "iii text to 3D graph");
+            title: string.Equals(recipe, "echo", StringComparison.OrdinalIgnoreCase)
+                ? "iii echo graph"
+                : "iii text to 3D graph",
+            runtimeState: runtime);
 
         var uiRoot = new Control { Name = "IiiGraphRoot" };
         uiRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        uiRoot.SetOffsetsPreset(Control.LayoutPreset.FullRect);
         GetTree().Root.AddChild(uiRoot);
 
         var renderer = new FantaSim.App.Ui.Seam.ViewRenderer(uiRoot, () => view, _ => null, logger);
         renderer.Bind();
+        if (_config.GetValue("graph:autoRun", false))
+            Callable.From(() => view.Dispatch("run", "btn-run")).CallDeferred();
         _log.LogInformation("iii-graph view mounted: {NodeCount} nodes, {WireCount} wires.", view.Nodes.Count, view.Wires.Count);
+        RecordActivity(
+            ActivityEntryKind.UiOperation,
+            "ui.graph.show",
+            "system",
+            "node-graph",
+            payload: new JsonObject
+            {
+                ["viewId"] = view.ViewId,
+                ["recipe"] = recipe,
+                ["nodeCount"] = view.Nodes.Count,
+                ["wireCount"] = view.Wires.Count,
+            },
+            outcome: "mounted");
+    }
+
+    private FantaSim.App.NodeGraph.RunContext CreateAuditedRunContext(
+        FantaSim.App.NodeGraph.GraphRuntimeStateTracker runtime,
+        string runId,
+        string recipe)
+    {
+        var tracker = runtime.CreateRunContext(runId);
+        return new FantaSim.App.NodeGraph.RunContext
+        {
+            BeforeRun = async (graph, ct) =>
+            {
+                if (tracker.BeforeRun is not null)
+                    await tracker.BeforeRun(graph, ct).ConfigureAwait(false);
+                RecordActivity(
+                    ActivityEntryKind.DomainCommand,
+                    "graph.run.started",
+                    "system",
+                    "node-graph",
+                    payload: new JsonObject
+                    {
+                        ["runId"] = runId,
+                        ["recipe"] = recipe,
+                        ["status"] = "Running",
+                        ["nodeCount"] = graph.Nodes.Count,
+                        ["wireCount"] = graph.Wires.Count,
+                    },
+                    correlationId: runId,
+                    outcome: "started");
+            },
+            BeforeNode = async (node, payload, ct) =>
+            {
+                if (tracker.BeforeNode is not null)
+                    await tracker.BeforeNode(node, payload, ct).ConfigureAwait(false);
+                RecordActivity(
+                    ActivityEntryKind.Log,
+                    "graph.node.started",
+                    "system",
+                    "node-graph",
+                    payload: new JsonObject
+                    {
+                        ["runId"] = runId,
+                        ["nodeId"] = node.Id,
+                        ["functionId"] = node.FunctionId,
+                        ["status"] = "Running",
+                    },
+                    correlationId: runId,
+                    outcome: "started");
+            },
+            AfterNode = async (node, payload, result, ct) =>
+            {
+                if (tracker.AfterNode is not null)
+                    await tracker.AfterNode(node, payload, result, ct).ConfigureAwait(false);
+                var details = new JsonObject
+                {
+                    ["runId"] = runId,
+                    ["nodeId"] = node.Id,
+                    ["functionId"] = node.FunctionId,
+                    ["status"] = "Completed",
+                };
+                CopyIfPresent(result, details, "path");
+                CopyIfPresent(result, details, "mesh");
+                CopyIfPresent(result, details, "image");
+                CopyIfPresent(result, details, "usd_path");
+                CopyIfPresent(result, details, "glb_path");
+                CopyIfPresent(result, details, "fallback");
+                RecordActivity(
+                    ActivityEntryKind.Log,
+                    "graph.node.completed",
+                    "system",
+                    "node-graph",
+                    payload: details,
+                    correlationId: runId,
+                    outcome: "completed");
+            },
+            AfterRun = async (graph, ct) =>
+            {
+                if (tracker.AfterRun is not null)
+                    await tracker.AfterRun(graph, ct).ConfigureAwait(false);
+                RecordActivity(
+                    ActivityEntryKind.CommandResult,
+                    "graph.run.completed",
+                    "system",
+                    "node-graph",
+                    payload: new JsonObject
+                    {
+                        ["runId"] = runId,
+                        ["recipe"] = recipe,
+                        ["status"] = "Completed",
+                        ["nodeCount"] = graph.Nodes.Count,
+                    },
+                    correlationId: runId,
+                    outcome: "completed");
+            },
+            OnNodeFailed = async (node, ex, ct) =>
+            {
+                if (tracker.OnNodeFailed is not null)
+                    await tracker.OnNodeFailed(node, ex, ct).ConfigureAwait(false);
+                RecordActivity(
+                    ActivityEntryKind.Log,
+                    "graph.node.failed",
+                    "system",
+                    "node-graph",
+                    payload: new JsonObject
+                    {
+                        ["runId"] = runId,
+                        ["nodeId"] = node.Id,
+                        ["functionId"] = node.FunctionId,
+                        ["status"] = "Failed",
+                    },
+                    correlationId: runId,
+                    outcome: "failed",
+                    error: ex.Message);
+            },
+            OnRunFailed = async (graph, ex, ct) =>
+            {
+                if (tracker.OnRunFailed is not null)
+                    await tracker.OnRunFailed(graph, ex, ct).ConfigureAwait(false);
+                RecordActivity(
+                    ActivityEntryKind.CommandResult,
+                    "graph.run.failed",
+                    "system",
+                    "node-graph",
+                    payload: new JsonObject
+                    {
+                        ["runId"] = runId,
+                        ["recipe"] = recipe,
+                        ["status"] = "Failed",
+                        ["nodeCount"] = graph.Nodes.Count,
+                    },
+                    correlationId: runId,
+                    outcome: "failed",
+                    error: ex.Message);
+            },
+        };
     }
 
     // pipeline.run_text_to_3d via the composed iii axis (env-guarded demo). The graph is authored in
@@ -308,6 +604,7 @@ public partial class Host : Node
                 stage.SceneId,
                 resource.IsLoaded("stage"),
                 sceneFlow.ActiveScenes.Count);
+            RecordSceneActivity(stage.SceneId, stage.ParentSceneId, resource.IsLoaded("stage"), sceneFlow.ActiveScenes.Count);
 
             // Enter assist UNDER stage — a nested dynamic parent. Assist shares the one app kernel
             // through stage's child provider, across two collectible ALCs (same kernel hash in the log).
@@ -318,6 +615,7 @@ public partial class Host : Node
                 assist.ParentSceneId,
                 resource.IsLoaded("assist"),
                 sceneFlow.ActiveScenes.Count);
+            RecordSceneActivity(assist.SceneId, assist.ParentSceneId, resource.IsLoaded("assist"), sceneFlow.ActiveScenes.Count);
 
             // Enter the timeline bundle under stage. ITimelineController is already registered
             // (WorldViewComposition ran sync in _Ready before this deferred call). SceneFlowProvider
@@ -330,12 +628,35 @@ public partial class Host : Node
                 timeline.ParentSceneId,
                 resource.IsLoaded("timeline"),
                 sceneFlow.ActiveScenes.Count);
+            RecordSceneActivity(timeline.SceneId, timeline.ParentSceneId, resource.IsLoaded("timeline"), sceneFlow.ActiveScenes.Count);
         }
         catch (Exception ex)
         {
             _log.LogError("initial scene entry failed: {Exception}", ex);
+            RecordActivity(
+                ActivityEntryKind.Log,
+                "scene.enter.failed",
+                "system",
+                "scene",
+                outcome: "failed",
+                error: ex.Message);
         }
     }
+
+    private void RecordSceneActivity(string sceneId, string? parentSceneId, bool bundleLoaded, int activeScenes)
+        => RecordActivity(
+            ActivityEntryKind.Log,
+            "scene.enter",
+            "system",
+            "scene",
+            payload: new JsonObject
+            {
+                ["sceneId"] = sceneId,
+                ["parentSceneId"] = parentSceneId ?? string.Empty,
+                ["bundleLoaded"] = bundleLoaded,
+                ["activeScenes"] = activeScenes,
+            },
+            outcome: bundleLoaded ? "bundle loaded" : "scene entered");
 
     public override void _Process(double delta)
     {

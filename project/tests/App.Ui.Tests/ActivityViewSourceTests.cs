@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
 using FantaSim.App.Activity;
+using FantaSim.App.Ui;
 using FantaSim.App.Ui.Activity;
+using FantaSim.App.Ui.Presentation;
 using Xunit;
 using LedgerService = FantaSim.App.Activity.IService;
 
@@ -11,6 +13,42 @@ namespace FantaSim.App.Ui.Tests;
 
 public sealed class ActivityViewSourceTests
 {
+    private static readonly string TemplateJson = LoadCanonicalTemplateJson();
+
+    private static string LoadCanonicalTemplateJson()
+    {
+        // The canonical template lives in the App.Ui.Activity bundle assembly as an embedded
+        // resource (linked from project/bundles/activity/activity.presentation.json). Loading it
+        // through the generic loader exercises the same path the plugin uses at hot-reload time.
+        var assembly = typeof(ActivityViewSource).Assembly;
+        return PresentationDocumentLoader.LoadText(
+            assembly,
+            fileName: "activity.presentation.json",
+            embeddedResourceSuffix: ".Presentation.activity.presentation.json");
+    }
+
+    [Fact]
+    public void BuildDocument_UsesPresentationTemplateForRootAndActions()
+    {
+        var source = new ActivityViewSource(new FakeLedger(), bus: null, TemplateJson);
+
+        var document = source.BuildDocument();
+
+        Assert.Equal("activity", document.SurfaceId);
+        Assert.Equal("boomhud.runtime.basic.v1", document.CatalogId);
+        Assert.Equal("root", document.Root.Id);
+        Assert.Equal("container", document.Root.Type);
+        Assert.Contains(document.Root.Children, child => child.Id == "activity-title");
+
+        var refresh = document.Root.Children.Single(child => child.Id == "activity-refresh");
+        Assert.Equal("button", refresh.Type);
+        Assert.Contains(refresh.Actions, action => action.Command == "refresh");
+
+        var hide = document.Root.Children.Single(child => child.Id == "activity-hide");
+        Assert.Equal("button", hide.Type);
+        Assert.Contains(hide.Actions, action => action.Command == "hide");
+    }
+
     [Fact]
     public void BuildDocument_RendersExternalToolInspectorPayloadDetails()
     {
@@ -33,7 +71,7 @@ public sealed class ActivityViewSourceTests
             }.ToJsonString(),
             CorrelationId: "vplanet-live-smoke",
             Outcome: "inspector mounted for VPLanet Earth Output"));
-        var source = new ActivityViewSource(ledger, bus: null);
+        var source = new ActivityViewSource(ledger, bus: null, TemplateJson);
 
         var document = source.BuildDocument();
         var text = string.Join("\n", document.Root.Children
@@ -47,6 +85,59 @@ public sealed class ActivityViewSourceTests
         Assert.Contains("body: earth", text);
         Assert.Contains("rows: 2", text);
         Assert.Contains("source: .../vplanet/earth.forward", text);
+    }
+
+    [Fact]
+    public void BuildDocument_RendersUserAndSystemAuditDetails()
+    {
+        var ledger = new FakeLedger(
+            new ActivityEntry(
+                EntryId: "entry-user",
+                Kind: ActivityEntryKind.UiOperation,
+                Timestamp: new DateTimeOffset(2026, 6, 24, 13, 0, 0, TimeSpan.Zero),
+                Actor: new ActivityActor("user", "godot"),
+                Name: "ui.graph.run",
+                Category: "node-graph",
+                PayloadJson: new JsonObject
+                {
+                    ["runId"] = "run-1",
+                    ["recipe"] = "text-to-3d",
+                    ["nodeCount"] = 3,
+                    ["wireCount"] = 2,
+                }.ToJsonString(),
+                CorrelationId: "run-1",
+                Outcome: "run requested"),
+            new ActivityEntry(
+                EntryId: "entry-system",
+                Kind: ActivityEntryKind.Log,
+                Timestamp: new DateTimeOffset(2026, 6, 24, 13, 0, 1, TimeSpan.Zero),
+                Actor: new ActivityActor("system", "app"),
+                Name: "scene.enter",
+                Category: "scene",
+                PayloadJson: new JsonObject
+                {
+                    ["sceneId"] = "stage",
+                    ["bundleLoaded"] = true,
+                    ["activeScenes"] = 1,
+                }.ToJsonString(),
+                Outcome: "bundle loaded"));
+        var source = new ActivityViewSource(ledger, bus: null, TemplateJson);
+
+        var document = source.BuildDocument();
+        var text = string.Join("\n", document.Root.Children
+            .Select(child => child.Properties.TryGetValue("text", out var value)
+                ? value.Literal?.GetValue<string>() ?? string.Empty
+                : string.Empty));
+
+        Assert.Contains("user 1 / system 1", text);
+        Assert.Contains("ui.graph.run", text);
+        Assert.Contains("run: run-1", text);
+        Assert.Contains("recipe: text-to-3d", text);
+        Assert.Contains("nodes: 3", text);
+        Assert.Contains("wires: 2", text);
+        Assert.Contains("scene.enter", text);
+        Assert.Contains("scene: stage", text);
+        Assert.Contains("active scenes: 1", text);
     }
 
     private sealed class FakeLedger : LedgerService

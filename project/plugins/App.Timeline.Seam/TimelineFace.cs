@@ -129,27 +129,12 @@ public partial class TimelineFace : Control, ITimelineFace
         }
         _ctl = null;
         ResidentController = null;
-        if (_playPauseButton is not null)
-        {
-            _playPauseButton.Pressed -= OnPlayPausePressed;
-        }
-        if (_zoomOutButton is not null)
-        {
-            _zoomOutButton.Pressed -= OnZoomOutPressed;
-        }
-        if (_fitButton is not null)
-        {
-            _fitButton.Pressed -= OnFitPressed;
-        }
-        if (_zoomInButton is not null)
-        {
-            _zoomInButton.Pressed -= OnZoomInPressed;
-        }
-        if (_lanesContainer is not null)
-        {
-            _lanesContainer.GuiInput -= OnLanesGuiInput;
-        }
-        Resized -= OnLanesResized;
+        DisconnectIfConnected(_playPauseButton, BaseButton.SignalName.Pressed, Callable.From(OnPlayPausePressed));
+        DisconnectIfConnected(_zoomOutButton, BaseButton.SignalName.Pressed, Callable.From(OnZoomOutPressed));
+        DisconnectIfConnected(_fitButton, BaseButton.SignalName.Pressed, Callable.From(OnFitPressed));
+        DisconnectIfConnected(_zoomInButton, BaseButton.SignalName.Pressed, Callable.From(OnZoomInPressed));
+        DisconnectIfConnected(_lanesContainer, Control.SignalName.GuiInput, Callable.From<InputEvent>(OnLanesGuiInput));
+        DisconnectIfConnected(this, Control.SignalName.Resized, Callable.From(OnLanesResized));
 
         // Sever the resident-to-collectible-ALC bind so the old timeline bundle's ALC can
         // collect on hot-reload. ResidentProxy holds a generated __crossTarget typed as
@@ -576,5 +561,11 @@ public partial class TimelineFace : Control, ITimelineFace
             node.RemoveChild(child);
             child.QueueFree();
         }
+    }
+
+    private static void DisconnectIfConnected(GodotObject? source, StringName signal, Callable callable)
+    {
+        if (source is not null && GodotObject.IsInstanceValid(source) && source.IsConnected(signal, callable))
+            source.Disconnect(signal, callable);
     }
 }
