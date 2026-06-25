@@ -1,12 +1,11 @@
 {
-  "gpu": {
-    "smoke": false,
-    "shaderSmoke": false
-  },
   "graph": {
     "show": false,
     "prompt": "a small red toy cube",
     "test": false
+  },
+  "activity": {
+    "show": true
   },
   "world": {
     "showGraph": false,

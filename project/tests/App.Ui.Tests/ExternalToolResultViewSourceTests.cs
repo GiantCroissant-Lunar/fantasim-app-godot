@@ -16,7 +16,7 @@ public sealed class ExternalToolResultViewSourceTests
             "VPLanet Earth Output",
             new JsonObject
             {
-                ["job_id"] = "vplanet-live-smoke",
+                ["job_id"] = "vplanet-fixture-job",
                 ["outputTable"] = new JsonObject
                 {
                     ["bodyName"] = "earth",
@@ -47,7 +47,7 @@ public sealed class ExternalToolResultViewSourceTests
 
         var toolResult = document.DataModel!["toolResult"]!.AsObject();
         Assert.Equal("VPLanet Earth Output", toolResult["title"]!.GetValue<string>());
-        Assert.Equal("vplanet-live-smoke", toolResult["jobId"]!.GetValue<string>());
+        Assert.Equal("vplanet-fixture-job", toolResult["jobId"]!.GetValue<string>());
 
         var table = toolResult["table"]!.AsObject();
         Assert.Equal("earth", table["bodyName"]!.GetValue<string>());
@@ -91,9 +91,9 @@ public sealed class ExternalToolResultViewSourceTests
     }
 
     [Fact]
-    public void CreateVplanetSmokePreview_UsesDeterministicEarthOutputTable()
+    public void BuildDocument_UsesDeterministicEarthOutputTable()
     {
-        var source = ExternalToolResultViewSource.CreateVplanetSmokePreview();
+        var source = CreateVplanetFixtureSource();
 
         var document = source.BuildDocument();
         var table = document.DataModel!["toolResult"]!["table"]!.AsObject();
@@ -107,7 +107,7 @@ public sealed class ExternalToolResultViewSourceTests
     [Fact]
     public void BuildDocument_ProjectsInspectorSectionsAndRawPayloadPreview()
     {
-        var source = ExternalToolResultViewSource.CreateVplanetSmokePreview();
+        var source = CreateVplanetFixtureSource();
 
         var document = source.BuildDocument();
         var toolResult = document.DataModel!["toolResult"]!.AsObject();
@@ -130,7 +130,7 @@ public sealed class ExternalToolResultViewSourceTests
     [Fact]
     public void BuildDocument_RendersCompactRawPayloadNotice()
     {
-        var source = ExternalToolResultViewSource.CreateVplanetSmokePreview();
+        var source = CreateVplanetFixtureSource();
 
         var document = source.BuildDocument();
 
@@ -148,15 +148,42 @@ public sealed class ExternalToolResultViewSourceTests
     [Fact]
     public void BuildActivityPayload_DescribesExternalToolInspectorResult()
     {
-        var source = ExternalToolResultViewSource.CreateVplanetSmokePreview();
+        var source = CreateVplanetFixtureSource();
 
         var payload = source.BuildActivityPayload();
 
         Assert.Equal("external-tool-vplanet", payload["viewId"]!.GetValue<string>());
         Assert.Equal("VPLanet Earth Output", payload["title"]!.GetValue<string>());
         Assert.Equal("table", payload["kind"]!.GetValue<string>());
-        Assert.Equal("vplanet-live-smoke", payload["jobId"]!.GetValue<string>());
+        Assert.Equal("vplanet-fixture-job", payload["jobId"]!.GetValue<string>());
         Assert.Equal("earth", payload["bodyName"]!.GetValue<string>());
         Assert.Equal(2, payload["rowCount"]!.GetValue<int>());
     }
+
+    private static ExternalToolResultViewSource CreateVplanetFixtureSource()
+        => new(
+            "external-tool-vplanet",
+            "VPLanet Earth Output",
+            new JsonObject
+            {
+                ["job_id"] = "vplanet-fixture-job",
+                ["outputTable"] = new JsonObject
+                {
+                    ["bodyName"] = "earth",
+                    ["fallback"] = true,
+                    ["sourcePath"] = "/tmp/fantasim/vplanet/earth.forward",
+                    ["columns"] = new JsonArray
+                    {
+                        "Time",
+                        "SemiMajorAxis",
+                        "Eccentricity",
+                        "Obliquity",
+                    },
+                    ["rows"] = new JsonArray
+                    {
+                        new JsonArray { 0.0, 1.0, 0.0167, 23.5 },
+                        new JsonArray { 1_000_000.0, 1.0, 0.0167, 23.5 },
+                    },
+                },
+            });
 }

@@ -35,17 +35,20 @@ internal static class ActivityPresentationDocumentBuilder
             ?? throw new InvalidOperationException("Activity presentation template is missing 'activityTemplates'.");
 
         var rows = BuildRows(templates, entries, ledgerAvailable);
+        var shellRows = BuildShellRows(entries, ledgerAvailable);
+        var shellBindings = ReadShellBindings(template);
 
         var userCount = entries.Count(entry => string.Equals(entry.Actor.Kind, "user", StringComparison.OrdinalIgnoreCase));
         var systemCount = entries.Count(entry => string.Equals(entry.Actor.Kind, "system", StringComparison.OrdinalIgnoreCase));
         var commandCount = entries.Count(entry =>
             entry.Kind is ActivityEntryKind.DomainCommand or ActivityEntryKind.CommandResult);
         var failureCount = entries.Count(entry => !string.IsNullOrWhiteSpace(entry.Error));
+        var title =
+            $"ACTIVITY LEDGER  -  {entries.Count} shown  -  user {userCount} / system {systemCount}  -  commands {commandCount}  -  failures {failureCount}";
 
         var placeholders = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            ["activity.title"] =
-                $"ACTIVITY LEDGER  -  {entries.Count} shown  -  user {userCount} / system {systemCount}  -  commands {commandCount}  -  failures {failureCount}",
+            ["activity.title"] = title,
         };
 
         var slots = new Dictionary<string, JsonArray>(StringComparer.Ordinal)
@@ -53,14 +56,26 @@ internal static class ActivityPresentationDocumentBuilder
             ["activityRows"] = rows
         };
 
-        var removeTopLevelProperties = new HashSet<string>(StringComparer.Ordinal) { "activityTemplates" };
+        var removeTopLevelProperties = new HashSet<string>(StringComparer.Ordinal) { "activityTemplates", "shellBindings" };
 
         var binding = new PresentationTemplateBinding(
             Placeholders: placeholders,
             Slots: slots,
             RemoveTopLevelProperties: removeTopLevelProperties);
 
-        return PresentationTemplateBinder.Bind(templateJson, binding, revision);
+        var document = PresentationTemplateBinder.Bind(templateJson, binding, revision);
+        return document with
+        {
+            DataModel = new JsonObject
+            {
+                ["title"] = title,
+                ["rows"] = shellRows,
+                ["shell"] = new JsonObject
+                {
+                    ["bindings"] = shellBindings,
+                },
+            },
+        };
     }
 
     private static JsonArray BuildRows(JsonObject templates, IReadOnlyList<ActivityEntry> entries, bool ledgerAvailable)
@@ -101,6 +116,40 @@ internal static class ActivityPresentationDocumentBuilder
 
         return rows;
     }
+
+    private static JsonArray BuildShellRows(IReadOnlyList<ActivityEntry> entries, bool ledgerAvailable)
+    {
+        var rows = new JsonArray();
+        if (!ledgerAvailable)
+        {
+            rows.Add(new JsonObject { ["text"] = "(activity ledger unavailable)" });
+            return rows;
+        }
+
+        if (entries.Count == 0)
+        {
+            rows.Add(new JsonObject { ["text"] = "(no activity recorded yet - entries appear as commands are dispatched)" });
+            return rows;
+        }
+
+        for (var index = 0; index < entries.Count; index++)
+        {
+            var entry = entries[index];
+            rows.Add(new JsonObject
+            {
+                ["id"] = index,
+                ["text"] = FormatEntry(entry),
+                ["detail"] = FormatPayloadDetails(entry) ?? string.Empty,
+                ["error"] = entry.Error ?? string.Empty,
+                ["outcome"] = entry.Outcome ?? string.Empty,
+            });
+        }
+
+        return rows;
+    }
+
+    private static JsonArray ReadShellBindings(JsonObject template)
+        => template["shellBindings"]?.DeepClone() as JsonArray ?? new JsonArray();
 
     private static readonly IReadOnlyDictionary<string, string> EmptyValues =
         new Dictionary<string, string>(StringComparer.Ordinal);

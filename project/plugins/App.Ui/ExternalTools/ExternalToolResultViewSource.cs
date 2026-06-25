@@ -35,33 +35,6 @@ public sealed class ExternalToolResultViewSource : IViewSource
 
     public event Action? Changed;
 
-    public static ExternalToolResultViewSource CreateVplanetSmokePreview()
-        => new(
-            "external-tool-vplanet",
-            "VPLanet Earth Output",
-            new JsonObject
-            {
-                ["job_id"] = "vplanet-live-smoke",
-                ["outputTable"] = new JsonObject
-                {
-                    ["bodyName"] = "earth",
-                    ["fallback"] = true,
-                    ["sourcePath"] = "build/_artifacts/generated/vplanet-live-smoke/vplanet/earth.forward",
-                    ["columns"] = new JsonArray
-                    {
-                        "Time",
-                        "SemiMajorAxis",
-                        "Eccentricity",
-                        "Obliquity",
-                    },
-                    ["rows"] = new JsonArray
-                    {
-                        new JsonArray { 0.0, 1.0, 0.0167, 23.5 },
-                        new JsonArray { 1_000_000.0, 1.0, 0.0167, 23.5 },
-                    },
-                },
-            });
-
     public void UpdateResult(JsonObject result)
     {
         _result = CloneObject(result ?? throw new ArgumentNullException(nameof(result)));

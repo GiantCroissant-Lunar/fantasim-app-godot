@@ -44,7 +44,7 @@ public interface IService
 
     /// <summary>
     /// Load a (non-compute) shader resource through the resident seam and report what it is.
-    /// The path may point into a collectible bundle's PCK (e.g. "res://bundles/gpu-demo/...").
+    /// The path may point into a collectible bundle's PCK (e.g. "res://bundles/globe-shader/...").
     /// A missing or broken resource yields Found=false / Error, never an exception.
     /// </summary>
     Task<GpuShaderInspection> InspectShaderAsync(

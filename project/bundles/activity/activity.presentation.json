@@ -73,6 +73,53 @@
       }
     ]
   },
+  "shellBindings": [
+    {
+      "kind": "text",
+      "node": "ActivityTitle",
+      "path": "title"
+    },
+    {
+      "kind": "command",
+      "node": "ActivityRefresh",
+      "command": "refresh"
+    },
+    {
+      "kind": "command",
+      "node": "ActivityHide",
+      "command": "hide"
+    },
+    {
+      "kind": "list",
+      "node": "ActivityRows",
+      "path": "rows",
+      "lines": [
+        {
+          "path": "text",
+          "style": "normal",
+          "skipEmpty": true
+        },
+        {
+          "path": "detail",
+          "prefix": "        ",
+          "style": "muted",
+          "skipEmpty": true
+        },
+        {
+          "path": "error",
+          "prefix": "        error: ",
+          "style": "error",
+          "skipEmpty": true
+        },
+        {
+          "path": "outcome",
+          "prefix": "        outcome: ",
+          "style": "muted",
+          "skipEmpty": true
+        }
+      ]
+    }
+  ],
   "activityTemplates": {
     "unavailable": {
       "id": "activity-unavailable",

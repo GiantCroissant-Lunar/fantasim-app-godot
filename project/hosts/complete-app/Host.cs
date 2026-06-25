@@ -15,7 +15,6 @@ using FantaSim.App.Resource.Bundle;
 using FantaSim.App.SceneFlow;
 using FantaSim.App.Timeline.Seam;
 using FantaSim.App.Ui;
-using FantaSim.App.Ui.ExternalTools;
 using FantaSim.App.Ui.Seam;
 using Godot;
 using Microsoft.Extensions.Logging;
@@ -31,10 +30,6 @@ public partial class Host : Node
     private CollectibleBundles? _collectibleBundles;
     private FantaSim.App.Ecs.IService? _ecs;
     private bool _ecsWorldReady;
-
-    private FantaSim.App.Ui.Seam.ViewRenderer? _toolPreviewRenderer;
-    private ExternalToolResultViewSource? _toolPreviewView;
-    private Control? _toolPreviewUiRoot;
 
     public override void _Ready()
     {
@@ -85,56 +80,24 @@ public partial class Host : Node
         Callable.From(PingIiiBridge).CallDeferred();
         Callable.From(RunGraphTest).CallDeferred();
         Callable.From(ShowIiiGraph).CallDeferred();
-        Callable.From(ShowExternalToolPreview).CallDeferred();
-        Callable.From(ShowActivityViewPreview).CallDeferred();
     }
 
-    private void ShowExternalToolPreview()
+    private Task ShowActivityViewIfConfiguredAsync()
     {
-        if (_config?.GetValue("toolPreview:show", false) != true) return;
-        var logger = _composition!.Bootstrap.LoggerFactory.CreateLogger("ExternalToolPreview");
-
-        _toolPreviewRenderer?.Dispose();
-        _toolPreviewUiRoot?.QueueFree();
-
-        _toolPreviewView = ExternalToolResultViewSource.CreateVplanetSmokePreview();
-        _toolPreviewUiRoot = new Control
-        {
-            Name = "ExternalToolPreviewRoot",
-            Scale = Vector2.One,
-            ZIndex = 100,
-        };
-        _toolPreviewUiRoot.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
-        _toolPreviewUiRoot.Position = new Vector2(32, 32);
-        _toolPreviewUiRoot.Size = new Vector2(760, 640);
-        GetTree().Root.AddChild(_toolPreviewUiRoot);
-
-        _toolPreviewRenderer = new FantaSim.App.Ui.Seam.ViewRenderer(_toolPreviewUiRoot, () => _toolPreviewView, _ => null, logger);
-        _toolPreviewRenderer.Bind();
-        RecordExternalToolPreviewActivity(_toolPreviewView);
-        _log.LogInformation("external-tool preview mounted: {ViewId}.", _toolPreviewView.ViewId);
-    }
-
-    private void ShowActivityViewPreview()
-    {
-        if (_config?.GetValue("activity:show", false) != true) return;
+        if (_config?.GetValue("activity:show", true) != true)
+            return Task.CompletedTask;
 
         var ui = _composition!.Bootstrap.Registry.TryGet<FantaSim.App.Ui.IService>();
         if (ui is null)
         {
             _log.LogWarning("activity view skipped: UI service is not registered.");
-            return;
+            return Task.CompletedTask;
         }
 
-        _toolPreviewRenderer?.Dispose();
-        _toolPreviewRenderer = null;
-        _toolPreviewUiRoot?.QueueFree();
-        _toolPreviewUiRoot = null;
-
-        _ = ShowActivityViewPreviewAsync(ui);
+        return ShowActivityViewAsync(ui);
     }
 
-    private async Task ShowActivityViewPreviewAsync(FantaSim.App.Ui.IService ui)
+    private async Task ShowActivityViewAsync(FantaSim.App.Ui.IService ui)
     {
         try
         {
@@ -248,31 +211,6 @@ public partial class Host : Node
         return fallback;
     }
 
-    private void RecordExternalToolPreviewActivity(ExternalToolResultViewSource view)
-    {
-        var activity = _composition!.Bootstrap.Registry.TryGet<FantaSim.App.Activity.IService>();
-        if (activity is null)
-        {
-            _log.LogWarning("external-tool preview activity skipped: Activity service is not registered.");
-            return;
-        }
-
-        var payload = view.BuildActivityPayload();
-        var now = DateTimeOffset.UtcNow;
-        var entry = new ActivityEntry(
-            EntryId: $"external-tool.inspect.{view.ViewId}.{now.ToUnixTimeMilliseconds()}",
-            Kind: ActivityEntryKind.UiOperation,
-            Timestamp: now,
-            Actor: new ActivityActor("user", "godot"),
-            Name: "external-tool.inspect",
-            Category: "external-tool",
-            PayloadJson: payload.ToJsonString(),
-            CorrelationId: payload["jobId"]?.GetValue<string>(),
-            Outcome: $"inspector mounted for {view.Title}");
-        activity.Append(entry);
-        _log.LogInformation("external-tool preview activity recorded: {EntryId}.", entry.EntryId);
-    }
-
     private void RecordActivity(
         ActivityEntryKind kind,
         string name,
@@ -286,11 +224,11 @@ public partial class Host : Node
     {
         try
         {
-            var activity = _composition?.Bootstrap.Registry.TryGet<FantaSim.App.Activity.IService>();
-            if (activity is null)
+            var registry = _composition?.Bootstrap.Registry;
+            if (registry is null)
                 return;
 
-            activity.Append(new ActivityEntry(
+            var entry = new ActivityEntry(
                 EntryId: Guid.NewGuid().ToString("N"),
                 Kind: kind,
                 Timestamp: DateTimeOffset.UtcNow,
@@ -301,7 +239,16 @@ public partial class Host : Node
                 CausationId: causationId,
                 CorrelationId: correlationId,
                 Outcome: outcome,
-                Error: error));
+                Error: error);
+
+            var bus = registry.TryGet<CrosscutFoundation.Messaging.IMessageBus>();
+            if (bus is not null)
+            {
+                bus.Publish(entry);
+                return;
+            }
+
+            registry.TryGet<FantaSim.App.Activity.IService>()?.Append(entry);
         }
         catch (Exception ex)
         {
@@ -315,28 +262,16 @@ public partial class Host : Node
             target[key] = value.DeepClone();
     }
 
-    // Mount the iii text->3D graph as a BoomHud nodeGraph (env-guarded demo). Uses the GENERAL
-    // App.Ui.NodeGraph view over a read-only graph source; RUN routes through App.Command like the
-    // other demos. No per-domain view-source duplication.
+    // Mount the iii text->3D graph as a BoomHud nodeGraph. Uses the general App.Ui.NodeGraph view over
+    // a read-only graph source; RUN routes through App.Command. No per-domain view-source duplication.
     private void ShowIiiGraph()
     {
         if (_config?.GetValue("graph:show", false) != true) return;
         var logger = _composition!.Bootstrap.LoggerFactory.CreateLogger("IiiGraph");
         var prompt = _config.Get("graph:prompt") ?? "a small red toy cube";
-        var recipe = _config.Get("graph:recipe") ?? "text-to-3d";
+        const string recipe = "text-to-3d";
 
-        var graph = string.Equals(recipe, "echo", StringComparison.OrdinalIgnoreCase)
-            ? new FantaSim.App.NodeGraph.GraphDocument(
-                Nodes: new[]
-                {
-                    new FantaSim.App.NodeGraph.GraphNode(
-                        "echo",
-                        "test.echo",
-                        new JsonObject { ["prompt"] = prompt, ["source"] = "graph-runtime-smoke" }),
-                },
-                Wires: Array.Empty<FantaSim.App.NodeGraph.GraphWire>(),
-                SinkNodeId: "echo")
-            : FantaSim.App.Iii.Recipes.TextTo3dGraph.Build(prompt);
+        var graph = FantaSim.App.Iii.Recipes.TextTo3dGraph.Build(prompt);
         var graphSource = new FantaSim.App.NodeGraph.ReadOnlyGraphSource("iii-text-to-3d", graph);
         var runtime = new FantaSim.App.NodeGraph.GraphRuntimeStateTracker();
         var view = new FantaSim.App.Ui.NodeGraph.NodeGraphViewSource(
@@ -374,9 +309,7 @@ public partial class Host : Node
                     string.Join(", ", runtime.NodeStates.Select(kv => $"{kv.Key}:{kv.Value.Status}")));
                 return result;
             },
-            title: string.Equals(recipe, "echo", StringComparison.OrdinalIgnoreCase)
-                ? "iii echo graph"
-                : "iii text to 3D graph",
+            title: "iii text to 3D graph",
             runtimeState: runtime);
 
         var uiRoot = new Control { Name = "IiiGraphRoot" };
@@ -539,7 +472,7 @@ public partial class Host : Node
         };
     }
 
-    // pipeline.run_text_to_3d via the composed iii axis (env-guarded demo). The graph is authored in
+    // pipeline.run_text_to_3d via the composed iii axis. The graph is authored in
     // App.Iii.Recipes and executed by the general App.NodeGraph.GraphExecutor through the iii function
     // provider. Quits when done so the windowed verification run terminates.
     private async void RunGraphTest()
@@ -568,7 +501,7 @@ public partial class Host : Node
         }
     }
 
-    // iii.ping via the composed iii axis (env-guarded demo). Routes through App.Command so the
+    // iii.ping via the composed iii axis. Routes through App.Command so the
     // round-trip exercises the real dispatch path (router -> IIiiOrchestration -> bridge), not an
     // inline bridge instantiation.
     private async void PingIiiBridge()
@@ -640,6 +573,10 @@ public partial class Host : Node
                 "scene",
                 outcome: "failed",
                 error: ex.Message);
+        }
+        finally
+        {
+            await ShowActivityViewIfConfiguredAsync().ConfigureAwait(false);
         }
     }
 

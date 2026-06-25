@@ -15,8 +15,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\contracts\App.SceneFlow\App.SceneFlow.csproj" />
-    <ProjectReference Include="..\..\contracts\App.GpuCompute\App.GpuCompute.csproj" />
-    <ProjectReference Include="..\..\contracts\App.GpuShader\App.GpuShader.csproj" />
   </ItemGroup>
 
   <ItemGroup>

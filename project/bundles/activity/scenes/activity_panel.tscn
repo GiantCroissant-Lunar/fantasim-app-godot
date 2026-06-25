@@ -1,0 +1,46 @@
+[gd_scene format=3]
+
+[node name="ActivityPanel" type="PanelContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ActivityMargin" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 14
+theme_override_constants/margin_top = 12
+theme_override_constants/margin_right = 14
+theme_override_constants/margin_bottom = 12
+
+[node name="ActivityBody" type="VBoxContainer" parent="ActivityMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ActivityTitle" type="Label" parent="ActivityMargin/ActivityBody"]
+layout_mode = 2
+text = "Activity Ledger"
+autowrap_mode = 3
+
+[node name="ActivityToolbar" type="HBoxContainer" parent="ActivityMargin/ActivityBody"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ActivityRefresh" type="Button" parent="ActivityMargin/ActivityBody/ActivityToolbar"]
+layout_mode = 2
+text = "Refresh"
+
+[node name="ActivityHide" type="Button" parent="ActivityMargin/ActivityBody/ActivityToolbar"]
+layout_mode = 2
+text = "Hide"
+
+[node name="ActivityScroll" type="ScrollContainer" parent="ActivityMargin/ActivityBody"]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="ActivityRows" type="VBoxContainer" parent="ActivityMargin/ActivityBody/ActivityScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 3

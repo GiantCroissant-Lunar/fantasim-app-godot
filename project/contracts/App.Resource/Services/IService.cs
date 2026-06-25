@@ -6,6 +6,8 @@ namespace FantaSim.App.Resource;
 [ServiceContract]
 public interface IService
 {
+    event EventHandler<ResourceRuntimeChangingEventArgs>? RuntimeChanging;
+
     event EventHandler? RuntimeChanged;
 
     IReadOnlyList<string> ListLoaded();

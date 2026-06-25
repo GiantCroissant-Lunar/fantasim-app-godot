@@ -141,6 +141,8 @@ public sealed class UiServiceTests
 
         public List<string> Unloaded { get; } = new();
 
+        public event EventHandler<FantaSim.App.Resource.ResourceRuntimeChangingEventArgs>? RuntimeChanging { add { } remove { } }
+
         public event EventHandler? RuntimeChanged { add { } remove { } }
 
         public bool IsLoaded(string id) => _loaded.Contains(id);

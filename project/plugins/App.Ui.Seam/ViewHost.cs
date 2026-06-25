@@ -1,4 +1,5 @@
 using FantaSim.App.Ui.Providers;
+using FantaSim.App.Resource;
 using Godot;
 using Microsoft.Extensions.Logging;
 using ServiceArchi.Contracts;
@@ -10,16 +11,23 @@ public sealed class ViewHost : IViewHost
 {
     private sealed class ActiveView
     {
-        public ActiveView(Control mount, ViewRenderer renderer, EventHandler runtimeChanged, IDisposable? watch)
+        public ActiveView(
+            Control mount,
+            ViewRenderer renderer,
+            EventHandler<ResourceRuntimeChangingEventArgs> runtimeChanging,
+            EventHandler runtimeChanged,
+            IDisposable? watch)
         {
             Mount = mount;
             Renderer = renderer;
+            RuntimeChanging = runtimeChanging;
             RuntimeChanged = runtimeChanged;
             Watch = watch;
         }
 
         public Control Mount { get; }
         public ViewRenderer Renderer { get; }
+        public EventHandler<ResourceRuntimeChangingEventArgs> RuntimeChanging { get; }
         public EventHandler RuntimeChanged { get; }
         public IDisposable? Watch { get; }
     }
@@ -96,11 +104,20 @@ public sealed class ViewHost : IViewHost
             _loggerFactory.CreateLogger($"ViewRenderer[{viewId}]"));
         renderer.Bind();
 
+        EventHandler<ResourceRuntimeChangingEventArgs> onChanging = (_, args) =>
+        {
+            if (string.Equals(args.BundleId, viewId, StringComparison.OrdinalIgnoreCase))
+            {
+                renderer.ReleaseSourceReference();
+                _logger.LogInformation("View source released before resource {Operation}: {ViewId}", args.Operation, viewId);
+            }
+        };
         EventHandler onChanged = (_, _) => Callable.From(renderer.Rebind).CallDeferred();
+        _resource.RuntimeChanging += onChanging;
         _resource.RuntimeChanged += onChanged;
         var watch = _resource.WatchResource(viewId);
 
-        _active[viewId] = new ActiveView(mount, renderer, onChanged, watch);
+        _active[viewId] = new ActiveView(mount, renderer, onChanging, onChanged, watch);
         _logger.LogInformation("View mounted: {ViewId}", viewId);
     }
 
@@ -110,6 +127,7 @@ public sealed class ViewHost : IViewHost
             return false;
 
         _active.Remove(viewId);
+        _resource.RuntimeChanging -= view.RuntimeChanging;
         _resource.RuntimeChanged -= view.RuntimeChanged;
         view.Watch?.Dispose();
         view.Renderer.Dispose();

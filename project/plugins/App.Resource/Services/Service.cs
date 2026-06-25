@@ -26,6 +26,8 @@ public sealed class Service : IService
     private IProvider Provider =>
         _resolvedProvider ??= _providerRegistry.Get<IProvider>(RegistryArchi.Contracts.SelectionMode.HighestPriority);
 
+    public event EventHandler<ResourceRuntimeChangingEventArgs>? RuntimeChanging;
+
     public event EventHandler? RuntimeChanged;
 
     public async Task AutoLoadAsync(CancellationToken cancellationToken = default)
@@ -107,18 +109,22 @@ public sealed class Service : IService
 
     public async Task UnloadAsync(string id, CancellationToken cancellationToken = default)
     {
+        OnRuntimeChanging(id, ResourceRuntimeOperation.Unload);
         await Provider.UnloadAsync(id, cancellationToken);
         OnRuntimeChanged();
     }
 
     public async Task ReloadAsync(string id, CancellationToken cancellationToken = default)
     {
+        OnRuntimeChanging(id, ResourceRuntimeOperation.Reload);
         await Provider.ReloadAsync(id, cancellationToken);
         OnRuntimeChanged();
     }
 
     public async Task ReloadByPathAsync(string path, CancellationToken cancellationToken = default)
     {
+        if (ResolveLoadedBundleId(path) is { } bundleId)
+            OnRuntimeChanging(bundleId, ResourceRuntimeOperation.Reload);
         await Provider.ReloadByPathAsync(path, cancellationToken);
         OnRuntimeChanged();
     }
@@ -136,11 +142,35 @@ public sealed class Service : IService
 
     public async Task UnloadAllAsync(CancellationToken cancellationToken = default)
     {
+        foreach (var bundleId in Provider.ListLoaded())
+            OnRuntimeChanging(bundleId, ResourceRuntimeOperation.UnloadAll);
         await Provider.UnloadAllAsync(cancellationToken);
         OnRuntimeChanged();
     }
 
+    private void OnRuntimeChanging(string bundleId, ResourceRuntimeOperation operation)
+        => RuntimeChanging?.Invoke(this, new ResourceRuntimeChangingEventArgs(bundleId, operation));
+
     private void OnRuntimeChanged() => RuntimeChanged?.Invoke(this, EventArgs.Empty);
+
+    private string? ResolveLoadedBundleId(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
+
+        var fileName = Path.GetFileName(path);
+        foreach (var entry in Provider.ListEntries())
+        {
+            if (string.Equals(entry.PckPath, path, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(Path.GetFileName(entry.PckPath), fileName, StringComparison.OrdinalIgnoreCase))
+            {
+                return entry.BundleId;
+            }
+        }
+
+        var id = Path.GetFileNameWithoutExtension(path);
+        return string.IsNullOrWhiteSpace(id) || !Provider.IsLoaded(id) ? null : id;
+    }
 
     private static HashSet<string> ParseIdList(string? value)
         => (value ?? string.Empty)
