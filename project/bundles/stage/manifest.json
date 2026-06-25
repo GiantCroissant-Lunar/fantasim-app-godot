@@ -5,7 +5,8 @@
   "entryScene": "scenes/stage_entry.tscn",
   "pluginAssembly": "FantaSim.App.Stage.dll",
   "scenes": [
-    "scenes/stage_entry.tscn"
+    "scenes/stage_entry.tscn",
+    "scenes/environment.tscn"
   ],
   "metadata": {
     "bundleType": "scene-tier"
