@@ -83,15 +83,19 @@ collection probe is deferred via the `FrameProvider` to after the stack unwinds.
 | S0 scoping | DONE | report `.agent/run/reports/s0-reload-scoping.md` (glm-5.2) |
 | S1 collection harness | DISPATCHED | plain-xUnit, reuses `App.Resource.Tests` (no new project) |
 | S2 policy + Fix1 rework | not started | `ReloadPolicy` in PURE `App.Resource` (see correction below) |
-| S3 R3 + headless | not started | needs a NEW Godot.NET.Sdk test project — STRUCTURAL, confirm w/ user |
+| S3 R3 + headless | not started | install official R3.Godot addon (GodotFrameProvider.Process); headless test needs a NEW Godot.NET.Sdk project — STRUCTURAL, confirm |
 | S4 cleanup | not started | drop `FakeCommandService` (real Service is Godot-free) |
 
 ## S0 findings (RESOLVED 2026-06-25) — see `.agent/run/reports/s0-reload-scoping.md`
 - **R3 1.3.1** (CPM `Directory.Packages.props:8`). `R3.FrameProvider` is an abstract class;
   `R3.FakeFrameProvider` (`.Advance()`) is the real manual test source; `Observable.NextFrame(
-  frameProvider, ct)` / `TimerFrame(N,...)` are awaitable. **No R3-Godot package** → hand-write
-  `GodotFrameProvider : R3.FrameProvider` (counts `SceneTree.ProcessFrame`) and set
-  `ObservableSystem.DefaultFrameProvider` at composition (S3). R3 today is used only in
+  frameProvider, ct)` / `TimerFrame(N,...)` are awaitable. **R3 HAS official Godot support**
+  (CORRECTED — docs https://github.com/Cysharp/R3#godot; S0 only proved it was not installed
+  locally). Not a nuget: copy the `addons/R3.Godot` plugin into the Godot project + enable it.
+  It provides `GodotFrameProvider.Process` / `.PhysicsProcess` (+ `GodotTimeProvider.*`) and an
+  autoloaded `FrameProviderDispatcher` that sets them as R3 defaults and routes UnhandledException
+  to `GD.PrintErr`. So S3 INSTALLS the addon (matching R3 1.3.1) and injects
+  `GodotFrameProvider.Process` — NO hand-written provider. R3 today is used only in
   `App.World.FieldView` (pure).
 - **Test template** = plugin-archi `TestAssemblyFactory.EmitPluginAssembly` (Roslyn
   `CSharpCompilation.Emit`) + `PluginHostBuilder.AddPluginGroup(...).Build()` (collectible ALC);
@@ -112,7 +116,9 @@ collection probe is deferred via the `FrameProvider` to after the stack unwinds.
 ## Confirmed file layout (adjusted)
 - `plugins/App.Resource/ReloadPolicy.cs` — PURE policy (unmount → unloadReload → `NextFrame` →
   GC-poll → `ReloadResult`). [S2]
-- `plugins/App.Resource.Bundle.Seam/GodotFrameProvider.cs` — prod R3 frame source. [S3]
+- R3 Godot addon: copy `addons/R3.Godot` (matching R3 1.3.1) into the Godot project + enable the
+  `FrameProviderDispatcher` autoload; prod injects `GodotFrameProvider.Process`. NO hand-written
+  provider. [S3]
 - `tests/App.Resource.Tests/{SimpleViewHost,TestViewSourceFactory,ReloadCollectionTests}.cs` —
   real-but-simple host + Roslyn-emitted `IViewSource` + plain-xUnit collection tests. [S1, no new project]
 - NEW Godot.NET.Sdk test project for the headless integration test. [S3, STRUCTURAL — confirm]
