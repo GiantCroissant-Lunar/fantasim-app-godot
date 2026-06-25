@@ -186,6 +186,11 @@ public sealed class HttpTransportTests
             _commands.Add(descriptor);
         }
 
+        public void Unregister(string commandId)
+        {
+            _commands.RemoveAll(command => string.Equals(command.Id, commandId, StringComparison.Ordinal));
+        }
+
         public Task<CommandResult> ExecuteAsync(CommandRequest request, CancellationToken cancellationToken = default)
         {
             LastRequest = request;
