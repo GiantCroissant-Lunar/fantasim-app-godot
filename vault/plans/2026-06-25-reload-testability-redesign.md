@@ -80,14 +80,39 @@ collection probe is deferred via the `FrameProvider` to after the stack unwinds.
 ## Status
 | Slice | State | Notes |
 |---|---|---|
-| S0 scoping | DISPATCHED | opencode `ollama/glm-5.2:cloud` |
-| S1 RED test | not started | |
-| S2 policy + Fix1 rework | not started | |
-| S3 R3 + headless | not started | |
-| S4 cleanup | not started | |
+| S0 scoping | DONE | report `.agent/run/reports/s0-reload-scoping.md` (glm-5.2) |
+| S1 collection harness | DISPATCHED | plain-xUnit, reuses `App.Resource.Tests` (no new project) |
+| S2 policy + Fix1 rework | not started | `ReloadPolicy` in PURE `App.Resource` (see correction below) |
+| S3 R3 + headless | not started | needs a NEW Godot.NET.Sdk test project — STRUCTURAL, confirm w/ user |
+| S4 cleanup | not started | drop `FakeCommandService` (real Service is Godot-free) |
 
-## Open unknowns (S0 fills these)
-- R3 `FrameProvider` exact type/API + the app's R3 package version.
-- plugin-archi test: how it emits/loads a collectible test assembly (Roslyn? fixture?).
-- Reload-path file map: where the policy should live (BundleHost vs a new coordinator).
-- Real command `Service` usable in `HttpTransportTests` (drop the fake)?
+## S0 findings (RESOLVED 2026-06-25) — see `.agent/run/reports/s0-reload-scoping.md`
+- **R3 1.3.1** (CPM `Directory.Packages.props:8`). `R3.FrameProvider` is an abstract class;
+  `R3.FakeFrameProvider` (`.Advance()`) is the real manual test source; `Observable.NextFrame(
+  frameProvider, ct)` / `TimerFrame(N,...)` are awaitable. **No R3-Godot package** → hand-write
+  `GodotFrameProvider : R3.FrameProvider` (counts `SceneTree.ProcessFrame`) and set
+  `ObservableSystem.DefaultFrameProvider` at composition (S3). R3 today is used only in
+  `App.World.FieldView` (pure).
+- **Test template** = plugin-archi `TestAssemblyFactory.EmitPluginAssembly` (Roslyn
+  `CSharpCompilation.Emit`) + `PluginHostBuilder.AddPluginGroup(...).Build()` (collectible ALC);
+  weak-only `PluginUnloadResult` + bounded force-GC poll (10×25ms); no `[MethodImpl(NoInlining)]`
+  needed (just don't retain ALC-typed locals).
+- **Pin = `ViewRenderer._source`** (managed `IViewSource`), dropped by `Unbind()` → `_source=null`
+  (`App.Ui.Seam/ViewRenderer.cs:18,66`). Godot Control nodes hold NO bundle-typed managed refs.
+- **Real command `Service`** is Godot-free; ctor `(IMainThreadDispatcher, IRegistry,
+  ILoggerFactory, IWorldOrchestration?=null)`; `ImmediateMainThreadDispatcher` is Godot-free →
+  S4 can drop `FakeCommandService` (add projref to `App.Command`, update the `HealthAndStatus`
+  assertion to the real command list).
+- **CORRECTION to the report's layout:** `ReloadPolicy` must NOT live in
+  `App.Resource.Bundle.Seam` (that's `Godot.NET.Sdk` → drags GodotSharp → not plain-xUnit-testable).
+  Put it in the PURE `plugins/App.Resource` (net8.0) as a class taking delegates/abstractions
+  (`Func<Task<bool>>` unmount, `Func<Task<PluginUnloadResult?>>` unloadReload, `R3.FrameProvider`).
+  The Godot `.Seam` wires the concrete `BundleHost`/`ViewHost` closures at composition.
+
+## Confirmed file layout (adjusted)
+- `plugins/App.Resource/ReloadPolicy.cs` — PURE policy (unmount → unloadReload → `NextFrame` →
+  GC-poll → `ReloadResult`). [S2]
+- `plugins/App.Resource.Bundle.Seam/GodotFrameProvider.cs` — prod R3 frame source. [S3]
+- `tests/App.Resource.Tests/{SimpleViewHost,TestViewSourceFactory,ReloadCollectionTests}.cs` —
+  real-but-simple host + Roslyn-emitted `IViewSource` + plain-xUnit collection tests. [S1, no new project]
+- NEW Godot.NET.Sdk test project for the headless integration test. [S3, STRUCTURAL — confirm]
