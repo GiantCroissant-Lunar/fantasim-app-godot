@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace FantaSim.App.Resource.Bundle;
 
-public sealed class BundleSceneHost
+public sealed class BundleSceneHost : IBundleSceneRegistry
 {
     private readonly Node _root;
     private readonly ILogger _logger;
@@ -46,6 +46,18 @@ public sealed class BundleSceneHost
         _activeScenes[bundleId] = scene;
         _logger.LogInformation("Bundle scene registered: {BundleId}", bundleId);
     }
+
+    public IReadOnlyList<string> ListActiveSceneIds()
+        => _activeScenes.Keys.OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToArray();
+
+    public Node? GetSceneOrNull(string bundleId)
+        => _activeScenes.TryGetValue(bundleId, out var scene)
+            && GodotObject.IsInstanceValid(scene)
+            ? scene
+            : null;
+
+    public Node? GetNodeOrNull(string bundleId, NodePath nodePath)
+        => GetSceneOrNull(bundleId)?.GetNodeOrNull(nodePath);
 
     public void RemoveScene(string bundleId, bool detachFromParent = true)
     {

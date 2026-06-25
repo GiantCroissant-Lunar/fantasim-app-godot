@@ -20,15 +20,29 @@ public sealed class BundleProvider : IProvider
         IPluginHost pluginHost,
         ILoggerFactory loggerFactory,
         Func<string, bool> isCollectibleAssembly)
+        : this(
+            new BundleSceneHost(
+                sceneRoot ?? throw new ArgumentNullException(nameof(sceneRoot)),
+                (loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory))).CreateLogger("BundleSceneHost")),
+            pluginHost,
+            loggerFactory,
+            isCollectibleAssembly)
     {
-        if (sceneRoot is null) throw new ArgumentNullException(nameof(sceneRoot));
+    }
+
+    public BundleProvider(
+        BundleSceneHost sceneHost,
+        IPluginHost pluginHost,
+        ILoggerFactory loggerFactory,
+        Func<string, bool> isCollectibleAssembly)
+    {
+        if (sceneHost is null) throw new ArgumentNullException(nameof(sceneHost));
         if (pluginHost is null) throw new ArgumentNullException(nameof(pluginHost));
         if (loggerFactory is null) throw new ArgumentNullException(nameof(loggerFactory));
         if (isCollectibleAssembly is null) throw new ArgumentNullException(nameof(isCollectibleAssembly));
 
         var vfs = new BundleVfs();
         var extractor = new BundleExtractor();
-        var sceneHost = new BundleSceneHost(sceneRoot, loggerFactory.CreateLogger("BundleSceneHost"));
         _host = new BundleHost(vfs, extractor, sceneHost, pluginHost, loggerFactory.CreateLogger("BundleHost"), isCollectibleAssembly);
     }
 
