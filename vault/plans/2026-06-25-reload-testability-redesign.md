@@ -82,8 +82,9 @@ collection probe is deferred via the `FrameProvider` to after the stack unwinds.
 |---|---|---|
 | S0 scoping | DONE | report `.agent/run/reports/s0-reload-scoping.md` (glm-5.2) |
 | S1 collection harness | DONE | 2/2 pass (verified via `dotnet test`): held->pinned, dropped->collected |
-| S2 policy + Fix1 rework | NEXT | S2a: pure `ReloadPolicy` + `FakeFrameProvider` gate test (`App.Resource`); S2b: wire into seam (verify at S3) |
-| S3 R3 + headless | not started | install official R3.Godot addon (GodotFrameProvider.Process); headless test needs a NEW Godot.NET.Sdk project — STRUCTURAL, confirm |
+| S2a policy + gate test | DISPATCHED | pure `ReloadPolicy` + `FakeFrameProvider` plain-xUnit test (`App.Resource`) |
+| S2b wire + Fix1 rework | not started | Godot seam; synchronous main-thread unmount; verified at S3 |
+| S3 R3 + headless | not started | install R3.Godot addon (`GodotFrameProvider.Process`); headless integration via complete-app `run:headless` (NO new project) |
 | S4 cleanup | not started | drop `FakeCommandService` (real Service is Godot-free) |
 
 ## S0 findings (RESOLVED 2026-06-25) — see `.agent/run/reports/s0-reload-scoping.md`
@@ -121,4 +122,5 @@ collection probe is deferred via the `FrameProvider` to after the stack unwinds.
   provider. [S3]
 - `tests/App.Resource.Tests/{SimpleViewHost,TestViewSourceFactory,ReloadCollectionTests}.cs` —
   real-but-simple host + Roslyn-emitted `IViewSource` + plain-xUnit collection tests. [S1, no new project]
-- NEW Godot.NET.Sdk test project for the headless integration test. [S3, STRUCTURAL — confirm]
+- Headless integration via complete-app `run:headless` (drive `resource.reload_bundle`, assert
+  `old ALC collected` in the console log) — NO new project (complete-app runs headless). [S3]
