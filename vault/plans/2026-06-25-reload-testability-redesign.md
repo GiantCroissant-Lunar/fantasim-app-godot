@@ -83,8 +83,8 @@ collection probe is deferred via the `FrameProvider` to after the stack unwinds.
 | S0 scoping | DONE | report `.agent/run/reports/s0-reload-scoping.md` (glm-5.2) |
 | S1 collection harness | DONE | 2/2 pass (verified via `dotnet test`): held->pinned, dropped->collected |
 | S2a policy + gate test | DISPATCHED | pure `ReloadPolicy` + `FakeFrameProvider` plain-xUnit test (`App.Resource`) |
-| S2b wire + Fix1 rework | not started | Godot seam; synchronous main-thread unmount; verified at S3 |
-| S3 R3 + headless | not started | install R3.Godot addon (`GodotFrameProvider.Process`); headless integration via complete-app `run:headless` (NO new project) |
+| S2b wire + Fix1 rework | ON HOLD | gated on the S3 verification approach (user rethinking 2026-06-25) |
+| S3 R3 + headless | ON HOLD | user rethinking the headless / R3.Godot-addon approach (2026-06-25) |
 | S4 cleanup | not started | drop `FakeCommandService` (real Service is Godot-free) |
 
 ## S0 findings (RESOLVED 2026-06-25) — see `.agent/run/reports/s0-reload-scoping.md`
