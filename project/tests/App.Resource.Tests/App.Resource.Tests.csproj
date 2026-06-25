@@ -9,9 +9,12 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="GiantCroissant.RegistryArchi.Core" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="BoomHud.Foundation" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\plugins\App.Resource\App.Resource.csproj" />
     <ProjectReference Include="..\..\contracts\App.Resource\App.Resource.csproj" />
+    <ProjectReference Include="..\..\contracts\App.Ui\App.Ui.csproj" />
   </ItemGroup>
 </Project>

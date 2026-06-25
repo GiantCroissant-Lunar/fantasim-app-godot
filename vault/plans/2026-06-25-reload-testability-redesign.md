@@ -81,8 +81,8 @@ collection probe is deferred via the `FrameProvider` to after the stack unwinds.
 | Slice | State | Notes |
 |---|---|---|
 | S0 scoping | DONE | report `.agent/run/reports/s0-reload-scoping.md` (glm-5.2) |
-| S1 collection harness | DISPATCHED | plain-xUnit, reuses `App.Resource.Tests` (no new project) |
-| S2 policy + Fix1 rework | not started | `ReloadPolicy` in PURE `App.Resource` (see correction below) |
+| S1 collection harness | DONE | 2/2 pass (verified via `dotnet test`): held->pinned, dropped->collected |
+| S2 policy + Fix1 rework | NEXT | S2a: pure `ReloadPolicy` + `FakeFrameProvider` gate test (`App.Resource`); S2b: wire into seam (verify at S3) |
 | S3 R3 + headless | not started | install official R3.Godot addon (GodotFrameProvider.Process); headless test needs a NEW Godot.NET.Sdk project — STRUCTURAL, confirm |
 | S4 cleanup | not started | drop `FakeCommandService` (real Service is Godot-free) |
 
