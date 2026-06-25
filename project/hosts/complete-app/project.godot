@@ -11,6 +11,7 @@ config/icon="res://icon.svg"
 
 [autoload]
 
+FrameProviderDispatcher="*res://addons/R3.Godot/FrameProviderDispatcher.cs"
 Host="*res://Host.cs"
 
 [display]

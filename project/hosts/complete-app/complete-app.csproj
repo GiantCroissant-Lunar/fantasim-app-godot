@@ -39,6 +39,14 @@
     <ProjectReference Include="..\..\plugins\App.Remote.Seam\App.Remote.Seam.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- R3.Godot addon (vendored under addons/R3.Godot) provides the FrameProviderDispatcher autoload,
+         which sets ObservableSystem.DefaultFrameProvider to GodotFrameProvider.Process; consumed by
+         BundleHost's frame-deferred ALC-collection gate (S2b). CPM is off here, so the version is inline
+         (matches Directory.Packages.props + the vendored addon, R3 1.3.1). -->
+    <PackageReference Include="R3" Version="1.3.1" />
+  </ItemGroup>
+
   <!-- Vendored phantom-camera addon (v0.11.0.2, GDScript at runtime). Its bundled C# wrapper sources
        are compiled into the App.Camera SEAM (App.Camera.Seam pulls them via Compile Include), not the
        host assembly - exclude them here so the types exist exactly once. -->
