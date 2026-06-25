@@ -1,6 +1,33 @@
 using System.Collections.Generic;
+using FantaSim.App.World.Dto;
 
 namespace FantaSim.App.World;
+
+/// <summary>
+/// Data-first description of the planet surface the Stage-owned Environment scene can bind.
+/// This contract carries product/layer provenance only; engine-specific nodes, materials, and
+/// meshes are chosen by presentation builders in reloadable bundles.
+/// </summary>
+public sealed record PlanetPresentationDocument(
+    string PlanetId,
+    string SourceWorldId,
+    long ReferenceTick,
+    int Revision,
+    IReadOnlyList<PlanetPresentationLayer> Layers,
+    IReadOnlyList<RenderEntityDto> RenderEntities);
+
+/// <summary>
+/// One planet layer projected from a real world-generation product address.
+/// </summary>
+public sealed record PlanetPresentationLayer(
+    string LayerId,
+    string RegimeId,
+    string Variant,
+    string Branch,
+    string ProductDomain,
+    string ProductName,
+    long ProductTick,
+    string ProductAddress);
 
 /// <summary>
 /// Describes one renderable world layer: its identity, display label, geometric kind,

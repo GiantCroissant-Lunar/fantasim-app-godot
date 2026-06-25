@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using FantaSim.App.NodeGraph;
 
 namespace FantaSim.App.World;
@@ -334,6 +335,42 @@ public sealed record WorldGenerationProductAddress
     public long Tick { get; init; }
 
     public string ToPath() => $"/{Variant}/{Branch}/{Domain}/{Product}@{Tick}";
+
+    public static bool TryParse(string? path, out WorldGenerationProductAddress? address)
+    {
+        address = null;
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+
+        var parts = path.Trim().Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 4)
+            return false;
+
+        var productPart = parts[3];
+        var tickSeparator = productPart.LastIndexOf('@');
+        if (tickSeparator <= 0 || tickSeparator == productPart.Length - 1)
+            return false;
+
+        var product = productPart[..tickSeparator];
+        var tickText = productPart[(tickSeparator + 1)..];
+        if (!long.TryParse(tickText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var tick))
+            return false;
+
+        try
+        {
+            address = new WorldGenerationProductAddress(
+                Variant: parts[0],
+                Branch: parts[1],
+                Domain: parts[2],
+                Product: product,
+                Tick: tick);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
 
     public override string ToString() => ToPath();
 }

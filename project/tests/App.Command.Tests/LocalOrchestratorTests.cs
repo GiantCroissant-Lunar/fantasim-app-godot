@@ -322,6 +322,15 @@ internal sealed class FakeWorldService : WorldService
         return ProductsView;
     }
 
+    public PlanetPresentationDocument GetPlanetPresentationAsync()
+        => new(
+            PlanetId: "fake-world",
+            SourceWorldId: "fake-world",
+            ReferenceTick: ProductsView.ReferenceTick,
+            Revision: ProductsView.GraphRevision,
+            Layers: Array.Empty<PlanetPresentationLayer>(),
+            RenderEntities: Array.Empty<RenderEntityDto>());
+
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
     {
         GenerateCalls++;

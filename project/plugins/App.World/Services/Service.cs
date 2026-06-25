@@ -115,6 +115,29 @@ public sealed class Service : IService, IDisposable
             return _generationProducts;
     }
 
+    public PlanetPresentationDocument GetPlanetPresentationAsync()
+    {
+        var overview = _runtime.GetOverview();
+        var renderSnapshot = _runtime.GetRenderSnapshot();
+        WorldGenerationProductsView products;
+        lock (_generationProductsGate)
+            products = _generationProducts;
+
+        var layers = products.Products
+            .Select(ToPlanetLayer)
+            .Where(layer => layer is not null)
+            .Cast<PlanetPresentationLayer>()
+            .ToArray();
+
+        return new PlanetPresentationDocument(
+            PlanetId: overview.WorldId,
+            SourceWorldId: overview.WorldId,
+            ReferenceTick: products.ReferenceTick,
+            Revision: products.GraphRevision,
+            Layers: layers,
+            RenderEntities: renderSnapshot.Entities ?? Array.Empty<RenderEntityDto>());
+    }
+
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -177,6 +200,34 @@ public sealed class Service : IService, IDisposable
         => request.Parameters is not null
            && request.Parameters.TryGetValue("source", out var source)
            && string.Equals(source?.ToString(), GenerationGraphSource, StringComparison.Ordinal);
+
+    private static PlanetPresentationLayer? ToPlanetLayer(string productAddress)
+    {
+        if (!WorldGenerationProductAddress.TryParse(productAddress, out var address) || address is null)
+            return null;
+
+        var (regimeId, layerId) = SplitRegimeLayer(address);
+        return new PlanetPresentationLayer(
+            LayerId: layerId,
+            RegimeId: regimeId,
+            Variant: address.Variant,
+            Branch: address.Branch,
+            ProductDomain: address.Domain,
+            ProductName: address.Product,
+            ProductTick: address.Tick,
+            ProductAddress: address.ToPath());
+    }
+
+    private static (string RegimeId, string LayerId) SplitRegimeLayer(WorldGenerationProductAddress address)
+    {
+        var separator = address.Product.IndexOf('.', StringComparison.Ordinal);
+        if (separator <= 0 || separator == address.Product.Length - 1)
+            return (string.Empty, $"{address.Domain}.{address.Product}");
+
+        return (
+            RegimeId: address.Product[..separator],
+            LayerId: $"{address.Domain}.{address.Product[(separator + 1)..]}");
+    }
 
 #if USE_PROJECT_REFERENCES
     private static string NewTruthWriterActorName()
