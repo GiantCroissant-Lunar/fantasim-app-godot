@@ -35,4 +35,6 @@ internal sealed class SimpleViewHost : IViewHost
     {
         return Task.FromResult(_active.Remove(viewId));
     }
+
+    public bool UnmountNow(string viewId) => _active.Remove(viewId);
 }

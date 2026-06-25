@@ -120,6 +120,13 @@ public sealed class UiServiceTests
             Unmount(viewId);
             return Task.FromResult(wasMounted);
         }
+
+        public bool UnmountNow(string viewId)
+        {
+            var wasMounted = Mounted.Contains(viewId, StringComparer.Ordinal);
+            Unmount(viewId);
+            return wasMounted;
+        }
     }
 
     // Models the resource service: only ids passed to the constructor become "loaded" when the

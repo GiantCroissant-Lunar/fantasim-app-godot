@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Godot;
 using Microsoft.Extensions.Logging;
 using PluginArchi.Extensibility.Abstractions;
+using R3;
 
 namespace FantaSim.App.Resource.Bundle;
 
@@ -278,22 +279,35 @@ public sealed class BundleHost
         // The SOUND "bundle unloaded" signal is the old collectible ALC being GC-collected -- NOT a
         // successful Directory.Delete (on macOS/Linux, unlinking a still-mapped DLL succeeds even while
         // the ALC is alive). A resident holder typically drops its ref a few frames after unload
-        // (cross-alc-rules R4), so poll on a bounded cadence and force a GC only on the final check.
+        // (cross-alc-rules R4), so poll on a bounded cadence and force a GC on each check.
         // The retry loop lives HERE in the host -- PluginArchi never loops (no stop-the-world GC in shared code).
-        const int maxAttempts = 8;
-        const int delayMs = 50;
+        //
+        // GATE-TIMING FIX (mirrors the xUnit-proven ReloadPolicy in App.Resource): the old gate probed
+        // `IsCollected` on a `Task.Delay` loop SYNCHRONOUSLY inside the live reload call stack, so
+        // transient refs (the in-flight async state machine, R4 deferred holders) pinned the ALC
+        // during the check and produced a false "still pinned". Deferring each probe to the NEXT FRAME
+        // via R3 releases the in-flight stack before the probe runs. The autoloaded
+        // FrameProviderDispatcher (the lead installs it in complete-app) sets
+        // ObservableSystem.DefaultFrameProvider to GodotFrameProvider.Process, so NextFrame ticks on
+        // real Godot frames. In a non-Godot/headless context the R3 default still ticks, so this stays
+        // buildable + testable. Go through ObservableSystem.DefaultFrameProvider -- do NOT reference
+        // GodotFrameProvider directly (it lives in the addon source, not a referenced assembly).
+        const int maxAttempts = 60; // frames are ~16ms; 60 frames ~= 1s worst case
 
         for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
-            var isFinal = attempt == maxAttempts - 1;
-            if (unloadResult.IsCollected(forceGc: isFinal))
+            // Defer to the NEXT FRAME so the in-flight reload async machinery is released first --
+            // the old gate probed synchronously inside the live reload stack and got a false negative.
+            await Observable.NextFrame(ObservableSystem.DefaultFrameProvider, cancellationToken)
+                .FirstAsync(cancellationToken).ConfigureAwait(false);
+
+            // forceGc every attempt -- matches ReloadPolicy (the probe is meaningless without a fresh
+            // GC since IsCollected only reports true after the ALC is actually unreferenced+collected).
+            if (unloadResult.IsCollected(forceGc: true))
             {
                 _logger.LogInformation("Hot-reload: old ALC collected for bundle {BundleId}", bundleId);
                 return;
             }
-
-            if (!isFinal)
-                await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
         }
 
         _logger.LogWarning(

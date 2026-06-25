@@ -44,6 +44,8 @@ public sealed class ViewHost : IViewHost
 
     public void Unmount(string viewId) => Callable.From(() => UnmountImpl(viewId)).CallDeferred();
 
+    public bool UnmountNow(string viewId) => UnmountImpl(viewId);
+
     public Task<bool> UnmountAndWaitAsync(string viewId, CancellationToken cancellationToken = default)
     {
         // Scene-tree mutation must run on the Godot main thread, so the unmount is deferred. We

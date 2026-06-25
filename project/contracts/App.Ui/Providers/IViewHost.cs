@@ -14,4 +14,13 @@ public interface IViewHost
     /// Returns true if a view was actually mounted for <paramref name="viewId"/> (and is now removed).
     /// </summary>
     Task<bool> UnmountAndWaitAsync(string viewId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Synchronously unmounts the view. MUST be called on the Godot main thread (the caller
+    /// guarantees it). Drops the bundle-typed <c>IViewSource</c> reference immediately (no
+    /// deferral). Returns true if a view was actually mounted for <paramref name="viewId"/>
+    /// (and is now removed). This is the main-thread unmount seam the reload handler uses so
+    /// the rest of the reload stays on the main thread (no deferred-TCS thread hop).
+    /// </summary>
+    bool UnmountNow(string viewId);
 }

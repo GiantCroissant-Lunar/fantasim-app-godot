@@ -51,15 +51,19 @@ public static class CommandComposition
                     return JsonSerializer.Serialize(new { ok = false, error = "resource service not registered" });
 
                 // Drop the resident ViewHost reference to this bundle's IViewSource BEFORE unloading,
-                // so the old collectible ALC can be GC-collected. UnmountAndWaitAsync awaits the
-                // deferred unmount completion (ViewRenderer.Dispose nulls _source); a fire-and-forget
-                // Unmount would race the unload and leave the pin. Keyed off the ViewHost's own
-                // mounted set, so it covers both IService.ShowAsync-mounted views (e.g. "activity")
-                // and views mounted directly via IViewHost.Mount (e.g. "timeline", whose
-                // TimelinePlugin mounts it without going through IService).
+                // so the old collectible ALC can be GC-collected. The command handler runs ON the
+                // Godot main thread (RemoteBridgeNode._Process dequeues + fire-and-forget runs the
+                // async handler, so awaits yield back to the frame loop). UnmountNow is a SYNCHRONOUS
+                // main-thread call -- the previous UnmountAndWaitAsync used a deferred-TCS unmount with
+                // RunContinuationsAsynchronously + ConfigureAwait(false), which hopped the rest of the
+                // handler (SceneFlow Exit->Enter -> RemoveChild) onto a threadpool thread and tripped
+                // "Removing children only allowed from the main thread." Keeping the unmount synchronous
+                // keeps the whole reload on the main thread. Keyed off the ViewHost's own mounted set,
+                // so it covers both IService.ShowAsync-mounted views (e.g. "activity") and views mounted
+                // directly via IViewHost.Mount (e.g. "timeline", whose TimelinePlugin mounts it without
+                // going through IService).
                 var viewHost = registry.TryGet<FantaSim.App.Ui.Providers.IViewHost>();
-                var wasMounted = viewHost is not null
-                    && await viewHost.UnmountAndWaitAsync(bundleId, ct).ConfigureAwait(false);
+                var wasMounted = viewHost is not null && viewHost.UnmountNow(bundleId);
 
                 var sceneFlow = registry.TryGet<FantaSim.App.SceneFlow.IService>();
                 var target = sceneFlow?.ActiveScenes.FirstOrDefault(s => s.SceneId == bundleId);
@@ -68,14 +72,16 @@ public static class CommandComposition
                     // Scene-tier reload via Exit->Enter so the old ALC's SceneFlow pin is released.
                     // ExitAsync cascades to descendant scenes, so capture the subtree (root + all
                     // transitive descendants, in ActiveScenes entry order) and re-Enter it after.
+                    // No ConfigureAwait(false): the handler is on the Godot main thread and scene-tree
+                    // mutation downstream (RemoveChild) must stay there.
                     var subtree = CollectSubtree(sceneFlow.ActiveScenes, bundleId);
-                    await sceneFlow.ExitAsync(bundleId, ct).ConfigureAwait(false);
+                    await sceneFlow.ExitAsync(bundleId, ct);
                     foreach (var node in subtree)
-                        await sceneFlow.EnterAsync(new FantaSim.App.SceneFlow.SceneRequest(node.SceneId, node.ParentSceneId), ct).ConfigureAwait(false);
+                        await sceneFlow.EnterAsync(new FantaSim.App.SceneFlow.SceneRequest(node.SceneId, node.ParentSceneId), ct);
                 }
                 else
                 {
-                    await resource.ReloadAsync(bundleId, ct).ConfigureAwait(false); // plugin-only bundle, or no SceneFlow
+                    await resource.ReloadAsync(bundleId, ct); // plugin-only bundle, or no SceneFlow
 
                     // Scene-tier reloads re-mount the view via the re-entered scene's plugin; a
                     // plugin-only reload has nothing to do so. Restore it here only in that case.

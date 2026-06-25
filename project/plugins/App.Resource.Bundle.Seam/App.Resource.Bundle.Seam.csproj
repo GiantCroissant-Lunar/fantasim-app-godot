@@ -20,5 +20,9 @@
     <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Hosting" Version="0.1.6" />
     <PackageReference Include="GiantCroissant.RegistryArchi.Contracts" Version="0.1.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.1" />
+    <!-- R3 for the frame-deferred ALC-collection gate in VerifyOldContextCollectedAsync (mirrors the
+         pure ReloadPolicy in App.Resource). CPM is OFF for this project, so the version is inline.
+         Pinned to 1.3.1 to match Directory.Packages.props and the vendored addons/R3.Godot (R3 1.3.1). -->
+    <PackageReference Include="R3" Version="1.3.1" />
   </ItemGroup>
 </Project>
