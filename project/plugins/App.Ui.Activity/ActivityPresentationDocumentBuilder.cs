@@ -106,6 +106,7 @@ internal static class ActivityPresentationDocumentBuilder
             };
 
             rows.Add(PresentationTemplateBinder.CloneTemplate(templates, "entry", values));
+            AppendCommandCardTemplates(rows, templates, entry, values);
             if (!string.IsNullOrWhiteSpace(values["row.detail"]))
                 rows.Add(PresentationTemplateBinder.CloneTemplate(templates, "detail", values));
             if (!string.IsNullOrWhiteSpace(values["row.error"]))
@@ -135,14 +136,17 @@ internal static class ActivityPresentationDocumentBuilder
         for (var index = 0; index < entries.Count; index++)
         {
             var entry = entries[index];
-            rows.Add(new JsonObject
+            var row = new JsonObject
             {
                 ["id"] = index,
                 ["text"] = FormatEntry(entry),
                 ["detail"] = FormatPayloadDetails(entry) ?? string.Empty,
                 ["error"] = entry.Error ?? string.Empty,
                 ["outcome"] = entry.Outcome ?? string.Empty,
-            });
+            };
+            if (TryReadCommandCard(entry) is { } card)
+                row["command"] = card;
+            rows.Add(row);
         }
 
         return rows;
@@ -150,6 +154,59 @@ internal static class ActivityPresentationDocumentBuilder
 
     private static JsonArray ReadShellBindings(JsonObject template)
         => template["shellBindings"]?.DeepClone() as JsonArray ?? new JsonArray();
+
+    private static JsonObject? TryReadCommandCard(ActivityEntry entry)
+    {
+        if (entry.Kind is not (ActivityEntryKind.DomainCommand or ActivityEntryKind.CommandResult))
+            return null;
+        if (string.IsNullOrWhiteSpace(entry.PayloadJson))
+            return null;
+
+        try
+        {
+            if (JsonNode.Parse(entry.PayloadJson) is not JsonObject payload)
+                return null;
+
+            return payload.TryGetPropertyValue("command", out var commandNode) && commandNode is not null
+                ? payload
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static void AppendCommandCardTemplates(
+        JsonArray rows, JsonObject templates, ActivityEntry entry, Dictionary<string, string> values)
+    {
+        if (TryReadCommandCard(entry) is not { } card)
+            return;
+
+        var title = ReadString(card, "descriptorTitle");
+        var description = ReadString(card, "descriptorDescription");
+        var status = FormatCommandStatus(entry, card);
+
+        values["row.commandTitle"] = title;
+        values["row.commandDescription"] = description;
+        values["row.commandStatus"] = status;
+
+        if (!string.IsNullOrWhiteSpace(title))
+            rows.Add(PresentationTemplateBinder.CloneTemplate(templates, "commandTitle", values));
+        if (!string.IsNullOrWhiteSpace(description))
+            rows.Add(PresentationTemplateBinder.CloneTemplate(templates, "commandDescription", values));
+        if (!string.IsNullOrWhiteSpace(status))
+            rows.Add(PresentationTemplateBinder.CloneTemplate(templates, "commandStatus", values));
+    }
+
+    private static string FormatCommandStatus(ActivityEntry entry, JsonObject card)
+    {
+        if (entry.Kind != ActivityEntryKind.CommandResult)
+            return "requested";
+
+        var errorType = ReadString(card, "errorType");
+        return string.IsNullOrWhiteSpace(errorType) ? "ok" : $"failed: {errorType}";
+    }
 
     private static readonly IReadOnlyDictionary<string, string> EmptyValues =
         new Dictionary<string, string>(StringComparer.Ordinal);

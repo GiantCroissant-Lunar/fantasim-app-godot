@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using FantaSim.App.Activity;
 using FantaSim.App.Command.Orchestration;
 using FantaSim.App.Command.Providers;
@@ -160,7 +161,7 @@ public sealed class Service : IService, IDisposable
                 request.ActorId),
             Name: request.Command,
             Category: descriptor.Category,
-            PayloadJson: request.PayloadJson,
+            PayloadJson: BuildCommandRequestPayload(request, descriptor, correlationId),
             CorrelationId: correlationId,
             Outcome: "requested"));
         return entryId;
@@ -180,11 +181,57 @@ public sealed class Service : IService, IDisposable
             Actor: new ActivityActor("system", "command"),
             Name: request.Command + ".result",
             Category: descriptor?.Category ?? "command",
-            PayloadJson: result.ResultJson,
+            PayloadJson: BuildCommandResultPayload(request, descriptor, correlationId, causationId, result),
             CausationId: causationId,
             CorrelationId: correlationId,
             Outcome: result.Ok ? "ok" : "failed",
             Error: result.Error?.Message));
+    }
+
+    // ActivityEntry schema is intentionally unchanged; the structured envelope carries the
+    // command-card data. Payload actor fields reflect the initiator; the result entry's
+    // ActivityEntry.Actor stays "system" to preserve existing audit counts.
+    private static string BuildCommandRequestPayload(
+        CommandRequest request,
+        CommandDescriptor descriptor,
+        string correlationId)
+    {
+        return new JsonObject
+        {
+            ["command"] = request.Command,
+            ["descriptorTitle"] = descriptor.Title,
+            ["descriptorDescription"] = descriptor.Description,
+            ["category"] = descriptor.Category,
+            ["actorKind"] = string.IsNullOrWhiteSpace(request.ActorKind) ? "system" : request.ActorKind!,
+            ["actorId"] = request.ActorId,
+            ["correlationId"] = correlationId,
+            ["causationId"] = null,
+            ["payloadJson"] = request.PayloadJson,
+        }.ToJsonString();
+    }
+
+    private static string BuildCommandResultPayload(
+        CommandRequest request,
+        CommandDescriptor? descriptor,
+        string correlationId,
+        string? causationId,
+        CommandResult result)
+    {
+        return new JsonObject
+        {
+            ["command"] = request.Command,
+            ["descriptorTitle"] = descriptor?.Title,
+            ["descriptorDescription"] = descriptor?.Description,
+            ["category"] = descriptor?.Category,
+            ["actorKind"] = string.IsNullOrWhiteSpace(request.ActorKind) ? "system" : request.ActorKind!,
+            ["actorId"] = request.ActorId,
+            ["correlationId"] = correlationId,
+            ["causationId"] = causationId,
+            ["ok"] = result.Ok,
+            ["errorType"] = result.Error?.Type,
+            ["errorMessage"] = result.Error?.Message,
+            ["resultJson"] = result.ResultJson,
+        }.ToJsonString();
     }
 
     private void AppendActivity(ActivityEntry entry)

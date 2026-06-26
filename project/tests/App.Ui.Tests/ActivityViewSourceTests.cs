@@ -140,6 +140,83 @@ public sealed class ActivityViewSourceTests
         Assert.Contains("active scenes: 1", text);
     }
 
+    [Fact]
+    public void BuildDocument_RendersStructuredCommandCard()
+    {
+        var ledger = new FakeLedger(
+            new ActivityEntry(
+                EntryId: "cmd-req",
+                Kind: ActivityEntryKind.DomainCommand,
+                Timestamp: new DateTimeOffset(2026, 6, 26, 10, 0, 0, TimeSpan.Zero),
+                Actor: new ActivityActor("user", "godot"),
+                Name: "world.orchestrate",
+                Category: "orchestration",
+                PayloadJson: new JsonObject
+                {
+                    ["command"] = "world.orchestrate",
+                    ["descriptorTitle"] = "Orchestrate world",
+                    ["descriptorDescription"] = "Delegates to the active orchestrator.",
+                    ["category"] = "orchestration",
+                    ["actorKind"] = "user",
+                    ["actorId"] = "godot",
+                    ["correlationId"] = "corr-1",
+                    ["payloadJson"] = "{\"command\":\"world.refresh\"}",
+                }.ToJsonString(),
+                CorrelationId: "corr-1",
+                Outcome: "requested"),
+            new ActivityEntry(
+                EntryId: "cmd-res",
+                Kind: ActivityEntryKind.CommandResult,
+                Timestamp: new DateTimeOffset(2026, 6, 26, 10, 0, 1, TimeSpan.Zero),
+                Actor: new ActivityActor("system", "command"),
+                Name: "world.orchestrate.result",
+                Category: "orchestration",
+                PayloadJson: new JsonObject
+                {
+                    ["command"] = "world.orchestrate",
+                    ["descriptorTitle"] = "Orchestrate world",
+                    ["descriptorDescription"] = "Delegates to the active orchestrator.",
+                    ["category"] = "orchestration",
+                    ["actorKind"] = "user",
+                    ["actorId"] = "godot",
+                    ["correlationId"] = "corr-1",
+                    ["causationId"] = "cmd-req",
+                    ["ok"] = true,
+                    ["resultJson"] = "{\"success\":true}",
+                }.ToJsonString(),
+                CausationId: "cmd-req",
+                CorrelationId: "corr-1",
+                Outcome: "ok"));
+        var source = new ActivityViewSource(ledger, bus: null, TemplateJson);
+
+        var document = source.BuildDocument();
+
+        var rows = document.DataModel!["rows"]!.AsArray();
+        var commandRows = rows
+            .Select(row => row!.AsObject())
+            .Where(row => row.ContainsKey("command"))
+            .ToArray();
+        Assert.Equal(2, commandRows.Length);
+        var resultRow = commandRows.First(row => row["command"]!["ok"] is not null);
+        var requestRow = commandRows.First(row => row["command"]!["ok"] is null);
+
+        Assert.Equal("Orchestrate world", requestRow["command"]!["descriptorTitle"]!.GetValue<string>());
+        Assert.Equal("world.orchestrate", requestRow["command"]!["command"]!.GetValue<string>());
+        Assert.Equal("{\"command\":\"world.refresh\"}", requestRow["command"]!["payloadJson"]!.GetValue<string>());
+        Assert.True(resultRow["command"]!["ok"]!.GetValue<bool>());
+        Assert.Equal("cmd-req", resultRow["command"]!["causationId"]!.GetValue<string>());
+
+        var text = string.Join("\n", document.Root.Children
+            .Select(child => child.Properties.TryGetValue("text", out var value)
+                ? value.Literal?.GetValue<string>() ?? string.Empty
+                : string.Empty));
+
+        Assert.Contains("Orchestrate world", text);
+        Assert.Contains("Delegates to the active orchestrator.", text);
+        Assert.Contains("status: ok", text);
+        Assert.Contains("status: requested", text);
+    }
+
     private sealed class FakeLedger : LedgerService
     {
         private readonly List<ActivityEntry> _entries;

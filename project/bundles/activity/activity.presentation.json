@@ -100,6 +100,41 @@
           "skipEmpty": true
         },
         {
+          "path": "command.descriptorTitle",
+          "prefix": "        ",
+          "skipEmpty": true
+        },
+        {
+          "path": "command.descriptorDescription",
+          "prefix": "        ",
+          "style": "muted",
+          "skipEmpty": true
+        },
+        {
+          "path": "command.category",
+          "prefix": "        category: ",
+          "style": "muted",
+          "skipEmpty": true
+        },
+        {
+          "path": "command.actorKind",
+          "prefix": "        actor: ",
+          "style": "muted",
+          "skipEmpty": true
+        },
+        {
+          "path": "command.ok",
+          "prefix": "        ok: ",
+          "style": "muted",
+          "skipEmpty": true
+        },
+        {
+          "path": "command.errorType",
+          "prefix": "        error type: ",
+          "style": "error",
+          "skipEmpty": true
+        },
+        {
           "path": "detail",
           "prefix": "        ",
           "style": "muted",
@@ -172,6 +207,33 @@
       "properties": {
         "text": {
           "literal": "        outcome: ${row.outcome}"
+        }
+      }
+    },
+    "commandTitle": {
+      "id": "activity-entry-${row.id}-cmd-title",
+      "type": "label",
+      "properties": {
+        "text": {
+          "literal": "        ${row.commandTitle}"
+        }
+      }
+    },
+    "commandDescription": {
+      "id": "activity-entry-${row.id}-cmd-desc",
+      "type": "label",
+      "properties": {
+        "text": {
+          "literal": "        ${row.commandDescription}"
+        }
+      }
+    },
+    "commandStatus": {
+      "id": "activity-entry-${row.id}-cmd-status",
+      "type": "label",
+      "properties": {
+        "text": {
+          "literal": "        status: ${row.commandStatus}"
         }
       }
     }
