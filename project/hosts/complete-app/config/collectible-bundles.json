@@ -23,7 +23,23 @@
       "assemblyNames": [
         "FantaSim.App.World",
         "FantaSim.App.World.FieldView",
-        "FantaSim.App.World.Composition"
+        "FantaSim.App.World.Composition",
+        "ConcurrentCollections",
+        "Dahomey.Cbor",
+        "Microsoft.Extensions.Http",
+        "Microsoft.Extensions.ObjectPool",
+        "Microsoft.IO.RecyclableMemoryStream",
+        "Microsoft.Spatial",
+        "Semver",
+        "SurrealDb.Embedded.InMemory",
+        "SurrealDb.Net",
+        "System.Collections.Immutable",
+        "System.IO.Pipelines",
+        "System.Linq.AsyncEnumerable",
+        "System.Reactive",
+        "SystemTextJsonPatch",
+        "UnifyStorage.Runtime.SurrealDb",
+        "Websocket.Client"
       ]
     }
   ]

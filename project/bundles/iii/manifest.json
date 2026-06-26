@@ -1,0 +1,8 @@
+{
+  "bundleId": "iii",
+  "displayName": "III Worker Manifests",
+  "version": "0.1.0",
+  "metadata": {
+    "bundleType": "worker-config"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "workers": [
+    {
+      "workerId": "comfy",
+      "displayName": "ComfyUI text-to-mesh worker",
+      "description": "Runs SDXL + TripoSR in ComfyUI to generate a mesh from text.",
+      "functionFamilies": ["comfy."],
+      "functions": [],
+      "environmentDefaults": {
+        "COMFY_URL": "http://127.0.0.1:8188"
+      }
+    },
+    {
+      "workerId": "blender",
+      "displayName": "Blender mesh-refinement worker",
+      "description": "Refines TripoSR meshes and converts assets to glTF via headless Blender.",
+      "functionFamilies": ["blender.", "asset."],
+      "functions": [],
+      "environmentDefaults": {
+        "BLENDER_BIN": "/Applications/Blender.app/Contents/MacOS/Blender"
+      }
+    },
+    {
+      "workerId": "pipeline",
+      "displayName": "Text-to-3D pipeline coordinator",
+      "description": "Coordinates comfy -> blender -> asset-to-gltf for the text-to-3D pipeline.",
+      "functionFamilies": ["pipeline."],
+      "functions": ["pipeline.text_to_3d"],
+      "environmentDefaults": {}
+    },
+    {
+      "workerId": "vplanet",
+      "displayName": "VPLanet simulation worker",
+      "description": "Builds input bundles, runs VPLanet, and parses output tables.",
+      "functionFamilies": ["vplanet."],
+      "functions": [],
+      "environmentDefaults": {}
+    }
+  ]
+}

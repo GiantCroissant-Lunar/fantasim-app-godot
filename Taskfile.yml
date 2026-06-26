@@ -165,9 +165,125 @@ tasks:
       - dotnet build project/plugins/App.World/App.World.csproj -c Debug -v q -nologo
       - dotnet build project/plugins/App.World.Composition/App.World.Composition.csproj -c Debug -v q -nologo
       - dotnet build project/plugins/App.World.FieldView/App.World.FieldView.csproj -c Debug -v q -nologo
-      - cp project/plugins/App.World/bin/Debug/net8.0/FantaSim.App.World.dll project/bundles/world/FantaSim.App.World.dll
-      - cp project/plugins/App.World.Composition/bin/Debug/net8.0/FantaSim.App.World.Composition.dll project/bundles/world/FantaSim.App.World.Composition.dll
-      - cp project/plugins/App.World.FieldView/bin/Debug/net8.0/FantaSim.App.World.FieldView.dll project/bundles/world/FantaSim.App.World.FieldView.dll
+      - find project/bundles/world -maxdepth 1 -type f -name '*.dll' -delete
+      - find project/bundles/world -maxdepth 1 -type f -name '*.deps.json' -delete
+      # Stage the world bundle from the real deps graph, filtered through Bootstrap's shared policy.
+      # Resident/shared contracts stay out of the bundle unless collectible-bundles.json explicitly
+      # excludes that exact assembly from parent sharing.
+      - |
+        set -eu
+        app_world_out="project/plugins/App.World/bin/Debug/net8.0"
+        bundle_dir="project/bundles/world"
+        cp "$app_world_out/FantaSim.App.World.deps.json" project/bundles/world/
+        collectible_names="$(jq -r '.bundles[] | select(.bundleId == "world") | (.assemblyNames // [])[]' project/hosts/complete-app/config/collectible-bundles.json)"
+        nuget_root="${NUGET_PACKAGES:-$HOME/.nuget/packages}"
+
+        is_collectible_override() {
+          printf '%s\n' "$collectible_names" | grep -Fxq "$1"
+        }
+
+        is_shared_exact() {
+          case "$1" in
+            FantaSim.World.Fields.Contracts|\
+            FantaSim.World.Fields.Core|\
+            FantaSim.World.Shared.Contracts|\
+            UnifyMaths|\
+            UnifyStorage.Abstractions|\
+            UnifyStorage.Runtime.LiteDb|\
+            Arch)
+              return 0
+              ;;
+          esac
+          return 1
+        }
+
+        is_shared_prefix() {
+          case "$1" in
+            System.*|\
+            Microsoft.*|\
+            Godot*|\
+            GodotSharp*|\
+            netstandard|\
+            PluginArchi.*|\
+            ServiceArchi.*|\
+            RegistryArchi.*|\
+            DependencyArchi.*|\
+            CrosscutFoundation.*|\
+            MessagePipe*|\
+            BoomHud*|\
+            R3|\
+            ReactiveUI|\
+            DynamicData|\
+            FantaSim.App.*|\
+            FantaSim.App.World.*|\
+            FantaSim.App.Command.*|\
+            Akka*|\
+            Newtonsoft.Json|\
+            UnifyEcs.*|\
+            TimeDete.*)
+              return 0
+              ;;
+          esac
+          return 1
+        }
+
+        should_stage() {
+          asm="$1"
+          if is_collectible_override "$asm"; then
+            return 0
+          fi
+          if is_shared_exact "$asm" || is_shared_prefix "$asm"; then
+            return 1
+          fi
+          return 0
+        }
+
+        staged_names="$(mktemp)"
+        jq -r '
+          .targets[]
+          | to_entries[]
+          | .key as $package
+          | (.value.runtime // {})
+          | keys[]
+          | [$package, .]
+          | @tsv
+        ' "$app_world_out/FantaSim.App.World.deps.json" | while IFS="$(printf '\t')" read -r package asset; do
+          asm="$(basename "$asset" .dll)"
+          if ! should_stage "$asm"; then
+            continue
+          fi
+          if grep -Fxq "$asm" "$staged_names"; then
+            continue
+          fi
+          printf '%s\n' "$asm" >> "$staged_names"
+          src="$app_world_out/$asm.dll"
+          if [ -f "$src" ]; then
+            cp "$src" "$bundle_dir/"
+            continue
+          fi
+          package_id="${package%/*}"
+          package_version="${package##*/}"
+          package_dir="$(printf '%s' "$package_id" | tr '[:upper:]' '[:lower:]')"
+          src="$nuget_root/$package_dir/$package_version/$asset"
+          if [ ! -f "$src" ]; then
+            echo "missing package runtime asset for world bundle: $src" >&2
+            exit 1
+          fi
+          cp "$src" "$bundle_dir/"
+        done
+
+  bundle:iii:build:
+    desc: Stage iii worker manifests into the bundle source dir
+    cmds:
+      - mkdir -p project/bundles/iii
+      # Data-only bundle: no DLL. Worker source stays in project/workers/; this bundle owns metadata.
+
+  bundle:iii:
+    desc: Export the iii worker metadata bundle PCK (manifest + workers.json, no DLL)
+    deps: [bundle:link, bundle:iii:build, artifacts:latest]
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles
+      - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "iii PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles/iii.pck'
 
   bundle:world:
     desc: Build the world data-bundle DLLs + export the collectible world bundle PCK (manifest + dlls, no scene)
@@ -177,8 +293,8 @@ tasks:
       - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "world PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.GITVERSION_MAJORMINORPATCH}}/godot/bundles/world.pck'
 
   bundles:
-    desc: Export all collectible bundle PCKs (stage + assist + timeline + activity + world)
-    deps: [bundle:stage, bundle:assist, bundle:timeline, bundle:activity, bundle:world]
+    desc: Export all collectible bundle PCKs (stage + assist + timeline + activity + world + iii)
+    deps: [bundle:stage, bundle:assist, bundle:timeline, bundle:activity, bundle:world, bundle:iii]
 
   bundle:install:
     desc: Copy exported bundle PCKs next to the exported app exe so the windowed app resolves them
@@ -193,6 +309,7 @@ tasks:
       - cp "{{.PCKS}}/timeline.pck" "{{.MACOS}}/bundles/timeline.pck"
       - cp "{{.PCKS}}/activity.pck" "{{.MACOS}}/bundles/activity.pck"
       - cp "{{.PCKS}}/world.pck" "{{.MACOS}}/bundles/world.pck"
+      - cp "{{.PCKS}}/iii.pck" "{{.MACOS}}/bundles/iii.pck"
 
   run:exported:
     desc: Launch the exported WINDOWED app (with console) so bundle load is observable; never headless
