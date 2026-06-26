@@ -7,9 +7,17 @@ using FantaSim.World.Contracts.Units;
 
 namespace FantaSim.App.Timeline;
 
+/// <summary>One canonical time ladder rung (e.g. jz, ka, kb).</summary>
+public sealed record TimelineLadderRung(string Symbol, double UnitTicks);
+
 public static class TimelineModel
 {
     private static readonly int[] NiceMultipliers = { 1, 2, 5, 10, 20, 50, 100, 200, 500 };
+
+    private static readonly IReadOnlyList<TimelineLadderRung> LadderRungs = BuildLadderRungs();
+
+    /// <summary>Exposes the canonical odometer ladder rungs, ordered from finest to coarsest.</summary>
+    public static IReadOnlyList<TimelineLadderRung> GetLadderRungs() => LadderRungs;
 
     public static IReadOnlyList<TimelineBand> Bands(
         SphereRegimeSchedule schedule,
@@ -93,6 +101,30 @@ public static class TimelineModel
         return marks;
     }
 
+    /// <summary>Ruler whose step and labels are locked to the selected ladder rung.</summary>
+    public static IReadOnlyList<TimelineRulerMark> Ruler(
+        long viewStartTick,
+        long viewEndTick,
+        TimelineLadderRung rung)
+    {
+        if (viewEndTick <= viewStartTick) return Array.Empty<TimelineRulerMark>();
+
+        long step = Math.Max(1L, (long)Math.Round(rung.UnitTicks));
+        long first = AlignUp(viewStartTick, step);
+        double span = viewEndTick - viewStartTick;
+        var scale = rung.Symbol;
+        var marks = new List<TimelineRulerMark>();
+
+        for (long tick = first; tick <= viewEndTick; tick += step)
+        {
+            double fraction = (tick - viewStartTick) / span;
+            marks.Add(new TimelineRulerMark(tick, fraction, TimelineTimeFormatter.ForTick(tick, scale)));
+            if (long.MaxValue - tick < step) break;
+        }
+
+        return marks;
+    }
+
     public static long RulerStepTicks(
         long viewStartTick,
         long viewEndTick,
@@ -109,11 +141,11 @@ public static class TimelineModel
     private static IEnumerable<long> RulerStepCandidates()
     {
         var candidates = new SortedSet<long> { 1L };
-        foreach (var (_, unitTicks) in TimeLadderUnits())
+        foreach (var rung in LadderRungs)
         {
             foreach (int multiplier in NiceMultipliers)
             {
-                long step = Math.Max(1L, (long)Math.Round(unitTicks * multiplier, MidpointRounding.AwayFromZero));
+                long step = Math.Max(1L, (long)Math.Round(rung.UnitTicks * multiplier, MidpointRounding.AwayFromZero));
                 candidates.Add(step);
             }
         }
@@ -141,7 +173,7 @@ public static class TimelineModel
         if (value > 0L) set.Add(value);
     }
 
-    private static IReadOnlyList<(string Symbol, double UnitTicks)> TimeLadderUnits()
+    private static IReadOnlyList<TimelineLadderRung> BuildLadderRungs()
     {
         var profile = BaselineScaleProfiles.GeospherePlateTime;
         var ladder = new List<(string Symbol, double Cumulative)> { (profile.Steps[0].FromScaleSymbol, 1.0) };
@@ -153,7 +185,7 @@ public static class TimelineModel
 
         var anchor = ladder.Single(entry => entry.Symbol == profile.AnchorScaleSymbol).Cumulative;
         return ladder
-            .Select(entry => (entry.Symbol, UnitConverter.TicksPerMegaAnnum * entry.Cumulative / anchor))
+            .Select(entry => new TimelineLadderRung(entry.Symbol, UnitConverter.TicksPerMegaAnnum * entry.Cumulative / anchor))
             .ToArray();
     }
 
@@ -161,21 +193,63 @@ public static class TimelineModel
     {
         var viewSpan = Math.Abs((double)viewEndTick - viewStartTick);
         var maxMagnitude = Math.Max(viewSpan, Math.Abs((double)stepTick));
-        var units = TimeLadderUnits();
         if (maxMagnitude <= 0)
             return BaselineScaleProfiles.GeospherePlateTime.AnchorScaleSymbol;
 
-        var selected = units[0].Symbol;
-        foreach (var (symbol, unitTicks) in units)
+        return SelectRungForSpan((long)maxMagnitude).Symbol;
+    }
+
+    /// <summary>Selects the coarsest rung whose unit still fits inside the view span.</summary>
+    public static TimelineLadderRung SelectRungForSpan(long viewSpanTicks)
+    {
+        if (LadderRungs.Count == 0)
+            throw new InvalidOperationException("Timeline ladder profile produced no rungs.");
+        if (viewSpanTicks <= 0L)
+            return LadderRungs[0];
+
+        var selected = LadderRungs[0];
+        foreach (var rung in LadderRungs)
         {
-            if (maxMagnitude >= unitTicks)
-                selected = symbol;
+            if (viewSpanTicks >= rung.UnitTicks)
+                selected = rung;
             else
                 break;
         }
 
         return selected;
     }
+
+    /// <summary>Returns the next finer rung, or null if <paramref name="current"/> is already the finest.</summary>
+    public static TimelineLadderRung? TryGetFinerRung(TimelineLadderRung current)
+    {
+        int index = FindRungIndex(current);
+        if (index <= 0)
+            return null;
+        return LadderRungs[index - 1];
+    }
+
+    /// <summary>Returns the next coarser rung, or null if <paramref name="current"/> is already the coarsest.</summary>
+    public static TimelineLadderRung? TryGetCoarserRung(TimelineLadderRung current)
+    {
+        int index = FindRungIndex(current);
+        if (index < 0 || index >= LadderRungs.Count - 1)
+            return null;
+        return LadderRungs[index + 1];
+    }
+
+    private static int FindRungIndex(TimelineLadderRung rung)
+    {
+        for (int i = 0; i < LadderRungs.Count; i++)
+        {
+            if (LadderRungs[i].Symbol == rung.Symbol)
+                return i;
+        }
+        return -1;
+    }
+
+    /// <summary>Visible span for a rung, expressed as a fixed number of rung units.</summary>
+    public static long SpanTicksForRung(TimelineLadderRung rung, int units = 10)
+        => Math.Max(1L, (long)Math.Round(rung.UnitTicks * units));
 
     private static long AlignUp(long value, long step)
     {
@@ -191,4 +265,3 @@ public static class TimelineModel
         return (start, end);
     }
 }
-

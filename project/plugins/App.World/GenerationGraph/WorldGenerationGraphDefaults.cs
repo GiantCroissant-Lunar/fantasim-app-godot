@@ -18,6 +18,13 @@ public static class WorldGenerationGraphDefaults
     public const string GeosphereCrustLayerGraphId = "geosphere.crust.layer";
     public const string VplanetEarthGraphId = "external.vplanet.earth";
     public const string GeosphereSphereId = "geosphere";
+    public const string AtmosphereSphereId = "atmosphere";
+    public const string DefaultLayerRendererContract = "world.globe.layer.v1";
+    public const string PlateLayerRendererContract = "world.globe.plate-layer.v1";
+    public const string CrustLayerRendererContract = "world.globe.crust-layer.v1";
+    public const string GenericLayerProductKind = "world/layer";
+    public const string PlateLayerProductKind = "world/plate-layer";
+    public const string CrustLayerProductKind = "world/crust-layer";
 
     public static WorldGenerationGraphFamilyDocument BuildFamily(DateTimeOffset? updatedUtc = null)
     {
@@ -99,7 +106,15 @@ public static class WorldGenerationGraphDefaults
                 new WorldGenerationSubgraphBinding(GeosphereGraphId, "crust", MobilePlateLayerGraphId),
                 new WorldGenerationSubgraphBinding(MobilePlateLayerGraphId, "plate_layer", GeospherePlateLayerGraphId),
                 new WorldGenerationSubgraphBinding(MobilePlateLayerGraphId, "crust_layer", GeosphereCrustLayerGraphId),
-            });
+            },
+            LayerGraphBindings: new[]
+            {
+                new WorldLayerGraphBinding(GeosphereSphereId, "geosphere.magma-ocean", GeosphereMagmaOceanGraphId, RegimeId: "magma-ocean"),
+                new WorldLayerGraphBinding(GeosphereSphereId, "geosphere.stagnant-lid", GeosphereStagnantLidGraphId, RegimeId: "stagnant-lid"),
+                new WorldLayerGraphBinding(GeosphereSphereId, "geosphere.plate", GeospherePlateLayerGraphId, RegimeId: "mobile-plate"),
+                new WorldLayerGraphBinding(GeosphereSphereId, "geosphere.crust", GeosphereCrustLayerGraphId, RegimeId: "mobile-plate"),
+            },
+            LayerSourceBindings: BuildLayerSourceBindings());
     }
 
     public static WorldGenerationGraphView BuildBodyFormationGraph()
@@ -216,27 +231,373 @@ public static class WorldGenerationGraphDefaults
         string layerId,
         string role)
     {
-        var node = LayerScopeNode("layer_scope", label, regimeId, layerId, role);
+        if (string.Equals(layerId, "geosphere.crust", StringComparison.Ordinal))
+            return BuildCrustLayerGraph(graphId, label, regimeId, layerId, role);
+        if (string.Equals(layerId, "geosphere.plate", StringComparison.Ordinal))
+            return BuildPlateLayerGraph(graphId, label, regimeId, layerId, role);
+
+        return BuildExecutableLayerScopeGraph(graphId, label, regimeId, layerId, role);
+    }
+
+    private static WorldGenerationGraphView BuildExecutableLayerScopeGraph(
+        string graphId,
+        string label,
+        string regimeId,
+        string layerId,
+        string role)
+    {
+        var scope = LayerScopeNode("layer_scope", label, regimeId, layerId, role);
+        var source = LayerSourceNode(
+            "source_pcg",
+            "PCG Layer Source",
+            regimeId,
+            layerId,
+            $"{layerId}.pcg",
+            WorldLayerSourceKinds.Procedural,
+            WorldLayerSourceAvailability.Available,
+            GenericLayerProductKind,
+            DefaultLayerRendererContract);
+        var normalize = NormalizeLayerNode(
+            "normalize_layer",
+            "Normalize Layer",
+            regimeId,
+            layerId,
+            $"{layerId}.pcg",
+            WorldLayerSourceKinds.Procedural,
+            GenericLayerProductKind,
+            DefaultLayerRendererContract);
 
         return new WorldGenerationGraphView(
             GraphId: graphId,
             Label: label,
-            Description: $"Layer graph for {layerId} in the {regimeId} regime.",
-            Nodes: new[] { node },
-            Wires: Array.Empty<WorldGenerationGraphWire>(),
+            Description: $"Executable layer graph for {layerId} in the {regimeId} regime: selected source normalizes into the shared renderer contract.",
+            Nodes: new[] { scope, source, normalize },
+            Wires: new[]
+            {
+                new WorldGenerationGraphWire("layer_scope", "layer", "source_pcg", "layer", "world/layer_scope"),
+                new WorldGenerationGraphWire("layer_scope", "layer", "normalize_layer", "layer", "world/layer_scope"),
+                new WorldGenerationGraphWire("source_pcg", "source", "normalize_layer", "primarySource", "world/layer_source"),
+            },
             Annotations: new[]
             {
                 new WorldGenerationGraphAnnotation(
                     AnnotationId: $"comment_{SanitizeId(graphId)}",
                     Kind: WorldGenerationGraphAnnotationKinds.CommentBoundary,
                     Label: label,
-                    Bounds: new WorldGenerationGraphBounds(-80, -80, 420, 220),
-                    NodeIds: new[] { "layer_scope" },
-                    Text: "Executable metadata placeholder for a layer-owned generation subgraph.",
+                    Bounds: new WorldGenerationGraphBounds(-80, -80, 760, 260),
+                    NodeIds: new[] { "layer_scope", "source_pcg", "normalize_layer" },
+                    Text: "Every layer graph declares its scope, selects a source candidate, then normalizes into the renderer-facing layer contract.",
                     Color: "#f6c85f"),
             },
-            OutputNodeIds: new[] { "layer_scope" });
+            OutputNodeIds: new[] { "normalize_layer" });
     }
+
+    private static WorldGenerationGraphView BuildPlateLayerGraph(
+        string graphId,
+        string label,
+        string regimeId,
+        string layerId,
+        string role)
+    {
+        var scope = LayerScopeNode("layer_scope", label, regimeId, layerId, role);
+        var pcgSource = LayerSourceNode(
+            "source_pcg",
+            "PCG Plate Source",
+            regimeId,
+            layerId,
+            "geosphere.plate.pcg",
+            WorldLayerSourceKinds.Procedural,
+            WorldLayerSourceAvailability.Available,
+            PlateLayerProductKind,
+            PlateLayerRendererContract,
+            providerId: "App.World");
+        var rotSource = LayerSourceNode(
+            "source_gplates_rot",
+            "GPlates ROT Source",
+            regimeId,
+            layerId,
+            "geosphere.plate.gplates-rot",
+            WorldLayerSourceKinds.WorldNativeImport,
+            WorldLayerSourceAvailability.RequiresUserContent,
+            PlateLayerProductKind,
+            PlateLayerRendererContract,
+            bodyId: "user-selected",
+            datasetId: "user-selected",
+            providerId: "Geosphere.Plate.Rotation.Stream",
+            importFormat: "gplates.rot");
+        var normalize = NormalizeLayerNode(
+            "normalize_plate",
+            "Normalize Plate Layer",
+            regimeId,
+            layerId,
+            "geosphere.plate.pcg",
+            WorldLayerSourceKinds.Procedural,
+            PlateLayerProductKind,
+            PlateLayerRendererContract);
+
+        return new WorldGenerationGraphView(
+            GraphId: graphId,
+            Label: label,
+            Description: "Plate-layer graph: PCG and world-native import sources normalize into one shared plate renderer contract.",
+            Nodes: new[] { scope, pcgSource, rotSource, normalize },
+            Wires: new[]
+            {
+                new WorldGenerationGraphWire("layer_scope", "layer", "source_pcg", "layer", "world/layer_scope"),
+                new WorldGenerationGraphWire("layer_scope", "layer", "source_gplates_rot", "layer", "world/layer_scope"),
+                new WorldGenerationGraphWire("layer_scope", "layer", "normalize_plate", "layer", "world/layer_scope"),
+                new WorldGenerationGraphWire("source_pcg", "source", "normalize_plate", "primarySource", "world/layer_source"),
+                new WorldGenerationGraphWire("source_gplates_rot", "source", "normalize_plate", "secondarySource", "world/layer_source"),
+            },
+            Annotations: new[]
+            {
+                new WorldGenerationGraphAnnotation(
+                    AnnotationId: "group_plate_layer_scope",
+                    Kind: WorldGenerationGraphAnnotationKinds.CommentBoundary,
+                    Label: "Plate layer scope",
+                    Bounds: new WorldGenerationGraphBounds(-80, -80, 360, 220),
+                    NodeIds: new[] { "layer_scope" },
+                    Text: "This node declares the active mobile-plate layer selected from the timeline track.",
+                    Color: "#f6c85f"),
+                new WorldGenerationGraphAnnotation(
+                    AnnotationId: "group_plate_sources",
+                    Kind: WorldGenerationGraphAnnotationKinds.GroupBoundary,
+                    Label: "Plate source candidates",
+                    Bounds: new WorldGenerationGraphBounds(320, -80, 900, 300),
+                    NodeIds: new[] { "source_pcg", "source_gplates_rot", "normalize_plate" },
+                    Text: "PCG is the selected runtime source today. GPlates .rot is a real world-native import capability that requires user-provided rotation content; both converge on the same plate renderer contract.",
+                    Color: "#8bd17c"),
+            },
+            OutputNodeIds: new[] { "normalize_plate" });
+    }
+
+    private static WorldGenerationGraphView BuildCrustLayerGraph(
+        string graphId,
+        string label,
+        string regimeId,
+        string layerId,
+        string role)
+    {
+        var scope = LayerScopeNode("layer_scope", label, regimeId, layerId, role);
+        var source = LayerSourceNode(
+            "source_pcg",
+            "PCG Crust Source",
+            regimeId,
+            layerId,
+            "geosphere.crust.pcg",
+            WorldLayerSourceKinds.Procedural,
+            WorldLayerSourceAvailability.Available,
+            CrustLayerProductKind,
+            CrustLayerRendererContract,
+            providerId: "App.World.CrustPipeline");
+        var normalize = NormalizeLayerNode(
+            "normalize_crust",
+            "Normalize Crust Layer",
+            regimeId,
+            layerId,
+            "geosphere.crust.pcg",
+            WorldLayerSourceKinds.Procedural,
+            CrustLayerProductKind,
+            CrustLayerRendererContract);
+        var options = NodeFromSchema("options", WorldFunctionProvider.WorldOptions);
+        var crust = NodeFromSchema("crust", WorldFunctionProvider.CrustGenerate);
+        var comfy = NodeFromSchema("comfy_generate", "comfy.generate", new Dictionary<string, string>
+        {
+            ["prompt"] = "geosphere crust layer surface asset",
+            ["jobId"] = "geosphere-crust-layer",
+        });
+        var blender = NodeFromSchema("blender_refine", "blender.refine", new Dictionary<string, string>
+        {
+            ["jobId"] = "geosphere-crust-layer",
+        });
+        var gltf = NodeFromSchema("asset_gltf", "asset.to_gltf", new Dictionary<string, string>
+        {
+            ["jobId"] = "geosphere-crust-layer",
+        });
+
+        return new WorldGenerationGraphView(
+            GraphId: graphId,
+            Label: label,
+            Description: "Crust-layer graph: native PCG source normalizes into the shared renderer contract, with iii asset tools kept as authoring-side visual preparation.",
+            Nodes: new[] { scope, source, normalize, options, crust, comfy, blender, gltf },
+            Wires: new[]
+            {
+                new WorldGenerationGraphWire("layer_scope", "layer", "source_pcg", "layer", "world/layer_scope"),
+                new WorldGenerationGraphWire("layer_scope", "layer", "normalize_crust", "layer", "world/layer_scope"),
+                new WorldGenerationGraphWire("source_pcg", "source", "normalize_crust", "primarySource", "world/layer_source"),
+                new WorldGenerationGraphWire("options", "options", "crust", "options", "world/options"),
+                new WorldGenerationGraphWire("comfy_generate", "mesh", "blender_refine", "source", "comfy/mesh"),
+                new WorldGenerationGraphWire("blender_refine", "usdPath", "asset_gltf", "source", "blender/usd"),
+            },
+            Annotations: new[]
+            {
+                new WorldGenerationGraphAnnotation(
+                    AnnotationId: "group_crust_generation",
+                    Kind: WorldGenerationGraphAnnotationKinds.GroupBoundary,
+                    Label: "fantasim-world crust generation",
+                    Bounds: new WorldGenerationGraphBounds(-80, -80, 780, 340),
+                    NodeIds: new[] { "layer_scope", "source_pcg", "normalize_crust", "options", "crust" },
+                    Text: "Native C# nodes bind the selected mobile-plate crust layer to a PCG source, run the current crust summary pipeline, and expose the normalized renderer contract.",
+                    Color: "#6ea8fe"),
+                new WorldGenerationGraphAnnotation(
+                    AnnotationId: "group_crust_asset_tools",
+                    Kind: WorldGenerationGraphAnnotationKinds.GroupBoundary,
+                    Label: "iii visual asset chain",
+                    Bounds: new WorldGenerationGraphBounds(760, -80, 860, 300),
+                    NodeIds: new[] { "comfy_generate", "blender_refine", "asset_gltf" },
+                    Text: "ComfyUI and Blender nodes are real iii external-tool nodes surfaced in the layer graph for authoring and inspection.",
+                    Color: "#8bd17c"),
+            },
+            OutputNodeIds: new[] { "normalize_crust" });
+    }
+
+    private static IReadOnlyList<WorldLayerSourceBinding> BuildLayerSourceBindings()
+        => new[]
+        {
+            LayerSourceBinding(
+                "geosphere.magma-ocean",
+                "Magma Ocean PCG Source",
+                "magma-ocean",
+                GeosphereMagmaOceanGraphId,
+                "geosphere.magma-ocean.pcg",
+                WorldLayerSourceKinds.Procedural,
+                "world/geosphere-magma-ocean-layer",
+                DefaultLayerRendererContract),
+            LayerSourceBinding(
+                "geosphere.stagnant-lid",
+                "Stagnant Lid PCG Source",
+                "stagnant-lid",
+                GeosphereStagnantLidGraphId,
+                "geosphere.stagnant-lid.pcg",
+                WorldLayerSourceKinds.Procedural,
+                "world/geosphere-stagnant-lid-layer",
+                DefaultLayerRendererContract),
+            LayerSourceBinding(
+                "geosphere.plate",
+                "PCG Plate Source",
+                "mobile-plate",
+                GeospherePlateLayerGraphId,
+                "geosphere.plate.pcg",
+                WorldLayerSourceKinds.Procedural,
+                PlateLayerProductKind,
+                PlateLayerRendererContract,
+                providerId: "App.World"),
+            LayerSourceBinding(
+                "geosphere.plate",
+                "GPlates ROT Import",
+                "mobile-plate",
+                GeospherePlateLayerGraphId,
+                "geosphere.plate.gplates-rot",
+                WorldLayerSourceKinds.WorldNativeImport,
+                PlateLayerProductKind,
+                PlateLayerRendererContract,
+                bodyId: "user-selected",
+                datasetId: "user-selected",
+                providerId: "Geosphere.Plate.Rotation.Stream",
+                availability: WorldLayerSourceAvailability.RequiresUserContent,
+                importFormat: "gplates.rot"),
+            LayerSourceBinding(
+                "geosphere.crust",
+                "PCG Crust Source",
+                "mobile-plate",
+                GeosphereCrustLayerGraphId,
+                "geosphere.crust.pcg",
+                WorldLayerSourceKinds.Procedural,
+                CrustLayerProductKind,
+                CrustLayerRendererContract,
+                providerId: "App.World.CrustPipeline"),
+        };
+
+    private static WorldLayerSourceBinding LayerSourceBinding(
+        string layerId,
+        string label,
+        string regimeId,
+        string graphId,
+        string sourceId,
+        string sourceKind,
+        string normalizedProductKind,
+        string rendererContract,
+        string bodyId = "fantasim",
+        string? datasetId = null,
+        string providerId = "App.World",
+        string availability = WorldLayerSourceAvailability.Available,
+        string? importFormat = null)
+        => new(
+            SphereId: GeosphereSphereId,
+            LayerId: layerId,
+            SourceId: sourceId,
+            Label: label,
+            SourceKind: sourceKind,
+            GraphId: graphId,
+            NormalizedProductKind: normalizedProductKind,
+            RendererContract: rendererContract,
+            RegimeId: regimeId,
+            BodyId: bodyId,
+            DatasetId: datasetId,
+            ProviderId: providerId,
+            Availability: availability,
+            ImportFormat: importFormat);
+
+    private static WorldGenerationGraphNode LayerSourceNode(
+        string nodeId,
+        string label,
+        string regimeId,
+        string layerId,
+        string sourceId,
+        string sourceKind,
+        string availability,
+        string normalizedProductKind,
+        string rendererContract,
+        string bodyId = "fantasim",
+        string datasetId = "",
+        string providerId = "App.World",
+        string importFormat = "")
+        => NodeFromSchema(
+            nodeId,
+            WorldFunctionProvider.LayerSource,
+            new Dictionary<string, string>
+            {
+                ["sphereId"] = GeosphereSphereId,
+                ["regimeId"] = regimeId,
+                ["layerId"] = layerId,
+                ["sourceId"] = sourceId,
+                ["sourceKind"] = sourceKind,
+                ["availability"] = availability,
+                ["bodyId"] = bodyId,
+                ["datasetId"] = datasetId,
+                ["providerId"] = providerId,
+                ["importFormat"] = importFormat,
+                ["normalizedProductKind"] = normalizedProductKind,
+                ["rendererContract"] = rendererContract,
+            }) with
+        {
+            Label = label,
+        };
+
+    private static WorldGenerationGraphNode NormalizeLayerNode(
+        string nodeId,
+        string label,
+        string regimeId,
+        string layerId,
+        string selectedSourceId,
+        string selectedSourceKind,
+        string normalizedProductKind,
+        string rendererContract)
+        => NodeFromSchema(
+            nodeId,
+            WorldFunctionProvider.LayerNormalize,
+            new Dictionary<string, string>
+            {
+                ["sphereId"] = GeosphereSphereId,
+                ["regimeId"] = regimeId,
+                ["layerId"] = layerId,
+                ["selectedSourceId"] = selectedSourceId,
+                ["selectedSourceKind"] = selectedSourceKind,
+                ["normalizedProductKind"] = normalizedProductKind,
+                ["rendererContract"] = rendererContract,
+            }) with
+        {
+            Label = label,
+        };
 
     internal static WorldGenerationGraphNode NodeFromSchema(
         string nodeId,
@@ -262,7 +623,10 @@ public static class WorldGenerationGraphDefaults
             IsExpensive: schema.IsExpensive,
             Inputs: schema.Inputs,
             Outputs: schema.Outputs,
-            Parameters: parameters);
+            Parameters: parameters,
+            Summary: schema.Summary,
+            ProviderMetadata: schema.ProviderMetadata,
+            ExecutionTraits: schema.ExecutionTraits);
     }
 
     private static WorldGenerationGraphNode LayerScopeNode(

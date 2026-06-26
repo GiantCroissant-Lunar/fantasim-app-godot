@@ -71,6 +71,62 @@ public sealed class WorldGenerationNodeSchemaMetadataTests
     }
 
     [Fact]
+    public void ComfyManifest_DeclaresIiiProviderMetadataAndComfyGenerateFunction()
+    {
+        var manifest = ComfyExternalToolManifest.Build();
+        Assert.NotNull(manifest.ProviderMetadata);
+        Assert.Equal(FunctionProviderKinds.Iii, manifest.ProviderMetadata.ProviderKind);
+        Assert.Equal("comfy-worker", manifest.ProviderMetadata.ProviderId);
+
+        var generate = Assert.Single(manifest.Functions);
+        Assert.Equal("comfy.generate", generate.FunctionId);
+        Assert.True(generate.IsSideEffect);
+        Assert.True(generate.IsExpensive);
+        Assert.NotNull(generate.ExecutionTraits);
+        Assert.True(generate.ExecutionTraits.RequiresExternalProcess);
+        Assert.True(generate.ExecutionTraits.RequiresNetwork);
+        Assert.Equal("comfy/mesh", generate.ExecutionTraits.ArtifactShape);
+    }
+
+    [Fact]
+    public void BlenderManifest_DeclaresIiiProviderMetadataAndRefineAndToGltfFunctions()
+    {
+        var manifest = BlenderExternalToolManifest.Build();
+        Assert.NotNull(manifest.ProviderMetadata);
+        Assert.Equal(FunctionProviderKinds.Iii, manifest.ProviderMetadata.ProviderKind);
+        Assert.Equal("blender-worker", manifest.ProviderMetadata.ProviderId);
+
+        Assert.Equal(2, manifest.Functions.Count);
+        var refine = Assert.Single(manifest.Functions, f => f.FunctionId == "blender.refine");
+        Assert.True(refine.IsSideEffect);
+        Assert.True(refine.IsExpensive);
+        Assert.NotNull(refine.ExecutionTraits);
+        Assert.True(refine.ExecutionTraits.RequiresExternalProcess);
+        Assert.Equal("blender/usd", refine.ExecutionTraits.ArtifactShape);
+
+        var toGltf = Assert.Single(manifest.Functions, f => f.FunctionId == "asset.to_gltf");
+        Assert.NotNull(toGltf.ExecutionTraits);
+        Assert.Equal("asset/gltf", toGltf.ExecutionTraits.ArtifactShape);
+    }
+
+    [Fact]
+    public void WorldGenerationNodeCatalog_IncludesComfyAndBlenderProjectedSchemas()
+    {
+        var catalog = WorldGenerationNodeCatalog.All;
+        var comfy = Assert.Single(catalog, s => s.TypeId == "comfy.generate");
+        Assert.Equal(FunctionProviderKinds.Iii, comfy.ProviderMetadata.ProviderKind);
+        Assert.Equal("external/imagine", comfy.Category);
+
+        var refine = Assert.Single(catalog, s => s.TypeId == "blender.refine");
+        Assert.Equal(FunctionProviderKinds.Iii, refine.ProviderMetadata.ProviderKind);
+        Assert.Equal("external/geometry", refine.Category);
+
+        var toGltf = Assert.Single(catalog, s => s.TypeId == "asset.to_gltf");
+        Assert.Equal(FunctionProviderKinds.Iii, toGltf.ProviderMetadata.ProviderKind);
+        Assert.Equal("external/geometry", toGltf.Category);
+    }
+
+    [Fact]
     public void WorldGenerationNodeSchema_RoundTripsProviderMetadataWithCamelCaseJson()
     {
         var schema = new WorldGenerationNodeSchema(

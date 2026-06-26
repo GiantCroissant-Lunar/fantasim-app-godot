@@ -1,4 +1,5 @@
 using FantaSim.App.World.Dto;
+using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Services;
 using ServiceArchi.Core;
 using Xunit;
@@ -92,5 +93,51 @@ public sealed class WorldServiceGenerationProductsTests
         Assert.True(result1.Success);
         Assert.True(result2.Success);
         Assert.Equal(initialRevision, products2.GraphRevision);
+    }
+
+    [Fact]
+    public void PlanetPresentation_CarriesGenerationGraphId_ForLayerProductAddress()
+    {
+        using var service = new Service(new ServiceRegistry());
+        var productAddress = "/base/main/geosphere/mobile-plate.geosphere.crust@1234";
+        service.RunGenerationAsync(new WorldGenerationRequest(
+            WorldId: "graph-world",
+            GenerationSpec: "world.layer-scope:mobile-plate",
+            Parameters: new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["source"] = "world-generation.graph",
+                ["graphRevision"] = 3,
+                ["canonicalTick"] = 1_234L,
+                ["productAddresses"] = new[] { productAddress },
+            }));
+
+        var document = service.GetPlanetPresentationAsync();
+
+        var layer = Assert.Single(document.Layers);
+        Assert.Equal("geosphere.crust", layer.LayerId);
+        Assert.Equal("mobile-plate", layer.RegimeId);
+        Assert.Equal(WorldGenerationGraphDefaults.GeosphereCrustLayerGraphId, layer.GenerationGraphId);
+    }
+
+    [Fact]
+    public void PlanetPresentation_LeavesGenerationGraphIdNull_WhenNoLayerBindingMatches()
+    {
+        using var service = new Service(new ServiceRegistry());
+        var productAddress = "/base/main/formation/body-set@1234";
+        service.RunGenerationAsync(new WorldGenerationRequest(
+            WorldId: "graph-world",
+            GenerationSpec: "body-formation:planetesimal-swarm",
+            Parameters: new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["source"] = "world-generation.graph",
+                ["graphRevision"] = 1,
+                ["canonicalTick"] = 1_234L,
+                ["productAddresses"] = new[] { productAddress },
+            }));
+
+        var document = service.GetPlanetPresentationAsync();
+
+        var layer = Assert.Single(document.Layers);
+        Assert.Null(layer.GenerationGraphId);
     }
 }

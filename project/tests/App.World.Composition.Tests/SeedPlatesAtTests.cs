@@ -77,13 +77,12 @@ public class SeedPlatesAtTests
     }
 
     [Fact]
-    public void SeedPlatesAt_PlaceholderPolesHaveZeroRate()
+    public void SeedPlatesAt_CarriesConvectionDriftPoles()
     {
-        // LidFractureAtOnset gives each seed EulerPole(axis, 0.0) — a placeholder pole.
+        // Seed plates now carry convection-derived drift so the renderer can show plate movement.
         long onset = SphereRegimeScheduleDefaults.PlateOnsetTickFor(AtmosphereForcing.Default);
         var roster = OnsetRoster.Build(worldSeed: 2024, onsetTick: onset, tessellationFrequency: 3);
 
-        foreach (var plate in roster.SeedPlatesAt(onset))
-            Assert.Equal(0.0, plate.Pole.AngularRate);
+        Assert.Contains(roster.SeedPlatesAt(onset), plate => plate.Pole.AngularRate > 0.0);
     }
 }

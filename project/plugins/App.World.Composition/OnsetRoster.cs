@@ -4,6 +4,7 @@ using FantaSim.Geosphere.Asthenosphere.Convection;
 using FantaSim.Geosphere.Plate.Topology;
 using FantaSim.Geosphere.Plate.Topology.Contracts;
 using FantaSim.Geosphere.Plate.Topology.Materializer;
+using FantaSim.World.Contracts.Units;
 using FantaSim.World.TruthStream;
 using TimeDete.Time.Primitives;
 using UnifyCell;
@@ -25,6 +26,10 @@ namespace FantaSim.App.World.Composition;
 /// </remarks>
 public sealed class OnsetRoster
 {
+    private const double DefaultAngularDriftPerMegaAnnum = 0.02;
+    private static readonly double DefaultAngularDriftPerTick =
+        UnitConverter.RadiansPerMegaAnnumToRadiansPerTick(DefaultAngularDriftPerMegaAnnum);
+
     /// <summary>
     /// The TruthStream identity used by LidFractureAtOnset / PlateTopologyEmitter when producing
     /// the onset roster. These values MUST match the engine's plate-topology stream config
@@ -62,17 +67,27 @@ public sealed class OnsetRoster
     /// </summary>
     public static OnsetRoster Build(int worldSeed, long onsetTick, int tessellationFrequency)
     {
-        var field = new ConvectionFieldGenerator(new ConvectionFieldConfig { Seed = worldSeed });
+        var field = new ConvectionFieldGenerator(new ConvectionFieldConfig
+        {
+            Seed = worldSeed,
+            AngularDriftPerTick = DefaultAngularDriftPerTick,
+        });
         var tess = new GeodesicSphereTessellation(tessellationFrequency);
 
         // Build the geometry seeds by mirroring LidFractureAtOnset's seed loop EXACTLY
-        // (upwelling order → plate IDs 0..N-1 match PlateTopologyState integer keys).
+        // (upwelling order -> plate IDs 0..N-1 match PlateTopologyState integer keys).
+        // Motion is derived from the same convection center's one-tick drift, so the pole/rate lives
+        // in the world DTO instead of being a renderer-only animation.
         var structure = field.GetStructure(onsetTick);
+        var nextStructure = field.GetStructure(checked(onsetTick + 1));
         var seedPlates = new List<Plate>(structure.Upwellings.Count);
         for (int i = 0; i < structure.Upwellings.Count; i++)
         {
             var axis = NormalizeOrZero(structure.Upwellings[i].Position);
-            seedPlates.Add(new Plate(i, ToSpherical(axis), new EulerPole(axis, 0.0)));
+            var nextAxis = i < nextStructure.Upwellings.Count
+                ? NormalizeOrZero(nextStructure.Upwellings[i].Position)
+                : axis;
+            seedPlates.Add(new Plate(i, ToSpherical(axis), PoleFromCenterDrift(axis, nextAxis)));
         }
 
         IReadOnlyList<ITruthEventDraft> drafts = LidFractureAtOnset.Fracture(
@@ -95,8 +110,7 @@ public sealed class OnsetRoster
     /// an empty list before the onset tick; at/after onset, the N plates produced by
     /// mirroring <c>LidFractureAtOnset</c>'s upwelling-seed loop exactly — same
     /// upwelling order → same integer IDs 0..N-1 as <see cref="PlatesAt"/>'s plate keys.
-    /// These plates carry placeholder poles (<c>EulerPole(axis, 0.0)</c>); convection-driven
-    /// drift is roadmap §9.2.
+    /// These plates carry convection-drift poles derived from the same upwelling center at the onset tick.
     /// </summary>
     public IReadOnlyList<Plate> SeedPlatesAt(long tick) =>
         tick < _onsetTick ? Array.Empty<Plate>() : _seedPlates;
@@ -111,6 +125,37 @@ public sealed class OnsetRoster
         double len = Math.Sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z);
         return len < 1e-15 ? new Vector3D(0, 0, 0) : new Vector3D(v.X / len, v.Y / len, v.Z / len);
     }
+
+    private static EulerPole PoleFromCenterDrift(Vector3D current, Vector3D next)
+    {
+        var cross = Cross(current, next);
+        var crossLength = Length(cross);
+        if (crossLength < 1e-15)
+            return new EulerPole(FallbackPoleAxis(current), DefaultAngularDriftPerTick);
+
+        var axis = new Vector3D(cross.X / crossLength, cross.Y / crossLength, cross.Z / crossLength);
+        var dot = Math.Clamp(Dot(current, next), -1.0, 1.0);
+        var rate = Math.Atan2(crossLength, dot);
+        return new EulerPole(axis, rate <= 0.0 ? DefaultAngularDriftPerTick : rate);
+    }
+
+    private static Vector3D FallbackPoleAxis(Vector3D current)
+    {
+        var seed = Math.Abs(current.Z) < 0.9 ? new Vector3D(0, 0, 1) : new Vector3D(0, 1, 0);
+        return NormalizeOrZero(Cross(current, seed));
+    }
+
+    private static Vector3D Cross(Vector3D a, Vector3D b)
+        => new(
+            (a.Y * b.Z) - (a.Z * b.Y),
+            (a.Z * b.X) - (a.X * b.Z),
+            (a.X * b.Y) - (a.Y * b.X));
+
+    private static double Dot(Vector3D a, Vector3D b)
+        => (a.X * b.X) + (a.Y * b.Y) + (a.Z * b.Z);
+
+    private static double Length(Vector3D v)
+        => Math.Sqrt((v.X * v.X) + (v.Y * v.Y) + (v.Z * v.Z));
 
     /// <summary>Spherical point for a cartesian unit vector. Mirrors SphereMath.ToSpherical
     /// (which delegates to SphericalVectorInterop.ToSphericalPoint → SphericalOps.ToSphericalPoint).</summary>

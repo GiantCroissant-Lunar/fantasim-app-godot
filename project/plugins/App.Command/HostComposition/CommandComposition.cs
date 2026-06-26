@@ -90,6 +90,9 @@ public static class CommandComposition
                         viewHost!.Mount(bundleId);
                 }
 
+                foreach (var hook in registry.GetAll<FantaSim.App.Command.IBundleReloadHook>())
+                    await hook.AfterReloadAsync(bundleId, ct);
+
                 log.LogInformation("resource.reload_bundle: reloaded '{BundleId}'.", bundleId);
                 return JsonSerializer.Serialize(new { ok = true, bundleId });
             });

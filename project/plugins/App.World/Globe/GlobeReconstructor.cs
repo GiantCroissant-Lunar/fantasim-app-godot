@@ -53,17 +53,11 @@ namespace FantaSim.App.World.Globe;
 //   - DefaultPlates() fallback is KEPT for the parameterless constructor (used by existing tests
 //     and Host.cs ComposeWorldView/ComposeCellElevation until Task 4 wires it end-to-end).
 //
-// PLAN4-TASK3b: Priority (2) boundary-type routing noted — NOT done here:
-//   The onset plates carry placeholder poles (rate=0.0). ClassifyBoundariesAt uses Euler-pole
-//   relative motion, so all boundaries at/after onset would be classified "Inactive" by the
-//   existing rigid classifier, producing no boundary lines. The CORRECT boundary types live in
-//   OnsetRoster.PlatesAt(tick).Boundaries (convection-classified by ConvectionBoundaryClassifier).
-//   To feed those into the render: GlobeReconstructor.ClassifyCellsAt would need a second
-//   code path that builds the typeByPair dict from PlateTopologyState.Boundaries (keyed by int
-//   from PlateId.Value parsed back to int) instead of calling PlateTopologyBuilder.ClassifyBoundariesAt.
-//   This is a clean mechanical change but requires adding the PlateTopologyState as a field and
-//   changing the ClassifyCellsAt signature or adding an overload. Deferred to Task 4 where the
-//   full tick/regime threading lands in the Godot call sites.
+// PLAN4-TASK3b: Priority (2) boundary-type routing noted — partially mitigated in the app port:
+//   OnsetRoster now supplies non-zero Euler poles derived from convection-center drift, so the
+//   existing rigid classifier has motion to classify. The richer ConvectionBoundaryClassifier
+//   output from OnsetRoster.PlatesAt(tick).Boundaries is still the future source of boundary
+//   doctrine when the full topology state is threaded into this reconstructor.
 
 public sealed class GlobeReconstructor
 {

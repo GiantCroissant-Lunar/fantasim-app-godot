@@ -12,7 +12,7 @@ namespace FantaSim.App.World.GenerationGraph;
 /// The generic UI sees the effective graph for the active tick; edits are applied to the
 /// authored graph, then the effective graph is recomposed.
 /// </summary>
-public sealed class WorldGenerationGraphFamilySource : IGraphSource, IGraphAnnotationSource, IGraphSubgraphSource, IGraphNodeMetadataSource
+public sealed class WorldGenerationGraphFamilySource : IGraphSource, IGraphAnnotationSource, IGraphSubgraphSource, IGraphNodeMetadataSource, IGraphNodePresentationSource
 {
     private readonly object _gate = new();
     private WorldGenerationGraphSource _activeSource = null!;
@@ -101,6 +101,32 @@ public sealed class WorldGenerationGraphFamilySource : IGraphSource, IGraphAnnot
         SelectGraph(graph.GraphId, tick);
     }
 
+    public void SelectLayer(string sphereId, string layerId, long tick, string? regimeId = null)
+    {
+        var graph = WorldGenerationGraphFamilyComposer.ResolveLayerGraph(
+            Family,
+            sphereId,
+            layerId,
+            regimeId);
+
+        SelectGraph(graph.GraphId, tick);
+    }
+
+    public bool TrySelectLayer(string sphereId, string layerId, long tick, string? regimeId = null)
+    {
+        var binding = WorldGenerationGraphFamilyComposer.TryFindLayerBinding(
+            Family,
+            sphereId,
+            layerId,
+            regimeId);
+
+        if (binding is null)
+            return false;
+
+        SelectGraph(binding.GraphId, tick);
+        return true;
+    }
+
     public void SetTick(long tick)
     {
         lock (_gate)
@@ -142,6 +168,9 @@ public sealed class WorldGenerationGraphFamilySource : IGraphSource, IGraphAnnot
 
     public bool TryGetNodeTypeInfo(string typeId, out GraphNodeTypeInfo? info)
         => _activeSource.TryGetNodeTypeInfo(typeId, out info);
+
+    public bool TryGetNodePresentation(string nodeId, out GraphNodePresentation? presentation)
+        => _activeSource.TryGetNodePresentation(nodeId, out presentation);
 
     public WorldGenerationGraphExecutionScopeKey? TryBuildExecutionScopeKey(
         string variant = "base",

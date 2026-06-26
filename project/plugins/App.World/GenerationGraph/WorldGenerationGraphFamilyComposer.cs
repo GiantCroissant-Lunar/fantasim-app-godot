@@ -47,6 +47,87 @@ public static class WorldGenerationGraphFamilyComposer
         return ResolveGraph(family, binding.GraphId);
     }
 
+    public static WorldLayerGraphBinding? TryFindLayerBinding(
+        WorldGenerationGraphFamilyDocument family,
+        string sphereId,
+        string layerId,
+        string? regimeId = null)
+    {
+        ArgumentNullException.ThrowIfNull(family);
+        RequireNonEmpty(sphereId, nameof(sphereId));
+        RequireNonEmpty(layerId, nameof(layerId));
+
+        var bindings = family.LayerGraphBindings ?? Array.Empty<WorldLayerGraphBinding>();
+
+        if (regimeId is not null)
+        {
+            var specific = bindings.FirstOrDefault(candidate =>
+                string.Equals(candidate.SphereId, sphereId, StringComparison.Ordinal)
+                && string.Equals(candidate.LayerId, layerId, StringComparison.Ordinal)
+                && string.Equals(candidate.RegimeId, regimeId, StringComparison.Ordinal));
+            if (specific is not null)
+                return specific;
+        }
+
+        return bindings.FirstOrDefault(candidate =>
+            string.Equals(candidate.SphereId, sphereId, StringComparison.Ordinal)
+            && string.Equals(candidate.LayerId, layerId, StringComparison.Ordinal)
+            && candidate.RegimeId is null);
+    }
+
+    public static IReadOnlyList<WorldLayerSourceBinding> FindLayerSourceBindings(
+        WorldGenerationGraphFamilyDocument family,
+        string sphereId,
+        string layerId,
+        string? regimeId = null)
+    {
+        ArgumentNullException.ThrowIfNull(family);
+        RequireNonEmpty(sphereId, nameof(sphereId));
+        RequireNonEmpty(layerId, nameof(layerId));
+
+        var bindings = family.LayerSourceBindings ?? Array.Empty<WorldLayerSourceBinding>();
+        var matches = new List<WorldLayerSourceBinding>();
+
+        if (regimeId is not null)
+        {
+            matches.AddRange(bindings.Where(candidate =>
+                string.Equals(candidate.SphereId, sphereId, StringComparison.Ordinal)
+                && string.Equals(candidate.LayerId, layerId, StringComparison.Ordinal)
+                && string.Equals(candidate.RegimeId, regimeId, StringComparison.Ordinal)));
+        }
+
+        matches.AddRange(bindings.Where(candidate =>
+            string.Equals(candidate.SphereId, sphereId, StringComparison.Ordinal)
+            && string.Equals(candidate.LayerId, layerId, StringComparison.Ordinal)
+            && candidate.RegimeId is null));
+
+        return matches;
+    }
+
+    public static WorldLayerSourceBinding? TryFindDefaultLayerSourceBinding(
+        WorldGenerationGraphFamilyDocument family,
+        string sphereId,
+        string layerId,
+        string? regimeId = null)
+    {
+        var bindings = FindLayerSourceBindings(family, sphereId, layerId, regimeId);
+        return bindings.FirstOrDefault(binding =>
+                   string.Equals(binding.Availability, WorldLayerSourceAvailability.Available, StringComparison.Ordinal))
+               ?? bindings.FirstOrDefault();
+    }
+
+    public static WorldGenerationGraphView ResolveLayerGraph(
+        WorldGenerationGraphFamilyDocument family,
+        string sphereId,
+        string layerId,
+        string? regimeId = null)
+    {
+        var binding = TryFindLayerBinding(family, sphereId, layerId, regimeId)
+            ?? throw new ArgumentException($"No graph binding exists for layer '{sphereId}:{layerId}'.");
+
+        return ResolveGraph(family, binding.GraphId);
+    }
+
     public static WorldGenerationGraphCompositionResult ComposeEffectiveGraph(
         WorldGenerationGraphFamilyDocument family,
         string graphId,

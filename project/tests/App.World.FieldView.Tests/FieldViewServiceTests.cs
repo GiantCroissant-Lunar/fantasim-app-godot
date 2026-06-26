@@ -52,8 +52,11 @@ internal sealed class FakeWorldService : IService
         return new WorldGenerationResult(Success: true, Message: "fake-gen", ResultWorldId: request.WorldId);
     }
 
-    public void SubscribeGenerationChanged(Action<WorldGenerationChangedEvent> callback)
-        => _callback = callback;
+    public IDisposable SubscribeGenerationChanged(Action<WorldGenerationChangedEvent> callback)
+    {
+        _callback = callback;
+        return new CallbackSubscription(this, callback);
+    }
 
     /// <summary>Test hook: seed the field/scalar payloads the service returns on the next read.</summary>
     public void Seed(IReadOnlyDictionary<string, object> fieldValues, IReadOnlyDictionary<string, float> scalarValues)
@@ -65,6 +68,29 @@ internal sealed class FakeWorldService : IService
     /// <summary>Test hook: fire a generation-changed event to all subscribers.</summary>
     public void FireGenerationChanged(WorldGenerationChangedEvent evt)
         => _callback?.Invoke(evt);
+
+    private sealed class CallbackSubscription : IDisposable
+    {
+        private readonly FakeWorldService _owner;
+        private readonly Action<WorldGenerationChangedEvent> _callback;
+        private bool _disposed;
+
+        public CallbackSubscription(FakeWorldService owner, Action<WorldGenerationChangedEvent> callback)
+        {
+            _owner = owner;
+            _callback = callback;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+            _disposed = true;
+
+            if (ReferenceEquals(_owner._callback, _callback))
+                _owner._callback = null;
+        }
+    }
 }
 
 public class FieldViewServiceTests

@@ -29,7 +29,10 @@ public partial class Host : Node
     private CrosscutFoundation.Config.IService? _config;
     private CollectibleBundles? _collectibleBundles;
     private FantaSim.App.Ecs.IService? _ecs;
+    private PlanetPresentationBinder? _planetPresentation;
+    private FantaSim.App.Resource.IService? _resource;
     private bool _ecsWorldReady;
+    private bool _timelineReloadPending;
 
     public override void _Ready()
     {
@@ -53,13 +56,14 @@ public partial class Host : Node
         var tree = GetTree();
 
         ResourceComposition.ComposeResource(ctx, this, _collectibleBundles);
+        SubscribeResourceRuntimeEvents(ctx.Registry);
         SceneFlowComposition.ComposeSceneFlow(ctx);
         (_ecs, _ecsWorldReady) = EcsComposition.ComposeEcs(ctx);
         CommandComposition.ComposeCommand(ctx);
+        RegisterTimelineReloadHook(ctx.Registry);
         IiiComposition.ComposeIii(ctx, tree, this);
         GpuComposition.ComposeGpu(ctx);
         GpuShaderComposition.ComposeGpuShader(ctx);
-        TimelineComposition.ComposeTimeline(ctx);
         ActivityComposition.ComposeActivity(ctx);
         UiComposition.ComposeUi(ctx, tree);
         RemoteIngressComposition.ComposeRemoteIngress(ctx, this);
@@ -77,9 +81,118 @@ public partial class Host : Node
         // test concern, not the running app). Deferred so _Ready stays non-blocking and the bundle's
         // entry scene mounts on the main thread after the tree is ready.
         Callable.From(EnterInitialScenes).CallDeferred();
-        Callable.From(PingIiiBridge).CallDeferred();
-        Callable.From(RunGraphTest).CallDeferred();
         Callable.From(ShowIiiGraph).CallDeferred();
+    }
+
+    public override void _ExitTree()
+    {
+        if (_resource is not null)
+        {
+            _resource.RuntimeChanging -= OnResourceRuntimeChanging;
+            _resource.RuntimeChanged -= OnResourceRuntimeChanged;
+            _resource = null;
+        }
+
+        base._ExitTree();
+    }
+
+    private void SubscribeResourceRuntimeEvents(IRegistry registry)
+    {
+        _resource = registry.TryGet<FantaSim.App.Resource.IService>();
+        if (_resource is null)
+        {
+            _log.LogWarning("resource runtime events skipped: resource service is not registered.");
+            return;
+        }
+
+        _resource.RuntimeChanging += OnResourceRuntimeChanging;
+        _resource.RuntimeChanged += OnResourceRuntimeChanged;
+    }
+
+    private void OnResourceRuntimeChanging(object? sender, FantaSim.App.Resource.ResourceRuntimeChangingEventArgs e)
+    {
+        if (e.Operation == FantaSim.App.Resource.ResourceRuntimeOperation.Reload
+            && string.Equals(e.BundleId, "timeline", StringComparison.OrdinalIgnoreCase))
+        {
+            _timelineReloadPending = true;
+        }
+    }
+
+    private void OnResourceRuntimeChanged(object? sender, EventArgs e)
+    {
+        if (!_timelineReloadPending)
+            return;
+
+        _timelineReloadPending = false;
+        if (_composition is null)
+            return;
+
+        var registry = _composition.Bootstrap.Registry;
+        var resource = registry.TryGet<FantaSim.App.Resource.IService>();
+        if (resource?.IsLoaded("timeline") != true)
+            return;
+
+        HandleTimelineBundleReloaded();
+    }
+
+    private void RegisterTimelineReloadHook(IRegistry registry)
+    {
+        registry.Register<FantaSim.App.Command.IBundleReloadHook>(
+            new TimelineReloadHook(this),
+            new ServiceRegistration { Tags = new[] { "timeline", "hot-reload" }, Description = "Timeline resident rebind after bundle reload" });
+    }
+
+    private void HandleTimelineBundleReloaded()
+    {
+        if (_composition is null)
+            return;
+
+        TimelineComposition.ComposeTimeline(new HostCompositionContext(_composition));
+        _log.LogInformation("timeline resident composition rebound after bundle reload.");
+        RecordActivity(
+            ActivityEntryKind.Log,
+            "timeline.composition.rebound",
+            "system",
+            "timeline",
+            outcome: "rebound after bundle reload");
+
+        Callable.From(RebindTimelineFaceAndPushCurrentView).CallDeferred();
+    }
+
+    private void RebindTimelineFaceAndPushCurrentView()
+    {
+        if (_composition is null)
+            return;
+
+        var registry = _composition.Bootstrap.Registry;
+        var sceneRegistry = registry.TryGet<IBundleSceneRegistry>();
+        if (sceneRegistry?.GetSceneOrNull("timeline") is TimelineFace face)
+            face.RebindResidentContext();
+
+        var controller = registry.TryGet<FantaSim.App.World.Composition.ITimelineController>();
+        var timeline = registry.TryGet<FantaSim.App.Timeline.IService>();
+        if (controller is null || timeline is null)
+            return;
+
+        _ = timeline.SeekAsync(controller.Tick);
+    }
+
+    private sealed class TimelineReloadHook : FantaSim.App.Command.IBundleReloadHook
+    {
+        private readonly Host _host;
+
+        public TimelineReloadHook(Host host)
+        {
+            _host = host;
+        }
+
+        public Task AfterReloadAsync(string bundleId, CancellationToken cancellationToken = default)
+        {
+            if (string.Equals(bundleId, "timeline", StringComparison.OrdinalIgnoreCase))
+                _host.HandleTimelineBundleReloaded();
+
+            return Task.CompletedTask;
+        }
     }
 
     private Task ShowActivityViewIfConfiguredAsync()
@@ -472,54 +585,6 @@ public partial class Host : Node
         };
     }
 
-    // pipeline.run_text_to_3d via the composed iii axis. The graph is authored in
-    // App.Iii.Recipes and executed by the general App.NodeGraph.GraphExecutor through the iii function
-    // provider. Quits when done so the windowed verification run terminates.
-    private async void RunGraphTest()
-    {
-        if (_config?.GetValue("graph:test", false) != true) return;
-        var prompt = _config?.Get("graph:prompt") ?? "a small red toy cube";
-        _log.LogInformation("executing text->3D graph via iii axis (prompt=\"{Prompt}\")...", prompt);
-
-        var client = _composition!.Bootstrap.Registry.Get<FantaSim.App.Command.IClient>();
-        try
-        {
-            var result = await client.CommandAsync(new FantaSim.App.Command.CommandRequest(
-                Command: "pipeline.run_text_to_3d",
-                PayloadJson: $"{{\"prompt\":\"{prompt}\"}}"));
-            Callable.From(() =>
-            {
-                if (result.Ok) _log.LogInformation("text->3D graph DONE — {ResultJson}", result.ResultJson);
-                else _log.LogError("text->3D graph failed: {Message}", result.Error?.Message);
-                GetTree().Quit();
-            }).CallDeferred();
-        }
-        catch (Exception ex)
-        {
-            var msg = ex.Message;
-            Callable.From(() => { _log.LogError("text->3D graph execution failed: {Message}", msg); GetTree().Quit(); }).CallDeferred();
-        }
-    }
-
-    // iii.ping via the composed iii axis. Routes through App.Command so the
-    // round-trip exercises the real dispatch path (router -> IIiiOrchestration -> bridge), not an
-    // inline bridge instantiation.
-    private async void PingIiiBridge()
-    {
-        if (_config?.GetValue("iii:ping", false) != true) return;
-        if (!ClassDB.ClassExists("IiiClient"))
-        {
-            _log.LogError("IiiClient not registered");
-            return;
-        }
-
-        var client = _composition!.Bootstrap.Registry.Get<FantaSim.App.Command.IClient>();
-        var result = await client.CommandAsync(new FantaSim.App.Command.CommandRequest(
-            Command: "iii.ping",
-            PayloadJson: "{\"hello\":\"bridge\"}"));
-        _log.LogInformation("iii ping result ok={Ok} payload={Payload}", result.Ok, result.ResultJson);
-    }
-
     // Boot the real scene flow: enter the "stage" tier under app-root. SceneFlow finds no resident
     // activator, loads stage.pck via the Resource service into a collectible ALC, the bundle's
     // StagePlugin registers its activator across the ALC boundary, and SceneFlow activates it.
@@ -539,6 +604,13 @@ public partial class Host : Node
                 sceneFlow.ActiveScenes.Count);
             RecordSceneActivity(stage.SceneId, stage.ParentSceneId, resource.IsLoaded("stage"), sceneFlow.ActiveScenes.Count);
 
+            await LoadWorldBundleAndMountPlanetAsync(registry, resource).ConfigureAwait(false);
+
+            // Timeline depends on the resident planet timeline controller. Compose it after the
+            // world domain bundle has supplied the planet presentation document, but before the
+            // timeline scene bundle instantiates its resident TimelineFace.
+            TimelineComposition.ComposeTimeline(new HostCompositionContext(_composition!));
+
             // Enter assist UNDER stage — a nested dynamic parent. Assist shares the one app kernel
             // through stage's child provider, across two collectible ALCs (same kernel hash in the log).
             var assist = await sceneFlow.EnterAsync(new FantaSim.App.SceneFlow.SceneRequest("assist", "stage"));
@@ -550,10 +622,10 @@ public partial class Host : Node
                 sceneFlow.ActiveScenes.Count);
             RecordSceneActivity(assist.SceneId, assist.ParentSceneId, resource.IsLoaded("assist"), sceneFlow.ActiveScenes.Count);
 
-            // Enter the timeline bundle under stage. ITimelineController is already registered
-            // (WorldViewComposition ran sync in _Ready before this deferred call). SceneFlowProvider
-            // loads the PCK first, then calls ActivateAsync — so IsLoaded("timeline") is true
-            // by the time TimelinePlugin.InitializeAsync resolves the controller and mounts the view.
+            // Enter the timeline bundle under stage. ITimelineController is already registered by the
+            // resident planet presentation binder. SceneFlowProvider loads the PCK first, then calls
+            // ActivateAsync — so IsLoaded("timeline") is true by the time TimelinePlugin.InitializeAsync
+            // resolves the controller and mounts the view.
             var timeline = await sceneFlow.EnterAsync(new FantaSim.App.SceneFlow.SceneRequest("timeline", "stage"));
             _log.LogInformation(
                 "entered scene '{SceneId}' under '{ParentSceneId}'; bundleLoaded={TimelineLoaded}; activeScenes={ActiveScenes}",
@@ -578,6 +650,39 @@ public partial class Host : Node
         {
             await ShowActivityViewIfConfiguredAsync().ConfigureAwait(false);
         }
+    }
+
+    private async Task LoadWorldBundleAndMountPlanetAsync(
+        IRegistry registry,
+        FantaSim.App.Resource.IService resource)
+    {
+        if (!resource.IsLoaded("world"))
+            await resource.LoadFromDirectoryAsync("world").ConfigureAwait(false);
+
+        _log.LogInformation("loaded domain bundle 'world'; bundleLoaded={WorldLoaded}", resource.IsLoaded("world"));
+        RecordActivity(
+            ActivityEntryKind.Log,
+            "bundle.load",
+            "system",
+            "world",
+            payload: new JsonObject
+            {
+                ["bundleId"] = "world",
+                ["bundleLoaded"] = resource.IsLoaded("world"),
+            },
+            outcome: resource.IsLoaded("world") ? "bundle loaded" : "bundle unavailable");
+
+        if (!resource.IsLoaded("world"))
+            return;
+
+        var sceneRegistry = registry.Get<IBundleSceneRegistry>();
+        _planetPresentation?.Dispose();
+        _planetPresentation = new PlanetPresentationBinder(
+            registry,
+            resource,
+            sceneRegistry,
+            _composition!.Bootstrap.LoggerFactory);
+        _planetPresentation.Rebind();
     }
 
     private void RecordSceneActivity(string sceneId, string? parentSceneId, bool bundleLoaded, int activeScenes)
@@ -614,6 +719,8 @@ public partial class Host : Node
     {
         if (what == NotificationWMCloseRequest || what == NotificationExitTree)
         {
+            _planetPresentation?.Dispose();
+            _planetPresentation = null;
             _composition?.Dispose();
         }
         base._Notification(what);

@@ -26,6 +26,9 @@
     <!-- App.World contracts for ITimelineController + SphereRegimeSchedule (the face resolves
          the controller from the registry passed at construction). -->
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+    <!-- T1 command contract lets the resident timeline face dispatch user selections through
+         the command/activity pipeline without depending on the T3 command implementation. -->
+    <ProjectReference Include="..\..\contracts\App.Command\App.Command.csproj" />
     <ProjectReference Include="..\..\generators\Cross.SourceGenerators\Cross.SourceGenerators.csproj"
                       OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\contracts\Cross.Abstractions\Cross.Abstractions.csproj" />

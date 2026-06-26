@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using Godot;
 using FantaSim.App.World.Composition;
 using FantaSim.App.Timeline.Providers;
 using FantaSim.App.Timeline;
+using FantaSim.App.Command;
 using Microsoft.Extensions.Logging;
 
 namespace FantaSim.App.Timeline.Seam;
@@ -28,17 +30,24 @@ public partial class TimelineFace : Control, ITimelineFace
 
     private readonly List<(Button Button, double Start, double Width)> _geosphereBands = new();
     private readonly List<(Button Button, double Start, double Width)> _atmosphereBands = new();
-    private readonly List<(Control Control, string LayerId, string Sphere)> _tracks = new();
+    private readonly List<(Button Button, string LayerId, string Sphere, StyleBoxFlat NormalStyle, StyleBoxFlat InactiveStyle, StyleBoxFlat SelectedStyle)> _tracks = new();
 
     private double _internalTick;
     private long _lastPushedTick = -1;
     private bool _isPlaying;
     private long _viewStartTick;
     private long _viewEndTick;
+    private TimelineViewSnapshot? _lastViewSnapshot;
+    private bool _nodesInitialized;
+    private bool _playbackRegistered;
+    private bool _proxyBound;
     private readonly double _ticksPerSecond = 5_000_000.0;
     private const long MinViewSpanTicks = 1L;
-    private const float RegimeBandHeight = 24f;
-    private const float TrackHeight = 22f;
+    private const int RungSpanUnits = 10;
+    private const float RegimeBandHeight = 28f;
+    private const float TrackHeight = 26f;
+
+    private TimelineLadderRung SelectedRung => TimelineModel.SelectRungForSpan(_viewEndTick - _viewStartTick);
 
     private readonly ILogger _log;
 
@@ -52,6 +61,8 @@ public partial class TimelineFace : Control, ITimelineFace
     public static ITimelineController? ResidentController { get; set; }
 
     public static DeferredTimelineFace? ResidentProxy;
+
+    public static IClient? ResidentCommandClient { get; set; }
 
     /// <summary>
     /// Shared factory set by TimelineComposition before the collectible bundle scene instantiates
@@ -73,6 +84,8 @@ public partial class TimelineFace : Control, ITimelineFace
         {
             _internalTick = value;
             var tick = (long)value;
+            if (!_isPlaying)
+                return;
             if (tick != _lastPushedTick && _ctl is not null)
             {
                 _lastPushedTick = tick;
@@ -83,39 +96,65 @@ public partial class TimelineFace : Control, ITimelineFace
     }
 
     public override void _Ready()
+        => BindResidentContext(forceProxyBind: false);
+
+    public void RebindResidentContext()
+        => BindResidentContext(forceProxyBind: true);
+
+    private void BindResidentContext(bool forceProxyBind)
     {
-        _ctl = ResidentController;
-        if (_ctl is null)
+        var controller = ResidentController;
+        if (controller is null)
         {
             _log.LogWarning("No active ITimelineController found.");
             SetProcess(false);
             return;
         }
 
-        _playPauseButton = GetNode<Button>("VBoxContainer/Header/PlayPauseButton");
-        _zoomOutButton = GetNode<Button>("VBoxContainer/Header/ZoomOutButton");
-        _fitButton = GetNode<Button>("VBoxContainer/Header/FitButton");
-        _zoomInButton = GetNode<Button>("VBoxContainer/Header/ZoomInButton");
-        _statusLabel = GetNode<Label>("VBoxContainer/Header/StatusLabel");
-        _zoomLabel = GetNode<Label>("VBoxContainer/Header/ZoomLabel");
-        _rulerRoot = GetNode<Control>("VBoxContainer/Ruler");
-        _lanesContainer = GetNode<Control>("VBoxContainer/LanesContainer");
-        _playheadLine = GetNode<ColorRect>("VBoxContainer/LanesContainer/PlayheadLine");
+        if (_playbackRegistered && !ReferenceEquals(_ctl, controller))
+            _ctl?.UnregisterPlayback();
+
+        _ctl = controller;
+        SetProcess(true);
+
+        if (!_nodesInitialized)
+        {
+            _playPauseButton = GetNode<Button>("VBoxContainer/Header/PlayPauseButton");
+            _zoomOutButton = GetNode<Button>("VBoxContainer/Header/ZoomOutButton");
+            _fitButton = GetNode<Button>("VBoxContainer/Header/FitButton");
+            _zoomInButton = GetNode<Button>("VBoxContainer/Header/ZoomInButton");
+            _statusLabel = GetNode<Label>("VBoxContainer/Header/StatusLabel");
+            _zoomLabel = GetNode<Label>("VBoxContainer/Header/ZoomLabel");
+            _rulerRoot = GetNode<Control>("VBoxContainer/Ruler");
+            _lanesContainer = GetNode<Control>("VBoxContainer/LanesContainer");
+            _playheadLine = GetNode<ColorRect>("VBoxContainer/LanesContainer/PlayheadLine");
+
+            _playPauseButton.Pressed += OnPlayPausePressed;
+            _zoomOutButton.Pressed += OnZoomOutPressed;
+            _fitButton.Pressed += OnFitPressed;
+            _zoomInButton.Pressed += OnZoomInPressed;
+            _lanesContainer.GuiInput += OnLanesGuiInput;
+            Resized += OnLanesResized;
+
+            SetupAnimationSystem();
+            _nodesInitialized = true;
+        }
 
         _viewStartTick = 0L;
         _viewEndTick = _ctl.MaxTick;
 
-        _playPauseButton.Pressed += OnPlayPausePressed;
-        _zoomOutButton.Pressed += OnZoomOutPressed;
-        _fitButton.Pressed += OnFitPressed;
-        _zoomInButton.Pressed += OnZoomInPressed;
-        _lanesContainer.GuiInput += OnLanesGuiInput;
-        Resized += OnLanesResized;
-
         BuildLanes();
-        SetupAnimationSystem();
+        if (!_playbackRegistered)
+        {
+            _ctl.RegisterPlayback(Play, Pause, SeekTo, () => _isPlaying);
+            _playbackRegistered = true;
+        }
 
-        ResidentProxy?.BindCrossTarget(this);
+        if (forceProxyBind || !_proxyBound)
+        {
+            ResidentProxy?.BindCrossTarget(this);
+            _proxyBound = ResidentProxy is not null;
+        }
 
         SeekTo(_ctl.Tick);
         UpdateLayout();
@@ -123,10 +162,12 @@ public partial class TimelineFace : Control, ITimelineFace
 
     public override void _ExitTree()
     {
-        if (_ctl is not null)
+        if (_ctl is not null && _playbackRegistered)
         {
             _ctl.UnregisterPlayback();
         }
+        _playbackRegistered = false;
+        _proxyBound = false;
         _ctl = null;
         ResidentController = null;
         DisconnectIfConnected(_playPauseButton, BaseButton.SignalName.Pressed, Callable.From(OnPlayPausePressed));
@@ -144,6 +185,7 @@ public partial class TimelineFace : Control, ITimelineFace
         ResidentProxy?.UnbindCrossTarget();
         ResidentProxy = null;
         ResidentLoggerFactory = null;
+        ResidentCommandClient = null;
     }
 
     private void SetupAnimationSystem()
@@ -219,6 +261,8 @@ public partial class TimelineFace : Control, ITimelineFace
     {
         if (_ctl is null) return;
         _isPlaying = true;
+        if (_animationPlayer is not null)
+            _animationPlayer.Seek(_ctl.Tick / _ticksPerSecond, update: false);
         TransitionState("playing");
     }
 
@@ -233,6 +277,7 @@ public partial class TimelineFace : Control, ITimelineFace
     {
         if (_ctl is null) return;
         tick = Math.Clamp(tick, 0L, _ctl.MaxTick);
+        _isPlaying = false;
         _internalTick = tick;
         _lastPushedTick = tick;
 
@@ -242,13 +287,16 @@ public partial class TimelineFace : Control, ITimelineFace
             _animationPlayer.Seek(pos, update: true);
         }
 
-        TransitionState("scrub");
         _ctl.PushTick(tick);
         UpdateUI();
     }
 
     public void ApplyView(TimelineViewSnapshot snapshot)
     {
+        _lastViewSnapshot = snapshot;
+        _internalTick = snapshot.Tick;
+        _lastPushedTick = snapshot.Tick;
+        _isPlaying = snapshot.State == TimelinePlaybackState.Playing;
         UpdateUI();
     }
 
@@ -309,7 +357,10 @@ public partial class TimelineFace : Control, ITimelineFace
 
     private void OnZoomOutPressed()
     {
-        ZoomAroundCurrentTick(2.0);
+        if (_ctl is null) return;
+        var coarser = TimelineModel.TryGetCoarserRung(SelectedRung);
+        if (coarser is null) return;
+        ZoomToSpanAroundCurrentTick(TimelineModel.SpanTicksForRung(coarser, RungSpanUnits));
     }
 
     private void OnFitPressed()
@@ -320,7 +371,10 @@ public partial class TimelineFace : Control, ITimelineFace
 
     private void OnZoomInPressed()
     {
-        ZoomAroundCurrentTick(0.5);
+        if (_ctl is null) return;
+        var finer = TimelineModel.TryGetFinerRung(SelectedRung);
+        if (finer is null) return;
+        ZoomToSpanAroundCurrentTick(TimelineModel.SpanTicksForRung(finer, RungSpanUnits));
     }
 
     private void OnLanesResized()
@@ -389,9 +443,12 @@ public partial class TimelineFace : Control, ITimelineFace
                 ClipText = true,
                 FocusMode = FocusModeEnum.None
             };
+            btn.AddThemeFontSizeOverride("font_size", 12);
 
             var normalStyle = new StyleBoxFlat();
             normalStyle.BgColor = GetRegimeColor(b.RegimeId);
+            normalStyle.BorderColor = new Color(0.95f, 0.98f, 1.0f, 0.55f);
+            normalStyle.SetBorderWidthAll(1);
             normalStyle.SetCornerRadiusAll(3);
             btn.AddThemeStyleboxOverride("normal", normalStyle);
             btn.AddThemeStyleboxOverride("hover", normalStyle);
@@ -406,20 +463,103 @@ public partial class TimelineFace : Control, ITimelineFace
         var tracks = TimelineModel.Tracks(schedule, _ctl.Tick);
         foreach (var t in tracks)
         {
-            var trackControl = new PanelContainer { CustomMinimumSize = new Vector2(0, TrackHeight) };
-            var label = new Label { Text = $"  {t.LayerId}", VerticalAlignment = VerticalAlignment.Center };
-            label.AddThemeFontSizeOverride("font_size", 12);
-            trackControl.AddChild(label);
+            var trackSphere = sphere;
+            var trackLayerId = t.LayerId;
+            var btn = new Button
+            {
+                CustomMinimumSize = new Vector2(0, TrackHeight),
+                Text = $"  {FriendlyLayerLabel(t.LayerId)}",
+                TooltipText = $"{sphere}:{t.LayerId}",
+                Alignment = HorizontalAlignment.Left,
+                FocusMode = FocusModeEnum.None,
+            };
+            btn.AddThemeFontSizeOverride("font_size", 12);
+            btn.AddThemeColorOverride("font_color", new Color(0.94f, 0.96f, 0.98f, 0.98f));
+            btn.AddThemeColorOverride("font_hover_color", new Color(1.0f, 1.0f, 1.0f, 1.0f));
 
-            var style = new StyleBoxFlat { BgColor = new Color(0.12f, 0.15f, 0.18f, 0.5f) };
-            style.SetBorderWidthAll(1);
-            style.BorderColor = new Color(0.2f, 0.24f, 0.28f);
-            style.SetCornerRadiusAll(3);
-            trackControl.AddThemeStyleboxOverride("panel", style);
+            var normalStyle = new StyleBoxFlat { BgColor = new Color(0.14f, 0.20f, 0.24f, 0.78f) };
+            normalStyle.SetBorderWidthAll(1);
+            normalStyle.BorderColor = new Color(0.28f, 0.42f, 0.48f, 0.86f);
+            normalStyle.SetCornerRadiusAll(3);
 
-            tracksRoot.AddChild(trackControl);
-            _tracks.Add((trackControl, t.LayerId, sphere));
+            var inactiveStyle = new StyleBoxFlat { BgColor = new Color(0.08f, 0.10f, 0.12f, 0.72f) };
+            inactiveStyle.SetBorderWidthAll(1);
+            inactiveStyle.BorderColor = new Color(0.20f, 0.24f, 0.28f, 0.74f);
+            inactiveStyle.SetCornerRadiusAll(3);
+
+            var selectedStyle = new StyleBoxFlat { BgColor = new Color(0.20f, 0.33f, 0.46f, 0.92f) };
+            selectedStyle.SetBorderWidthAll(2);
+            selectedStyle.BorderColor = new Color(0.58f, 0.82f, 1.00f, 0.98f);
+            selectedStyle.SetCornerRadiusAll(3);
+
+            btn.AddThemeStyleboxOverride("normal", normalStyle);
+            btn.AddThemeStyleboxOverride("hover", selectedStyle);
+            btn.AddThemeStyleboxOverride("pressed", selectedStyle);
+
+            btn.Pressed += () => OnTrackPressed(trackSphere, trackLayerId);
+
+            tracksRoot.AddChild(btn);
+            _tracks.Add((btn, t.LayerId, sphere, normalStyle, inactiveStyle, selectedStyle));
         }
+    }
+
+    private async void OnTrackPressed(string sphere, string layerId)
+    {
+        if (_ctl is null || !IsLayerActive(sphere, layerId))
+            return;
+
+        var commandClient = ResidentCommandClient;
+        if (commandClient is null)
+        {
+            _ctl.SelectLayer(sphere, layerId);
+            UpdateUI();
+            return;
+        }
+
+        try
+        {
+            var schedule = string.Equals(sphere, "atmosphere", StringComparison.Ordinal)
+                ? _ctl.AtmosphereSchedule
+                : _ctl.GeosphereSchedule;
+            var payload = JsonSerializer.Serialize(new
+            {
+                sphereId = sphere,
+                layerId,
+                regimeId = schedule.RegimeAt(_ctl.Tick)?.RegimeId
+            });
+            var result = await commandClient.CommandAsync(new CommandRequest(
+                Command: "timeline.select_layer",
+                PayloadJson: payload,
+                ActorKind: "user",
+                ActorId: "godot"));
+            if (!result.Ok)
+            {
+                _log.LogWarning(
+                    "Timeline layer selection command failed: {LayerId} ({Error})",
+                    layerId,
+                    result.Error?.Message ?? "unknown error");
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Timeline layer selection command failed for {LayerId}.", layerId);
+            _ctl.SelectLayer(sphere, layerId);
+        }
+
+        UpdateUI();
+    }
+
+    private bool IsLayerActive(string sphere, string layerId)
+    {
+        if (_ctl is null)
+            return false;
+
+        var schedule = string.Equals(sphere, "atmosphere", StringComparison.Ordinal)
+            ? _ctl.AtmosphereSchedule
+            : _ctl.GeosphereSchedule;
+
+        return schedule.RegimeAt(_ctl.Tick)?.ActiveLayers.Any(layer =>
+            string.Equals(layer.Value, layerId, StringComparison.Ordinal)) == true;
     }
 
     private Color GetRegimeColor(string regimeId) => regimeId switch
@@ -436,17 +576,22 @@ public partial class TimelineFace : Control, ITimelineFace
     {
         if (_ctl is null || _statusLabel is null || _playPauseButton is null || _playheadLine is null || _lanesContainer is null) return;
 
-        var tick = _ctl.Tick;
+        var snapshot = _lastViewSnapshot;
+        var tick = snapshot?.Tick ?? _ctl.Tick;
         var timeLabel = TimelineTimeFormatter.ForTick(tick);
 
-        var playState = _isPlaying ? "playing" : "paused";
-        var geoRegime = _ctl.GeosphereSchedule.RegimeAt(tick)?.RegimeId ?? "-";
+        var playState = snapshot?.State switch
+        {
+            TimelinePlaybackState.Playing => "playing",
+            TimelinePlaybackState.Scrubbing => "scrubbing",
+            _ => _isPlaying ? "playing" : "paused"
+        };
+        var geoRegime = snapshot?.ActiveRegimeId ?? _ctl.GeosphereSchedule.RegimeAt(tick)?.RegimeId ?? "-";
         _statusLabel.Text = $"{playState} : {geoRegime} : {timeLabel}";
-        _playPauseButton.Text = _isPlaying ? "Pause" : "Play";
+        _playPauseButton.Text = playState == "playing" ? "Pause" : "Play";
         if (_zoomLabel is not null)
         {
-            long step = TimelineModel.RulerStepTicks(_viewStartTick, _viewEndTick);
-            _zoomLabel.Text = TimelineTimeFormatter.ForViewRange(_viewStartTick, _viewEndTick, step);
+            _zoomLabel.Text = TimelineTimeFormatter.ForViewRange(_viewStartTick, _viewEndTick, SelectedRung);
         }
 
         var span = Math.Max(1L, _viewEndTick - _viewStartTick);
@@ -457,26 +602,45 @@ public partial class TimelineFace : Control, ITimelineFace
         foreach (var band in _geosphereBands)
         {
             var isCurrent = _ctl.GeosphereSchedule.RegimeAt(tick)?.RegimeId == band.Button.Text;
-            band.Button.Modulate = isCurrent ? new Color(1, 1, 1, 1f) : new Color(1, 1, 1, 0.3f);
+            band.Button.Modulate = isCurrent ? new Color(1, 1, 1, 1f) : new Color(1, 1, 1, 0.58f);
         }
 
         foreach (var band in _atmosphereBands)
         {
             var isCurrent = _ctl.AtmosphereSchedule.RegimeAt(tick)?.RegimeId == band.Button.Text;
-            band.Button.Modulate = isCurrent ? new Color(1, 1, 1, 1f) : new Color(1, 1, 1, 0.3f);
+            band.Button.Modulate = isCurrent ? new Color(1, 1, 1, 1f) : new Color(1, 1, 1, 0.58f);
         }
 
         var activeGeoLayers = _ctl.GeosphereSchedule.RegimeAt(tick)?.ActiveLayers.Select(l => l.Value).ToHashSet() ?? new HashSet<string>();
         var activeAtmoLayers = _ctl.AtmosphereSchedule.RegimeAt(tick)?.ActiveLayers.Select(l => l.Value).ToHashSet() ?? new HashSet<string>();
 
+        var selected = _ctl.SelectedLayer;
         foreach (var track in _tracks)
         {
             bool isActive = track.Sphere == "geosphere"
                 ? activeGeoLayers.Contains(track.LayerId)
                 : activeAtmoLayers.Contains(track.LayerId);
 
-            track.Control.Modulate = isActive ? new Color(1, 1, 1, 1f) : new Color(1, 1, 1, 0.3f);
+            bool isSelected = isActive
+                && selected is not null
+                && string.Equals(selected.SphereId, track.Sphere, StringComparison.Ordinal)
+                && string.Equals(selected.LayerId, track.LayerId, StringComparison.Ordinal);
+
+            track.Button.Disabled = false;
+            track.Button.Modulate = isActive ? new Color(1, 1, 1, 1f) : new Color(1, 1, 1, 0.68f);
+            track.Button.AddThemeStyleboxOverride("normal", isSelected
+                ? track.SelectedStyle
+                : isActive
+                    ? track.NormalStyle
+                    : track.InactiveStyle);
         }
+    }
+
+    private static string FriendlyLayerLabel(string layerId)
+    {
+        var name = layerId.Split('.', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? layerId;
+        return string.Join(' ', name.Split('-', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Length == 0 ? part : char.ToUpperInvariant(part[0]) + part[1..]));
     }
 
     private void UpdateRuler()
@@ -497,7 +661,7 @@ public partial class TimelineFace : Control, ITimelineFace
         };
         _rulerRoot.AddChild(baseline);
 
-        foreach (var mark in TimelineModel.Ruler(_viewStartTick, _viewEndTick))
+        foreach (var mark in TimelineModel.Ruler(_viewStartTick, _viewEndTick, SelectedRung))
         {
             float x = (float)(mark.Fraction * width);
             var tick = new ColorRect
@@ -523,11 +687,11 @@ public partial class TimelineFace : Control, ITimelineFace
         }
     }
 
-    private void ZoomAroundCurrentTick(double factor)
+    private void ZoomToSpanAroundCurrentTick(long targetSpan)
     {
         if (_ctl is null) return;
-        long span = _viewEndTick - _viewStartTick;
-        long nextSpan = (long)Math.Clamp(span * factor, MinViewSpanTicks, _ctl.MaxTick);
+        long span = Math.Max(MinViewSpanTicks, _viewEndTick - _viewStartTick);
+        long nextSpan = Math.Clamp(targetSpan, MinViewSpanTicks, _ctl.MaxTick);
         long anchor = Math.Clamp(_ctl.Tick, _viewStartTick, _viewEndTick);
         double anchorFraction = span > 0 ? (anchor - _viewStartTick) / (double)span : 0.5;
         long nextStart = anchor - (long)(nextSpan * anchorFraction);

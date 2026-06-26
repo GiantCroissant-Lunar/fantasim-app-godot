@@ -17,8 +17,9 @@ namespace FantaSim.App.Timeline.Services;
 public sealed class Service : IService, IDisposable
 {
     private readonly ITimelineFace _face;
-    private readonly SphereRegimeSchedule _geosphere;
-    private readonly SphereRegimeSchedule _atmosphere;
+    private readonly Func<SphereRegimeSchedule> _geosphere;
+    private readonly Func<SphereRegimeSchedule> _atmosphere;
+    private readonly Func<long> _maxTick;
     private readonly ILogger _log;
     private long _tick;
     private TimelinePlaybackState _state = TimelinePlaybackState.Idle;
@@ -30,17 +31,45 @@ public sealed class Service : IService, IDisposable
         SphereRegimeSchedule atmosphere,
         long maxTick,
         ILoggerFactory loggerFactory)
+        : this(
+            face,
+            () => geosphere ?? throw new ArgumentNullException(nameof(geosphere)),
+            () => atmosphere ?? throw new ArgumentNullException(nameof(atmosphere)),
+            () => maxTick,
+            loggerFactory)
+    {
+    }
+
+    public Service(
+        ITimelineFace face,
+        ITimelineController controller,
+        ILoggerFactory loggerFactory)
+        : this(
+            face,
+            () => controller?.GeosphereSchedule ?? throw new ArgumentNullException(nameof(controller)),
+            () => controller?.AtmosphereSchedule ?? throw new ArgumentNullException(nameof(controller)),
+            () => controller?.MaxTick ?? throw new ArgumentNullException(nameof(controller)),
+            loggerFactory)
+    {
+    }
+
+    private Service(
+        ITimelineFace face,
+        Func<SphereRegimeSchedule> geosphere,
+        Func<SphereRegimeSchedule> atmosphere,
+        Func<long> maxTick,
+        ILoggerFactory loggerFactory)
     {
         _face = face ?? throw new ArgumentNullException(nameof(face));
         _geosphere = geosphere ?? throw new ArgumentNullException(nameof(geosphere));
         _atmosphere = atmosphere ?? throw new ArgumentNullException(nameof(atmosphere));
+        _maxTick = maxTick ?? throw new ArgumentNullException(nameof(maxTick));
         if (loggerFactory is null) throw new ArgumentNullException(nameof(loggerFactory));
         _log = loggerFactory.CreateLogger("App.Timeline.Service");
-        MaxTick = maxTick;
     }
 
     public long Tick => _tick;
-    public long MaxTick { get; }
+    public long MaxTick => Math.Max(0L, _maxTick());
     public TimelinePlaybackState State => _state;
     public event Action<TimelineViewSnapshot>? ViewChanged;
 
@@ -87,7 +116,7 @@ public sealed class Service : IService, IDisposable
 
     private void PushView()
     {
-        var regime = _geosphere.RegimeAt(_tick);
+        var regime = _geosphere().RegimeAt(_tick);
         var snap = new TimelineViewSnapshot(_tick, _state, regime?.RegimeId, MaxTick);
         _face.ApplyView(snap);
         ViewChanged?.Invoke(snap);

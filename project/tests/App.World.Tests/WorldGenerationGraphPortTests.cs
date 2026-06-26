@@ -280,6 +280,56 @@ public sealed class WorldGenerationGraphPortTests
     }
 
     [Fact]
+    public void Composer_ResolveLayerGraph_ResolvesRegimeScopedBinding()
+    {
+        var family = WorldGenerationGraphDefaults.BuildFamily();
+
+        var crust = WorldGenerationGraphFamilyComposer.ResolveLayerGraph(
+            family,
+            WorldGenerationGraphDefaults.GeosphereSphereId,
+            "geosphere.crust",
+            regimeId: "mobile-plate");
+
+        Assert.Equal(WorldGenerationGraphDefaults.GeosphereCrustLayerGraphId, crust.GraphId);
+    }
+
+    [Fact]
+    public void TryFindLayerBinding_PrefersRegimeSpecific_ThenFallsBackToAgnostic()
+    {
+        var baseGraph = MakeView("world.base", "Base");
+        var specificGraph = MakeView("layer.specific", "Specific");
+        var agnosticGraph = MakeView("layer.agnostic", "Agnostic");
+        var family = new WorldGenerationGraphFamilyDocument(
+            DocumentId: "test.family",
+            SchemaVersion: 1,
+            Revision: 1,
+            BaseGraph: baseGraph,
+            Graphs: new[] { specificGraph, agnosticGraph },
+            RegimeGraphBindings: Array.Empty<WorldRegimeGraphBinding>(),
+            GraphOverrides: Array.Empty<WorldGenerationGraphScopedOverride>(),
+            LegacyOverrides: Array.Empty<WorldGenerationGraphOverride>(),
+            RunHistory: Array.Empty<WorldGenerationRunHistoryEntry>(),
+            UpdatedUtc: DateTimeOffset.UnixEpoch,
+            SubgraphBindings: Array.Empty<WorldGenerationSubgraphBinding>(),
+            LayerGraphBindings: new[]
+            {
+                new WorldLayerGraphBinding("geosphere", "geosphere.crust", agnosticGraph.GraphId),
+                new WorldLayerGraphBinding("geosphere", "geosphere.crust", specificGraph.GraphId, RegimeId: "mobile-plate"),
+            });
+
+        var specific = WorldGenerationGraphFamilyComposer.TryFindLayerBinding(
+            family, "geosphere", "geosphere.crust", regimeId: "mobile-plate");
+        var agnostic = WorldGenerationGraphFamilyComposer.TryFindLayerBinding(
+            family, "geosphere", "geosphere.crust", regimeId: "stagnant-lid");
+        var missing = WorldGenerationGraphFamilyComposer.TryFindLayerBinding(
+            family, "geosphere", "geosphere.unknown");
+
+        Assert.Equal(specificGraph.GraphId, specific?.GraphId);
+        Assert.Equal(agnosticGraph.GraphId, agnostic?.GraphId);
+        Assert.Null(missing);
+    }
+
+    [Fact]
     public void Composer_RemoveNodeOverridePrunesAnnotationAttachments()
     {
         var baseGraph = MakeView("world.base", "Base");
@@ -685,18 +735,20 @@ public sealed class WorldGenerationGraphPortTests
         var run = await new WorldGenerationGraphRunner(new[] { new WorldFunctionProvider() })
             .RunAsync(compiled.Document, new JsonObject { ["canonicalTick"] = source.ActiveTick });
         var result = run.Sink;
-        var layer = Assert.IsType<JsonObject>(result["layer"]);
+        var layer = Assert.IsType<JsonObject>(result["normalizedLayer"]);
 
-        Assert.Equal(WorldFunctionProvider.LayerScope, result["function"]?.GetValue<string>());
-        Assert.Equal(WorldRegimeScheduleKinds.Sphere, result["scheduleKind"]?.GetValue<string>());
+        Assert.Equal(WorldFunctionProvider.LayerNormalize, result["function"]?.GetValue<string>());
         Assert.Equal(WorldGenerationGraphDefaults.GeosphereSphereId, result["sphereId"]?.GetValue<string>());
         Assert.Equal("geosphere.magma-ocean", layer["layerId"]?.GetValue<string>());
         Assert.Equal("magma-ocean", layer["regimeId"]?.GetValue<string>());
+        Assert.Equal("geosphere.magma-ocean.pcg", layer["sourceId"]?.GetValue<string>());
+        Assert.Equal(WorldLayerSourceKinds.Procedural, layer["sourceKind"]?.GetValue<string>());
+        Assert.Equal(WorldGenerationGraphDefaults.DefaultLayerRendererContract, layer["rendererContract"]?.GetValue<string>());
         Assert.Equal(1_234, result["canonicalTick"]?.GetValue<long>());
-        Assert.Single(run.Products);
-        Assert.Equal("layer_scope", run.Products[0].NodeId);
-        Assert.Equal(WorldFunctionProvider.LayerScope, run.Products[0].FunctionId);
-        Assert.Equal("/base/main/geosphere/magma-ocean.geosphere.magma-ocean@1234", run.Products[0].ProductAddress);
+        Assert.Contains(run.Products, product =>
+            product.NodeId == "normalize_layer"
+            && product.FunctionId == WorldFunctionProvider.LayerNormalize
+            && product.ProductAddress == "/base/main/geosphere/magma-ocean.geosphere.magma-ocean@1234");
     }
 
     [Fact]
@@ -1264,6 +1316,8 @@ public sealed class WorldGenerationGraphPortTests
 
     private sealed class FakeTimelineController : ITimelineController
     {
+        private TimelineLayerSelection? _selectedLayer;
+
         public FakeTimelineController(
             SphereRegimeSchedule geosphereSchedule,
             SphereRegimeSchedule atmosphereSchedule,
@@ -1281,11 +1335,19 @@ public sealed class WorldGenerationGraphPortTests
         public bool IsPlaying => false;
         public SphereRegimeSchedule GeosphereSchedule { get; }
         public SphereRegimeSchedule AtmosphereSchedule { get; }
+        public TimelineLayerSelection? SelectedLayer => _selectedLayer;
         public event Action<long>? TickChanged;
+        public event Action<TimelineLayerSelection?>? LayerSelectionChanged;
 
         public void Play() { }
         public void Pause() { }
         public void SeekTo(long tick) => PushTick(tick);
+
+        public void SelectLayer(string sphereId, string layerId)
+        {
+            _selectedLayer = new TimelineLayerSelection(sphereId, layerId);
+            LayerSelectionChanged?.Invoke(_selectedLayer);
+        }
 
         public void PushTick(long tick)
         {

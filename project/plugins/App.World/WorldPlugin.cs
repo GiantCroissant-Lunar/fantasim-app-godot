@@ -45,17 +45,21 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
 
     public ValueTask ShutdownAsync(CancellationToken ct = default)
     {
+        _log?.LogInformation("WorldPlugin: shutdown started.");
+
         // Unregister the world command so the resident command service drops the handler
         // delegate. The handler closes over the registry and resolves bundle-typed
         // INodeFunctionProvider instances; keeping it registered pins the old bundle's ALC.
         if (_registry is not null)
         {
             _registry.TryGet<FantaSim.App.Command.IService>()?.Unregister(RunWorldGenerationGraphCommand);
+            _log?.LogInformation("WorldPlugin: unregistered {Command}", RunWorldGenerationGraphCommand);
         }
 
         _worldCompositionHandle?.Dispose();
         _worldCompositionHandle = null;
         _registry = null;
+        _log?.LogInformation("WorldPlugin: shutdown completed.");
         _log = null;
         return ValueTask.CompletedTask;
     }

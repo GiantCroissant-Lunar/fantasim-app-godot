@@ -13,11 +13,30 @@ namespace FantaSim.App.Ui.Seam;
 
 internal static class MsaglGraphLayoutApplicator
 {
-    private const double HorizontalPadding = 56.0;
-    private const double VerticalPadding = 48.0;
-    private const double ColumnGap = 96.0;
-    private const double NodeGapX = 54.0;
-    private const double NodeGapY = 42.0;
+    // Card geometry must match GraphNodeVisualEnhancer so MSAGL node boxes reflect the real
+    // rendered card. The enhancer fixes content width at 318px with 10px left/right panel
+    // content margins and 1px borders, giving a 340px rendered card width.
+    private const double CardContentWidth = 318.0;
+    private const double CardContentMarginX = 10.0;
+    private const double CardBorderX = 1.0;
+    private const double CardWidth = CardContentWidth + 2 * CardContentMarginX + 2 * CardBorderX;
+
+    private const double TitleBarHeight = 26.0;   // titlebar content 5+5 + font line ~16
+    private const double StripeHeight = 5.0;       // category color stripe under titlebar
+    private const double SlotRowHeight = 26.0;    // matches enhancer SlotRowHeight
+    private const double DetailLineHeight = 15.0; // font 11 + line spacing
+    private const double ParamLineHeight = 15.0;
+    private const double RuntimeLineHeight = 14.0;
+    private const double PreviewHeight = 72.0;
+    private const double CardPadTop = 8.0;
+    private const double CardPadBottom = 8.0;
+
+    // Left graph panel is 760px wide (ViewHost.graphPanelWidth). Two columns of 340px cards
+    // plus a 64px column gap fit inside that panel while staying clear of the activity panel.
+    private const double HorizontalPadding = 24.0;
+    private const double ColumnGap = 64.0;
+    private const double NodeGapX = 24.0;
+    private const double NodeGapY = 28.0;
 
     public static bool TryApply(GraphEdit graphEdit, object viewModel, ILogger logger)
     {
@@ -99,9 +118,9 @@ internal static class MsaglGraphLayoutApplicator
 
         var settings = new SugiyamaLayoutSettings
         {
-            NodeSeparation = 68,
-            LayerSeparation = 190,
-            AspectRatio = 2.4,
+            NodeSeparation = NodeGapX,
+            LayerSeparation = NodeGapY + 40,
+            AspectRatio = 1.6,
             RandomSeedForOrdering = 1,
         };
 
@@ -124,7 +143,7 @@ internal static class MsaglGraphLayoutApplicator
 
         foreach (var column in rawNodes.GroupBy(node => node.Rank).OrderBy(group => group.Key))
         {
-            var y = VerticalPadding;
+            var y = 16.0;
             foreach (var node in column.OrderBy(node => node.Order))
             {
                 positioned.Add(new PositionedNode(
@@ -157,13 +176,32 @@ internal static class MsaglGraphLayoutApplicator
             if (string.IsNullOrWhiteSpace(nodeId))
                 continue;
 
+            var runtime = item.GetType()
+                .GetProperty("RuntimeState", BindingFlags.Public | BindingFlags.Instance)
+                ?.GetValue(item);
+
+            var extraDetailLines = CountExtraDetailLines(
+                item.GetType()
+                    .GetProperty("ProviderMetadata", BindingFlags.Public | BindingFlags.Instance)
+                    ?.GetValue(item),
+                item.GetType()
+                    .GetProperty("ExecutionTraits", BindingFlags.Public | BindingFlags.Instance)
+                    ?.GetValue(item));
+
+            var runtimeLines = CountRuntimeLines(runtime);
+            var hasPreview = ReadHasPreview(item);
+
             yield return new LayoutNode(
                 nodeId,
                 ReadString(item, "TypeId") ?? nodeId,
                 ReadInt(item, "InputCount", 1),
                 ReadInt(item, "OutputCount", 1),
                 ReadString(item, "Summary") ?? string.Empty,
-                ReadString(item, "Detail") ?? string.Empty);
+                ReadString(item, "Detail") ?? string.Empty,
+                ReadListCount(item, "ParameterLines"),
+                extraDetailLines,
+                runtimeLines,
+                hasPreview);
         }
     }
 
@@ -184,13 +222,111 @@ internal static class MsaglGraphLayoutApplicator
         }
     }
 
-    private static double NodeWidth(LayoutNode node)
-        => Math.Clamp(150 + node.Title.Length * 8, 300, 380);
+    // Cards are a fixed width in the enhancer; width never varies by content. Returning a
+    // constant keeps the MSAGL geometry boxes aligned with what Godot actually draws.
+    private static double NodeWidth(LayoutNode node) => CardWidth;
 
+    // Height mirrors the enhancer's AddNodeBody layout:
+    //   titlebar + stripe + max(input,output) slot rows + detail block + provider/trait lines
+    //   + runtime lines + parameter lines + optional preview, with panel top/bottom padding.
     private static double NodeHeight(LayoutNode node)
-        => 142 + Math.Max(node.InputCount, node.OutputCount) * 30
-           + (string.IsNullOrWhiteSpace(node.Summary) ? 0 : 44)
-           + (string.IsNullOrWhiteSpace(node.Detail) ? 0 : 18);
+    {
+        var slotRows = Math.Max(node.InputCount, node.OutputCount);
+        var detailLines = CountDetailLines(node);
+        var lines = slotRows + detailLines + node.ParameterLineCount + node.RuntimeLineCount;
+        var height = TitleBarHeight + StripeHeight + CardPadTop + CardPadBottom
+                     + slotRows * SlotRowHeight
+                     + detailLines * DetailLineHeight
+                     + node.ParameterLineCount * ParamLineHeight
+                     + node.RuntimeLineCount * RuntimeLineHeight;
+
+        if (node.HasPreview)
+            height += PreviewHeight;
+
+        return height;
+    }
+
+    // The enhancer always renders a detail block: Summary + NodeFacts (category|typeKey[|flags])
+    // + PortKindSummary (in:/out:). When summary is empty it still renders the two fact lines,
+    // so the minimum detail body is 3 lines. Detail text is not empty when either summary or
+    // detail is present.
+    private static int CountDetailLines(LayoutNode node)
+    {
+        var lines = 0;
+        if (!string.IsNullOrWhiteSpace(node.Summary))
+            lines++;
+        // NodeFacts always renders one line.
+        lines++;
+        // PortKindSummary always renders two lines (in: / out:).
+        lines += 2;
+
+        if (!string.IsNullOrWhiteSpace(node.Detail))
+            lines++;
+
+        lines += node.ExtraDetailLineCount;
+
+        return lines;
+    }
+
+    private static int CountExtraDetailLines(object? providerMetadata, object? executionTraits)
+    {
+        if (providerMetadata is null && executionTraits is null)
+            return 0;
+
+        var lines = 0;
+        if (providerMetadata is not null)
+        {
+            // provider line always present when metadata is non-null.
+            lines++;
+            var runtime = ReadString(providerMetadata, "RuntimeRequirement");
+            if (!string.IsNullOrWhiteSpace(runtime))
+                lines++;
+        }
+
+        if (executionTraits is not null)
+        {
+            var traitParts = 0;
+            if (ReadBool(executionTraits, "RequiresExternalProcess")) traitParts++;
+            if (ReadBool(executionTraits, "RequiresNetwork")) traitParts++;
+            if (ReadBool(executionTraits, "RequiresMainThread")) traitParts++;
+            if (ReadBool(executionTraits, "SupportsCancellation")) traitParts++;
+            if (ReadIntOrNull(executionTraits, "DefaultTimeoutSeconds") is not null) traitParts++;
+            if (traitParts > 0)
+                lines++;
+            if (!string.IsNullOrWhiteSpace(ReadString(executionTraits, "ArtifactShape")))
+                lines++;
+        }
+
+        return lines;
+    }
+
+    private static int CountRuntimeLines(object? runtimeState)
+    {
+        if (runtimeState is null)
+            return 0;
+
+        // Enhancer returns early for Pending with no payload.
+        var status = ReadString(runtimeState, "Status");
+        var hasPayload = !string.IsNullOrWhiteSpace(ReadString(runtimeState, "InputsJson"))
+                          || !string.IsNullOrWhiteSpace(ReadString(runtimeState, "OutputsJson"))
+                          || !string.IsNullOrWhiteSpace(ReadString(runtimeState, "ArtifactsJson"))
+                          || !string.IsNullOrWhiteSpace(ReadString(runtimeState, "LogsJson"));
+        if (status == "Pending" && !hasPayload)
+            return 0;
+
+        var lines = 1; // status line
+        if (!string.IsNullOrWhiteSpace(ReadString(runtimeState, "InputsJson"))) lines++;
+        if (!string.IsNullOrWhiteSpace(ReadString(runtimeState, "OutputsJson"))) lines++;
+        if (!string.IsNullOrWhiteSpace(ReadString(runtimeState, "ArtifactsJson"))) lines++;
+        if (!string.IsNullOrWhiteSpace(ReadString(runtimeState, "LogsJson"))) lines++;
+        return lines;
+    }
+
+    private static bool ReadHasPreview(object? item)
+        => ReadInt(item, "PreviewWidth") > 0
+           && ReadInt(item, "PreviewHeight") > 0
+           && ReadByteArray(item, "PreviewRgba") is { Length: > 0 } bytes
+           && bytes.Length == ReadInt(item, "PreviewWidth") * ReadInt(item, "PreviewHeight") * 4;
 
     private static IReadOnlyDictionary<string, int> BuildRanks(
         IReadOnlyList<LayoutNode> nodes,
@@ -250,10 +386,33 @@ internal static class MsaglGraphLayoutApplicator
     private static string? ReadString(object? item, string propertyName)
         => item?.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance)?.GetValue(item)?.ToString();
 
-    private static int ReadInt(object? item, string propertyName, int fallback)
+    private static int ReadInt(object? item, string propertyName, int fallback = 0)
         => item?.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance)?.GetValue(item) is int value
             ? value
             : fallback;
+
+    private static int? ReadIntOrNull(object? item, string propertyName)
+        => item?.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance)?.GetValue(item) is int value
+            ? value
+            : null;
+
+    private static bool ReadBool(object? item, string propertyName)
+        => item?.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance)?.GetValue(item) is bool value && value;
+
+    private static byte[]? ReadByteArray(object? item, string propertyName)
+        => item?.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance)?.GetValue(item) as byte[];
+
+    private static int ReadListCount(object? item, string propertyName)
+    {
+        var property = item?.GetType().GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+        if (property?.GetValue(item) is not IEnumerable values)
+            return 0;
+
+        var count = 0;
+        foreach (var _ in values)
+            count++;
+        return count;
+    }
 
     private sealed record LayoutNode(
         string NodeId,
@@ -261,7 +420,11 @@ internal static class MsaglGraphLayoutApplicator
         int InputCount,
         int OutputCount,
         string Summary,
-        string Detail);
+        string Detail,
+        int ParameterLineCount,
+        int ExtraDetailLineCount,
+        int RuntimeLineCount,
+        bool HasPreview);
 
     private sealed record LayoutWire(string FromNodeId, string ToNodeId);
 

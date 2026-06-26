@@ -191,4 +191,24 @@ public sealed class WorldGenerationGraphFamilyContractTests
         Assert.DoesNotContain(layerIndexGraph.Nodes, node => node.Id == "options");
         Assert.Equal(2, navigator.Subgraphs.Count);
     }
+
+    [Fact]
+    public void DefaultFamily_CarriesLayerGraphBindings_MakingLayerIdentityFirstClass()
+    {
+        var family = WorldGenerationGraphDefaults.BuildFamily();
+
+        Assert.NotEmpty(family.LayerGraphBindings!);
+        Assert.All(family.LayerGraphBindings!, binding =>
+            Assert.Contains(binding.GraphId, family.Graphs.Append(family.BaseGraph).Select(g => g.GraphId)));
+        Assert.Contains(family.LayerGraphBindings!, binding =>
+            binding.SphereId == WorldGenerationGraphDefaults.GeosphereSphereId
+            && binding.LayerId == "geosphere.magma-ocean"
+            && binding.GraphId == WorldGenerationGraphDefaults.GeosphereMagmaOceanGraphId
+            && binding.RegimeId == "magma-ocean");
+        Assert.Contains(family.LayerGraphBindings!, binding =>
+            binding.SphereId == WorldGenerationGraphDefaults.GeosphereSphereId
+            && binding.LayerId == "geosphere.crust"
+            && binding.GraphId == WorldGenerationGraphDefaults.GeosphereCrustLayerGraphId
+            && binding.RegimeId == "mobile-plate");
+    }
 }

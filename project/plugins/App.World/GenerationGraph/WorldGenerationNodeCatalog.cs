@@ -85,6 +85,60 @@ public static class WorldGenerationNodeCatalog
             ExecutionTraits: NativeExecutionTraits),
 
         new WorldGenerationNodeSchema(
+            TypeId: WorldFunctionProvider.LayerSource,
+            Label: "Layer Source",
+            Category: "source",
+            IsSideEffect: false,
+            IsExpensive: false,
+            Inputs: new[] { new WorldGenerationGraphPort("layer", "Layer", "world/layer_scope", Required: false) },
+            Outputs: new[] { new WorldGenerationGraphPort("source", "Source", "world/layer_source", Required: false) },
+            Summary: "Declares one concrete source candidate for a world layer: PCG, world-native import, iii-normalized data, or observed dataset.",
+            Parameters: new[]
+            {
+                new WorldGenerationGraphParameter("sphereId", "Sphere", WorldGenerationGraphDefaults.GeosphereSphereId, "string"),
+                new WorldGenerationGraphParameter("regimeId", "Regime", "mobile-plate", "string"),
+                new WorldGenerationGraphParameter("layerId", "Layer", "geosphere.crust", "string"),
+                new WorldGenerationGraphParameter("sourceId", "Source", "geosphere.crust.pcg", "string"),
+                new WorldGenerationGraphParameter("sourceKind", "Source Kind", WorldLayerSourceKinds.Procedural, "string"),
+                new WorldGenerationGraphParameter("availability", "Availability", WorldLayerSourceAvailability.Available, "string"),
+                new WorldGenerationGraphParameter("bodyId", "Body", "fantasim", "string"),
+                new WorldGenerationGraphParameter("datasetId", "Dataset", "", "string"),
+                new WorldGenerationGraphParameter("providerId", "Provider", "App.World", "string"),
+                new WorldGenerationGraphParameter("importFormat", "Import Format", "", "string"),
+                new WorldGenerationGraphParameter("normalizedProductKind", "Product Kind", "world/layer", "string"),
+                new WorldGenerationGraphParameter("rendererContract", "Renderer", "world.globe.layer.v1", "string"),
+            },
+            ProviderMetadata: CSharpMetadata,
+            ExecutionTraits: NativeExecutionTraits),
+
+        new WorldGenerationNodeSchema(
+            TypeId: WorldFunctionProvider.LayerNormalize,
+            Label: "Normalize Layer",
+            Category: "geosphere",
+            IsSideEffect: false,
+            IsExpensive: false,
+            Inputs: new[]
+            {
+                new WorldGenerationGraphPort("layer", "Layer", "world/layer_scope", Required: true),
+                new WorldGenerationGraphPort("primarySource", "Primary Source", "world/layer_source", Required: true),
+                new WorldGenerationGraphPort("secondarySource", "Secondary Source", "world/layer_source", Required: false),
+            },
+            Outputs: new[] { new WorldGenerationGraphPort("normalizedLayer", "Normalized Layer", "world/normalized_layer", Required: false) },
+            Summary: "Normalizes the selected source candidate into the product contract consumed by the shared planet layer renderer.",
+            Parameters: new[]
+            {
+                new WorldGenerationGraphParameter("sphereId", "Sphere", WorldGenerationGraphDefaults.GeosphereSphereId, "string"),
+                new WorldGenerationGraphParameter("regimeId", "Regime", "mobile-plate", "string"),
+                new WorldGenerationGraphParameter("layerId", "Layer", "geosphere.crust", "string"),
+                new WorldGenerationGraphParameter("selectedSourceId", "Selected Source", "geosphere.crust.pcg", "string"),
+                new WorldGenerationGraphParameter("selectedSourceKind", "Selected Kind", WorldLayerSourceKinds.Procedural, "string"),
+                new WorldGenerationGraphParameter("normalizedProductKind", "Product Kind", "world/layer", "string"),
+                new WorldGenerationGraphParameter("rendererContract", "Renderer", "world.globe.layer.v1", "string"),
+            },
+            ProviderMetadata: CSharpMetadata,
+            ExecutionTraits: NativeExecutionTraits),
+
+        new WorldGenerationNodeSchema(
             TypeId: WorldFunctionProvider.CrustGenerate,
             Label: "Crust Generation",
             Category: "geosphere",
@@ -97,6 +151,8 @@ public static class WorldGenerationNodeCatalog
             ExecutionTraits: NativeExecutionTraits),
     }
     .Concat(ExternalToolNodeSchemaProjector.Project(VplanetExternalToolManifest.Build()))
+    .Concat(ExternalToolNodeSchemaProjector.Project(ComfyExternalToolManifest.Build()))
+    .Concat(ExternalToolNodeSchemaProjector.Project(BlenderExternalToolManifest.Build()))
     .ToList();
 
     public static IReadOnlyList<WorldGenerationNodeSchema> All => Schemas;

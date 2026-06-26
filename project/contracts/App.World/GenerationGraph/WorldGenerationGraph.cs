@@ -29,7 +29,10 @@ public sealed record WorldGenerationGraphNode(
     bool IsExpensive,
     IReadOnlyList<WorldGenerationGraphPort> Inputs,
     IReadOnlyList<WorldGenerationGraphPort> Outputs,
-    IReadOnlyList<WorldGenerationGraphParameter>? Parameters = null);
+    IReadOnlyList<WorldGenerationGraphParameter>? Parameters = null,
+    string? Summary = null,
+    FunctionProviderMetadata? ProviderMetadata = null,
+    FunctionExecutionTraits? ExecutionTraits = null);
 
 /// <summary>One typed input or output port on a world-generation node.</summary>
 public sealed record WorldGenerationGraphPort(
@@ -227,6 +230,59 @@ public sealed record WorldRegimeGraphBinding(
     string? SphereId = null);
 
 /// <summary>
+/// Binds a layer (optionally scoped to a regime) to a named graph in the family. This makes
+/// layer identity first-class in the graph family: each layer, optionally within a regime,
+/// names its own creation graph, parallel to <see cref="WorldRegimeGraphBinding"/>. When
+/// <paramref name="RegimeId"/> is null the binding is regime-agnostic and applies to every
+/// regime of the sphere that lacks a regime-specific binding.
+/// </summary>
+public sealed record WorldLayerGraphBinding(
+    string SphereId,
+    string LayerId,
+    string GraphId,
+    string? RegimeId = null);
+
+/// <summary>Layer source categories used by authoring graphs before data is normalized for rendering.</summary>
+public static class WorldLayerSourceKinds
+{
+    public const string Procedural = "procedural";
+    public const string WorldNativeImport = "world-native-import";
+    public const string ExternalNormalizedImport = "external-normalized-import";
+    public const string ObservedDataset = "observed-dataset";
+    public const string Hybrid = "hybrid";
+}
+
+/// <summary>Availability states for source bindings. These describe real capability, not sample data.</summary>
+public static class WorldLayerSourceAvailability
+{
+    public const string Available = "available";
+    public const string RequiresUserContent = "requires-user-content";
+    public const string RequiresExternalProvider = "requires-external-provider";
+    public const string Unavailable = "unavailable";
+}
+
+/// <summary>
+/// Binds a layer source candidate to the normalized product contract consumed by renderers.
+/// Source candidates can be PCG, world-native imports such as GPlates .rot, externally
+/// normalized iii data, or later planetary datasets; they all converge on RendererContract.
+/// </summary>
+public sealed record WorldLayerSourceBinding(
+    string SphereId,
+    string LayerId,
+    string SourceId,
+    string Label,
+    string SourceKind,
+    string GraphId,
+    string NormalizedProductKind,
+    string RendererContract,
+    string? RegimeId = null,
+    string? BodyId = null,
+    string? DatasetId = null,
+    string? ProviderId = null,
+    string? Availability = null,
+    string? ImportFormat = null);
+
+/// <summary>
 /// A graph-scoped override layer. Edits apply only to one named graph when the
 /// playhead tick falls inside Range.
 /// </summary>
@@ -240,8 +296,8 @@ public sealed record WorldGenerationGraphScopedOverride(
 
 /// <summary>
 /// Target authoring model for world creation: base graph for compatibility,
-/// named regime/layer graphs, graph-scoped overrides, explicit subgraphs, and
-/// run history.
+/// named regime/layer graphs, graph-scoped overrides, explicit subgraphs, layer
+/// graph bindings, and run history.
 /// </summary>
 public sealed record WorldGenerationGraphFamilyDocument(
     string DocumentId,
@@ -254,7 +310,9 @@ public sealed record WorldGenerationGraphFamilyDocument(
     IReadOnlyList<WorldGenerationGraphOverride> LegacyOverrides,
     IReadOnlyList<WorldGenerationRunHistoryEntry> RunHistory,
     DateTimeOffset UpdatedUtc,
-    IReadOnlyList<WorldGenerationSubgraphBinding>? SubgraphBindings = null);
+    IReadOnlyList<WorldGenerationSubgraphBinding>? SubgraphBindings = null,
+    IReadOnlyList<WorldLayerGraphBinding>? LayerGraphBindings = null,
+    IReadOnlyList<WorldLayerSourceBinding>? LayerSourceBindings = null);
 
 /// <summary>
 /// Cache key for a generation-graph execution scope. This identifies which

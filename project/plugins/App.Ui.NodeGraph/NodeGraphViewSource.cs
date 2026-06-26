@@ -550,14 +550,27 @@ public class NodeGraphViewSource : IViewSource, IDisposable
                 traits = nodeType.ExecutionTraits;
             }
 
+            GraphNodePresentation? presentation = null;
+            if (_source is IGraphNodePresentationSource presentationSource)
+                presentationSource.TryGetNodePresentation(n.Id, out presentation);
+
+            var label = !string.IsNullOrWhiteSpace(presentation?.Label)
+                ? presentation.Label!
+                : n.FunctionId;
+            if (!string.IsNullOrWhiteSpace(presentation?.Summary))
+                summary = presentation.Summary!;
+            var detail = presentation?.Detail ?? string.Empty;
+            var parameterLines = presentation?.ParameterLines ?? BuildParameterLines(n.Params);
+
             GraphNodeRuntimeState? runtimeState = null;
             _runtimeState?.NodeStates.TryGetValue(n.Id, out runtimeState);
 
             Nodes.Add(new NodeItem(
-                NodeId: n.Id, TypeId: n.FunctionId, InputCount: ins.Count, OutputCount: outs.Count,
+                NodeId: n.Id, TypeId: label, InputCount: ins.Count, OutputCount: outs.Count,
                 Category: category, TypeKey: n.FunctionId, Summary: summary,
-                Detail: n.Params.ToJsonString(), IsSideEffect: isSideEffect, IsExpensive: isExpensive,
+                Detail: detail, IsSideEffect: isSideEffect, IsExpensive: isExpensive,
                 Inputs: ins, Outputs: outs,
+                ParameterLines: parameterLines,
                 ProviderMetadata: metadata, ExecutionTraits: traits,
                 RuntimeState: runtimeState));
         }
@@ -638,6 +651,11 @@ public class NodeGraphViewSource : IViewSource, IDisposable
                 ["outputs"] = BuildPorts(node.Outputs),
                 ["parameterLines"] = BuildStringArray(node.ParameterLines ?? Array.Empty<string>()),
                 ["parameters"] = BuildParameters(node.Parameters ?? Array.Empty<ParameterItem>()),
+                ["provider"] = BuildProviderMetadata(node.ProviderMetadata),
+                ["providerLabel"] = BuildProviderLabel(node.ProviderMetadata),
+                ["executionTraits"] = BuildExecutionTraits(node.ExecutionTraits),
+                ["chips"] = BuildNodeChips(node),
+                ["providerLines"] = BuildProviderLines(node.ProviderMetadata, node.ExecutionTraits),
                 ["runtimeState"] = BuildNodeRuntimeState(node.RuntimeState),
             });
         }
@@ -782,6 +800,102 @@ public class NodeGraphViewSource : IViewSource, IDisposable
         };
     }
 
+    private static JsonObject? BuildProviderMetadata(FunctionProviderMetadata? metadata)
+    {
+        if (metadata is null)
+            return null;
+
+        return new JsonObject
+        {
+            ["kind"] = metadata.ProviderKind,
+            ["id"] = metadata.ProviderId,
+            ["runtimeRequirement"] = metadata.RuntimeRequirement,
+            ["determinism"] = metadata.Determinism,
+            ["trustLevel"] = metadata.TrustLevel,
+        };
+    }
+
+    private static string? BuildProviderLabel(FunctionProviderMetadata? metadata)
+    {
+        if (metadata is null)
+            return null;
+
+        var kind = metadata.ProviderKind;
+        var id = metadata.ProviderId;
+        return !string.IsNullOrWhiteSpace(id)
+            ? $"{kind} / {id}"
+            : kind;
+    }
+
+    private static JsonObject? BuildExecutionTraits(FunctionExecutionTraits? traits)
+    {
+        if (traits is null)
+            return null;
+
+        return new JsonObject
+        {
+            ["requiresExternalProcess"] = traits.RequiresExternalProcess,
+            ["requiresNetwork"] = traits.RequiresNetwork,
+            ["requiresMainThread"] = traits.RequiresMainThread,
+            ["isDeterministic"] = traits.IsDeterministic,
+            ["supportsCancellation"] = traits.SupportsCancellation,
+            ["defaultTimeoutSeconds"] = traits.DefaultTimeoutSeconds,
+            ["cacheKeyShape"] = traits.CacheKeyShape,
+            ["artifactShape"] = traits.ArtifactShape,
+            ["commitEligibility"] = traits.CommitEligibility,
+        };
+    }
+
+    private static JsonArray BuildNodeChips(NodeItem node)
+    {
+        var chips = new JsonArray();
+
+        if (!string.IsNullOrWhiteSpace(node.Category) && !string.Equals(node.Category, "graph", StringComparison.Ordinal))
+            chips.Add(node.Category);
+
+        if (node.ProviderMetadata is { } metadata)
+        {
+            if (!string.IsNullOrWhiteSpace(metadata.ProviderKind))
+                chips.Add(metadata.ProviderKind);
+            if (!string.IsNullOrWhiteSpace(metadata.ProviderId))
+                chips.Add(metadata.ProviderId);
+        }
+
+        if (node.IsSideEffect)
+            chips.Add("side-effect");
+        if (node.IsExpensive)
+            chips.Add("expensive");
+
+        if (node.ExecutionTraits is { } traits)
+        {
+            if (traits.RequiresExternalProcess == true)
+                chips.Add("external-process");
+            if (traits.RequiresNetwork == true)
+                chips.Add("network");
+            if (traits.RequiresMainThread == true)
+                chips.Add("main-thread");
+            if (traits.SupportsCancellation == true)
+                chips.Add("cancellable");
+            if (traits.IsDeterministic == false)
+                chips.Add("non-deterministic");
+            if (!string.IsNullOrWhiteSpace(traits.CommitEligibility))
+                chips.Add(traits.CommitEligibility);
+        }
+
+        return chips;
+    }
+
+    private static JsonArray BuildProviderLines(
+        FunctionProviderMetadata? metadata,
+        FunctionExecutionTraits? traits)
+    {
+        var lines = FunctionProviderDetailFormatter.Format(metadata, traits);
+        var result = new JsonArray();
+        foreach (var line in lines)
+            result.Add(line);
+        return result;
+    }
+
     private static string SafeComponentId(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -790,6 +904,72 @@ public class NodeGraphViewSource : IViewSource, IDisposable
         var chars = value.Select(ch => char.IsLetterOrDigit(ch) || ch is '_' or '-' ? ch : '-').ToArray();
         var safe = new string(chars).Trim('-');
         return string.IsNullOrWhiteSpace(safe) ? "subgraph" : safe;
+    }
+
+    private static IReadOnlyList<string> BuildParameterLines(JsonObject parameters)
+    {
+        if (parameters.Count == 0)
+            return Array.Empty<string>();
+
+        var lines = new List<string>(parameters.Count);
+        foreach (var (key, value) in parameters)
+        {
+            var formatted = FormatParameterValue(value);
+            if (string.IsNullOrWhiteSpace(formatted))
+                continue;
+
+            lines.Add($"{HumanizeKey(key)}: {Shorten(formatted, 64)}");
+        }
+
+        return lines;
+    }
+
+    private static string FormatParameterValue(JsonNode? value)
+    {
+        if (value is null)
+            return string.Empty;
+        if (value is JsonValue jsonValue)
+        {
+            if (jsonValue.TryGetValue<string>(out var stringValue))
+                return stringValue;
+            if (jsonValue.TryGetValue<int>(out var intValue))
+                return intValue.ToString(CultureInfo.InvariantCulture);
+            if (jsonValue.TryGetValue<long>(out var longValue))
+                return longValue.ToString(CultureInfo.InvariantCulture);
+            if (jsonValue.TryGetValue<double>(out var doubleValue))
+                return doubleValue.ToString(CultureInfo.InvariantCulture);
+            if (jsonValue.TryGetValue<bool>(out var boolValue))
+                return boolValue ? "true" : "false";
+        }
+
+        return value.ToJsonString();
+    }
+
+    private static string HumanizeKey(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return "Value";
+
+        var words = new List<string>();
+        var start = 0;
+        for (var i = 1; i < key.Length; i++)
+        {
+            if (char.IsUpper(key[i]) && !char.IsUpper(key[i - 1]))
+            {
+                words.Add(key[start..i]);
+                start = i;
+            }
+        }
+        words.Add(key[start..]);
+        return string.Join(' ', words.Select(word =>
+            word.Length == 0 ? word : char.ToUpperInvariant(word[0]) + word[1..]));
+    }
+
+    private static string Shorten(string value, int maxLength)
+    {
+        if (value.Length <= maxLength)
+            return value;
+        return value[..Math.Max(1, maxLength - 1)] + ".";
     }
 
     private static JsonArray BuildParameters(IReadOnlyList<ParameterItem> parameters)

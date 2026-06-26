@@ -3,10 +3,16 @@ using Akka.Actor;
 #endif
 using System.Globalization;
 using System.Text.Json;
+using FantaSim.App.World.Cells;
 using FantaSim.App.World.Dto;
+using FantaSim.App.World.GenerationGraph;
+using FantaSim.App.World.Globe;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using ServiceArchi.Contracts;
+using OnsetRoster = FantaSim.App.World.Composition.OnsetRoster;
+using SphereRegimeSchedule = FantaSim.App.World.Composition.SphereRegimeSchedule;
+using SphereRegimeScheduleDefaults = FantaSim.App.World.Composition.SphereRegimeScheduleDefaults;
 
 namespace FantaSim.App.World.Services;
 
@@ -60,12 +66,12 @@ public sealed class Service : IService, IDisposable
         ITruthEventWriter? truthWriter = null;
         try
         {
-            truthWriter = actorSystem is null
-                ? new DirectTruthEventWriter(truthStoreHandle.EventStore)
-                : ActorTruthEventWriter.Start(
-                    actorSystem,
+            truthWriter = truthStoreOptions.Backend == WorldTruthStoreBackend.SurrealDb
+                ? ActorTruthEventWriter.Start(
+                    actorSystem!,
                     truthStoreHandle.EventStore,
-                    actorName: NewTruthWriterActorName());
+                    actorName: NewTruthWriterActorName())
+                : new DirectTruthEventWriter(truthStoreHandle.EventStore);
             _runtime = WorldRuntimeFactory.Create(registry, truthWriter);
             _truthStoreHandle = truthStoreHandle;
             truthWriter = null;
@@ -119,12 +125,14 @@ public sealed class Service : IService, IDisposable
     {
         var overview = _runtime.GetOverview();
         var renderSnapshot = _runtime.GetRenderSnapshot();
+        var family = WorldGenerationGraphDefaults.BuildFamily();
+        var runtime = BuildPlanetPresentationRuntime(family);
         WorldGenerationProductsView products;
         lock (_generationProductsGate)
             products = _generationProducts;
 
         var layers = products.Products
-            .Select(ToPlanetLayer)
+            .Select(address => ToPlanetLayer(address, family))
             .Where(layer => layer is not null)
             .Cast<PlanetPresentationLayer>()
             .ToArray();
@@ -135,7 +143,15 @@ public sealed class Service : IService, IDisposable
             ReferenceTick: products.ReferenceTick,
             Revision: products.GraphRevision,
             Layers: layers,
-            RenderEntities: renderSnapshot.Entities ?? Array.Empty<RenderEntityDto>());
+            RenderEntities: renderSnapshot.Entities ?? Array.Empty<RenderEntityDto>())
+        {
+            GlobeSnapshot = runtime.GlobeSnapshot,
+            GlobeReferenceTick = runtime.GlobeReferenceTick,
+            GeosphereSchedule = runtime.GeosphereSchedule,
+            AtmosphereSchedule = runtime.AtmosphereSchedule,
+            MaxTick = runtime.MaxTick,
+            GenerationGraphFamily = family,
+        };
     }
 
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
@@ -148,10 +164,17 @@ public sealed class Service : IService, IDisposable
         return result;
     }
 
-    public void SubscribeGenerationChanged(Action<WorldGenerationChangedEvent> callback)
+    public IDisposable SubscribeGenerationChanged(Action<WorldGenerationChangedEvent> callback)
     {
         ArgumentNullException.ThrowIfNull(callback);
-        lock (_subscribersGate) _subscribers.Add(callback);
+        lock (_subscribersGate)
+        {
+            if (_disposed)
+                return Disposable.Empty;
+            _subscribers.Add(callback);
+        }
+
+        return new GenerationChangedSubscription(this, callback);
     }
 
     private void EmitGenerationChanged(WorldGenerationChangedEvent evt)
@@ -201,12 +224,17 @@ public sealed class Service : IService, IDisposable
            && request.Parameters.TryGetValue("source", out var source)
            && string.Equals(source?.ToString(), GenerationGraphSource, StringComparison.Ordinal);
 
-    private static PlanetPresentationLayer? ToPlanetLayer(string productAddress)
+    private static PlanetPresentationLayer? ToPlanetLayer(
+        string productAddress,
+        WorldGenerationGraphFamilyDocument family)
     {
         if (!WorldGenerationProductAddress.TryParse(productAddress, out var address) || address is null)
             return null;
 
         var (regimeId, layerId) = SplitRegimeLayer(address);
+        var regime = string.IsNullOrEmpty(regimeId) ? null : regimeId;
+        var graphId = WorldGenerationGraphFamilyComposer.TryFindLayerBinding(family, address.Domain, layerId, regime)?.GraphId;
+        var source = WorldGenerationGraphFamilyComposer.TryFindDefaultLayerSourceBinding(family, address.Domain, layerId, regime);
         return new PlanetPresentationLayer(
             LayerId: layerId,
             RegimeId: regimeId,
@@ -215,7 +243,13 @@ public sealed class Service : IService, IDisposable
             ProductDomain: address.Domain,
             ProductName: address.Product,
             ProductTick: address.Tick,
-            ProductAddress: address.ToPath());
+            ProductAddress: address.ToPath(),
+            GenerationGraphId: graphId,
+            SourceId: source?.SourceId,
+            SourceKind: source?.SourceKind,
+            SourceLabel: source?.Label,
+            SourceAvailability: source?.Availability,
+            RendererContract: source?.RendererContract);
     }
 
     private static (string RegimeId, string LayerId) SplitRegimeLayer(WorldGenerationProductAddress address)
@@ -226,8 +260,49 @@ public sealed class Service : IService, IDisposable
 
         return (
             RegimeId: address.Product[..separator],
-            LayerId: $"{address.Domain}.{address.Product[(separator + 1)..]}");
+            LayerId: address.Product[(separator + 1)..]);
     }
+
+    private static PlanetPresentationRuntime BuildPlanetPresentationRuntime(WorldGenerationGraphFamilyDocument family)
+    {
+        long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        var renderOptions = ResolvePlanetRenderOptions(family);
+        var roster = OnsetRoster.Build(renderOptions.Seed, onsetTick, renderOptions.TessellationFrequency);
+        var geosphere = SphereRegimeScheduleDefaults.GeosphereDefault;
+        var atmosphere = SphereRegimeScheduleDefaults.AtmosphereFor(onsetTick);
+        var reconstructor = GlobeReconstructor.FromOnsetRoster(
+            roster,
+            onsetTick,
+            geosphere,
+            renderOptions.TessellationFrequency);
+
+        return new PlanetPresentationRuntime(
+            reconstructor.BuildGlobeAt(onsetTick),
+            onsetTick,
+            geosphere,
+            atmosphere,
+            onsetTick + 20_000_000L);
+    }
+
+    private static WorldGenerationRenderOptions ResolvePlanetRenderOptions(WorldGenerationGraphFamilyDocument family)
+    {
+        var source = WorldGenerationGraphFamilySource.ForRegime(
+            "world-generation",
+            family,
+            WorldRegimeScheduleKinds.Sphere,
+            "mobile-plate",
+            SphereRegimeScheduleDefaults.PlateOnsetTick,
+            WorldGenerationGraphDefaults.GeosphereSphereId);
+
+        return WorldGenerationRenderOptions.Resolve(source.Graph);
+    }
+
+    private sealed record PlanetPresentationRuntime(
+        WorldGlobeSnapshot GlobeSnapshot,
+        long GlobeReferenceTick,
+        SphereRegimeSchedule GeosphereSchedule,
+        SphereRegimeSchedule AtmosphereSchedule,
+        long MaxTick);
 
 #if USE_PROJECT_REFERENCES
     private static string NewTruthWriterActorName()
@@ -399,6 +474,8 @@ public sealed class Service : IService, IDisposable
         _disposed = true;
         try
         {
+            lock (_subscribersGate)
+                _subscribers.Clear();
             _runtime.Dispose();
         }
         finally
@@ -406,6 +483,43 @@ public sealed class Service : IService, IDisposable
 #if USE_PROJECT_REFERENCES
             _truthStoreHandle.Dispose();
 #endif
+        }
+    }
+
+    private void UnsubscribeGenerationChanged(Action<WorldGenerationChangedEvent> callback)
+    {
+        lock (_subscribersGate)
+            _subscribers.Remove(callback);
+    }
+
+    private sealed class GenerationChangedSubscription : IDisposable
+    {
+        private Service? _owner;
+        private Action<WorldGenerationChangedEvent>? _callback;
+
+        public GenerationChangedSubscription(Service owner, Action<WorldGenerationChangedEvent> callback)
+        {
+            _owner = owner;
+            _callback = callback;
+        }
+
+        public void Dispose()
+        {
+            var owner = Interlocked.Exchange(ref _owner, null);
+            var callback = Interlocked.Exchange(ref _callback, null);
+            if (owner is null || callback is null)
+                return;
+
+            owner.UnsubscribeGenerationChanged(callback);
+        }
+    }
+
+    private sealed class Disposable : IDisposable
+    {
+        public static readonly IDisposable Empty = new Disposable();
+
+        public void Dispose()
+        {
         }
     }
 }

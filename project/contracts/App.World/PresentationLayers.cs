@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using FantaSim.App.World.Composition;
 using FantaSim.App.World.Dto;
 
 namespace FantaSim.App.World;
@@ -14,11 +15,47 @@ public sealed record PlanetPresentationDocument(
     long ReferenceTick,
     int Revision,
     IReadOnlyList<PlanetPresentationLayer> Layers,
-    IReadOnlyList<RenderEntityDto> RenderEntities);
+    IReadOnlyList<RenderEntityDto> RenderEntities)
+{
+    /// <summary>
+    /// Plain contract-side globe geometry to be bound by a resident Godot presentation builder.
+    /// The collectible world bundle owns how this data is generated; the resident seam owns only
+    /// translating the DTO into nodes/meshes under the Stage-owned Environment scene.
+    /// </summary>
+    public WorldGlobeSnapshot? GlobeSnapshot { get; init; }
+
+    /// <summary>
+    /// Canonical tick represented by <see cref="GlobeSnapshot"/>'s base geometry. Presentation
+    /// builders apply plate motion relative to this tick so the onset snapshot does not jump when shown.
+    /// </summary>
+    public long GlobeReferenceTick { get; init; }
+
+    /// <summary>Current geosphere regime schedule authored by the world bundle.</summary>
+    public SphereRegimeSchedule? GeosphereSchedule { get; init; }
+
+    /// <summary>Current atmosphere regime schedule authored by the world bundle.</summary>
+    public SphereRegimeSchedule? AtmosphereSchedule { get; init; }
+
+    /// <summary>Timeline upper bound for resident playback surfaces.</summary>
+    public long MaxTick { get; init; }
+
+    /// <summary>
+    /// Contract-side generation graph family that explains the creation graph behind regimes and
+    /// layers. Presentation hosts can inspect and bind this DTO without referencing the world plugin
+    /// implementation assembly.
+    /// </summary>
+    public WorldGenerationGraphFamilyDocument? GenerationGraphFamily { get; init; }
+}
 
 /// <summary>
 /// One planet layer projected from a real world-generation product address.
 /// </summary>
+/// <param name="GenerationGraphId">
+/// Optional: the family graph id that produced this layer's product, resolved from the
+/// family's <see cref="WorldLayerGraphBinding"/>. Null when no layer binding covers the
+/// product's (sphere, layer) pair. Carries the layer/regime -> graph link end-to-end so
+/// presentation surfaces can name the creation approach behind each layer.
+/// </param>
 public sealed record PlanetPresentationLayer(
     string LayerId,
     string RegimeId,
@@ -27,7 +64,13 @@ public sealed record PlanetPresentationLayer(
     string ProductDomain,
     string ProductName,
     long ProductTick,
-    string ProductAddress);
+    string ProductAddress,
+    string? GenerationGraphId = null,
+    string? SourceId = null,
+    string? SourceKind = null,
+    string? SourceLabel = null,
+    string? SourceAvailability = null,
+    string? RendererContract = null);
 
 /// <summary>
 /// Describes one renderable world layer: its identity, display label, geometric kind,

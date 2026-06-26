@@ -24,6 +24,7 @@ public sealed class FieldViewService : IDisposable
     private readonly IReadOnlyList<string> _fieldIds;
     private readonly IReadOnlyList<string> _scalarFieldIds;
     private readonly Subject<WorldGenerationChangedEvent> _generationChanged = new();
+    private readonly IDisposable _generationSubscription;
     private readonly object _gate = new();
     private bool _disposed;
 
@@ -43,9 +44,10 @@ public sealed class FieldViewService : IDisposable
         Fields = new ObservableCollection<FieldValueViewModel>();
         GenerationChanged = _generationChanged;
 
-        // Attach the world change callback once. The T1 contract exposes only add-callback
-        // (no unsubscribe), so Dispose guards later invocations with the _disposed flag.
-        _worldService.SubscribeGenerationChanged(OnWorldGenerationChanged);
+        // Attach the world change callback once and release it with the projection. World services
+        // are collectible bundle instances; resident projections must not keep callbacks in old
+        // world instances after bundle reload.
+        _generationSubscription = _worldService.SubscribeGenerationChanged(OnWorldGenerationChanged);
 
         // Seed the collection from the current world state so consumers bind to a non-empty view.
         Refresh(viewTick: 0);
@@ -158,5 +160,6 @@ public sealed class FieldViewService : IDisposable
         }
 
         _generationChanged.Dispose();
+        _generationSubscription.Dispose();
     }
 }

@@ -90,4 +90,30 @@ public sealed class ProviderMetadataContractTests
         Assert.Equal(manifest.Provider, manifest.ProviderMetadata?.ProviderKind);
         Assert.NotEmpty(manifest.Functions);
     }
+
+    [Fact]
+    public void ComfyExternalToolManifest_RemainsBuildable()
+    {
+        var manifest = ComfyExternalToolManifest.Build();
+
+        Assert.NotNull(manifest);
+        Assert.Equal("comfy", manifest.ToolId);
+        Assert.Equal("iii", manifest.Provider);
+        Assert.NotNull(manifest.ProviderMetadata);
+        Assert.Equal(FunctionProviderKinds.Iii, manifest.ProviderMetadata.ProviderKind);
+        Assert.NotEmpty(manifest.Functions);
+    }
+
+    [Fact]
+    public void BlenderExternalToolManifest_RemainsBuildable()
+    {
+        var manifest = BlenderExternalToolManifest.Build();
+
+        Assert.NotNull(manifest);
+        Assert.Equal("blender", manifest.ToolId);
+        Assert.Equal("iii", manifest.Provider);
+        Assert.NotNull(manifest.ProviderMetadata);
+        Assert.Equal(FunctionProviderKinds.Iii, manifest.ProviderMetadata.ProviderKind);
+        Assert.Equal(2, manifest.Functions.Count);
+    }
 }

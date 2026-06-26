@@ -18,6 +18,15 @@ public static class TimelineTimeFormatter
             : viewRange;
     }
 
+    /// <summary>Zoom readout locked to a specific ladder rung.</summary>
+    public static string ForViewRange(long viewStartTick, long viewEndTick, TimelineLadderRung rung)
+    {
+        string scale = rung.Symbol;
+        long stepTick = Math.Max(1L, (long)Math.Round(rung.UnitTicks));
+        string viewRange = $"view {ForTick(viewStartTick, scale)} - {ForTick(viewEndTick, scale)}";
+        return $"{viewRange} | rung {scale} | step {ForTick(stepTick, scale)}";
+    }
+
     internal static string ForTick(long tick, string? targetScaleSymbol)
     {
         double anchorAmount = tick / (double)UnitConverter.TicksPerMegaAnnum;

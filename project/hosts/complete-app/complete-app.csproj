@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\plugins\App.Common\App.Common.csproj" />
+    <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
     <ProjectReference Include="..\..\plugins\App.Resource\App.Resource.csproj" />
     <ProjectReference Include="..\..\plugins\App.Resource.Bundle.Seam\App.Resource.Bundle.Seam.csproj" />
     <ProjectReference Include="..\..\plugins\App.SceneFlow\App.SceneFlow.csproj" />

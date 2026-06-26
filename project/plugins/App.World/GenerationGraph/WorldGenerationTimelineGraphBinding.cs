@@ -5,8 +5,10 @@ namespace FantaSim.App.World.GenerationGraph;
 
 /// <summary>
 /// Keeps a world-generation graph family source aligned with a timeline cursor.
-/// Regime changes select the bound regime graph; ticks inside the same regime only
-/// recompose the current graph so manually opened layer subgraphs remain usable.
+/// Regime changes select the bound regime graph; an explicit layer selection switches
+/// to the layer graph resolved for the active regime at the current tick. If the selected
+/// layer has no binding for the current regime/tick, the binding falls back to the regime
+/// graph rather than fabricating an unavailable layer graph.
 /// </summary>
 public sealed class WorldGenerationTimelineGraphBinding : IDisposable
 {
@@ -31,7 +33,8 @@ public sealed class WorldGenerationTimelineGraphBinding : IDisposable
         _sphereId = sphereId;
 
         _timeline.TickChanged += OnTickChanged;
-        Follow(_timeline.Tick);
+        _timeline.LayerSelectionChanged += OnLayerSelectionChanged;
+        Follow(_timeline.Tick, _timeline.SelectedLayer);
     }
 
     public static WorldGenerationTimelineGraphBinding BindGeosphere(
@@ -47,28 +50,64 @@ public sealed class WorldGenerationTimelineGraphBinding : IDisposable
     {
         if (_disposed) return;
         _timeline.TickChanged -= OnTickChanged;
+        _timeline.LayerSelectionChanged -= OnLayerSelectionChanged;
         _disposed = true;
     }
 
-    private void OnTickChanged(long tick) => Follow(tick);
+    private void OnTickChanged(long tick) => Follow(tick, _timeline.SelectedLayer);
+    private void OnLayerSelectionChanged(TimelineLayerSelection? selection) => Follow(_timeline.Tick, selection);
 
-    private void Follow(long tick)
+    private void Follow(long tick, TimelineLayerSelection? selectedLayer)
     {
-        var regime = _timeline.GeosphereSchedule.RegimeAt(tick);
-        if (regime is null)
+        if (selectedLayer is not null)
+        {
+            var schedule = ScheduleFor(selectedLayer.SphereId);
+            var regime = schedule.RegimeAt(tick);
+            if (regime is not null)
+            {
+                var layerBinding = WorldGenerationGraphFamilyComposer.TryFindLayerBinding(
+                    _source.Family,
+                    selectedLayer.SphereId,
+                    selectedLayer.LayerId,
+                    regime.RegimeId);
+
+                if (layerBinding is not null)
+                {
+                    if (string.Equals(_source.ActiveGraphId, layerBinding.GraphId, StringComparison.Ordinal))
+                    {
+                        _source.SetTick(tick);
+                    }
+                    else
+                    {
+                        _source.SelectGraph(layerBinding.GraphId, tick);
+                    }
+
+                    _currentRegimeId = regime.RegimeId;
+                    return;
+                }
+            }
+        }
+
+        var defaultRegime = _timeline.GeosphereSchedule.RegimeAt(tick);
+        if (defaultRegime is null)
         {
             _currentRegimeId = null;
             _source.SetTick(tick);
             return;
         }
 
-        if (!string.Equals(_currentRegimeId, regime.RegimeId, StringComparison.Ordinal))
+        if (!string.Equals(_currentRegimeId, defaultRegime.RegimeId, StringComparison.Ordinal))
         {
-            _source.SelectRegime(_scheduleKind, regime.RegimeId, tick, _sphereId);
-            _currentRegimeId = regime.RegimeId;
+            _source.SelectRegime(_scheduleKind, defaultRegime.RegimeId, tick, _sphereId);
+            _currentRegimeId = defaultRegime.RegimeId;
             return;
         }
 
         _source.SetTick(tick);
     }
+
+    private SphereRegimeSchedule ScheduleFor(string sphereId)
+        => string.Equals(sphereId, WorldGenerationGraphDefaults.AtmosphereSphereId, StringComparison.Ordinal)
+            ? _timeline.AtmosphereSchedule
+            : _timeline.GeosphereSchedule;
 }

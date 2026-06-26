@@ -9,6 +9,7 @@ using FantaSim.App.World.Globe;
 using FantaSim.App.World.Seam;
 using Godot;
 using Microsoft.Extensions.Logging;
+using ServiceArchi.Contracts;
 
 namespace FantaSim.App.World.Seam;
 
@@ -79,7 +80,7 @@ public static class WorldViewComposition
             magmaSurfaceTemperatureAt);
         // Extend the scrubber to cover the full transport range so the user can drag to onset and beyond.
         view.SetMaxTick(maxTransportTick);
-        SubscribeWorldGenerationRefresh(ctx, tree, view, log);
+        var generationSubscription = SubscribeWorldGenerationRefresh(ctx, tree, view, log);
         tree.Root.CallDeferred("add_child", view);
 
         // Build the atmosphere schedule (same onset tick) so the timeline HUD can show both spheres.
@@ -89,7 +90,15 @@ public static class WorldViewComposition
         // deferred EnterAsync calls) so the timeline bundle can resolve it during ActivateAsync.
         var controller = new TimelineController(
             view, schedule, atmosphereSchedule, maxTransportTick);
-        ctx.Registry.Register<ITimelineController>(controller);
+        var timelineRegistration = ctx.Registry.RegisterOwned<ITimelineController>(
+            controller,
+            new ServiceRegistration { Tags = new[] { "world", "timeline" }, Description = "World view timeline controller" });
+
+        view.TreeExited += () =>
+        {
+            generationSubscription.Dispose();
+            timelineRegistration.Dispose();
+        };
 
         // Seed the initial regime so GlobeView starts in the correct state before the first tick fires.
         var initialRegime = schedule.RegimeAt(0);
@@ -107,13 +116,13 @@ public static class WorldViewComposition
             renderOptions.TessellationFrequency);
     }
 
-    private static void SubscribeWorldGenerationRefresh(HostCompositionContext ctx, Godot.SceneTree tree, GlobeView view, ILogger log)
+    private static IDisposable SubscribeWorldGenerationRefresh(HostCompositionContext ctx, Godot.SceneTree tree, GlobeView view, ILogger log)
     {
         var world = ctx.Registry.TryGet<FantaSim.App.World.IService>();
         if (world is null)
-            return;
+            return DelegateDisposable.Empty;
 
-        world.SubscribeGenerationChanged(evt =>
+        return world.SubscribeGenerationChanged(evt =>
         {
             if (!WorldGenerationRefreshPolicy.ShouldRefreshGlobe(evt))
                 return;
@@ -128,6 +137,27 @@ public static class WorldViewComposition
                 log.LogInformation("World view refreshed after generation change at tick={Tick:N0}; detail={Detail}", tick, evt.Detail);
             }).CallDeferred();
         });
+    }
+
+    private sealed class DelegateDisposable : IDisposable
+    {
+        public static readonly IDisposable Empty = new DelegateDisposable(null);
+
+        private readonly Action? _dispose;
+        private int _disposed;
+
+        private DelegateDisposable(Action? dispose)
+        {
+            _dispose = dispose;
+        }
+
+        public void Dispose()
+        {
+            if (System.Threading.Interlocked.Exchange(ref _disposed, 1) != 0)
+                return;
+
+            _dispose?.Invoke();
+        }
     }
 
     private static SphereHandoff? TryBuildDefaultSphereHandoff(HostCompositionContext ctx, ILogger log)

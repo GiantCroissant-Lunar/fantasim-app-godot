@@ -42,6 +42,12 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
     /// <summary>Function id for a source node that packages regime/layer graph metadata.</summary>
     public const string LayerScope = "world.layer-scope";
 
+    /// <summary>Function id for a source candidate that can feed a world layer.</summary>
+    public const string LayerSource = "world.layer-source";
+
+    /// <summary>Function id for normalizing one selected source into a renderer-facing layer product.</summary>
+    public const string LayerNormalize = "world.layer-normalize";
+
     /// <summary>Function id for the crust-evolution pipeline run.</summary>
     public const string CrustGenerate = "crust.generate";
 
@@ -85,6 +91,8 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
             WorldOptions => PackageWorldOptions(payload),
             BodyFormation => PackageBodyFormation(payload),
             LayerScope => PackageLayerScope(payload),
+            LayerSource => PackageLayerSource(payload),
+            LayerNormalize => PackageLayerNormalization(payload),
             CrustGenerate => await GenerateCrustAsync(payload, cancellationToken).ConfigureAwait(false),
             _ => throw new InvalidOperationException(
                 $"WorldFunctionProvider has no handler for function '{functionId}'."),
@@ -208,6 +216,103 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
                 Product: $"{regimeId}.{layerId}",
                 Tick: tick).ToPath(),
             ["layer"] = layer,
+        };
+    }
+
+    private static JsonObject PackageLayerSource(JsonObject payload)
+    {
+        var sphereId = ReadString(payload, "sphereId", WorldGenerationGraphDefaults.GeosphereSphereId);
+        var regimeId = ReadString(payload, "regimeId", "mobile-plate");
+        var layerId = ReadString(payload, "layerId", "geosphere.crust");
+        var sourceId = ReadString(payload, "sourceId", $"{layerId}.pcg");
+        var sourceKind = ReadString(payload, "sourceKind", WorldLayerSourceKinds.Procedural);
+        var normalizedProductKind = ReadString(payload, "normalizedProductKind", "world/layer");
+        var rendererContract = ReadString(payload, "rendererContract", "world.globe.layer.v1");
+        var availability = ReadString(payload, "availability", WorldLayerSourceAvailability.Available);
+        var tick = ReadLong(payload, "canonicalTick", ReadLong(payload, "tick", 0));
+
+        var source = new JsonObject
+        {
+            ["sourceId"] = sourceId,
+            ["sourceKind"] = sourceKind,
+            ["sphereId"] = sphereId,
+            ["regimeId"] = regimeId,
+            ["layerId"] = layerId,
+            ["availability"] = availability,
+            ["normalizedProductKind"] = normalizedProductKind,
+            ["rendererContract"] = rendererContract,
+            ["canonicalTick"] = tick,
+        };
+
+        AddOptionalString(source, payload, "bodyId");
+        AddOptionalString(source, payload, "datasetId");
+        AddOptionalString(source, payload, "providerId");
+        AddOptionalString(source, payload, "importFormat");
+
+        return new JsonObject
+        {
+            ["function"] = LayerSource,
+            ["sourceId"] = sourceId,
+            ["sourceKind"] = sourceKind,
+            ["sphereId"] = sphereId,
+            ["regimeId"] = regimeId,
+            ["layerId"] = layerId,
+            ["availability"] = availability,
+            ["normalizedProductKind"] = normalizedProductKind,
+            ["rendererContract"] = rendererContract,
+            ["canonicalTick"] = tick,
+            ["productAddress"] = new WorldGenerationProductAddress(
+                Variant: "base",
+                Branch: "main",
+                Domain: sphereId,
+                Product: $"{regimeId}.{layerId}.{sourceId}",
+                Tick: tick).ToPath(),
+            ["source"] = source,
+        };
+    }
+
+    private static JsonObject PackageLayerNormalization(JsonObject payload)
+    {
+        var source = ReadObject(payload, "primarySource") ?? ReadObject(payload, "source");
+        var sphereId = ReadString(payload, "sphereId", ReadStringOrDefault(source, "sphereId", WorldGenerationGraphDefaults.GeosphereSphereId));
+        var regimeId = ReadString(payload, "regimeId", ReadStringOrDefault(source, "regimeId", "mobile-plate"));
+        var layerId = ReadString(payload, "layerId", ReadStringOrDefault(source, "layerId", "geosphere.crust"));
+        var sourceId = ReadString(payload, "selectedSourceId", ReadStringOrDefault(source, "sourceId", $"{layerId}.pcg"));
+        var sourceKind = ReadString(payload, "selectedSourceKind", ReadStringOrDefault(source, "sourceKind", WorldLayerSourceKinds.Procedural));
+        var normalizedProductKind = ReadString(payload, "normalizedProductKind", ReadStringOrDefault(source, "normalizedProductKind", "world/layer"));
+        var rendererContract = ReadString(payload, "rendererContract", ReadStringOrDefault(source, "rendererContract", "world.globe.layer.v1"));
+        var tick = ReadLong(payload, "canonicalTick", ReadLongOrDefault(source, "canonicalTick", ReadLong(payload, "tick", 0)));
+        var productAddress = new WorldGenerationProductAddress(
+            Variant: "base",
+            Branch: "main",
+            Domain: sphereId,
+            Product: $"{regimeId}.{layerId}",
+            Tick: tick).ToPath();
+
+        return new JsonObject
+        {
+            ["function"] = LayerNormalize,
+            ["sourceId"] = sourceId,
+            ["sourceKind"] = sourceKind,
+            ["sphereId"] = sphereId,
+            ["regimeId"] = regimeId,
+            ["layerId"] = layerId,
+            ["normalizedProductKind"] = normalizedProductKind,
+            ["rendererContract"] = rendererContract,
+            ["canonicalTick"] = tick,
+            ["productAddress"] = productAddress,
+            ["normalizedLayer"] = new JsonObject
+            {
+                ["sourceId"] = sourceId,
+                ["sourceKind"] = sourceKind,
+                ["sphereId"] = sphereId,
+                ["regimeId"] = regimeId,
+                ["layerId"] = layerId,
+                ["productKind"] = normalizedProductKind,
+                ["rendererContract"] = rendererContract,
+                ["productAddress"] = productAddress,
+                ["canonicalTick"] = tick,
+            },
         };
     }
 
@@ -483,10 +588,26 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         return fallback;
     }
 
+    private static long ReadLongOrDefault(JsonObject? o, string key, long fallback)
+        => o is null ? fallback : ReadLong(o, key, fallback);
+
     private static string ReadString(JsonObject o, string key, string fallback)
         => o.TryGetPropertyValue(key, out var node) && node is JsonValue value && value.TryGetValue<string>(out var text)
             ? text
             : fallback;
+
+    private static string ReadStringOrDefault(JsonObject? o, string key, string fallback)
+        => o is null ? fallback : ReadString(o, key, fallback);
+
+    private static JsonObject? ReadObject(JsonObject o, string key)
+        => o.TryGetPropertyValue(key, out var node) && node is JsonObject value ? value : null;
+
+    private static void AddOptionalString(JsonObject target, JsonObject source, string key)
+    {
+        var value = ReadString(source, key, string.Empty);
+        if (!string.IsNullOrWhiteSpace(value))
+            target[key] = value;
+    }
 
     private static double ReadDouble(JsonObject o, string key, double fallback)
         => o.TryGetPropertyValue(key, out var n) ? ToDouble(n, fallback) : fallback;

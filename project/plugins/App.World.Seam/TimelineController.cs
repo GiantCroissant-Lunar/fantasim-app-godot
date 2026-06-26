@@ -7,6 +7,7 @@ public sealed class TimelineController : ITimelineController
 {
     private readonly GlobeView _globe;
     private long _tick;
+    private TimelineLayerSelection? _selectedLayer;
     private Action? _onPlay;
     private Action? _onPause;
     private Action<long>? _onSeek;
@@ -26,12 +27,27 @@ public sealed class TimelineController : ITimelineController
     public bool IsPlaying => _checkPlaying?.Invoke() ?? false;
     public SphereRegimeSchedule GeosphereSchedule { get; }
     public SphereRegimeSchedule AtmosphereSchedule { get; }
+    public TimelineLayerSelection? SelectedLayer => _selectedLayer;
 
     public void Play() => _onPlay?.Invoke();
     public void Pause() => _onPause?.Invoke();
     public void SeekTo(long tick) => _onSeek?.Invoke(tick);
 
+    public void SelectLayer(string sphereId, string layerId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sphereId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(layerId);
+
+        var next = new TimelineLayerSelection(sphereId, layerId);
+        if (Equals(_selectedLayer, next))
+            return;
+
+        _selectedLayer = next;
+        LayerSelectionChanged?.Invoke(_selectedLayer);
+    }
+
     public event Action<long>? TickChanged;
+    public event Action<TimelineLayerSelection?>? LayerSelectionChanged;
 
     public void PushTick(long tick)
     {

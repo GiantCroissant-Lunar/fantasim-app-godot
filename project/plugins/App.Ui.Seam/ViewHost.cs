@@ -89,11 +89,7 @@ public sealed class ViewHost : IViewHost
             return;
 
         var mount = new PanelContainer { Name = $"View_{viewId}" };
-        mount.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        mount.OffsetLeft = 12;
-        mount.OffsetTop = 44;
-        mount.OffsetRight = -12;
-        mount.OffsetBottom = -12;
+        ConfigureMountLayout(mount, viewId);
         mount.AddThemeStyleboxOverride("panel", ViewBackground());
         _uiRoot.AddChild(mount);
 
@@ -119,6 +115,47 @@ public sealed class ViewHost : IViewHost
 
         _active[viewId] = new ActiveView(mount, renderer, onChanging, onChanged, watch);
         _logger.LogInformation("View mounted: {ViewId}", viewId);
+    }
+
+    private static void ConfigureMountLayout(Control mount, string viewId)
+    {
+        const float edge = 12f;
+        const float top = 44f;
+        const float sidePanelWidth = 460f;
+        const float graphPanelWidth = 760f;
+        const float timelineReservedHeight = 292f;
+        const float timelineGap = 8f;
+
+        mount.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        mount.AnchorTop = 0f;
+        mount.AnchorBottom = 1f;
+        mount.OffsetTop = top;
+        mount.OffsetBottom = -edge;
+
+        if (string.Equals(viewId, "activity", StringComparison.Ordinal))
+        {
+            mount.AnchorLeft = 1f;
+            mount.AnchorRight = 1f;
+            mount.OffsetLeft = -sidePanelWidth;
+            mount.OffsetRight = -edge;
+            mount.OffsetBottom = -(edge + timelineReservedHeight + timelineGap);
+            return;
+        }
+
+        if (string.Equals(viewId, "world-generation-node-graph", StringComparison.Ordinal))
+        {
+            mount.AnchorLeft = 0f;
+            mount.AnchorRight = 0f;
+            mount.OffsetLeft = edge;
+            mount.OffsetRight = edge + graphPanelWidth;
+            mount.OffsetBottom = -(edge + timelineReservedHeight + timelineGap);
+            return;
+        }
+
+        mount.AnchorLeft = 0f;
+        mount.AnchorRight = 1f;
+        mount.OffsetLeft = edge;
+        mount.OffsetRight = -edge;
     }
 
     private bool UnmountImpl(string viewId)

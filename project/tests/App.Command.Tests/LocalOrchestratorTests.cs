@@ -1,3 +1,7 @@
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json.Nodes;
+using FantaSim.App.Activity;
 using FantaSim.App.Command.Clients;
 using FantaSim.App.Command.Orchestration;
 using FantaSim.App.Command.Providers;
@@ -291,6 +295,95 @@ public class CommandServiceTests
         Assert.True(result.Ok);
         Assert.Equal(1, world.OverviewCalls);
     }
+
+    // ---------------------------------------------------------------------
+    // Behavior 11: ExecuteAsync records structured command-card payloads for
+    // both the request and the result entry, including descriptor, actor,
+    // correlation/causation, and payload/result JSON.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public async Task ExecuteAsync_records_enriched_command_activity_payloads()
+    {
+        var registry = new ServiceRegistry();
+        var ledger = new RecordingLedger();
+        registry.Register<FantaSim.App.Activity.IService>(ledger, new ServiceRegistration { Tags = new[] { "activity" } });
+        var service = new Service(
+            new ImmediateMainThreadDispatcher(),
+            registry,
+            NullLoggerFactory.Instance);
+        service.Register(
+            new CommandDescriptor("ping", "Ping", "Pings back", "test"),
+            (payload, ct) => Task.FromResult<string?>("{\"pong\":true}"));
+
+        await service.ExecuteAsync(new CommandRequest(
+            Command: "ping",
+            PayloadJson: "{\"hello\":1}",
+            ActorKind: "user",
+            ActorId: "godot"));
+
+        Assert.Equal(2, ledger.Entries.Count);
+        var requestEntry = ledger.Entries[0];
+        var resultEntry = ledger.Entries[1];
+        Assert.Equal(ActivityEntryKind.DomainCommand, requestEntry.Kind);
+        Assert.Equal(ActivityEntryKind.CommandResult, resultEntry.Kind);
+
+        var requestPayload = JsonNode.Parse(requestEntry.PayloadJson!)!.AsObject();
+        Assert.Equal("ping", requestPayload["command"]!.GetValue<string>());
+        Assert.Equal("Ping", requestPayload["descriptorTitle"]!.GetValue<string>());
+        Assert.Equal("Pings back", requestPayload["descriptorDescription"]!.GetValue<string>());
+        Assert.Equal("test", requestPayload["category"]!.GetValue<string>());
+        Assert.Equal("user", requestPayload["actorKind"]!.GetValue<string>());
+        Assert.Equal("godot", requestPayload["actorId"]!.GetValue<string>());
+        Assert.Equal("{\"hello\":1}", requestPayload["payloadJson"]!.GetValue<string>());
+
+        var resultPayload = JsonNode.Parse(resultEntry.PayloadJson!)!.AsObject();
+        Assert.Equal("ping", resultPayload["command"]!.GetValue<string>());
+        Assert.True(resultPayload["ok"]!.GetValue<bool>());
+        Assert.Equal("{\"pong\":true}", resultPayload["resultJson"]!.GetValue<string>());
+        Assert.Equal(requestEntry.EntryId, resultEntry.CausationId);
+        Assert.Equal(requestEntry.CorrelationId, resultEntry.CorrelationId);
+    }
+
+    // ---------------------------------------------------------------------
+    // Behavior 12: an unknown command records a structured failure payload
+    // with ok=false and the typed errorType/errorMessage.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public async Task ExecuteAsync_unknown_command_records_enriched_failure_payload()
+    {
+        var registry = new ServiceRegistry();
+        var ledger = new RecordingLedger();
+        registry.Register<FantaSim.App.Activity.IService>(ledger, new ServiceRegistration { Tags = new[] { "activity" } });
+        var service = new Service(
+            new ImmediateMainThreadDispatcher(),
+            registry,
+            NullLoggerFactory.Instance);
+
+        await service.ExecuteAsync(new CommandRequest(Command: "nope", ActorKind: "cli", ActorId: "tester"));
+
+        var single = Assert.Single(ledger.Entries);
+        Assert.Equal(ActivityEntryKind.CommandResult, single.Kind);
+        var payload = JsonNode.Parse(single.PayloadJson!)!.AsObject();
+        Assert.Equal("nope", payload["command"]!.GetValue<string>());
+        Assert.False(payload["ok"]!.GetValue<bool>());
+        Assert.Equal("unknown-command", payload["errorType"]!.GetValue<string>());
+        Assert.Contains("Unknown command", payload["errorMessage"]!.GetValue<string>());
+        Assert.Equal("cli", payload["actorKind"]!.GetValue<string>());
+        Assert.Equal("tester", payload["actorId"]!.GetValue<string>());
+    }
+
+    private sealed class RecordingLedger : FantaSim.App.Activity.IService
+    {
+        public List<ActivityEntry> Entries { get; } = new();
+
+        public void Append(ActivityEntry entry) => Entries.Add(entry);
+
+        public IReadOnlyList<ActivityEntry> QueryLatest(int count)
+            => Entries.TakeLast(count).Reverse().ToArray();
+
+        public IReadOnlyList<ActivityEntry> QueryByCorrelationId(string correlationId)
+            => Entries.Where(e => e.CorrelationId == correlationId).ToArray();
+    }
 }
 
 /// <summary>Minimal fake App.World.IService for orchestration tests.</summary>
@@ -337,7 +430,17 @@ internal sealed class FakeWorldService : WorldService
         return new WorldGenerationResult(true, "fake-generation", request.WorldId);
     }
 
-    public void SubscribeGenerationChanged(Action<WorldGenerationChangedEvent> callback) { }
+    public IDisposable SubscribeGenerationChanged(Action<WorldGenerationChangedEvent> callback)
+        => NoopDisposable.Instance;
+
+    private sealed class NoopDisposable : IDisposable
+    {
+        public static readonly IDisposable Instance = new NoopDisposable();
+
+        public void Dispose()
+        {
+        }
+    }
 }
 
 /// <summary>Minimal fake App.Ecs.IService for orchestration tests.</summary>

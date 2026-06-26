@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using FantaSim.App.NodeGraph;
+using FantaSim.App.World;
 
 namespace FantaSim.App.World.GenerationGraph;
 
@@ -13,7 +14,7 @@ namespace FantaSim.App.World.GenerationGraph;
 /// Editable world-generation graph source backed by the typed world authoring model and projected
 /// into the generic node-graph document expected by the shared UI/executor.
 /// </summary>
-public sealed class WorldGenerationGraphSource : IGraphSource, IGraphAnnotationSource, IGraphNodeMetadataSource
+public sealed class WorldGenerationGraphSource : IGraphSource, IGraphAnnotationSource, IGraphNodeMetadataSource, IGraphNodePresentationSource
 {
     private readonly object _gate = new();
 
@@ -76,6 +77,20 @@ public sealed class WorldGenerationGraphSource : IGraphSource, IGraphAnnotationS
             schema.IsExpensive,
             schema.ProviderMetadata,
             schema.ExecutionTraits);
+        return true;
+    }
+
+    public bool TryGetNodePresentation(string nodeId, out GraphNodePresentation? presentation)
+    {
+        var node = Graph.Nodes.FirstOrDefault(candidate =>
+            string.Equals(candidate.NodeId, nodeId, StringComparison.Ordinal));
+        if (node is null)
+        {
+            presentation = null;
+            return false;
+        }
+
+        presentation = BuildPresentation(node);
         return true;
     }
 
@@ -364,6 +379,52 @@ public sealed class WorldGenerationGraphSource : IGraphSource, IGraphAnnotationS
         }
 
         return value.ToJsonString();
+    }
+
+    private static GraphNodePresentation BuildPresentation(WorldGenerationGraphNode node)
+        => new(
+            node.NodeId,
+            string.IsNullOrWhiteSpace(node.Label) ? node.TypeId : node.Label,
+            string.IsNullOrWhiteSpace(node.Summary) ? null : node.Summary,
+            ParameterLines: BuildPresentationParameterLines(node));
+
+    private static IReadOnlyList<string> BuildPresentationParameterLines(WorldGenerationGraphNode node)
+    {
+        if (node.Parameters is null || node.Parameters.Count == 0)
+            return Array.Empty<string>();
+
+        if (string.Equals(node.TypeId, WorldFunctionProvider.LayerSource, StringComparison.Ordinal))
+            return SelectParameterLines(node.Parameters, "sourceId", "sourceKind", "availability", "providerId", "importFormat", "rendererContract");
+
+        if (string.Equals(node.TypeId, WorldFunctionProvider.LayerNormalize, StringComparison.Ordinal))
+            return SelectParameterLines(node.Parameters, "selectedSourceId", "selectedSourceKind", "normalizedProductKind", "rendererContract");
+
+        if (string.Equals(node.TypeId, WorldFunctionProvider.LayerScope, StringComparison.Ordinal))
+            return SelectParameterLines(node.Parameters, "layerId", "regimeId", "role");
+
+        return node.Parameters
+            .Where(parameter => !string.IsNullOrWhiteSpace(parameter.Value))
+            .Take(5)
+            .Select(parameter => $"{parameter.Label}: {parameter.Value}")
+            .ToArray();
+    }
+
+    private static IReadOnlyList<string> SelectParameterLines(
+        IReadOnlyList<WorldGenerationGraphParameter> parameters,
+        params string[] keys)
+    {
+        var lines = new List<string>(keys.Length);
+        foreach (var key in keys)
+        {
+            var parameter = parameters.FirstOrDefault(candidate =>
+                string.Equals(candidate.Key, key, StringComparison.Ordinal));
+            if (parameter is null || string.IsNullOrWhiteSpace(parameter.Value))
+                continue;
+
+            lines.Add($"{parameter.Label}: {parameter.Value}");
+        }
+
+        return lines;
     }
 
     private static bool SameEndpoint(WorldGenerationGraphWire left, WorldGenerationGraphWire right)

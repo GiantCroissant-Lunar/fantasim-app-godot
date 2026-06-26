@@ -33,6 +33,20 @@ public interface IGraphNodeMetadataSource
     bool TryGetNodeTypeInfo(string typeId, out GraphNodeTypeInfo? info);
 }
 
+/// <summary>Optional instance-level node presentation for sources that keep authored labels/details
+/// outside the executable <see cref="GraphNode"/> document.</summary>
+public sealed record GraphNodePresentation(
+    string NodeId,
+    string Label,
+    string? Summary = null,
+    string? Detail = null,
+    IReadOnlyList<string>? ParameterLines = null);
+
+public interface IGraphNodePresentationSource
+{
+    bool TryGetNodePresentation(string nodeId, out GraphNodePresentation? presentation);
+}
+
 /// <summary>Optional extension for sources that can expose non-executable graph annotations.</summary>
 public interface IGraphAnnotationSource
 {

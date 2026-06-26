@@ -14,5 +14,5 @@ public interface IService
     WorldGenerationProductsView GetGenerationProductsAsync();
     PlanetPresentationDocument GetPlanetPresentationAsync();
     WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request);
-    void SubscribeGenerationChanged(Action<WorldGenerationChangedEvent> callback);
+    IDisposable SubscribeGenerationChanged(Action<WorldGenerationChangedEvent> callback);
 }

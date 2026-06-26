@@ -11,7 +11,7 @@ public static class WorldComposition
     public static IDisposable ComposeWorld(HostCompositionContext ctx)
     {
         var log = ctx.LoggerFactory.CreateLogger("HostComposition.World");
-        var disposables = new List<IDisposable>(3);
+        var disposables = new List<IDisposable>(2);
 #if USE_PROJECT_REFERENCES
         var actorSystem = ctx.Registry.TryGet<Akka.Actor.ActorSystem>();
         var world = new FantaSim.App.World.Services.Service(
@@ -25,14 +25,7 @@ public static class WorldComposition
             new ServiceRegistration { Tags = new[] { "world" }, Description = "World service" }));
         log.LogInformation("[Host] registered: World");
 
-        var projection = new FantaSim.App.World.FieldView.Services.FieldViewService(
-            world,
-            new[] { "app.elevation-m" },
-            new[] { "app.elevation-m" });
-        disposables.Add(ctx.Registry.RegisterOwned<FantaSim.App.World.FieldView.Services.FieldViewService>(
-            projection,
-            new ServiceRegistration { Tags = new[] { "world", "projection" }, Description = "Field view service" }));
-        log.LogInformation("[Host] World detail: projection registered");
+        disposables.Add(world);
 
         var worldProvider = new FantaSim.App.World.WorldFunctionProvider(ctx.LoggerFactory);
         disposables.Add(ctx.Registry.RegisterOwned<FantaSim.App.NodeGraph.INodeFunctionProvider>(
@@ -51,6 +44,7 @@ public static class WorldComposition
         {
             foreach (var d in _items)
                 try { d.Dispose(); } catch { }
+            _items.Clear();
         }
     }
 }
