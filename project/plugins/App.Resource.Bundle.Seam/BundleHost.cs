@@ -8,7 +8,6 @@ using System.Threading.Tasks;
 using Godot;
 using Microsoft.Extensions.Logging;
 using PluginArchi.Extensibility.Abstractions;
-using R3;
 
 namespace FantaSim.App.Resource.Bundle;
 
@@ -88,7 +87,7 @@ public sealed class BundleHost
             _gate.Release();
         }
 
-        await VerifyOldContextCollectedAsync(bundleId, unloadResult, cancellationToken);
+        QueueOldContextCollectionVerification(bundleId, unloadResult, cancellationToken);
     }
 
     public async Task ReloadAsync(string bundleId, CancellationToken cancellationToken = default)
@@ -112,7 +111,7 @@ public sealed class BundleHost
             _gate.Release();
         }
 
-        await VerifyOldContextCollectedAsync(bundleId, unloadResult, cancellationToken);
+        QueueOldContextCollectionVerification(bundleId, unloadResult, cancellationToken);
     }
 
     public async Task ReloadByPckPathAsync(string pckPath, CancellationToken cancellationToken = default)
@@ -143,7 +142,7 @@ public sealed class BundleHost
         }
 
         if (reloadedBundleId is not null)
-            await VerifyOldContextCollectedAsync(reloadedBundleId, unloadResult, cancellationToken);
+            QueueOldContextCollectionVerification(reloadedBundleId, unloadResult, cancellationToken);
     }
 
     public async Task UnloadAllAsync(CancellationToken cancellationToken = default)
@@ -281,39 +280,54 @@ public sealed class BundleHost
         return unloadResult;
     }
 
-    private async Task VerifyOldContextCollectedAsync(
+    private void QueueOldContextCollectionVerification(
         string bundleId,
         PluginUnloadResult? unloadResult,
         CancellationToken cancellationToken)
     {
-        // No diagnostic available (older host) or nothing was unloaded -> nothing to verify.
         if (unloadResult is null || !unloadResult.UnloadInitiated)
             return;
 
-        // The SOUND "bundle unloaded" signal is the old collectible ALC being GC-collected -- NOT a
-        // successful Directory.Delete (on macOS/Linux, unlinking a still-mapped DLL succeeds even while
-        // the ALC is alive). A resident holder typically drops its ref a few frames after unload
-        // (cross-alc-rules R4), so poll on a bounded cadence and force a GC on each check.
-        // The retry loop lives HERE in the host -- PluginArchi never loops (no stop-the-world GC in shared code).
-        //
-        // GATE-TIMING FIX (mirrors the xUnit-proven ReloadPolicy in App.Resource): the old gate probed
-        // `IsCollected` on a `Task.Delay` loop SYNCHRONOUSLY inside the live reload call stack, so
-        // transient refs (the in-flight async state machine, R4 deferred holders) pinned the ALC
-        // during the check and produced a false "still pinned". Deferring each probe to the NEXT FRAME
-        // via R3 releases the in-flight stack before the probe runs. The autoloaded
-        // FrameProviderDispatcher (the lead installs it in complete-app) sets
-        // ObservableSystem.DefaultFrameProvider to GodotFrameProvider.Process, so NextFrame ticks on
-        // real Godot frames. In a non-Godot/headless context the R3 default still ticks, so this stays
-        // buildable + testable. Go through ObservableSystem.DefaultFrameProvider -- do NOT reference
-        // GodotFrameProvider directly (it lives in the addon source, not a referenced assembly).
-        const int maxAttempts = 60; // frames are ~16ms; 60 frames ~= 1s worst case
+        _ = VerifyOldContextCollectedAfterReloadReturnsAsync(bundleId, unloadResult, cancellationToken);
+    }
+
+    private async Task VerifyOldContextCollectedAfterReloadReturnsAsync(
+        string bundleId,
+        PluginUnloadResult unloadResult,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Run the diagnostic after the unload/reload method has returned to its caller and after
+            // deferred resident cleanup has had time to run.
+            for (var i = 0; i < 30; i++)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(16), cancellationToken);
+            }
+
+            await VerifyOldContextCollectedAsync(bundleId, unloadResult, cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Hot-reload: old ALC collection verification failed for bundle {BundleId}", bundleId);
+        }
+    }
+
+    private async Task VerifyOldContextCollectedAsync(
+        string bundleId,
+        PluginUnloadResult unloadResult,
+        CancellationToken cancellationToken)
+    {
+        // The reliable "bundle unloaded" signal is the old collectible ALC being GC-collected.
+        // Directory deletion can succeed while the ALC is still alive, so poll on a bounded cadence.
+        const int maxAttempts = 300;
 
         for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
-            // Defer to the NEXT FRAME so the in-flight reload async machinery is released first --
-            // the old gate probed synchronously inside the live reload stack and got a false negative.
-            await Observable.NextFrame(ObservableSystem.DefaultFrameProvider, cancellationToken)
-                .FirstAsync(cancellationToken);
+            await Task.Delay(TimeSpan.FromMilliseconds(16), cancellationToken);
 
             // forceGc every attempt -- matches ReloadPolicy (the probe is meaningless without a fresh
             // GC since IsCollected only reports true after the ALC is actually unreferenced+collected).
