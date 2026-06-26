@@ -11,7 +11,7 @@ namespace FantaSim.App.Command.Orchestration;
 /// </summary>
 public interface IIiiOrchestration
 {
-    /// <summary>Trigger an iii-axis command (e.g. <c>pipeline.run_text_to_3d</c>, <c>iii.ping</c>).</summary>
+    /// <summary>Trigger an iii-axis command (e.g. <c>pipeline.run_text_to_3d</c>).</summary>
     Task<CommandResult> TriggerAsync(CommandRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>Health of the iii axis: bridge up? engine reachable?</summary>
