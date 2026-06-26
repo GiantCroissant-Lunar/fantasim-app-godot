@@ -14,8 +14,8 @@
     <PackageVersion Include="GiantCroissant.ServiceArchi.Contracts" Version="0.1.1" />
     <PackageVersion Include="GiantCroissant.ServiceArchi.Core" Version="0.1.1" />
     <PackageVersion Include="GiantCroissant.ServiceArchi.SourceGen" Version="0.1.1" PrivateAssets="all" />
-    <PackageVersion Include="GiantCroissant.RegistryArchi.Contracts" Version="0.1.1" />
-    <PackageVersion Include="GiantCroissant.RegistryArchi.Core" Version="0.1.1" />
+    <PackageVersion Include="GiantCroissant.RegistryArchi.Contracts" Version="0.1.2" />
+    <PackageVersion Include="GiantCroissant.RegistryArchi.Core" Version="0.1.2" />
     <PackageVersion Include="GiantCroissant.DependencyArchi.Abstractions" Version="0.1.1" />
     <PackageVersion Include="GiantCroissant.DependencyArchi.MicrosoftExtensions" Version="0.1.1" />
     <PackageVersion Include="GiantCroissant.DependencyArchi.SourceGenerators" Version="0.1.1" PrivateAssets="all" />
