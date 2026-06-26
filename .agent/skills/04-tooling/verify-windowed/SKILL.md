@@ -47,6 +47,34 @@ Keep the windowed app open the whole time. Per change, only steps 2–5 repeat.
 
 `task bundles` re-exports all three tiers at once when you touched more than one.
 
+## Handoff / Final State
+
+Do not close the exported app between runtime verification iterations. If the user is
+continuing the session, asks to keep inspecting the app, or says to keep going, leave
+the windowed exported app running and report:
+
+- the app PID,
+- the log path,
+- the last verified command/reload evidence.
+
+Only stop the app when verification is explicitly finished, the user asks you to close
+it, or the running process is no longer useful for the next step. If you do stop it,
+say why.
+
+Do not close the app just to satisfy Codex exec-session cleanup. If the app was launched
+from an attached `exec_command` session and should remain open, relaunch or keep it via a
+detached process before final, for example:
+
+```bash
+LOG=/tmp/fantasim-windowed-$(date +%s).log
+APP="build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/complete-app"
+remote__enabled=true nohup "$APP" > "$LOG" 2>&1 &
+echo "pid=$! log=$LOG"
+```
+
+The handoff proof is the PID/log path plus the last successful command/reload evidence,
+not a closed process.
+
 ## Hot-Reload vs. Full Build — the decision
 
 **Hot-reload** (steps above) when the change is **inside a collectible ALC** — the bundle
