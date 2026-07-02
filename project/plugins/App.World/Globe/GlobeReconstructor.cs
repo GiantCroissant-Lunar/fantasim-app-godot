@@ -182,31 +182,119 @@ public sealed class GlobeReconstructor
         return BuildGlobeCore();
     }
 
-    // Shared plate-globe build logic: builds the full N-cap WorldGlobeSnapshot from
-    // the current _tessellation, _plates, and _topology. Called by BuildGlobe() (legacy
-    // path, after the onset guard) and by BuildGlobeAt() (onset path, when ShowsPlateFeatures = true).
+    // Shared plate-globe build logic at the BASE (tick-0) geometry. Delegates to
+    // BuildGlobeCoreAtTick(0) where every rotation is identity, so the moved positions equal the
+    // base positions — the tick-0 snapshot this method always produced.
     private WorldGlobeSnapshot BuildGlobeCore()
+        => BuildGlobeCoreAtTick(0L);
+
+    // Tick-rotated plate-globe build: same shared-vertex topology as BuildGlobeCore, but every
+    // global corner vertex is moved by its incident plates' Euler rotations at <paramref name="tick"/>.
+    // A corner shared by N plates (a plate boundary or junction) is moved to the normalized AVERAGE
+    // of the N plates' rotations applied to the base corner — the same seam-midpoint model
+    // BuildBoundaryArcsAt uses for single-sample boundary endpoints (BuildArcPointsFromSharedEdge),
+    // generalized to N incident plates. This keeps caps and arcs in the SAME frame at the SAME tick
+    // and preserves watertightness: a shared corner becomes ONE moved position, so the downstream
+    // GlobePlateSurfaces dedupe (which keys on position) still collapses it to one vertex.
+    //
+    // At tick == 0 every rotation is identity, so the moved positions equal the base positions and
+    // the snapshot is bit-for-bit the tick-0 geometry (BuildGlobeCore's old behaviour).
+    private WorldGlobeSnapshot BuildGlobeCoreAtTick(long tick)
     {
         int n = _tessellation.CellCount;
+        int freq = _frequency;
+
+        var vertexIndex = new Dictionary<(long, long, long), int>(DedupeComparer);
+        var basePositions = new List<Vector3D>();
+        var incidentPlates = new List<HashSet<int>>();
+        var cellCornerGlobalIds = new int[n * 3];
+
+        for (int cell = 0; cell < n; cell++)
+        {
+            int plateId = _topology.Assignment.TryGetValue(cell, out var pid) ? pid : -1;
+            var corners = _tessellation.GetBoundary(new GeodesicCoord(cell, freq));
+            for (int k = 0; k < 3; k++)
+            {
+                var basePos = corners[k].ToVector3D();
+                int gid = GetOrAddGlobalVertex(basePos, vertexIndex, basePositions, incidentPlates);
+                cellCornerGlobalIds[(cell * 3) + k] = gid;
+                if (plateId >= 0)
+                    incidentPlates[gid].Add(plateId);
+            }
+        }
+
+        var rotationByPlate = BuildRotationsByPlate(tick);
+
+        var movedPositions = new Vector3D[basePositions.Count];
+        for (int g = 0; g < basePositions.Count; g++)
+        {
+            var basePos = basePositions[g];
+            var plates = incidentPlates[g];
+            if (plates.Count == 0)
+            {
+                movedPositions[g] = basePos;
+                continue;
+            }
+
+            var sum = new Vector3D(0, 0, 0);
+            int count = 0;
+            foreach (var plateId in plates)
+            {
+                if (!rotationByPlate.TryGetValue(plateId, out var q)) continue;
+                sum += q.Rotate(basePos);
+                count++;
+            }
+            movedPositions[g] = count > 0 ? NormalizeOrZero(sum * (1.0 / count)) : basePos;
+        }
+
         var cells = new List<GlobeCell>(n);
         for (int cell = 0; cell < n; cell++)
         {
-            var corners = _tessellation.GetBoundary(new GeodesicCoord(cell, _frequency)); // 3 unit-sphere points
             int plateId = _topology.Assignment.TryGetValue(cell, out var pid) ? pid : -1;
+            var g0 = cellCornerGlobalIds[(cell * 3) + 0];
+            var g1 = cellCornerGlobalIds[(cell * 3) + 1];
+            var g2 = cellCornerGlobalIds[(cell * 3) + 2];
             cells.Add(new GlobeCell(
                 cell, plateId,
-                ToVec3(corners[0]), ToVec3(corners[1]), ToVec3(corners[2])));
+                ToVec3(movedPositions[g0]),
+                ToVec3(movedPositions[g1]),
+                ToVec3(movedPositions[g2])));
         }
 
         var globePlates = new List<GlobePlate>(_plates.Count);
         foreach (var plate in _plates)
             globePlates.Add(new GlobePlate(plate.PlateId, ToVec3(plate.Pole.Axis), plate.Pole.AngularRate));
 
-        // Authoring boundary: the engine still measures the anchor in real-world Ma, but past this
-        // point the app is tick-native — the snapshot carries ticks-per-anchor, never "Ma".
         long ticksPerAnchor = UnitConverter.TicksPerMegaAnnum;
         return new WorldGlobeSnapshot(
             _frequency, n, _plates.Count, ticksPerAnchor, cells, globePlates);
+    }
+
+    // Quantize a base corner to an integer grid so the same icosphere vertex (bar a few ulps from
+    // the lat/lon round-trip) maps to one key. Matches GlobePlateSurfaces' DedupeEpsilon so the
+    // moved positions this snapshot emits dedupe cleanly downstream (watertight preserved).
+    private const double CornerDedupeEpsilon = 1e-5;
+    private const double CornerDedupeScale = 1.0 / CornerDedupeEpsilon;
+    private static readonly IEqualityComparer<(long, long, long)> DedupeComparer =
+        System.Collections.Generic.EqualityComparer<(long, long, long)>.Default;
+
+    private static int GetOrAddGlobalVertex(
+        Vector3D basePos,
+        Dictionary<(long, long, long), int> vertexIndex,
+        List<Vector3D> basePositions,
+        List<HashSet<int>> incidentPlates)
+    {
+        var key = (
+            (long)Math.Round(basePos.X * CornerDedupeScale),
+            (long)Math.Round(basePos.Y * CornerDedupeScale),
+            (long)Math.Round(basePos.Z * CornerDedupeScale));
+        if (vertexIndex.TryGetValue(key, out var existing)) return existing;
+
+        int id = basePositions.Count;
+        basePositions.Add(basePos);
+        incidentPlates.Add(new HashSet<int>());
+        vertexIndex[key] = id;
+        return id;
     }
 
     /// <summary>
@@ -237,7 +325,7 @@ public sealed class GlobeReconstructor
             return new WorldGlobeSnapshot(
                 _frequency, n, 0, ticksPerAnchor, cells, new List<GlobePlate>());
         }
-        return BuildGlobeCore();
+        return BuildGlobeCoreAtTick(tick);
     }
 
     /// <summary>

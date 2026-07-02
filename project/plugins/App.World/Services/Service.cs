@@ -392,8 +392,8 @@ public sealed class Service : IService, IDisposable
         var (cellElevations, cellFeatures) = BuildCrustSurfaceData(reconstructor, arcTick, _logger);
 
         return new PlanetPresentationRuntime(
-            reconstructor.BuildGlobeAt(onsetTick),
-            onsetTick,
+            reconstructor.BuildGlobeAt(arcTick),
+            arcTick,
             geosphere,
             atmosphere,
             onsetTick + 20_000_000L,

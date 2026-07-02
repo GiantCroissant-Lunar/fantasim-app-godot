@@ -24,7 +24,6 @@ internal sealed class PlanetPresentationBinder : IDisposable
     private const string WorldBundleId = "world";
     private static readonly NodePath PlanetLayerMountPath = new("Environment/PlanetMount/Planet/LayerMounts");
     private static readonly Vector3 PlanetBodyPreviewOffset = new(0.8f, 0.0f, 0.0f);
-    private const float MaxPlateMotionPreviewRadians = 0.08f;
 
     private readonly IRegistry _registry;
     private readonly ResourceService _resource;
@@ -39,9 +38,7 @@ internal sealed class PlanetPresentationBinder : IDisposable
     private PlateBoundaryFocusRenderer? _boundaryRenderer;
     private MeshInstance3D? _mantle;
     private Label3D? _statusLabel;
-    private readonly Dictionary<int, PlateMotionBinding> _plateMotions = new();
     private GlobePlateSurfaces? _plateSurfaces;
-    private long _globeReferenceTick;
     private PlanetGenerationGraphSource? _graphSource;
     private NodeGraphViewSource? _graphView;
     private PlanetGenerationGraphSource.PlanetGenerationTimelineGraphBinding? _graphBinding;
@@ -210,7 +207,6 @@ internal sealed class PlanetPresentationBinder : IDisposable
         root.SetMeta("globeReferenceTick", document.GlobeReferenceTick);
         mount.AddChild(root);
         _activeRoot = root;
-        _globeReferenceTick = document.GlobeReferenceTick;
 
         AddLightingAndCamera(root);
 
@@ -303,8 +299,6 @@ internal sealed class PlanetPresentationBinder : IDisposable
         if (_boundaryRenderer is not null && GodotObject.IsInstanceValid(_boundaryRenderer))
             _boundaryRenderer.Visible = showBoundaries;
 
-        ApplyPlateMotion(tick, showsPlateFeatures);
-
         if (_mantle is not null && GodotObject.IsInstanceValid(_mantle))
             _mantle.MaterialOverride = ResolveMantleMaterial(RegimeSurfaceResolver.Resolve(regimeId));
 
@@ -350,7 +344,6 @@ internal sealed class PlanetPresentationBinder : IDisposable
         }
         _plateSurfaceRoot = null;
         _plateSurfaces = null;
-        _plateMotions.Clear();
 
         _plateSurfaceRoot = BuildPlateSurface(_currentDocument, _currentViewMode);
         body.AddChild(_plateSurfaceRoot);
@@ -394,26 +387,9 @@ internal sealed class PlanetPresentationBinder : IDisposable
 
         _timeline.UpdateFrom(document);
         EnsureNodeGraphView(document);
-        BindDocument(document);
-        _regimeRefreshPending = false;
-    }
-
-    private void ApplyPlateMotion(long tick, bool showsPlateFeatures)
-    {
-        if (_plateMotions.Count == 0)
-            return;
-
-        var deltaTick = showsPlateFeatures ? tick - _globeReferenceTick : 0L;
-        foreach (var motion in _plateMotions.Values)
-        {
-            if (!GodotObject.IsInstanceValid(motion.Instance))
-                continue;
-
-            // This preview still uses rigid plate caps; keep long-range drift readable until boundary geology is rendered.
-            var angle = (float)Math.Clamp(motion.RatePerTick * deltaTick, -MaxPlateMotionPreviewRadians, MaxPlateMotionPreviewRadians);
-            motion.Instance.Basis = new Basis(motion.Axis, angle);
-        }
-    }
+         BindDocument(document);
+         _regimeRefreshPending = false;
+     }
 
     private static void AddLightingAndCamera(Node3D root)
     {
@@ -473,13 +449,11 @@ internal sealed class PlanetPresentationBinder : IDisposable
     private Node3D BuildPlateSurface(PlanetPresentationDocument document, GlobeViewMode viewMode)
     {
         var snapshot = document.GlobeSnapshot!;
-        _plateMotions.Clear();
         var root = new Node3D
         {
             Name = "PlateSurface",
             Scale = Vector3.One * 2.0f,
         };
-        var plates = snapshot.Plates.ToDictionary(plate => plate.PlateId);
 
         // P1: view mode selects cap appearance — terrain (elevation tint + displacement) vs plate identity (flat).
         _plateSurfaces = new GlobePlateSurfaces(snapshot);
@@ -503,12 +477,6 @@ internal sealed class PlanetPresentationBinder : IDisposable
                 ? BuildPlateMesh(cap, perCellColor, perCellEmission)
                 : BuildPlateIdentityMesh(cap);
             root.AddChild(plate);
-            if (plates.TryGetValue(cap.PlateId, out var motionPlate)
-                && TryNormalize(ToV3(motionPlate.Axis), out var axis)
-                && motionPlate.RatePerTick != 0.0)
-            {
-                _plateMotions[cap.PlateId] = new PlateMotionBinding(plate, axis, motionPlate.RatePerTick);
-            }
         }
 
         return root;
@@ -975,8 +943,6 @@ void light() {
         _boundaryRenderer = null;
         _mantle = null;
         _statusLabel = null;
-        _plateMotions.Clear();
-        _globeReferenceTick = 0L;
         _currentDocument = null;
         _currentViewMode = GlobeViewMode.Inactive;
     }
@@ -1020,8 +986,6 @@ void light() {
         ClearActiveRoot();
     }
 }
-
-internal sealed record PlateMotionBinding(MeshInstance3D Instance, Vector3 Axis, double RatePerTick);
 
 internal sealed class PlanetTimelineController : ITimelineController
 {
