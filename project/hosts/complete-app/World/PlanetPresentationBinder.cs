@@ -8,6 +8,7 @@ using FantaSim.App.World;
 using FantaSim.App.World.Composition;
 using FantaSim.App.World.Dto;
 using FantaSim.App.World.Globe;
+using FantaSim.App.World.Rendering;
 using FantaSim.Cartography.Shared;
 using Godot;
 using Microsoft.Extensions.Logging;
@@ -219,7 +220,7 @@ internal sealed class PlanetPresentationBinder : IDisposable
 
         if (document.GlobeSnapshot is not null)
         {
-            _plateSurfaceRoot = BuildPlateSurface(document.GlobeSnapshot);
+            _plateSurfaceRoot = BuildPlateSurface(document);
             body.AddChild(_plateSurfaceRoot);
 
             _boundaryRenderer = new PlateBoundaryFocusRenderer(
@@ -403,8 +404,9 @@ internal sealed class PlanetPresentationBinder : IDisposable
         };
     }
 
-    private Node3D BuildPlateSurface(WorldGlobeSnapshot snapshot)
+    private Node3D BuildPlateSurface(PlanetPresentationDocument document)
     {
+        var snapshot = document.GlobeSnapshot!;
         _plateMotions.Clear();
         var root = new Node3D
         {
@@ -419,9 +421,14 @@ internal sealed class PlanetPresentationBinder : IDisposable
         var elevations = new double[snapshot.CellCount];
         var caps = _plateSurfaces.BuildSurfaces(elevations, exaggeration: WatertightDisplacementExaggeration);
 
+        // A2: per-cell hypsometric tint + typed feature accents, driven by the document's crust data
+        // (the same per-cell elevation that displaces the mesh once A1 wires displacement to this source).
+        // Bypassed (neutral mid-ramp) when the document carries no crust surface data.
+        var (perCellColor, perCellEmission) = BuildCellAppearance(snapshot.CellCount, document);
+
         foreach (var cap in caps.OrderBy(c => c.PlateId))
         {
-            var plate = BuildPlateMesh(cap);
+            var plate = BuildPlateMesh(cap, perCellColor, perCellEmission);
             root.AddChild(plate);
             if (plates.TryGetValue(cap.PlateId, out var motionPlate)
                 && TryNormalize(ToV3(motionPlate.Axis), out var axis)
@@ -434,10 +441,49 @@ internal sealed class PlanetPresentationBinder : IDisposable
         return root;
     }
 
+    // Computes per-cell Godot.Color (hypsometric tint with trench/ridge accent baked in) and per-cell
+    // volcanic emission intensity, from the document's crust elevation + feature data. Falls back to a
+    // neutral mid-ramp tint when crust data is absent (pre-onset or pipeline unavailable).
+    private static (Color[] Colors, float[] Emission) BuildCellAppearance(
+        int cellCount,
+        PlanetPresentationDocument document)
+    {
+        var colors = new Color[cellCount];
+        var emission = new float[cellCount];
+
+        var elevations = document.CellElevations;
+        if (elevations is null || elevations.Count != cellCount)
+        {
+            var fallback = ToColor(HypsometricTint.ComputeColors(new double[] { 0.0 })[0]);
+            for (int c = 0; c < cellCount; c++) colors[c] = fallback;
+            return (colors, emission);
+        }
+
+        var features = document.CellFeatures;
+        var rampColors = HypsometricTint.ComputeColors(elevations);
+        for (int c = 0; c < cellCount; c++)
+        {
+            var tint = rampColors[c];
+            byte kind = 0;
+            double magnitude = 0.0;
+            if (features is not null && c < features.Count)
+            {
+                kind = features[c].Kind;
+                magnitude = features[c].Magnitude;
+            }
+            var accent = CrustAccentMapper.Map(kind, magnitude);
+            colors[c] = ToColor(CrustAccentMapper.Apply(tint, accent));
+            emission[c] = (float)accent.VolcanicEmission;
+        }
+        return (colors, emission);
+    }
+
+    private static Color ToColor(RampColor c) => new((float)c.R, (float)c.G, (float)c.B);
+
     // Matches GlobeView's magnitude so the mantle sphere (radius 0.96 * 2) stays hidden under the caps.
     private const float WatertightDisplacementExaggeration = 0.00012f;
 
-    private static MeshInstance3D BuildPlateMesh(PlateCap cap)
+    private static MeshInstance3D BuildPlateMesh(PlateCap cap, Color[] perCellColor, float[] perCellEmission)
     {
         var surface = cap.Surface;
         int triCount = surface.TriangleCount;
@@ -464,10 +510,35 @@ internal sealed class PlanetPresentationBinder : IDisposable
             normals[b + 2] = ToV3(surface.SmoothNormals[i2]);
         }
 
+        // A2: per-vertex hypsometric color (ArrayType.Color) + volcanic emission (ArrayType.TexUV2.x).
+        // Separate loop from positions/normals so this merges cleanly with concurrent mesh-path work.
+        var colors = new Color[vertCount];
+        var uv2 = new Vector2[vertCount];
+        for (int t = 0; t < triCount; t++)
+        {
+            int cellId = cap.CellIds[t];
+            var color = cellId >= 0 && cellId < perCellColor.Length
+                ? perCellColor[cellId]
+                : new Color(0.3f, 0.35f, 0.28f);
+            float emis = cellId >= 0 && cellId < perCellEmission.Length
+                ? perCellEmission[cellId]
+                : 0f;
+
+            int b = t * 3;
+            colors[b + 0] = color;
+            colors[b + 1] = color;
+            colors[b + 2] = color;
+            uv2[b + 0] = new Vector2(emis, 0f);
+            uv2[b + 1] = new Vector2(emis, 0f);
+            uv2[b + 2] = new Vector2(emis, 0f);
+        }
+
         var arrays = new Godot.Collections.Array();
         arrays.Resize((int)Mesh.ArrayType.Max);
         arrays[(int)Mesh.ArrayType.Vertex] = vertices;
         arrays[(int)Mesh.ArrayType.Normal] = normals;
+        arrays[(int)Mesh.ArrayType.Color] = colors;
+        arrays[(int)Mesh.ArrayType.TexUV2] = uv2;
 
         var mesh = new ArrayMesh();
         mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
@@ -476,7 +547,7 @@ internal sealed class PlanetPresentationBinder : IDisposable
         {
             Name = $"Plate_{cap.PlateId}",
             Mesh = mesh,
-            MaterialOverride = BuildPlateMaterial(cap.PlateId),
+            MaterialOverride = HypsoPlateMaterial,
         };
     }
 
@@ -513,23 +584,6 @@ internal sealed class PlanetPresentationBinder : IDisposable
             PixelSize = 0.008f,
             Modulate = new Color(0.86f, 0.90f, 0.95f, 0.88f),
         };
-
-    private static StandardMaterial3D BuildPlateMaterial(int plateId)
-    {
-        var color = PlateColor(plateId);
-        return new()
-        {
-            AlbedoColor = new Color(color.R, color.G, color.B, 0.72f),
-            ShadingMode = BaseMaterial3D.ShadingModeEnum.PerPixel,
-            Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
-            EmissionEnabled = true,
-            Emission = color,
-            EmissionEnergyMultiplier = 0.08f,
-            Roughness = 0.86f,
-            Metallic = 0.0f,
-            CullMode = BaseMaterial3D.CullModeEnum.Disabled,
-        };
-    }
 
     // magma-ocean mantle: emissive molten lava with a slowly drifting fBm churn. lava-hot tracks the
     // sibling GlobeView.MagmaAlbedoForTemperature lava endpoint so both render paths read as the same lava.
@@ -658,15 +712,52 @@ void fragment() {
 }
 ";
 
+    // Hypsometric plate-cap shader (A2): per-vertex COLOR carries the terrain tint (deep ocean →
+    // shelf → lowland → upland → mountain → snow, computed on the CPU with percentile normalization);
+    // UV2.x carries the volcanic-vent emission intensity (0 = none). Trench darkening and ridge
+    // brightening are baked into the vertex COLOR on the CPU (CrustAccentMapper.Apply) so the shader
+    // only needs albedo + a gated emission pass. Half-Lambert light keeps displaced relief readable.
+    // Godot 4 docs: COLOR (vec4, auto-populated from ArrayType.Color, no flag on ShaderMaterial) and
+    // UV2 (vec2, auto-populated from ArrayType.TexUV2); EMISSION is out-vec3 in fragment().
+    private const string HypsoPlateShaderCode = @"
+shader_type spatial;
+render_mode cull_disabled;
+
+uniform vec4 u_volcanic_glow : source_color = vec4(1.0, 0.42, 0.10, 1.0);
+uniform float u_volcanic_energy : hint_range(0.0, 8.0) = 1.4;
+
+void fragment() {
+    ALBEDO = COLOR.rgb;
+    float vent = UV2.x;
+    if (vent > 0.001) {
+        EMISSION = u_volcanic_glow.rgb * vent * u_volcanic_energy;
+    }
+    ROUGHNESS = 0.92;
+    METALLIC = 0.0;
+}
+
+void light() {
+    float ndotl = dot(normalize(NORMAL), normalize(LIGHT));
+    float wrap = ndotl * 0.5 + 0.5;
+    wrap *= wrap;
+    DIFFUSE_LIGHT += ALBEDO * LIGHT_COLOR * ATTENUATION * wrap;
+}
+";
+
     private static Shader? _magmaShader;
     private static Shader? _stagnantShader;
+    private static Shader? _hypsoPlateShader;
 
     private Material? _magmaMantleMaterial;
     private Material? _stagnantMantleMaterial;
     private Material? _baseMantleMaterial;
+    private static Material? _hypsoPlateMaterial;
 
     private static Shader MagmaShader => _magmaShader ??= new Shader { Code = MagmaShaderCode };
     private static Shader StagnantShader => _stagnantShader ??= new Shader { Code = StagnantShaderCode };
+    private static Shader HypsoPlateShader => _hypsoPlateShader ??= new Shader { Code = HypsoPlateShaderCode };
+
+    private static Material HypsoPlateMaterial => _hypsoPlateMaterial ??= new ShaderMaterial { Shader = HypsoPlateShader };
 
     private Material ResolveMantleMaterial(RegimeSurfaceKind kind) =>
         kind switch
@@ -688,23 +779,6 @@ void fragment() {
             Metallic = 0.0f,
             CullMode = BaseMaterial3D.CullModeEnum.Disabled,
         };
-
-    private static Color PlateColor(int plateId)
-    {
-        ReadOnlySpan<Color> palette =
-        [
-            new Color(0.34f, 0.58f, 0.42f),
-            new Color(0.26f, 0.50f, 0.58f),
-            new Color(0.55f, 0.47f, 0.33f),
-            new Color(0.45f, 0.38f, 0.55f),
-            new Color(0.30f, 0.60f, 0.54f),
-            new Color(0.63f, 0.58f, 0.34f),
-            new Color(0.38f, 0.46f, 0.66f),
-            new Color(0.56f, 0.42f, 0.32f),
-        ];
-
-        return palette[Math.Abs(plateId) % palette.Length];
-    }
 
     private static Vector3 ToV3(GlobeVec3 value)
         => new(value.X, value.Y, value.Z);
