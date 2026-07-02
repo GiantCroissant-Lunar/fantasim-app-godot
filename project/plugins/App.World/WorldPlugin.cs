@@ -1,9 +1,11 @@
 using System;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using FantaSim.App.Common;
+using FantaSim.App.World.Composition;
 using FantaSim.App.World.GenerationGraph;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -23,8 +25,10 @@ namespace FantaSim.App.World;
 public sealed partial class WorldPlugin : ILifecyclePlugin
 {
     private const string RunWorldGenerationGraphCommand = "world.run_generation_graph";
+    private const long CrustGenerationWindowTicks = 5_000_000L;
 
     private IDisposable? _worldCompositionHandle;
+    private CrustGenerationTrigger? _crustTrigger;
     private IRegistry? _registry;
     private ILogger? _log;
 
@@ -39,6 +43,7 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
         _worldCompositionHandle = WorldComposition.ComposeWorld(ctx);
 
         RegisterWorldCommand(registry);
+        InstallCrustTrigger(registry, loggerFactory);
 
         return ValueTask.CompletedTask;
     }
@@ -55,6 +60,9 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
             _registry.TryGet<FantaSim.App.Command.IService>()?.Unregister(RunWorldGenerationGraphCommand);
             _log?.LogInformation("WorldPlugin: unregistered {Command}", RunWorldGenerationGraphCommand);
         }
+
+        _crustTrigger?.Dispose();
+        _crustTrigger = null;
 
         _worldCompositionHandle?.Dispose();
         _worldCompositionHandle = null;
@@ -108,5 +116,72 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
             registry.TryGet<FantaSim.App.Ecs.IService>()?.UpdateAll(0f);
 
         return generation;
+    }
+
+    private void InstallCrustTrigger(IRegistry registry, ILoggerFactory loggerFactory)
+    {
+        var controller = registry.TryGet<ITimelineController>();
+        if (controller is null)
+        {
+            _log?.LogWarning("WorldPlugin: no ITimelineController registered; automatic crust generation disabled.");
+            return;
+        }
+
+        var family = WorldGenerationGraphDefaults.BuildFamily();
+        var policy = new CrustGenerationTriggerPolicy(CrustGenerationWindowTicks);
+        _crustTrigger = new CrustGenerationTrigger(
+            controller,
+            policy,
+            family.Revision,
+            (canonicalTick, graphRevision, ct) => ExecuteCrustGenerationAsync(registry, family, canonicalTick, graphRevision, ct),
+            loggerFactory);
+        _crustTrigger.Start();
+
+        _log?.LogInformation(
+            "WorldPlugin: automatic crust generation installed (window={WindowTicks:N0}, graphRevision={Revision})",
+            CrustGenerationWindowTicks,
+            family.Revision);
+    }
+
+    private static async Task ExecuteCrustGenerationAsync(
+        IRegistry registry,
+        WorldGenerationGraphFamilyDocument family,
+        long canonicalTick,
+        int graphRevision,
+        CancellationToken cancellationToken)
+    {
+        var world = registry.TryGet<FantaSim.App.World.IService>();
+        if (world is null)
+            return;
+
+        var providers = registry.GetAll<FantaSim.App.NodeGraph.INodeFunctionProvider>().ToArray();
+        if (providers.Length == 0)
+            return;
+
+        var source = WorldGenerationGraphFamilySource.ForRegime(
+            "world-generation",
+            family,
+            WorldRegimeScheduleKinds.Sphere,
+            "mobile-plate",
+            canonicalTick,
+            WorldGenerationGraphDefaults.GeosphereSphereId);
+
+        var scopeKey = source.TryBuildExecutionScopeKey("base", "main", scheduleRevision: 1);
+        var sharedParams = new JsonObject
+        {
+            ["canonicalTick"] = canonicalTick,
+            ["graphRevision"] = graphRevision,
+        };
+
+        var runner = new WorldGenerationGraphRunner(providers);
+        var run = await runner.RunAsync(
+            source.CompileForExecution().Document,
+            sharedParams,
+            scopeKey,
+            cancellationToken).ConfigureAwait(false);
+
+        var generation = world.RunGenerationAsync(WorldGenerationGraphRunner.ToGenerationRequest(run, worldId: "default"));
+        if (generation.Success)
+            registry.TryGet<FantaSim.App.Ecs.IService>()?.UpdateAll(0f);
     }
 }
