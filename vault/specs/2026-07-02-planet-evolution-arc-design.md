@@ -31,8 +31,16 @@ Watching the planet evolve is the product. Three gaps break the experience today
   supply it instead of the reconstruction.
 - **Crust look = hypsometric + accents.** Elevation drives a height-tinted surface (ocean
   depth → shelf → plains → mountain → snow); typed accents on top (volcano = emissive vent,
-  trench = dark groove). Plate identity moves to the boundary polylines (already shipped);
-  per-plate cap albedo is retired at mobile-plate.
+  trench = dark groove).
+- **AMENDED 2026-07-02 (post-A review): layer focus selects the VIEW.** The focused timeline
+  track determines what the globe renders (track = layer doctrine): `geosphere.plate` focused
+  → the PLATE view: per-plate identity caps (flat relief) + the COMPLETE typed boundary
+  network (closed loops enclosing every plate; convergent/divergent/transform in high-contrast
+  styling). `geosphere.crust` focused → the hypsometric terrain view above. The original
+  "retire per-plate albedo at mobile-plate" applies only to the crust-focused view — the A2
+  implementation removed it globally, which made the plate view read as a hydrosphere costume
+  (a sphere that does not exist yet). Follow-up packets P1 (view switching), P2 (complete
+  boundary network — fragments today), P3 (boundary-type legibility).
 - **Timeline = the 2026-06-22 tscn spec, plus two requirements it lacked:** the emergence
   window drawn as a distinct zone with auto-slow playback through it, and crust snapshots
   pre-cached along the track for fluid scrubbing. All four outcomes are required: smooth
