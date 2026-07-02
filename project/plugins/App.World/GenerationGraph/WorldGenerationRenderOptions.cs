@@ -2,15 +2,30 @@ using System;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
+using FantaSim.App.World.Topography;
 
 namespace FantaSim.App.World.GenerationGraph;
 
 /// <summary>
-/// The subset of authored world-generation options needed before the live globe can be built.
+/// The subset of authored world-generation options needed before the live globe can be built, including
+/// the boundary-profile topography shape numbers (<see cref="BoundaryProfiles"/>) that shape crust relief
+/// at plate boundaries.
 /// </summary>
 public sealed record WorldGenerationRenderOptions(int Seed, int TessellationFrequency)
 {
-    public static WorldGenerationRenderOptions Default { get; } = new(Seed: 7, TessellationFrequency: 3);
+    // Frequency 4 (5120 cells) is the presentation-LOD default for P4 boundary-profile topography: at
+    // frequency 3 (1280 cells) a trench+arc pair spans only ~2 cells, so the profiles under-resolve. At
+    // frequency 4 the same angular parameters span ~4 cells. Measured one-shot pipeline cost (crust
+    // evolution + topology + boundary-profile contribution): ~0.18s at freq 4 vs ~0.10s at freq 3 — no
+    // explosion, and the parameter remains overridable per world. See BoundaryProfileLodTests.
+    public static WorldGenerationRenderOptions Default { get; } = new(Seed: 7, TessellationFrequency: 4);
+
+    /// <summary>
+    /// Boundary-profile topography shape numbers (P4). Defaults to the Earth-like reference
+    /// (<see cref="BoundaryProfileParameters.Default"/>); resolved from the <c>world.options</c> node so a
+    /// different world can override any shape number.
+    /// </summary>
+    public BoundaryProfileParameters BoundaryProfiles { get; init; } = BoundaryProfileParameters.Default;
 
     public static WorldGenerationRenderOptions Resolve(
         WorldGenerationGraphView graph,
@@ -41,7 +56,31 @@ public sealed record WorldGenerationRenderOptions(int Seed, int TessellationFreq
                 "Tessellation frequency must be positive.");
         }
 
-        return new WorldGenerationRenderOptions(seed, frequency);
+        var profiles = ResolveBoundaryProfiles(optionsNode.Params, options.BoundaryProfiles);
+
+        return new WorldGenerationRenderOptions(seed, frequency) { BoundaryProfiles = profiles };
+    }
+
+    private static BoundaryProfileParameters ResolveBoundaryProfiles(
+        JsonObject payload,
+        BoundaryProfileParameters fallback)
+    {
+        var d = fallback;
+        return new BoundaryProfileParameters(
+            ConvergentTrenchDepth: ReadDouble(payload, "convergentTrenchDepth", d.ConvergentTrenchDepth),
+            ConvergentTrenchHalfWidthRad: ReadDouble(payload, "convergentTrenchHalfWidthRad", d.ConvergentTrenchHalfWidthRad),
+            ConvergentArcHeight: ReadDouble(payload, "convergentArcHeight", d.ConvergentArcHeight),
+            ConvergentArcSetbackRad: ReadDouble(payload, "convergentArcSetbackRad", d.ConvergentArcSetbackRad),
+            ConvergentArcHalfWidthRad: ReadDouble(payload, "convergentArcHalfWidthRad", d.ConvergentArcHalfWidthRad),
+            ConvergentCollisionHeight: ReadDouble(payload, "convergentCollisionHeight", d.ConvergentCollisionHeight),
+            ConvergentCollisionHalfWidthRad: ReadDouble(payload, "convergentCollisionHalfWidthRad", d.ConvergentCollisionHalfWidthRad),
+            DivergentSwellHeight: ReadDouble(payload, "divergentSwellHeight", d.DivergentSwellHeight),
+            DivergentSwellHalfWidthRad: ReadDouble(payload, "divergentSwellHalfWidthRad", d.DivergentSwellHalfWidthRad),
+            DivergentRiftNotchDepth: ReadDouble(payload, "divergentRiftNotchDepth", d.DivergentRiftNotchDepth),
+            DivergentRiftHalfWidthRad: ReadDouble(payload, "divergentRiftHalfWidthRad", d.DivergentRiftHalfWidthRad),
+            TransformScarpAmplitude: ReadDouble(payload, "transformScarpAmplitude", d.TransformScarpAmplitude),
+            TransformHalfWidthRad: ReadDouble(payload, "transformHalfWidthRad", d.TransformHalfWidthRad),
+            TransformScarpPeriodPoints: ReadDouble(payload, "transformScarpPeriodPoints", d.TransformScarpPeriodPoints));
     }
 
     private static int ReadInt(JsonObject payload, string key, int fallback)
@@ -55,6 +94,26 @@ public sealed record WorldGenerationRenderOptions(int Seed, int TessellationFreq
             return checked((int)longValue);
         if (value.TryGetValue<string>(out var text)
             && int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return parsed;
+        }
+
+        return fallback;
+    }
+
+    private static double ReadDouble(JsonObject payload, string key, double fallback)
+    {
+        if (!payload.TryGetPropertyValue(key, out var node) || node is not JsonValue value)
+            return fallback;
+
+        if (value.TryGetValue<double>(out var doubleValue))
+            return doubleValue;
+        if (value.TryGetValue<int>(out var intValue))
+            return intValue;
+        if (value.TryGetValue<long>(out var longValue))
+            return longValue;
+        if (value.TryGetValue<string>(out var text)
+            && double.TryParse(text, NumberStyles.Float | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var parsed))
         {
             return parsed;
         }

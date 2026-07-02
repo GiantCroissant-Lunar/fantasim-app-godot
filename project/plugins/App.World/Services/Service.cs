@@ -9,6 +9,7 @@ using FantaSim.App.Ecs.Cells;
 using FantaSim.App.Ecs.Systems;
 using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Globe;
+using FantaSim.App.World.Topography;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using ServiceArchi.Contracts;
@@ -389,7 +390,7 @@ public sealed class Service : IService, IDisposable
             geosphere,
             renderOptions.TessellationFrequency);
 
-        var (cellElevations, cellFeatures) = BuildCrustSurfaceData(reconstructor, arcTick, _logger);
+        var (cellElevations, cellFeatures) = BuildCrustSurfaceData(reconstructor, arcTick, renderOptions.BoundaryProfiles, _logger);
 
         return new PlanetPresentationRuntime(
             reconstructor.BuildGlobeAt(onsetTick),
@@ -402,11 +403,12 @@ public sealed class Service : IService, IDisposable
             cellFeatures);
     }
 
-    // Single pipeline run → per-cell elevation (via CellElevationSystem.Derive, the same pure formula
-    // the ECS path uses) + per-cell typed feature (kind + magnitude). Null when the tick is gated out
-    // (pre-onset / non-plate) or the pipeline produced no state, so the host falls back to untinted.
+    // Single pipeline run → per-cell elevation (via CellElevationSystem.Derive + the boundary-profile
+    // contribution from P4, the same pure formula the ECS path uses) + per-cell typed feature
+    // (kind + magnitude). Null when the tick is gated out (pre-onset / non-plate) or the pipeline produced
+    // no state, so the host falls back to untinted.
     private static (IReadOnlyList<double>? Elevations, IReadOnlyList<CellCrustFeature>? Features)
-        BuildCrustSurfaceData(GlobeReconstructor reconstructor, long tick, ILogger logger)
+        BuildCrustSurfaceData(GlobeReconstructor reconstructor, long tick, BoundaryProfileParameters boundaryProfiles, ILogger logger)
     {
         try
         {
@@ -419,13 +421,21 @@ public sealed class Service : IService, IDisposable
             var features = new CellCrustFeature[n];
             snapshot.FeaturesByTick.TryGetValue(tick, out var featureMap);
 
+            // Boundary-profile topography (P4): the per-cell trench/arc/swell/rift/scarp contribution on top
+            // of CellElevationSystem.Derive. The field geometry uses the ONSET (tick-0) frame so it aligns
+            // with the static mesh the elevations displace (BuildGlobeAt returns tick-0 corners; the boundary
+            // arcs at the onset tick trace the unmoved shared edges). Godot-free, pure composition.
+            var globe = reconstructor.BuildGlobeAt(reconstructor.OnsetTick);
+            var arcs = reconstructor.BuildBoundaryArcsAt(reconstructor.OnsetTick);
+            var boundaryContributions = BoundaryProfileContribution.Build(globe, arcs, state, featureMap, boundaryProfiles);
+
             for (int cell = 0; cell < n; cell++)
             {
                 if (state.TryGetValue(cell, out var s))
                 {
                     var sample = new CrustSample(
                         s.ContinentalFraction, s.OrogenicPressure, s.VolcanicActivity, s.CrustAgeTicks);
-                    elevations[cell] = CellElevationSystem.Derive(sample);
+                    elevations[cell] = CellElevationSystem.Derive(sample) + boundaryContributions[cell];
                 }
                 if (featureMap is not null && featureMap.TryGetValue(cell, out var f))
                     features[cell] = new CellCrustFeature((byte)f.Kind, f.Magnitude);
