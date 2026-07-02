@@ -182,83 +182,23 @@ public sealed class GlobeReconstructor
         return BuildGlobeCore();
     }
 
-    // Shared plate-globe build logic at the BASE (tick-0) geometry. Delegates to
-    // BuildGlobeCoreAtTick(0) where every rotation is identity, so the moved positions equal the
-    // base positions — the tick-0 snapshot this method always produced.
+    // Shared plate-globe build logic at the BASE (tick-0 / onset) geometry. The cells are the
+    // UNROTATED tessellation — the sphere is tiled by construction — with the onset (tick-0)
+    // plate assignment from _topology. This is the snapshot BuildGlobe() (legacy path) returns,
+    // and the reference BuildGlobeAt(onsetTick) reproduces under per-tick reassignment (rotation
+    // is identity at the onset reference, so the reassigned assignment equals _topology.Assignment).
     private WorldGlobeSnapshot BuildGlobeCore()
-        => BuildGlobeCoreAtTick(0L);
-
-    // Tick-rotated plate-globe build: same shared-vertex topology as BuildGlobeCore, but every
-    // global corner vertex is moved by its incident plates' Euler rotations at <paramref name="tick"/>.
-    // A corner shared by N plates (a plate boundary or junction) is moved to the normalized AVERAGE
-    // of the N plates' rotations applied to the base corner — the same seam-midpoint model
-    // BuildBoundaryArcsAt uses for single-sample boundary endpoints (BuildArcPointsFromSharedEdge),
-    // generalized to N incident plates. This keeps caps and arcs in the SAME frame at the SAME tick
-    // and preserves watertightness: a shared corner becomes ONE moved position, so the downstream
-    // GlobePlateSurfaces dedupe (which keys on position) still collapses it to one vertex.
-    //
-    // At tick == 0 every rotation is identity, so the moved positions equal the base positions and
-    // the snapshot is bit-for-bit the tick-0 geometry (BuildGlobeCore's old behaviour).
-    private WorldGlobeSnapshot BuildGlobeCoreAtTick(long tick)
     {
         int n = _tessellation.CellCount;
         int freq = _frequency;
-
-        var vertexIndex = new Dictionary<(long, long, long), int>(DedupeComparer);
-        var basePositions = new List<Vector3D>();
-        var incidentPlates = new List<HashSet<int>>();
-        var cellCornerGlobalIds = new int[n * 3];
-
-        for (int cell = 0; cell < n; cell++)
-        {
-            int plateId = _topology.Assignment.TryGetValue(cell, out var pid) ? pid : -1;
-            var corners = _tessellation.GetBoundary(new GeodesicCoord(cell, freq));
-            for (int k = 0; k < 3; k++)
-            {
-                var basePos = corners[k].ToVector3D();
-                int gid = GetOrAddGlobalVertex(basePos, vertexIndex, basePositions, incidentPlates);
-                cellCornerGlobalIds[(cell * 3) + k] = gid;
-                if (plateId >= 0)
-                    incidentPlates[gid].Add(plateId);
-            }
-        }
-
-        var rotationByPlate = BuildRotationsByPlate(tick);
-
-        var movedPositions = new Vector3D[basePositions.Count];
-        for (int g = 0; g < basePositions.Count; g++)
-        {
-            var basePos = basePositions[g];
-            var plates = incidentPlates[g];
-            if (plates.Count == 0)
-            {
-                movedPositions[g] = basePos;
-                continue;
-            }
-
-            var sum = new Vector3D(0, 0, 0);
-            int count = 0;
-            foreach (var plateId in plates)
-            {
-                if (!rotationByPlate.TryGetValue(plateId, out var q)) continue;
-                sum += q.Rotate(basePos);
-                count++;
-            }
-            movedPositions[g] = count > 0 ? NormalizeOrZero(sum * (1.0 / count)) : basePos;
-        }
-
         var cells = new List<GlobeCell>(n);
         for (int cell = 0; cell < n; cell++)
         {
             int plateId = _topology.Assignment.TryGetValue(cell, out var pid) ? pid : -1;
-            var g0 = cellCornerGlobalIds[(cell * 3) + 0];
-            var g1 = cellCornerGlobalIds[(cell * 3) + 1];
-            var g2 = cellCornerGlobalIds[(cell * 3) + 2];
+            var corners = _tessellation.GetBoundary(new GeodesicCoord(cell, freq));
             cells.Add(new GlobeCell(
                 cell, plateId,
-                ToVec3(movedPositions[g0]),
-                ToVec3(movedPositions[g1]),
-                ToVec3(movedPositions[g2])));
+                ToVec3(corners[0]), ToVec3(corners[1]), ToVec3(corners[2])));
         }
 
         var globePlates = new List<GlobePlate>(_plates.Count);
@@ -270,32 +210,116 @@ public sealed class GlobeReconstructor
             _frequency, n, _plates.Count, ticksPerAnchor, cells, globePlates);
     }
 
-    // Quantize a base corner to an integer grid so the same icosphere vertex (bar a few ulps from
-    // the lat/lon round-trip) maps to one key. Matches GlobePlateSurfaces' DedupeEpsilon so the
-    // moved positions this snapshot emits dedupe cleanly downstream (watertight preserved).
-    private const double CornerDedupeEpsilon = 1e-5;
-    private const double CornerDedupeScale = 1.0 / CornerDedupeEpsilon;
-    private static readonly IEqualityComparer<(long, long, long)> DedupeComparer =
-        System.Collections.Generic.EqualityComparer<(long, long, long)>.Default;
-
-    private static int GetOrAddGlobalVertex(
-        Vector3D basePos,
-        Dictionary<(long, long, long), int> vertexIndex,
-        List<Vector3D> basePositions,
-        List<HashSet<int>> incidentPlates)
+    // Per-tick reassigned plate-globe build: the tessellation cells are FIXED on the sphere (unrotated
+    // corners — watertight by construction at every tick), and WHAT CHANGES is which plate each cell
+    // belongs to. The owning plate at tick T is decided by the SAME nearest-seed rule the engine's
+    // PlateTopologyBuilder.AssignCells uses at onset, applied to each plate's ROTATED seed — the seed
+    // is rotated by the plate's Euler rotation RELATIVE TO ONSET (delta = tick - onsetTick), so at
+    // onset (delta == 0) the rotation is identity and the reassigned assignment reproduces the onset
+    // roster (_topology.Assignment) exactly. Plates visibly change shape/position through membership
+    // as ticks advance, which is the correct and desired presentation.
+    //
+    // This replaces the rigid cap-rotation approach (commit 1137f67): rigidly rotated caps cannot tile
+    // a sphere once plates have drifted — they leave jagged voids at divergent boundaries and overlap
+    // at convergent ones. Reassigning cells keeps the tessellation watertight trivially (the caps ARE
+    // the unrotated cells) while plate membership — and therefore cap shapes, colors, and the cells
+    // along each boundary — evolves with the tick.
+    private WorldGlobeSnapshot BuildGlobeReassigned(long tick)
     {
-        var key = (
-            (long)Math.Round(basePos.X * CornerDedupeScale),
-            (long)Math.Round(basePos.Y * CornerDedupeScale),
-            (long)Math.Round(basePos.Z * CornerDedupeScale));
-        if (vertexIndex.TryGetValue(key, out var existing)) return existing;
+        var assignment = ReassignCellsAt(tick);
+        int n = _tessellation.CellCount;
+        int freq = _frequency;
+        var cells = new List<GlobeCell>(n);
+        for (int cell = 0; cell < n; cell++)
+        {
+            int plateId = assignment.TryGetValue(cell, out var pid) ? pid : -1;
+            var corners = _tessellation.GetBoundary(new GeodesicCoord(cell, freq));
+            cells.Add(new GlobeCell(
+                cell, plateId,
+                ToVec3(corners[0]), ToVec3(corners[1]), ToVec3(corners[2])));
+        }
 
-        int id = basePositions.Count;
-        basePositions.Add(basePos);
-        incidentPlates.Add(new HashSet<int>());
-        vertexIndex[key] = id;
-        return id;
+        var globePlates = new List<GlobePlate>(_plates.Count);
+        foreach (var plate in _plates)
+            globePlates.Add(new GlobePlate(plate.PlateId, ToVec3(plate.Pole.Axis), plate.Pole.AngularRate));
+
+        long ticksPerAnchor = UnitConverter.TicksPerMegaAnnum;
+        return new WorldGlobeSnapshot(
+            _frequency, n, _plates.Count, ticksPerAnchor, cells, globePlates);
     }
+
+    // Per-tick cell → plate reassignment: rotates each plate's seed by its Euler rotation relative
+    // to onset (delta = tick - _onsetTick) and assigns every fixed tessellation cell to the nearest
+    // rotated seed by great-circle distance (largest dot product between unit vectors). Ties break
+    // toward the lower plate id, matching PlateTopologyBuilder.AssignCells exactly.
+    //
+    // At delta == 0 (onset, or tick == _onsetTick for the legacy path where _onsetTick == 0) the
+    // rotation is identity, the rotated seeds equal the onset seeds, and the assignment reproduces
+    // _topology.Assignment (the onset roster) bit-for-bit — no recompute needed, so that case short-
+    // circuits and returns _topology.Assignment directly.
+    //
+    // O(cells x plates) simple math: one quaternion rotation per plate (cached), one dot product per
+    // cell per plate. At freq 4 (5120 cells, 10 plates) this is 51200 dot products — well under a
+    // frame budget on presentation refresh (not per frame).
+    private IReadOnlyDictionary<int, int> ReassignCellsAt(long tick)
+    {
+        long delta = tick - _onsetTick;
+        if (delta <= 0)
+            return _topology.Assignment;
+
+        int plateCount = _plates.Count;
+        var orderedPlates = _plates.OrderBy(p => p.PlateId).ToArray();
+        var rotatedSeeds = new Vector3D[plateCount];
+        for (int i = 0; i < plateCount; i++)
+        {
+            var plate = orderedPlates[i];
+            double angleRad = plate.Pole.AngularRate * delta;
+            var axis = plate.Pole.Axis.Normalize();
+            var q = Quaternion.FromAxisAngle(axis, angleRad);
+            rotatedSeeds[i] = q.Rotate(SphericalVectorInterop.ToVector3D(plate.Seed));
+        }
+
+        int n = _tessellation.CellCount;
+        int freq = _frequency;
+        var assignment = new Dictionary<int, int>(n);
+
+        for (int cell = 0; cell < n; cell++)
+        {
+            var center = _tessellation.GetCenter(new GeodesicCoord(cell, freq)).ToVector3D();
+
+            int bestPlate = orderedPlates[0].PlateId;
+            double bestCos = Vector3D.Dot(center, rotatedSeeds[0]);
+            for (int s = 1; s < orderedPlates.Length; s++)
+            {
+                double cos = Vector3D.Dot(center, rotatedSeeds[s]);
+                if (cos > bestCos) // strict ⇒ first (lowest-id) seed wins exact ties
+                {
+                    bestCos = cos;
+                    bestPlate = orderedPlates[s].PlateId;
+                }
+            }
+            assignment[cell] = bestPlate;
+        }
+        return assignment;
+    }
+
+    // Build a per-tick PlateTopology whose Assignment is the reassigned cell→plate map. The
+    // Boundaries/Junctions fields are left empty — they are recomputed by
+    // PlateTopologyBuilder.ClassifyBoundariesAt (which only reads topology.Assignment) and not used
+    // by the cap path. This topology is what ClassifyCellsAt and BuildBoundaryArcsAt feed into
+    // ClassifyBoundariesAt so that the cell-membership boundary and the typed arcs derive from the
+    // SAME reassigned ownership at the SAME tick.
+    private PlateTopology BuildReassignedTopology(long tick)
+    {
+        var assignment = ReassignCellsAt(tick);
+        return new PlateTopology(assignment, Array.Empty<Boundary>(), Array.Empty<Junction>());
+    }
+
+    // Rotation delta (canonical ticks) from the onset reference to <paramref name="tick"/>.
+    // ClassifyBoundariesAt reconstructs cell centers by rotating each cell with its (reassigned)
+    // plate's rotation at this delta — so the moved cell positions and the boundary classification
+    // agree with the reassigned membership that defined the frontier.
+    private long RotationDelta(long tick) => tick - _onsetTick;
 
     /// <summary>
     /// Tick-gated globe snapshot: returns a full N-cap globe at/after onset (when
@@ -325,7 +349,7 @@ public sealed class GlobeReconstructor
             return new WorldGlobeSnapshot(
                 _frequency, n, 0, ticksPerAnchor, cells, new List<GlobePlate>());
         }
-        return BuildGlobeCoreAtTick(tick);
+        return BuildGlobeReassigned(tick);
     }
 
     /// <summary>
@@ -339,8 +363,13 @@ public sealed class GlobeReconstructor
         int n = _tessellation.CellCount;
         if (!ShowsPlateFeatures(tick)) return new byte[n]; // all interior — pre-onset or non-plate regime
 
+        // Reassign cells to plates at this tick, then reclassify the reassigned boundaries from the
+        // moved cell positions (cells rotate with their reassigned plate). Both the membership and
+        // the classification derive from the same rotation, so the typed boundaries track the
+        // cell-membership frontier.
+        var topology = BuildReassignedTopology(tick);
         var boundaries = PlateTopologyBuilder.ClassifyBoundariesAt(
-            _tessellation, _plates, _topology, new CanonicalTick(tick));
+            _tessellation, _plates, topology, new CanonicalTick(RotationDelta(tick)));
         var typeByPair = new Dictionary<(int, int), BoundaryType>(boundaries.Count);
         foreach (var b in boundaries)
             typeByPair[(b.PlateA, b.PlateB)] = b.Type;
@@ -349,10 +378,10 @@ public sealed class GlobeReconstructor
         var space = _tessellation.Space;
         for (int cell = 0; cell < n; cell++)
         {
-            if (!_topology.Assignment.TryGetValue(cell, out var pc)) continue;
+            if (!topology.Assignment.TryGetValue(cell, out var pc)) continue;
             foreach (var nb in space.Neighbors(new GeodesicCoord(cell, _frequency)))
             {
-                if (!_topology.Assignment.TryGetValue(nb.FaceIndex, out var pn) || pn == pc) continue;
+                if (!topology.Assignment.TryGetValue(nb.FaceIndex, out var pn) || pn == pc) continue;
                 var key = pc < pn ? (pc, pn) : (pn, pc);
                 if (typeByPair.TryGetValue(key, out var type))
                 {
@@ -374,15 +403,17 @@ public sealed class GlobeReconstructor
 
     /// <summary>
     /// Typed plate-boundary arcs at <paramref name="tick"/>: each inter-plate boundary from the
-    /// topology truth (re-classified from the moved cell positions) becomes a smooth great-circle
+    /// reassigned topology (re-classified from the moved cell positions) becomes a smooth great-circle
     /// polyline (<see cref="PlateBoundaryArc"/>), ready for the host seam to render. Returns an empty
     /// list before onset or in non-plate regimes (same gate as <see cref="ClassifyCellsAt"/>).
     /// </summary>
     /// <remarks>
-    /// Boundaries here are authoritative for <paramref name="tick"/>; the topology engine re-derives
-    /// them from reconstructed cell positions, so types and sample paths evolve over time. Per-tick
-    /// reclassification across the playhead (retaining this reconstructor behind a tick-parametric
-    /// service query) is the next increment — today the document carries the reference-tick arcs.
+    /// The boundaries are derived from the SAME per-tick cell reassignment that drives
+    /// <see cref="BuildGlobeAt"/> and <see cref="ClassifyCellsAt"/>: cells are reassigned to plates
+    /// by rotating each plate's seed relative to onset, and <see cref="PlateTopologyBuilder.ClassifyBoundariesAt"/>
+    /// re-derives the boundaries from the moved cell positions under that reassigned ownership. So
+    /// the typed arcs and the cell-membership frontier always track each other (both derive from
+    /// the same rotation).
     /// </remarks>
     /// <param name="subdivsPerSegment">Great-circle subdivisions between consecutive topology sample
     /// points (higher = smoother, denser polyline). Defaults to 16.</param>
@@ -390,12 +421,13 @@ public sealed class GlobeReconstructor
     {
         if (!ShowsPlateFeatures(tick)) return Array.Empty<PlateBoundaryArc>();
 
+        var topology = BuildReassignedTopology(tick);
         var boundaries = PlateTopologyBuilder.ClassifyBoundariesAt(
-            _tessellation, _plates, _topology, new CanonicalTick(tick));
+            _tessellation, _plates, topology, new CanonicalTick(RotationDelta(tick)));
 
-        // Pre-compute the per-plate rotation at this tick once; used by the single-sample recovery
-        // to lift the shared-edge endpoints onto the moved sphere. Same formula as CellReconstructor.
-        var rotationByPlate = BuildRotationsByPlate(tick);
+        // Per-plate rotation at the delta tick; used by the single-sample recovery to lift the
+        // shared-edge endpoints onto the moved sphere. Same formula as CellReconstructor.
+        var rotationByPlate = BuildRotationsByPlate(RotationDelta(tick));
 
         var arcs = new List<PlateBoundaryArc>(boundaries.Count);
         foreach (var b in boundaries)
@@ -408,7 +440,7 @@ public sealed class GlobeReconstructor
                 // the real shared-edge endpoints — the topology truth the engine DOES provide —
                 // rotated to the tick and subdivided via the Unify-based sampler. No invented
                 // geometry: both endpoints come from the tessellation's shared corner vertices.
-                points = BuildArcPointsFromSharedEdge(b, rotationByPlate, subdivsPerSegment);
+                points = BuildArcPointsFromSharedEdge(b, topology, rotationByPlate, subdivsPerSegment);
             }
             if (points.Count < 2) continue;
             arcs.Add(new PlateBoundaryArc(b.PlateA, b.PlateB, BoundaryArcSampler.MapKind(b.Type), points));
@@ -446,10 +478,11 @@ public sealed class GlobeReconstructor
     // no boundary is invented.
     private IReadOnlyList<GlobeVec3> BuildArcPointsFromSharedEdge(
         Boundary b,
+        PlateTopology topology,
         IReadOnlyDictionary<int, Quaternion> rotationByPlate,
         int subdivsPerSegment)
     {
-        var (endA, endB) = FindSharedEdgeEndpoints(b.PlateA, b.PlateB);
+        var (endA, endB) = FindSharedEdgeEndpoints(b.PlateA, b.PlateB, topology);
         if (endA is null || endB is null) return Array.Empty<GlobeVec3>();
 
         var rotA = rotationByPlate.TryGetValue(b.PlateA, out var qa) ? qa : Quaternion.Identity;
@@ -465,7 +498,7 @@ public sealed class GlobeReconstructor
     // Finds the two shared corner vertices of the single cell edge between plateA and plateB.
     // Returns (null, null) when no shared edge exists (should not happen for a real boundary, but
     // guards against a topology/engine mismatch — the caller drops the arc in that case).
-    private (Vector3D? EndA, Vector3D? EndB) FindSharedEdgeEndpoints(int plateA, int plateB)
+    private (Vector3D? EndA, Vector3D? EndB) FindSharedEdgeEndpoints(int plateA, int plateB, PlateTopology topology)
     {
         int freq = _frequency;
         var space = _tessellation.Space;
@@ -473,11 +506,11 @@ public sealed class GlobeReconstructor
 
         for (int cell = 0; cell < n; cell++)
         {
-            if (!_topology.Assignment.TryGetValue(cell, out var pc) || pc != plateA) continue;
+            if (!topology.Assignment.TryGetValue(cell, out var pc) || pc != plateA) continue;
             var corners = _tessellation.GetBoundary(new GeodesicCoord(cell, freq));
             foreach (var nb in space.Neighbors(new GeodesicCoord(cell, freq)))
             {
-                if (!_topology.Assignment.TryGetValue(nb.FaceIndex, out var pn) || pn != plateB) continue;
+                if (!topology.Assignment.TryGetValue(nb.FaceIndex, out var pn) || pn != plateB) continue;
                 // Found the shared edge (cell, nb). The two shared corner vertices are the two
                 // vertices both triangles have in common. Geodesic cells share exactly two corners.
                 var nbCorners = _tessellation.GetBoundary(new GeodesicCoord(nb.FaceIndex, freq));

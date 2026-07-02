@@ -87,7 +87,12 @@ public sealed class BoundaryNetworkCompletenessTests
     public void ArcKindsCoverActiveTypes()
     {
         var model = BuildAppReconstructor(out long onsetTick);
-        var arcs = model.BuildBoundaryArcsAt(onsetTick);
+        // Check past onset: at the onset tick the rotation is identity (the reference frame), so the
+        // classification reflects the seed geometry. The full motion vocabulary (Convergent +
+        // Divergent + Transform) emerges once plates have drifted — 8 Ma past onset is the same
+        // window FrameAgreementTests uses, enough drift for all three types to appear.
+        long tick = onsetTick + 8 * UnitConverter.TicksPerMegaAnnum;
+        var arcs = model.BuildBoundaryArcsAt(tick);
 
         var kinds = arcs.Select(a => a.Kind).Distinct().ToArray();
         // The network must include real motion types (not only Inactive).
