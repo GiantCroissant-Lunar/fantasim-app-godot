@@ -53,6 +53,8 @@ internal sealed class PlanetPresentationBinder : IDisposable
     private bool _regimeRefreshPending;
     private long? _boundCrustSnapshotTick;
     private IReadOnlyList<long> _boundCrustSnapshotTicks = Array.Empty<long>();
+    private PlanetPresentationDocument? _currentDocument;
+    private GlobeViewMode _currentViewMode;
     private bool _disposed;
 
     public PlanetPresentationBinder(
@@ -222,9 +224,13 @@ internal sealed class PlanetPresentationBinder : IDisposable
         _mantle = BuildMantle(document);
         body.AddChild(_mantle);
 
+        _currentDocument = document;
+        _boundRegimeId = _timeline.GeosphereSchedule.RegimeAt(_timeline.Tick)?.RegimeId;
+        _currentViewMode = GlobeViewModeResolver.Resolve(_boundRegimeId, _timeline.SelectedLayer);
+
         if (document.GlobeSnapshot is not null)
         {
-            _plateSurfaceRoot = BuildPlateSurface(document);
+            _plateSurfaceRoot = BuildPlateSurface(document, _currentViewMode);
             body.AddChild(_plateSurfaceRoot);
 
             _boundaryRenderer = new PlateBoundaryFocusRenderer(
@@ -235,7 +241,6 @@ internal sealed class PlanetPresentationBinder : IDisposable
         body.AddChild(BuildProductLayerRoot(document));
         _statusLabel = BuildStatusLabel(document);
         body.AddChild(_statusLabel);
-        _boundRegimeId = _timeline.GeosphereSchedule.RegimeAt(_timeline.Tick)?.RegimeId;
         _boundCrustSnapshotTicks = document.CrustSnapshotTicks.Select(state => state.Tick).ToArray();
         _boundCrustSnapshotTick = new CrustSnapshotTickSeries(_boundCrustSnapshotTicks)
             .SelectSnapshotForPlayhead(_timeline.Tick);
@@ -289,9 +294,8 @@ internal sealed class PlanetPresentationBinder : IDisposable
             }
         }
 
-        bool isMobilePlate = regimeId == "mobile-plate";
-        bool isPlateFocused = _timeline.SelectedLayer?.LayerId == "geosphere.plate";
-        bool showBoundaries = showsPlateFeatures && isMobilePlate && isPlateFocused;
+        var viewMode = GlobeViewModeResolver.Resolve(regimeId, _timeline.SelectedLayer);
+        bool showBoundaries = viewMode == GlobeViewMode.PlateIdentity;
 
         if (_plateSurfaceRoot is not null && GodotObject.IsInstanceValid(_plateSurfaceRoot))
             _plateSurfaceRoot.Visible = showsPlateFeatures;
@@ -312,7 +316,44 @@ internal sealed class PlanetPresentationBinder : IDisposable
     {
         if (_disposed)
             return;
+
+        // P1: layer focus swaps the cap appearance. Rebuild just the plate surface (free old caps,
+        // build new ones) without re-fetching — no node leaks, no full rebind.
+        var regimeId = _timeline.GeosphereSchedule.RegimeAt(_timeline.Tick)?.RegimeId;
+        var newViewMode = GlobeViewModeResolver.Resolve(regimeId, selection);
+        if (newViewMode != _currentViewMode
+            && newViewMode != GlobeViewMode.Inactive
+            && _currentViewMode != GlobeViewMode.Inactive)
+        {
+            _currentViewMode = newViewMode;
+            RebuildPlateSurface();
+        }
+
         ApplyTimelineTick(_timeline.Tick);
+    }
+
+    private void RebuildPlateSurface()
+    {
+        if (_currentDocument is null || _currentDocument.GlobeSnapshot is null)
+            return;
+        if (_activeRoot is null || !GodotObject.IsInstanceValid(_activeRoot))
+            return;
+
+        var body = _activeRoot.GetNodeOrNull<Node3D>("PlanetBody");
+        if (body is null)
+            return;
+
+        if (_plateSurfaceRoot is not null && GodotObject.IsInstanceValid(_plateSurfaceRoot))
+        {
+            body.RemoveChild(_plateSurfaceRoot);
+            _plateSurfaceRoot.QueueFree();
+        }
+        _plateSurfaceRoot = null;
+        _plateSurfaces = null;
+        _plateMotions.Clear();
+
+        _plateSurfaceRoot = BuildPlateSurface(_currentDocument, _currentViewMode);
+        body.AddChild(_plateSurfaceRoot);
     }
 
     private void ScheduleRegimeRefresh()
@@ -429,7 +470,7 @@ internal sealed class PlanetPresentationBinder : IDisposable
         };
     }
 
-    private Node3D BuildPlateSurface(PlanetPresentationDocument document)
+    private Node3D BuildPlateSurface(PlanetPresentationDocument document, GlobeViewMode viewMode)
     {
         var snapshot = document.GlobeSnapshot!;
         _plateMotions.Clear();
@@ -440,24 +481,27 @@ internal sealed class PlanetPresentationBinder : IDisposable
         };
         var plates = snapshot.Plates.ToDictionary(plate => plate.PlateId);
 
-        // Watertight per-plate caps: within a plate, cells that meet at a corner SHARE that corner,
-        // so adjacent triangles meet exactly (no black cracks). Topology is cached once per snapshot.
-        // Displacement and hypsometric tint read the SAME per-cell crust elevations so color and
-        // relief stay coherent; flat-zero when crust products have not flowed yet.
+        // P1: view mode selects cap appearance — terrain (elevation tint + displacement) vs plate identity (flat).
         _plateSurfaces = new GlobePlateSurfaces(snapshot);
-        IReadOnlyList<double> elevations =
-            document.CellElevations is { } cellElevations && cellElevations.Count == snapshot.CellCount
+        bool isTerrain = viewMode == GlobeViewMode.HypsometricTerrain;
+
+        IReadOnlyList<double> elevations = isTerrain
+            ? (document.CellElevations is { } cellElevations && cellElevations.Count == snapshot.CellCount
                 ? cellElevations
-                : new double[snapshot.CellCount];
+                : new double[snapshot.CellCount])
+            : new double[snapshot.CellCount];
+
         var caps = _plateSurfaces.BuildSurfaces(elevations, exaggeration: WatertightDisplacementExaggeration);
 
-        // A2: per-cell hypsometric tint + typed feature accents, driven by the document's crust data.
-        // Bypassed (neutral mid-ramp) when the document carries no crust surface data.
-        var (perCellColor, perCellEmission) = BuildCellAppearance(snapshot.CellCount, document);
+        var (perCellColor, perCellEmission) = isTerrain
+            ? BuildCellAppearance(snapshot.CellCount, document)
+            : (Array.Empty<Color>(), Array.Empty<float>());
 
         foreach (var cap in caps.OrderBy(c => c.PlateId))
         {
-            var plate = BuildPlateMesh(cap, perCellColor, perCellEmission);
+            var plate = isTerrain
+                ? BuildPlateMesh(cap, perCellColor, perCellEmission)
+                : BuildPlateIdentityMesh(cap);
             root.AddChild(plate);
             if (plates.TryGetValue(cap.PlateId, out var motionPlate)
                 && TryNormalize(ToV3(motionPlate.Axis), out var axis)
@@ -571,6 +615,57 @@ internal sealed class PlanetPresentationBinder : IDisposable
         arrays[(int)Mesh.ArrayType.Normal] = normals;
         arrays[(int)Mesh.ArrayType.Color] = colors;
         arrays[(int)Mesh.ArrayType.TexUV2] = uv2;
+
+        var mesh = new ArrayMesh();
+        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+
+        return new MeshInstance3D
+        {
+            Name = $"Plate_{cap.PlateId}",
+            Mesh = mesh,
+            MaterialOverride = HypsoPlateMaterial,
+        };
+    }
+
+    // P1: plate-identity cap — every vertex in this cap gets the plate's identity color, flat-zero
+    // displacement (positions are already at unit-sphere radius from BuildSurfaces with zero
+    // elevations), no volcanic emission. Reuses HypsoPlateMaterial: the shader reads COLOR.rgb for
+    // albedo and only emits when UV2.x > 0, which is absent here.
+    private static MeshInstance3D BuildPlateIdentityMesh(PlateCap cap)
+    {
+        var surface = cap.Surface;
+        int triCount = surface.TriangleCount;
+        int vertCount = triCount * 3;
+
+        var vertices = new Vector3[vertCount];
+        var normals = new Vector3[vertCount];
+        var colors = new Color[vertCount];
+
+        var plateColor = ToColor(PlateIdentityPalette.ColorFor(cap.PlateId));
+
+        for (int t = 0; t < triCount; t++)
+        {
+            int i0 = surface.Triangles[(t * 3) + 0];
+            int i1 = surface.Triangles[(t * 3) + 1];
+            int i2 = surface.Triangles[(t * 3) + 2];
+
+            int b = t * 3;
+            vertices[b + 0] = ToV3(surface.Positions[i0]);
+            vertices[b + 1] = ToV3(surface.Positions[i1]);
+            vertices[b + 2] = ToV3(surface.Positions[i2]);
+            normals[b + 0] = ToV3(surface.SmoothNormals[i0]);
+            normals[b + 1] = ToV3(surface.SmoothNormals[i1]);
+            normals[b + 2] = ToV3(surface.SmoothNormals[i2]);
+            colors[b + 0] = plateColor;
+            colors[b + 1] = plateColor;
+            colors[b + 2] = plateColor;
+        }
+
+        var arrays = new Godot.Collections.Array();
+        arrays.Resize((int)Mesh.ArrayType.Max);
+        arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+        arrays[(int)Mesh.ArrayType.Normal] = normals;
+        arrays[(int)Mesh.ArrayType.Color] = colors;
 
         var mesh = new ArrayMesh();
         mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
@@ -882,6 +977,8 @@ void light() {
         _statusLabel = null;
         _plateMotions.Clear();
         _globeReferenceTick = 0L;
+        _currentDocument = null;
+        _currentViewMode = GlobeViewMode.Inactive;
     }
 
     private void ReleaseNodeGraphView()

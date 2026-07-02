@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using FantaSim.App.World;
 using FantaSim.App.World.Dto;
+using FantaSim.App.World.Rendering;
 using Godot;
 
 namespace FantaSim.App.Common.Entry;
@@ -14,9 +15,6 @@ namespace FantaSim.App.Common.Entry;
 /// </summary>
 public partial class PlateBoundaryFocusRenderer : Node3D
 {
-    private const float RibbonHalfWidth = 0.012f;
-    private const float RibbonHeight = 1.015f;
-
     public PlateBoundaryFocusRenderer(IReadOnlyList<PlateBoundaryArc> arcs)
     {
         Name = "PlateBoundaryFocusRenderer";
@@ -41,7 +39,8 @@ public partial class PlateBoundaryFocusRenderer : Node3D
                 byKind[arc.Kind] = bucket;
             }
 
-            AppendArcRibbon(bucket, arc.Points);
+            var style = BoundaryStyleMapper.Resolve(arc.Kind);
+            AppendArcRibbon(bucket, arc.Points, (float)style.RibbonHalfWidth, (float)style.SurfaceHeight);
         }
 
         foreach (var (kind, bucket) in byKind)
@@ -49,15 +48,15 @@ public partial class PlateBoundaryFocusRenderer : Node3D
             var mesh = BuildMeshFromLists(bucket.Vertices, bucket.Normals);
             if (mesh is null) continue;
 
-            var (name, color) = KindStyle(kind);
+            var style = BoundaryStyleMapper.Resolve(kind);
             AddChild(BuildMeshInstance(
-                name,
+                KindName(kind),
                 mesh,
-                BuildMaterial(color, emission: 0.45f, transparent: true)));
+                BuildMaterial(ToColor(style.Color), (float)style.EmissionEnergy, style.RenderOnTop)));
         }
     }
 
-    private static void AppendArcRibbon(Bucket bucket, IReadOnlyList<GlobeVec3> points)
+    private static void AppendArcRibbon(Bucket bucket, IReadOnlyList<GlobeVec3> points, float halfWidth, float height)
     {
         for (int i = 0; i < points.Count - 1; i++)
         {
@@ -68,22 +67,24 @@ public partial class PlateBoundaryFocusRenderer : Node3D
             if (tangent.LengthSquared() < 1e-10f) continue;
             tangent = tangent.Normalized();
 
-            var radial = (a + b).Normalized();            // outward normal at the segment midpoint
-            var side = tangent.Cross(radial);             // in the tangent plane, perpendicular to the arc
+            var radial = (a + b).Normalized();
+            var side = tangent.Cross(radial);
             if (side.LengthSquared() < 1e-10f) continue;
             side = side.Normalized();
 
-            AddRibbon(bucket.Vertices, bucket.Normals, a, b, side, RibbonHalfWidth, RibbonHeight);
+            AddRibbon(bucket.Vertices, bucket.Normals, a, b, side, halfWidth, height);
         }
     }
 
-    private static (string Name, Color Color) KindStyle(PlateBoundaryKind kind) => kind switch
+    private static string KindName(PlateBoundaryKind kind) => kind switch
     {
-        PlateBoundaryKind.Convergent => ("ConvergentBoundaries", new Color(0.92f, 0.34f, 0.18f)),
-        PlateBoundaryKind.Divergent  => ("DivergentBoundaries",  new Color(0.10f, 0.82f, 0.78f)),
-        PlateBoundaryKind.Transform  => ("TransformBoundaries",  new Color(0.94f, 0.90f, 0.42f)),
-        _                            => ("InactiveBoundaries",   new Color(0.6f, 0.6f, 0.6f)),
+        PlateBoundaryKind.Convergent => "ConvergentBoundaries",
+        PlateBoundaryKind.Divergent  => "DivergentBoundaries",
+        PlateBoundaryKind.Transform  => "TransformBoundaries",
+        _                            => "InactiveBoundaries",
     };
+
+    private static Color ToColor(RampColor c) => new((float)c.R, (float)c.G, (float)c.B);
 
     private sealed class Bucket
     {
@@ -142,7 +143,7 @@ public partial class PlateBoundaryFocusRenderer : Node3D
         {
             Name = "PlateFocusOceanShell",
             Mesh = mesh,
-            MaterialOverride = BuildMaterial(new Color(0.01f, 0.18f, 0.25f, 0.86f), emission: 0.22f, transparent: true),
+            MaterialOverride = BuildMaterial(new Color(0.01f, 0.18f, 0.25f, 0.86f), emission: 0.22f),
         };
     }
 
@@ -154,11 +155,11 @@ public partial class PlateBoundaryFocusRenderer : Node3D
             MaterialOverride = material,
         };
 
-    private static StandardMaterial3D BuildMaterial(Color color, float emission, bool transparent = false)
+    private static StandardMaterial3D BuildMaterial(Color color, float emission, bool renderOnTop = false)
         => new()
         {
             AlbedoColor = color,
-            Transparency = transparent ? BaseMaterial3D.TransparencyEnum.Alpha : BaseMaterial3D.TransparencyEnum.Disabled,
+            Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
             ShadingMode = BaseMaterial3D.ShadingModeEnum.PerPixel,
             EmissionEnabled = true,
             Emission = new Color(color.R, color.G, color.B),
@@ -166,6 +167,7 @@ public partial class PlateBoundaryFocusRenderer : Node3D
             Roughness = 0.82f,
             Metallic = 0.0f,
             CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+            RenderPriority = renderOnTop ? 10 : 0,
         };
 
     private static Vector3 CalculateNormal(Vector3 a, Vector3 b, Vector3 c)
