@@ -30,6 +30,19 @@ public sealed record PlanetPresentationDocument(
     /// </summary>
     public long GlobeReferenceTick { get; init; }
 
+    /// <summary>
+    /// Typed plate-boundary arcs (smooth great-circle unit-sphere points) derived from plate-topology
+    /// truth at <see cref="GlobeReferenceTick"/>. Null when the world bundle produced no arcs
+    /// (e.g. pre-onset). Hosts render them as polylines coloured by <see cref="PlateBoundaryKind"/>;
+    /// the arcs are rebuilt when the document is rebound, so boundaries appear/retire on regime change.
+    /// </summary>
+    /// <remarks>
+    /// Per-tick type reclassification across the playhead is a future increment (it needs a retained
+    /// reconstructor plus a tick-parametric service query); the arcs here are authoritative for the
+    /// reference tick and the cell-cap colouring is unaffected.
+    /// </remarks>
+    public IReadOnlyList<PlateBoundaryArc>? BoundaryArcs { get; init; }
+
     /// <summary>Current geosphere regime schedule authored by the world bundle.</summary>
     public SphereRegimeSchedule? GeosphereSchedule { get; init; }
 

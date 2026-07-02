@@ -151,6 +151,7 @@ public sealed class Service : IService, IDisposable
             AtmosphereSchedule = runtime.AtmosphereSchedule,
             MaxTick = runtime.MaxTick,
             GenerationGraphFamily = family,
+            BoundaryArcs = runtime.BoundaryArcs,
         };
     }
 
@@ -281,7 +282,8 @@ public sealed class Service : IService, IDisposable
             onsetTick,
             geosphere,
             atmosphere,
-            onsetTick + 20_000_000L);
+            onsetTick + 20_000_000L,
+            reconstructor.BuildBoundaryArcsAt(onsetTick));
     }
 
     private static WorldGenerationRenderOptions ResolvePlanetRenderOptions(WorldGenerationGraphFamilyDocument family)
@@ -302,7 +304,8 @@ public sealed class Service : IService, IDisposable
         long GlobeReferenceTick,
         SphereRegimeSchedule GeosphereSchedule,
         SphereRegimeSchedule AtmosphereSchedule,
-        long MaxTick);
+        long MaxTick,
+        IReadOnlyList<PlateBoundaryArc> BoundaryArcs);
 
 #if USE_PROJECT_REFERENCES
     private static string NewTruthWriterActorName()
