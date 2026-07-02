@@ -190,7 +190,9 @@ tasks:
             UnifyMaths|\
             UnifyStorage.Abstractions|\
             UnifyStorage.Runtime.LiteDb|\
-            Arch)
+            Arch|\
+            MessagePack|\
+            MessagePack.Annotations)
               return 0
               ;;
           esac

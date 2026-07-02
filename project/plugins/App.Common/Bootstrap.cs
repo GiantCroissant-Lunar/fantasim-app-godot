@@ -118,6 +118,9 @@ public sealed class Bootstrap
                     "UnifyStorage.Abstractions",          // App.Activity
                     "UnifyStorage.Runtime.LiteDb",        // App.Activity
                     "Arch",                               // transitive of shared UnifyEcs.Runtime.Arch
+                    "MessagePack",                        // transitive of shared CrosscutFoundation.Persistence.Contracts:
+                    "MessagePack.Annotations",            //   its CanonicalMessagePackOptions API exposes MessagePack types,
+                                                          //   so a bundle-local MessagePack.dll splits type identity (MissingMethodException)
                 },
                 prefixes: new[]
                 {
