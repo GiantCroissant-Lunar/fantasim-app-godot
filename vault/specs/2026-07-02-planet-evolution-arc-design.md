@@ -1,0 +1,111 @@
+# Planet evolution arc — design
+
+> status: concept-lock 2026-07-02 · approved in-session (brainstorming dialogue)
+> repo: fantasim-app-godot · builds on: `2026-06-22-tscn-timeline-time-advancement-design.md`
+> (sub-project B executes that spec; this doc does not restate it)
+
+## 1. Why
+
+Watching the planet evolve is the product. Three gaps break the experience today:
+
+1. **Crust features don't read.** With crust products flowing (`productLayers=1`), elevation
+   displaces the mesh but renders as undifferentiated lumps: no ranges along convergent
+   boundaries, no volcano forms, no height tinting. Feature types exist in the data
+   (`CrustFeatureKind`: Mountain / VolcanicArc / Trench / Ridge / Fault, each with magnitude)
+   but have no visual identity. Elevation also re-opens cross-plate seams (thin dark slivers):
+   the watertight proof held at flat-zero elevation only.
+2. **The timeline is not a timeline.** HSlider + hand-written tick accumulator; the
+   AnimationPlayer/AnimationTree transport is a trackless shell (see the 2026-06-22 spec §1).
+3. **Regime transitions are hard cuts.** Crossing stagnant-lid → mobile-plate is an instant
+   remount + material swap. The lid should visibly fracture into plates.
+
+## 2. Locked decisions (from the design dialogue)
+
+- **One arc, three ordered sub-projects: A → B → C.** Each gets its own plan and windowed
+  verification; later ones build on earlier ones.
+- **Transition = data-driven emergence, presentation-side.** The fracture animation derives
+  from real engine data (boundary network + convection seeds) but is reconstructed in the
+  app over a transition window around onset. Engine-side gradual fracture (truth-stream
+  crack-propagation events) is a recorded future direction this design must not preclude —
+  the emergence renderer consumes "fracture progress" as an input, so a future engine can
+  supply it instead of the reconstruction.
+- **Crust look = hypsometric + accents.** Elevation drives a height-tinted surface (ocean
+  depth → shelf → plains → mountain → snow); typed accents on top (volcano = emissive vent,
+  trench = dark groove). Plate identity moves to the boundary polylines (already shipped);
+  per-plate cap albedo is retired at mobile-plate.
+- **Timeline = the 2026-06-22 tscn spec, plus two requirements it lacked:** the emergence
+  window drawn as a distinct zone with auto-slow playback through it, and crust snapshots
+  pre-cached along the track for fluid scrubbing. All four outcomes are required: smooth
+  continuous playback, visible regime sections, transition-zone awareness, scrub
+  responsiveness.
+- **Time-varying crust.** `CrustPipeline.RunAsync(startTick, endTick, snapshotTicks)` and the
+  accumulative `CellCrustState` semantics already support terrain that grows with the
+  playhead; the app requests snapshots across the mobile-plate span and presents the
+  snapshot at ≤ playhead tick.
+
+## 3. Sub-project A — crust surface truth (this arc's first build)
+
+Three work packets, parallel-safe by ownership:
+
+**A1 — watertight under elevation (correctness).** Cross-plate boundary vertices must sample
+IDENTICAL elevations from both plates so displaced shared corners still coincide. Root cause
+of the slivers: per-plate elevation sampling diverges at shared cells. Proof: extend the
+existing coincidence test to non-zero, realistic elevation fields; assert exact match at
+shared boundary vertices. Owner: mesh path (`GlobePlateSurfaces` usage in
+`PlanetPresentationBinder`, App.World globe wrapper). Cartography repo stays read-only; API
+gaps get reported, not patched cross-repo.
+
+**A2 — hypsometric tint + typed accents (the look).** Per-vertex color from the same
+elevation data that displaces the mesh: ramp deep-ocean → shelf → plains → mountain →
+snow (colors chosen from the existing regime-material palette family). Typed accents from
+`CrustFeature` cells: VolcanicArc → small emissive vent (magnitude → intensity), Trench →
+darkened groove band, Ridge → subtle bright seam (the boundary polylines already color by
+type; accents must complement, not duplicate them). Mobile-plate regime only; magma/lid
+materials unchanged. Owner: material/color path in the binder + gdshader.
+
+**A3 — time-varying snapshots (evolution).** The crust trigger requests snapshots across the
+mobile-plate span (reuse the existing 5M-tick window as snapshot spacing); products carry
+per-snapshot addresses; the presentation selects the snapshot at ≤ playhead tick and
+re-tints/re-displaces on snapshot change (not per tick). Scrubbing within one snapshot
+window causes no re-fetch. Owner: `CrustGenerationTrigger` / `WorldPlugin` / `Service`
+product flow.
+
+## 4. Sub-project B — native timeline foundation (concept here, plan later)
+
+Execute the 2026-06-22 tscn timeline spec as written (AnimationPlayer master CT value-track =
+continuous playhead; AnimationTree transport; multi-lane sphere/layer/regime read-out;
+odometer-ladder labels; retire HSlider + boom-hud face), extended with:
+
+- **Emergence-window zone**: the transition window (§5) renders as a distinct marked zone in
+  the geosphere lane; playback auto-slows through it (configurable factor, default 4×).
+- **Snapshot cache strip**: A3's snapshot set is surfaced along the track so scrub hitches
+  are visible as "not yet generated" rather than silent stalls; pre-generation runs in
+  playback order.
+
+## 5. Sub-project C — emergence transition (concept here, plan later)
+
+Presentation-side reconstruction over a transition window W around plate onset (default:
+W = [onset − 2M ticks, onset + 3M ticks], tunable):
+
+- Before W: stagnant-lid basalt surface (unchanged).
+- Inside W: crack polylines grow along the REAL onset boundary network, propagating outward
+  from the real convection seed/plume points (growth parameter = normalized playhead
+  progress through W); crack glow = magma material bleeding through; near W's end the
+  fragments take on plate identity (boundary polylines fade in, hypsometric tint fades in).
+- After W: full mobile-plate presentation (A's surface + polylines).
+- Mechanism: AnimationTree crossfade states (lid / fracturing / plates) per the locked
+  vocabulary "state-machine = regime selector · blend = crossfade"; the fracture-progress
+  input is a function of playhead tick — replaceable later by engine truth.
+
+## 6. Verification
+
+Every packet: unit tests for the Godot-free logic (TDD), full suite green, then the exported
+windowed app is the gate (per verify-windowed): seams gone under elevation at mobile-plate;
+hypsometric + accents visible; terrain visibly different at early vs late mobile-plate ticks;
+(B) continuous playback + regime sections; (C) fracture animation through W with no hard cut.
+
+## 7. Non-goals / recorded follow-ups
+
+- Engine-side gradual fracture (truth-stream crack events) — future direction, kept pluggable.
+- Boundary-polyline layer auto-select at mobile-plate — small UX decision, folded into B.
+- Cell LOD above 1280 — revisit after A lands; polylines already decouple boundary look.
