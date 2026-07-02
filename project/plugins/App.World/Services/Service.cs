@@ -121,11 +121,19 @@ public sealed class Service : IService, IDisposable
             return _generationProducts;
     }
 
+    /// <summary>
+    /// Raised at the start of every presentation fetch. The host binder fetches the presentation
+    /// right after it registers its <c>ITimelineController</c>, so this is the earliest
+    /// registration-order-tolerant hook for late-arming (see WorldPlugin's crust trigger).
+    /// </summary>
+    public event Action? PresentationRequested;
+
     public PlanetPresentationDocument GetPlanetPresentationAsync()
         => GetPlanetPresentationAsync(SphereRegimeScheduleDefaults.PlateOnsetTick);
 
     public PlanetPresentationDocument GetPlanetPresentationAsync(long referenceTick)
     {
+        PresentationRequested?.Invoke();
         var overview = _runtime.GetOverview();
         var renderSnapshot = _runtime.GetRenderSnapshot();
         var family = WorldGenerationGraphDefaults.BuildFamily();

@@ -74,6 +74,35 @@ public sealed class WorldPluginCrustTriggerLateBindingTests
         Assert.Equal(1, controller.TickChangedSubscriberCount());
     }
 
+    [Fact]
+    public async Task Controller_registered_after_init_arms_trigger_via_presentation_fetch()
+    {
+        // Same startup race as above, but WITHOUT any generation run: in the exported app no
+        // generation event fires organically before the trigger would be needed, so waiting on
+        // generation-changed alone is a chicken-and-egg (the trigger IS the first generation).
+        // The binder calls GetPlanetPresentationAsync right after registering the controller --
+        // that fetch must arm the trigger.
+        var registry = NewRegistry();
+        var commandService = new FakeCommandService();
+        registry.Register<CommandService>(commandService, new ServiceRegistration { Tags = new[] { "command" } });
+
+        var plugin = new WorldPlugin();
+        await plugin.InitializeAsync(NewContext(registry), CancellationToken.None);
+
+        var controller = new LateFakeController(
+            SphereRegimeScheduleDefaults.GeosphereFor(PlateOnsetTick),
+            SphereRegimeScheduleDefaults.AtmosphereFor(PlateOnsetTick),
+            tick: 0);
+        registry.Register<ITimelineController>(controller, new ServiceRegistration { Tags = new[] { "world", "timeline" } });
+        Assert.Equal(0, controller.TickChangedSubscriberCount());
+
+        var world = registry.TryGet<FantaSim.App.World.IService>();
+        Assert.NotNull(world);
+        _ = world!.GetPlanetPresentationAsync();
+
+        Assert.Equal(1, controller.TickChangedSubscriberCount());
+    }
+
     private sealed class LateFakeController : ITimelineController
     {
         private TimelineLayerSelection? _selectedLayer;

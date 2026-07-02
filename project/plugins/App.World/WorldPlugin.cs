@@ -33,6 +33,7 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
     private ILoggerFactory? _loggerFactory;
     private ILogger? _log;
     private IDisposable? _lateArmSubscription;
+    private Services.Service? _presentationArmSource;
     private bool _crustArmed;
 
     public ValueTask InitializeAsync(IPluginContext context, CancellationToken ct = default)
@@ -67,6 +68,7 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
 
         _lateArmSubscription?.Dispose();
         _lateArmSubscription = null;
+        DetachPresentationArmHook();
 
         _crustTrigger?.Dispose();
         _crustTrigger = null;
@@ -148,7 +150,18 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
         }
 
         _lateArmSubscription = world.SubscribeGenerationChanged(_ => TryArmCrustTriggerLate());
-        _log?.LogInformation("WorldPlugin: no ITimelineController registered at init; deferred crust-trigger arming to first world generation event.");
+
+        // Generation-changed alone is a chicken-and-egg: in the exported app no generation runs
+        // before the trigger itself would start one. The host binder fetches the presentation
+        // right after registering ITimelineController, so a presentation fetch is the earliest
+        // organic arm signal.
+        if (world is Services.Service concrete)
+        {
+            _presentationArmSource = concrete;
+            concrete.PresentationRequested += OnPresentationRequestedArm;
+        }
+
+        _log?.LogInformation("WorldPlugin: no ITimelineController registered at init; deferred crust-trigger arming to first presentation fetch or world generation event.");
     }
 
     private bool TryArmCrustTrigger()
@@ -184,10 +197,22 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
         {
             _lateArmSubscription?.Dispose();
             _lateArmSubscription = null;
+            DetachPresentationArmHook();
             return true;
         }
 
         return false;
+    }
+
+    private void OnPresentationRequestedArm() => TryArmCrustTriggerLate();
+
+    private void DetachPresentationArmHook()
+    {
+        if (_presentationArmSource is not null)
+        {
+            _presentationArmSource.PresentationRequested -= OnPresentationRequestedArm;
+            _presentationArmSource = null;
+        }
     }
 
     private static async Task ExecuteCrustGenerationAsync(
