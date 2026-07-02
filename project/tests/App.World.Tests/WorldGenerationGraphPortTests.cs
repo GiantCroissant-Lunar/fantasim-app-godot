@@ -639,7 +639,7 @@ public sealed class WorldGenerationGraphPortTests
         Assert.Equal(WorldGenerationGraphDefaults.GeosphereGraphId, source.Graph.GraphId);
         Assert.Equal("Mobile Plate Geosphere", source.Graph.Label);
         Assert.Equal(WorldFunctionProvider.CrustGenerate, result["function"]?.GetValue<string>());
-        Assert.Equal(3, result["frequency"]?.GetValue<int>());
+        Assert.Equal(4, result["frequency"]?.GetValue<int>());
     }
 
     [Fact]
@@ -994,7 +994,7 @@ public sealed class WorldGenerationGraphPortTests
         Assert.Equal(WorldFunctionProvider.WorldOptions, compiled.Document.Nodes[0].FunctionId);
         Assert.Equal(WorldFunctionProvider.CrustGenerate, compiled.Document.Nodes[1].FunctionId);
         Assert.Equal(WorldFunctionProvider.CrustGenerate, result["function"]?.GetValue<string>());
-        Assert.Equal(3, result["frequency"]?.GetValue<int>());
+        Assert.Equal(4, result["frequency"]?.GetValue<int>());
         Assert.True(result["activeBoundaries"]?.GetValue<bool>());
     }
 
