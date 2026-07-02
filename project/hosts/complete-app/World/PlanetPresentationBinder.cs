@@ -7,6 +7,8 @@ using FantaSim.App.Ui.Providers;
 using FantaSim.App.World;
 using FantaSim.App.World.Composition;
 using FantaSim.App.World.Dto;
+using FantaSim.App.World.Globe;
+using FantaSim.Cartography.Shared;
 using Godot;
 using Microsoft.Extensions.Logging;
 using ServiceArchi.Contracts;
@@ -37,6 +39,7 @@ internal sealed class PlanetPresentationBinder : IDisposable
     private MeshInstance3D? _mantle;
     private Label3D? _statusLabel;
     private readonly Dictionary<int, PlateMotionBinding> _plateMotions = new();
+    private GlobePlateSurfaces? _plateSurfaces;
     private long _globeReferenceTick;
     private PlanetGenerationGraphSource? _graphSource;
     private NodeGraphViewSource? _graphView;
@@ -339,40 +342,57 @@ internal sealed class PlanetPresentationBinder : IDisposable
         };
         var plates = snapshot.Plates.ToDictionary(plate => plate.PlateId);
 
-        foreach (var group in snapshot.Cells.Where(cell => cell.PlateId >= 0).GroupBy(cell => cell.PlateId).OrderBy(group => group.Key))
+        // Watertight per-plate caps: within a plate, cells that meet at a corner SHARE that corner,
+        // so adjacent triangles meet exactly (no black cracks). Topology is cached once per snapshot.
+        _plateSurfaces = new GlobePlateSurfaces(snapshot);
+        var elevations = new double[snapshot.CellCount];
+        var caps = _plateSurfaces.BuildSurfaces(elevations, exaggeration: WatertightDisplacementExaggeration);
+
+        foreach (var cap in caps.OrderBy(c => c.PlateId))
         {
-            var plate = BuildPlateMesh(group.Key, group.ToArray());
+            var plate = BuildPlateMesh(cap);
             root.AddChild(plate);
-            if (plates.TryGetValue(group.Key, out var motionPlate)
+            if (plates.TryGetValue(cap.PlateId, out var motionPlate)
                 && TryNormalize(ToV3(motionPlate.Axis), out var axis)
                 && motionPlate.RatePerTick != 0.0)
             {
-                _plateMotions[group.Key] = new PlateMotionBinding(plate, axis, motionPlate.RatePerTick);
+                _plateMotions[cap.PlateId] = new PlateMotionBinding(plate, axis, motionPlate.RatePerTick);
             }
         }
 
         return root;
     }
 
-    private static MeshInstance3D BuildPlateMesh(int plateId, IReadOnlyList<GlobeCell> cells)
-    {
-        var vertices = new Vector3[cells.Count * 3];
-        var normals = new Vector3[vertices.Length];
+    // Matches GlobeView's magnitude so the mantle sphere (radius 0.96 * 2) stays hidden under the caps.
+    private const float WatertightDisplacementExaggeration = 0.00012f;
 
-        for (int i = 0; i < cells.Count; i++)
+    private static MeshInstance3D BuildPlateMesh(PlateCap cap)
+    {
+        var surface = cap.Surface;
+        int triCount = surface.TriangleCount;
+        int vertCount = triCount * 3;
+
+        // Flat-shaded (blocky): triple each triangle's shared corner POSITIONS, assign the triangle's
+        // single FlatNormal. Positions come from shared-vertex GlobeSurface.Positions, so adjacent
+        // triangles meet EXACTLY at shared corners: faceted yet crack-free.
+        var vertices = new Vector3[vertCount];
+        var normals = new Vector3[vertCount];
+
+        for (int t = 0; t < triCount; t++)
         {
-            var cell = cells[i];
-            var a = ToV3(cell.C0);
-            var b = ToV3(cell.C1);
-            var c = ToV3(cell.C2);
-            var normal = FaceNormal(a, b, c);
-            var offset = i * 3;
-            vertices[offset] = a;
-            vertices[offset + 1] = b;
-            vertices[offset + 2] = c;
-            normals[offset] = normal;
-            normals[offset + 1] = normal;
-            normals[offset + 2] = normal;
+            int i0 = surface.Triangles[(t * 3) + 0];
+            int i1 = surface.Triangles[(t * 3) + 1];
+            int i2 = surface.Triangles[(t * 3) + 2];
+
+            var flat = ToV3(surface.FlatNormals[t]);
+
+            int b = t * 3;
+            vertices[b + 0] = ToV3(surface.Positions[i0]);
+            vertices[b + 1] = ToV3(surface.Positions[i1]);
+            vertices[b + 2] = ToV3(surface.Positions[i2]);
+            normals[b + 0] = flat;
+            normals[b + 1] = flat;
+            normals[b + 2] = flat;
         }
 
         var arrays = new Godot.Collections.Array();
@@ -385,11 +405,13 @@ internal sealed class PlanetPresentationBinder : IDisposable
 
         return new MeshInstance3D
         {
-            Name = $"Plate_{plateId}",
+            Name = $"Plate_{cap.PlateId}",
             Mesh = mesh,
-            MaterialOverride = BuildPlateMaterial(plateId),
+            MaterialOverride = BuildPlateMaterial(cap.PlateId),
         };
     }
+
+    private static Vector3 ToV3(CartesianPoint3 p) => new((float)p.X, (float)p.Y, (float)p.Z);
 
     private static Node3D BuildProductLayerRoot(PlanetPresentationDocument document)
     {
@@ -494,19 +516,6 @@ internal sealed class PlanetPresentationBinder : IDisposable
         return true;
     }
 
-    private static Vector3 FaceNormal(Vector3 a, Vector3 b, Vector3 c)
-    {
-        var u = b - a;
-        var v = c - a;
-        var normal = new Vector3(
-            (u.Y * v.Z) - (u.Z * v.Y),
-            (u.Z * v.X) - (u.X * v.Z),
-            (u.X * v.Y) - (u.Y * v.X));
-        return normal.LengthSquared() > 0.000001f
-            ? normal.Normalized()
-            : a.Normalized();
-    }
-
     private static string SafeNodeName(string value)
     {
         var chars = value.Select(ch => char.IsLetterOrDigit(ch) || ch is '_' or '-' ? ch : '_').ToArray();
@@ -550,6 +559,7 @@ internal sealed class PlanetPresentationBinder : IDisposable
 
         _activeRoot = null;
         _plateSurfaceRoot = null;
+        _plateSurfaces = null;
         if (_boundaryRenderer is not null && GodotObject.IsInstanceValid(_boundaryRenderer))
         {
             _boundaryRenderer.GetParent()?.RemoveChild(_boundaryRenderer);

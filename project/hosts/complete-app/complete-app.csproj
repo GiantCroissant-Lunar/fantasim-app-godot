@@ -9,6 +9,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\plugins\App.Common\App.Common.csproj" />
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+    <!-- App.World PLUGIN (not just contracts): GlobePlateSurfaces wraps the cartography
+         GlobeSurfaceBuilder to produce WATERTIGHT per-plate caps; PlanetPresentationBinder uses it
+         as the mesh source so plate boundaries share vertices (no black cracks). Transitive refs
+         bring Cartography.Globe / Cartography.Shared into the host's compile scope. -->
+    <ProjectReference Include="..\..\plugins\App.World\App.World.csproj" />
     <ProjectReference Include="..\..\plugins\App.Resource\App.Resource.csproj" />
     <ProjectReference Include="..\..\plugins\App.Resource.Bundle.Seam\App.Resource.Bundle.Seam.csproj" />
     <ProjectReference Include="..\..\plugins\App.SceneFlow\App.SceneFlow.csproj" />
