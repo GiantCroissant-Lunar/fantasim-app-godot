@@ -91,6 +91,15 @@ public sealed class GlobePlateSurfaces
     private readonly IReadOnlyList<PlateTopology> _plates;
     private readonly NoiseParams _peaks;
 
+    // Global shared-vertex topology across ALL plates (built once, tick-invariant). A corner on the
+    // boundary between plate A and plate B is ONE global vertex; its envelope height is the mean over
+    // EVERY incident cell (both plates), so both plates displace that corner to the same radius and
+    // the seam stays watertight under non-uniform elevation. Per-plate topologies reference this map
+    // to read off their local vertex heights (see BuildSurfaces).
+    private readonly CartesianPoint3[] _globalVertices;
+    private readonly int[] _globalTriangles;
+    private readonly int[] _globalCellIds;
+
     /// <summary>
     /// Builds and caches the watertight per-plate topology from <paramref name="snapshot"/>. Plates with
     /// no cells are omitted. Plate caps are returned in ascending <see cref="GlobeCell.PlateId"/> order.
@@ -106,7 +115,8 @@ public sealed class GlobePlateSurfaces
         ArgumentNullException.ThrowIfNull(snapshot);
         _builder = builder ?? new GlobeSurfaceBuilder();
         _peaks = noise ?? DefaultPeaks;
-        _plates = BuildPlateTopologies(snapshot, _peaks);
+        (_globalVertices, _globalTriangles, _globalCellIds) = BuildGlobalTopology(snapshot);
+        _plates = BuildPlateTopologies(snapshot, _peaks, _globalVertices);
     }
 
     /// <summary>The plate ids that have at least one cell (ascending), in cap order.</summary>
@@ -133,33 +143,30 @@ public sealed class GlobePlateSurfaces
     {
         ArgumentNullException.ThrowIfNull(elevationsByCell);
 
+        // Global per-FACE heights in global face order, then gather to per-VERTEX means across ALL
+        // incident cells of ALL plates. A boundary corner shared by plates A and B sees both plates'
+        // cells here, so its mean (and hence radius) is identical regardless of which plate builds it.
+        var globalFaceHeights = new double[_globalCellIds.Length];
+        for (int f = 0; f < _globalCellIds.Length; f++)
+        {
+            int cellId = _globalCellIds[f];
+            double elev = (cellId >= 0 && cellId < elevationsByCell.Count) ? elevationsByCell[cellId] : 0.0;
+            globalFaceHeights[f] = elev * exaggeration;
+        }
+
+        var globalVertexHeights = GlobeSurfaceBuilder.GatherVertexHeights(
+            _globalVertices.Length, _globalTriangles, globalFaceHeights);
+
         var caps = new PlateCap[_plates.Count];
         for (int p = 0; p < _plates.Count; p++)
         {
             var plate = _plates[p];
-            int faceCount = plate.CellIds.Length;
 
-            // Per-face heights for THIS plate's faces, in the plate's local face order.
-            var perFaceHeights = new double[faceCount];
-            for (int f = 0; f < faceCount; f++)
-            {
-                int cellId = plate.CellIds[f];
-                double elev = (cellId >= 0 && cellId < elevationsByCell.Count) ? elevationsByCell[cellId] : 0.0;
-                perFaceHeights[f] = elev * exaggeration;
-            }
-
-            // Face heights -> per-vertex mean heights (the tectonic ENVELOPE, already × exaggeration).
-            var perVertexHeights = GlobeSurfaceBuilder.GatherVertexHeights(
-                plate.LocalVertices.Length, plate.LocalTriangles, perFaceHeights);
-
-            // Add the seeded PEAKS on top: cached per-vertex noise is in METRES (tick-invariant; sampled
-            // once on the base unit positions), so scale it by the same exaggeration as the envelope and
-            // sum. Final height[v] = (envelope_m + noise_m) × exaggeration. Because the noise rides the
-            // shared BASE position, coincident boundary corners stay equal → the cap remains watertight.
+            // Read each local vertex's envelope height from the GLOBAL mean (watertight across plates),
+            // then add the per-plate seeded peaks (already shared across plates via the base position).
+            var perVertexHeights = new double[plate.LocalVertices.Length];
             for (int v = 0; v < perVertexHeights.Length; v++)
-            {
-                perVertexHeights[v] += plate.VertexNoiseMetres[v] * exaggeration;
-            }
+                perVertexHeights[v] = globalVertexHeights[plate.LocalToGlobal[v]] + plate.VertexNoiseMetres[v] * exaggeration;
 
             var surface = _builder.Build(
                 plate.LocalVertices, plate.LocalTriangles, perVertexHeights, GlobeSurfaceBuilder.DefaultRadius);
@@ -171,8 +178,43 @@ public sealed class GlobePlateSurfaces
 
     // --- cached per-plate topology (built once) ----------------------------------------------------
 
-    private static IReadOnlyList<PlateTopology> BuildPlateTopologies(WorldGlobeSnapshot snapshot, NoiseParams peaks)
+    // Build a single global shared-vertex topology over the whole snapshot: dedupes every cell's
+    // three corners across ALL plates, so a corner on a plate boundary is ONE global vertex. The
+    // global triangle/cell-id arrays follow global face order (cells in snapshot order). Per-plate
+    // topologies then carry a LocalToGlobal map so BuildSurfaces can read the global envelope mean.
+    private static (CartesianPoint3[] Vertices, int[] Triangles, int[] CellIds) BuildGlobalTopology(WorldGlobeSnapshot snapshot)
     {
+        var vertexIndex = new Dictionary<(long, long, long), int>();
+        var vertices = new List<CartesianPoint3>();
+        var triangles = new int[snapshot.CellCount * 3];
+        var cellIds = new int[snapshot.CellCount];
+
+        var cells = snapshot.Cells;
+        for (int f = 0; f < cells.Count; f++)
+        {
+            var cell = cells[f];
+            cellIds[f] = cell.CellId;
+            triangles[(f * 3) + 0] = GetOrAddVertex(cell.C0, vertexIndex, vertices);
+            triangles[(f * 3) + 1] = GetOrAddVertex(cell.C1, vertexIndex, vertices);
+            triangles[(f * 3) + 2] = GetOrAddVertex(cell.C2, vertexIndex, vertices);
+        }
+
+        return (vertices.ToArray(), triangles, cellIds);
+    }
+
+    private static IReadOnlyList<PlateTopology> BuildPlateTopologies(WorldGlobeSnapshot snapshot, NoiseParams peaks, CartesianPoint3[] globalVertices)
+    {
+        // Reverse index: global vertex id -> its quantized base position (already the dedupe key).
+        var globalKeyById = new (long, long, long)[globalVertices.Length];
+        for (int g = 0; g < globalVertices.Length; g++)
+        {
+            var v = globalVertices[g];
+            globalKeyById[g] = (
+                (long)Math.Round(v.X * DedupeScale),
+                (long)Math.Round(v.Y * DedupeScale),
+                (long)Math.Round(v.Z * DedupeScale));
+        }
+
         // Group faces by plate, preserving cell-id order within each plate (deterministic, tick-stable).
         var byPlate = new SortedDictionary<int, List<GlobeCell>>();
         foreach (var cell in snapshot.Cells)
@@ -187,15 +229,17 @@ public sealed class GlobePlateSurfaces
 
         var result = new List<PlateTopology>(byPlate.Count);
         foreach (var kvp in byPlate)
-            result.Add(BuildOnePlate(kvp.Key, kvp.Value, peaks));
+            result.Add(BuildOnePlate(kvp.Key, kvp.Value, peaks, globalKeyById));
         return result;
     }
 
-    private static PlateTopology BuildOnePlate(int plateId, List<GlobeCell> cells, NoiseParams peaks)
+    private static PlateTopology BuildOnePlate(int plateId, List<GlobeCell> cells, NoiseParams peaks, (long, long, long)[] globalKeyById)
     {
-        // Dedupe the three corners of every face within the plate into shared local vertex ids.
-        var vertexIndex = new Dictionary<(long, long, long), int>();
+        // Dedupe the three corners of every face within the plate into shared local vertex ids, and
+        // record the global vertex each local vertex corresponds to (same quantized base position).
+        var localIndex = new Dictionary<(long, long, long), int>();
         var localVertices = new List<CartesianPoint3>();
+        var localToGlobal = new List<int>();
         var localTriangles = new int[cells.Count * 3];
         var cellIds = new int[cells.Count];
 
@@ -203,9 +247,9 @@ public sealed class GlobePlateSurfaces
         {
             var cell = cells[f];
             cellIds[f] = cell.CellId;
-            localTriangles[(f * 3) + 0] = GetOrAddVertex(cell.C0, vertexIndex, localVertices);
-            localTriangles[(f * 3) + 1] = GetOrAddVertex(cell.C1, vertexIndex, localVertices);
-            localTriangles[(f * 3) + 2] = GetOrAddVertex(cell.C2, vertexIndex, localVertices);
+            localTriangles[(f * 3) + 0] = GetOrAddVertex(cell.C0, localIndex, localVertices, localToGlobal, globalKeyById);
+            localTriangles[(f * 3) + 1] = GetOrAddVertex(cell.C1, localIndex, localVertices, localToGlobal, globalKeyById);
+            localTriangles[(f * 3) + 2] = GetOrAddVertex(cell.C2, localIndex, localVertices, localToGlobal, globalKeyById);
         }
 
         var vertices = localVertices.ToArray();
@@ -217,7 +261,7 @@ public sealed class GlobePlateSurfaces
         for (int v = 0; v < vertices.Length; v++)
             vertexNoiseMetres[v] = NoiseRelief.Sample(vertices[v], peaks);
 
-        return new PlateTopology(plateId, vertices, localTriangles, cellIds, vertexNoiseMetres);
+        return new PlateTopology(plateId, vertices, localTriangles, cellIds, vertexNoiseMetres, localToGlobal.ToArray());
     }
 
     private static int GetOrAddVertex(
@@ -234,6 +278,27 @@ public sealed class GlobePlateSurfaces
         return id;
     }
 
+    private static int GetOrAddVertex(
+        GlobeVec3 corner,
+        Dictionary<(long, long, long), int> localIndex,
+        List<CartesianPoint3> localVertices,
+        List<int> localToGlobal,
+        (long, long, long)[] globalKeyById)
+    {
+        var key = Quantize(corner);
+        if (localIndex.TryGetValue(key, out var existing)) return existing;
+
+        int localId = localVertices.Count;
+        localVertices.Add(new CartesianPoint3(corner.X, corner.Y, corner.Z));
+        localIndex[key] = localId;
+
+        // Find the global vertex with the same base-position key. The global topology already deduped
+        // across all plates, so exactly one global id matches this corner.
+        int globalId = Array.IndexOf(globalKeyById, key);
+        localToGlobal.Add(globalId);
+        return localId;
+    }
+
     // Quantize a unit-sphere corner to an integer grid so corners that are the same icosphere vertex
     // (bar a few ulps from the lat/lon round-trip) map to the same key. Math.Round to avoid the −0.0
     // vs +0.0 and truncation-toward-zero asymmetry a plain cast would introduce near axis planes.
@@ -248,7 +313,8 @@ public sealed class GlobePlateSurfaces
         CartesianPoint3[] LocalVertices,  // unique corners (shared-vertex array)
         int[] LocalTriangles,             // 3 indices per face, into LocalVertices
         int[] CellIds,                    // parallel to faces: the source cell id of each face
-        double[] VertexNoiseMetres);      // parallel to LocalVertices: seeded peaks (metres), tick-invariant
+        double[] VertexNoiseMetres,      // parallel to LocalVertices: seeded peaks (metres), tick-invariant
+        int[] LocalToGlobal);            // parallel to LocalVertices: index into the global shared-vertex array
 }
 
 /// <summary>
