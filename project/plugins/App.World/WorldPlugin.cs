@@ -30,20 +30,24 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
     private IDisposable? _worldCompositionHandle;
     private CrustGenerationTrigger? _crustTrigger;
     private IRegistry? _registry;
+    private ILoggerFactory? _loggerFactory;
     private ILogger? _log;
+    private IDisposable? _lateArmSubscription;
+    private bool _crustArmed;
 
     public ValueTask InitializeAsync(IPluginContext context, CancellationToken ct = default)
     {
         var registry = context.Services.GetRequiredService<IRegistry>();
         var loggerFactory = context.Services.GetRequiredService<ILoggerFactory>();
         _registry = registry;
+        _loggerFactory = loggerFactory;
         _log = loggerFactory.CreateLogger("WorldPlugin");
 
         var ctx = new HostCompositionContext(registry, loggerFactory);
         _worldCompositionHandle = WorldComposition.ComposeWorld(ctx);
 
         RegisterWorldCommand(registry);
-        InstallCrustTrigger(registry, loggerFactory);
+        InstallCrustTrigger();
 
         return ValueTask.CompletedTask;
     }
@@ -61,12 +65,17 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
             _log?.LogInformation("WorldPlugin: unregistered {Command}", RunWorldGenerationGraphCommand);
         }
 
+        _lateArmSubscription?.Dispose();
+        _lateArmSubscription = null;
+
         _crustTrigger?.Dispose();
         _crustTrigger = null;
+        _crustArmed = false;
 
         _worldCompositionHandle?.Dispose();
         _worldCompositionHandle = null;
         _registry = null;
+        _loggerFactory = null;
         _log?.LogInformation("WorldPlugin: shutdown completed.");
         _log = null;
         return ValueTask.CompletedTask;
@@ -89,6 +98,10 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
                 Category: "world"),
             async (payloadJson, ct) =>
             {
+                // The host binder may register ITimelineController after this plugin initialized;
+                // re-try arming on each world command invocation (one-shot once armed).
+                TryArmCrustTrigger();
+
                 var request = WorldGenerationGraphExecutionPayload.Deserialize(payloadJson ?? string.Empty);
 
                 var providers = registry.GetAll<FantaSim.App.NodeGraph.INodeFunctionProvider>().ToArray();
@@ -118,14 +131,34 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
         return generation;
     }
 
-    private void InstallCrustTrigger(IRegistry registry, ILoggerFactory loggerFactory)
+    private void InstallCrustTrigger()
     {
-        var controller = registry.TryGet<ITimelineController>();
-        if (controller is null)
+        if (TryArmCrustTrigger())
+            return;
+
+        // The timeline controller was not registered at init time. The resident host binder
+        // registers it later in the startup sequence. IRegistry exposes no change notification,
+        // so attach a one-shot late-arm hook to the world service's generation-changed event --
+        // the first generation run can only happen after the host has wired the controller.
+        var world = _registry?.TryGet<FantaSim.App.World.IService>();
+        if (world is null)
         {
-            _log?.LogWarning("WorldPlugin: no ITimelineController registered; automatic crust generation disabled.");
+            _log?.LogWarning("WorldPlugin: no ITimelineController registered and no world service to arm via; automatic crust generation disabled.");
             return;
         }
+
+        _lateArmSubscription = world.SubscribeGenerationChanged(_ => TryArmCrustTriggerLate());
+        _log?.LogInformation("WorldPlugin: no ITimelineController registered at init; deferred crust-trigger arming to first world generation event.");
+    }
+
+    private bool TryArmCrustTrigger()
+    {
+        if (_crustArmed || _registry is null)
+            return _crustArmed;
+
+        var controller = _registry.TryGet<ITimelineController>();
+        if (controller is null)
+            return false;
 
         var family = WorldGenerationGraphDefaults.BuildFamily();
         var policy = new CrustGenerationTriggerPolicy(CrustGenerationWindowTicks);
@@ -133,14 +166,28 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
             controller,
             policy,
             family.Revision,
-            (canonicalTick, graphRevision, ct) => ExecuteCrustGenerationAsync(registry, family, canonicalTick, graphRevision, ct),
-            loggerFactory);
+            (canonicalTick, graphRevision, ct) => ExecuteCrustGenerationAsync(_registry, family, canonicalTick, graphRevision, ct),
+            _loggerFactory);
         _crustTrigger.Start();
+        _crustArmed = true;
 
         _log?.LogInformation(
-            "WorldPlugin: automatic crust generation installed (window={WindowTicks:N0}, graphRevision={Revision})",
+            "WorldPlugin: automatic crust generation armed (window={WindowTicks:N0}, graphRevision={Revision})",
             CrustGenerationWindowTicks,
             family.Revision);
+        return true;
+    }
+
+    private bool TryArmCrustTriggerLate()
+    {
+        if (TryArmCrustTrigger())
+        {
+            _lateArmSubscription?.Dispose();
+            _lateArmSubscription = null;
+            return true;
+        }
+
+        return false;
     }
 
     private static async Task ExecuteCrustGenerationAsync(
