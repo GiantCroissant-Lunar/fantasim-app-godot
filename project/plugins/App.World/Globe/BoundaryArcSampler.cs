@@ -23,10 +23,18 @@ public static class BoundaryArcSampler
     /// unit-length and finite.
     /// </summary>
     public static IReadOnlyList<GlobeVec3> SubdivideGreatCircle(SphericalPoint a, SphericalPoint b, int subdiv)
+        => SubdivideGreatCircle(a.ToVector3D(), b.ToVector3D(), subdiv);
+
+    /// <summary>
+    /// Vector overload: subdivides the short great-circle arc between two unit-sphere vectors into
+    /// <c>subdiv + 1</c> ordered points (endpoints inclusive). Lets callers feed reconstructed
+    /// cell positions (already rotated to the target tick) without a SphericalPoint round-trip.
+    /// Same guards as the <see cref="SphericalPoint"/> overload: collinear pairs fall back to a
+    /// deterministic perpendicular axis so the result stays unit-length and finite.
+    /// </summary>
+    public static IReadOnlyList<GlobeVec3> SubdivideGreatCircle(Vector3D u0, Vector3D u1, int subdiv)
     {
         int steps = Math.Max(1, subdiv);
-        var u0 = a.ToVector3D();
-        var u1 = b.ToVector3D();
 
         var result = new GlobeVec3[steps + 1];
         result[0] = ToGlobeVec(u0);
