@@ -227,6 +227,94 @@ public sealed class GlobePlateSurfacesTests
         var caps = surfaces.BuildSurfaces(elevations, exaggeration: 0.00012)
             .OrderBy(c => c.PlateId).ToArray();
 
+        AssertCrossPlateBoundaryVerticesMatchExactly(caps);
+    }
+
+    [Fact]
+    public void Binder_regime_nonuniform_elevation_cross_plate_boundary_vertices_match_exactly()
+    {
+        // The watertight-at-zero proof (above) only exercises the noise layer. Under REAL per-cell
+        // elevations the ENVELOPE mean at a shared boundary corner must also agree across plates. The
+        // naive per-plate GatherVertexHeights means each side only sees its OWN cells -> the two copies
+        // of the corner get different heights -> a thin dark sliver crack. This test pins the fix:
+        // the elevation used for a shared corner is the mean over ALL incident cells GLOBALLY (across
+        // every plate), so the corner lands at one radius regardless of which plate builds it.
+        var snapshot = new GlobeReconstructor(frequency: 3).BuildGlobe();
+        var surfaces = new GlobePlateSurfaces(snapshot, noise: NoNoise); // isolate the envelope
+
+        // Deterministic, varying, non-uniform field. Boundary-adjacent cells of different plates get
+        // different elevations (cell ids interleave across plates), which is exactly the crack trigger.
+        var elevations = new double[snapshot.CellCount];
+        for (int i = 0; i < elevations.Length; i++)
+            elevations[i] = (i % 11) * 100.0 - 500.0; // -500..+400, varies per cell
+
+        var caps = surfaces.BuildSurfaces(elevations, exaggeration: 0.00012)
+            .OrderBy(c => c.PlateId).ToArray();
+
+        AssertEveryCrossPlateBoundaryVertexMatchesExactly(caps);
+    }
+
+    // Strict watertight check: group every cap's vertices by their BASE unit direction (quantized),
+    // find groups that span more than one plate, and assert the displaced positions agree to 9
+    // decimals across every plate in the group. This is the property the binder relies on — NO
+    // cross-plate boundary corner may crack, not just "at least one happens to line up".
+    private static void AssertEveryCrossPlateBoundaryVertexMatchesExactly(PlateCap[] caps)
+    {
+        const double DirEps = 1e-5;
+        const double DirScale = 1.0 / DirEps;
+
+        static (long, long, long) DirKey(CartesianPoint3 p)
+        {
+            double r = Math.Sqrt(p.X * p.X + p.Y * p.Y + p.Z * p.Z);
+            double inv = r > 0 ? 1.0 / r : 0.0;
+            return (
+                (long)Math.Round(p.X * inv * DirScale),
+                (long)Math.Round(p.Y * inv * DirScale),
+                (long)Math.Round(p.Z * inv * DirScale));
+        }
+
+        var groups = new Dictionary<(long, long, long), List<(int PlateId, int LocalVertex, CartesianPoint3 Pos)>>();
+        foreach (var cap in caps)
+        {
+            for (int v = 0; v < cap.Surface.VertexCount; v++)
+            {
+                var p = cap.Surface.Positions[v];
+                var key = DirKey(p);
+                if (!groups.TryGetValue(key, out var list))
+                {
+                    list = new List<(int, int, CartesianPoint3)>();
+                    groups[key] = list;
+                }
+                list.Add((cap.PlateId, v, p));
+            }
+        }
+
+        int crossGroups = 0;
+        foreach (var kv in groups)
+        {
+            var members = kv.Value;
+            var plateIds = members.Select(m => m.PlateId).Distinct().ToArray();
+            if (plateIds.Length < 2)
+                continue; // interior vertex, incident to a single plate
+
+            crossGroups++;
+            var refPos = members[0].Pos;
+            foreach (var m in members)
+            {
+                Assert.Equal(refPos.X, m.Pos.X, 9);
+                Assert.Equal(refPos.Y, m.Pos.Y, 9);
+                Assert.Equal(refPos.Z, m.Pos.Z, 9);
+            }
+        }
+
+        Assert.True(crossGroups > 0, "expected at least one cross-plate boundary vertex group");
+    }
+
+    // Shared assertion: every cross-plate coincident boundary vertex matches exactly (same quantized
+    // key -> same position within tolerance), matching the flat-zero test's tolerance style.
+    private static void AssertCrossPlateBoundaryVerticesMatchExactly(PlateCap[] caps)
+    {
+
         // Gather every cap's vertex positions onto a canonical (quantized) key so corners that are
         // the same icosphere vertex (bar a few ulps) compare equal across caps.
         var seen = new Dictionary<(long, long, long), (int PlateId, int LocalVertex)>();
