@@ -424,6 +424,9 @@ internal sealed class FakeWorldService : WorldService
             Layers: Array.Empty<PlanetPresentationLayer>(),
             RenderEntities: Array.Empty<RenderEntityDto>());
 
+    public PlanetPresentationDocument GetPlanetPresentationAsync(long referenceTick)
+        => GetPlanetPresentationAsync();
+
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
     {
         GenerateCalls++;
