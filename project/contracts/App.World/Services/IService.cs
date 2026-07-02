@@ -13,6 +13,16 @@ public interface IService
     WorldRenderSnapshot GetRenderSnapshotAsync();
     WorldGenerationProductsView GetGenerationProductsAsync();
     PlanetPresentationDocument GetPlanetPresentationAsync();
+
+    /// <summary>
+    /// Same as <see cref="GetPlanetPresentationAsync()"/> but builds the plate-boundary arcs at
+    /// <paramref name="referenceTick"/> instead of the plate-onset tick, so a presentation binder
+    /// that refreshes on a regime change gets arcs that reflect the playhead's current topology.
+    /// The globe base geometry stays anchored at onset (it is the motion reference frame); only the
+    /// boundary arcs are re-derived at the requested tick.
+    /// </summary>
+    PlanetPresentationDocument GetPlanetPresentationAsync(long referenceTick);
+
     WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request);
     IDisposable SubscribeGenerationChanged(Action<WorldGenerationChangedEvent> callback);
 }

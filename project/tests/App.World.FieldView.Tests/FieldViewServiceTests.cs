@@ -45,6 +45,9 @@ internal sealed class FakeWorldService : IService
             Layers: Array.Empty<PlanetPresentationLayer>(),
             RenderEntities: Array.Empty<RenderEntityDto>());
 
+    public PlanetPresentationDocument GetPlanetPresentationAsync(long referenceTick)
+        => GetPlanetPresentationAsync();
+
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
     {
         var evt = new WorldGenerationChangedEvent(request.WorldId, "generation", request.GenerationSpec);

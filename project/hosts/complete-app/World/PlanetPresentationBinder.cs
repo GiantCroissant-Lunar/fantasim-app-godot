@@ -48,6 +48,8 @@ internal sealed class PlanetPresentationBinder : IDisposable
     private bool _graphViewMounted;
     private int? _subscribedWorldHash;
     private bool _worldRuntimeChangePending;
+    private string? _boundRegimeId;
+    private bool _regimeRefreshPending;
     private bool _disposed;
 
     public PlanetPresentationBinder(
@@ -79,6 +81,12 @@ internal sealed class PlanetPresentationBinder : IDisposable
         _watch = _resource.WatchResource(WorldBundleId);
     }
 
+    private void ResetRegimeTracking()
+    {
+        _boundRegimeId = null;
+        _regimeRefreshPending = false;
+    }
+
     public void Rebind()
     {
         if (_disposed)
@@ -104,6 +112,9 @@ internal sealed class PlanetPresentationBinder : IDisposable
             return;
         }
 
+        // Clear the bound-regime baseline so the UpdateFrom -> PushTick -> ApplyTimelineTick path
+        // below (and any intermediate tick) cannot mistake this rebind for a regime transition.
+        ResetRegimeTracking();
         _timeline.UpdateFrom(document);
         EnsureNodeGraphView(document);
         Callable.From(() => BindDocument(document)).CallDeferred();
@@ -219,6 +230,7 @@ internal sealed class PlanetPresentationBinder : IDisposable
         body.AddChild(BuildProductLayerRoot(document));
         _statusLabel = BuildStatusLabel(document);
         body.AddChild(_statusLabel);
+        _boundRegimeId = _timeline.GeosphereSchedule.RegimeAt(_timeline.Tick)?.RegimeId;
         ApplyTimelineTick(_timeline.Tick);
 
         _log.LogInformation(
@@ -233,9 +245,25 @@ internal sealed class PlanetPresentationBinder : IDisposable
     private void ApplyTimelineTick(long tick)
     {
         var regime = _timeline.GeosphereSchedule.RegimeAt(tick);
+        var regimeId = regime?.RegimeId;
         var showsPlateFeatures = regime?.ShowsPlateFeatures ?? true;
 
-        bool isMobilePlate = regime?.RegimeId == "mobile-plate";
+        if (_boundRegimeId is not null
+            && !string.Equals(_boundRegimeId, regimeId, StringComparison.Ordinal))
+        {
+            // Regime-gated content (boundary arcs) differs across this boundary: re-fetch the
+            // presentation document so arcs built at the current tick reach the renderer. The id
+            // is stamped synchronously so rapid ticks cannot stack refreshes; the pending flag
+            // bounds the deferred work to one in-flight rebind.
+            var previousRegimeId = _boundRegimeId;
+            _boundRegimeId = regimeId;
+            _log.LogInformation(
+                "Planet regime transition {Previous} -> {Current} at t={Tick}: refreshing presentation.",
+                previousRegimeId, regimeId ?? "<none>", tick);
+            ScheduleRegimeRefresh();
+        }
+
+        bool isMobilePlate = regimeId == "mobile-plate";
         bool isPlateFocused = _timeline.SelectedLayer?.LayerId == "geosphere.plate";
         bool showBoundaries = showsPlateFeatures && isMobilePlate && isPlateFocused;
 
@@ -248,10 +276,10 @@ internal sealed class PlanetPresentationBinder : IDisposable
         ApplyPlateMotion(tick, showsPlateFeatures);
 
         if (_mantle is not null && GodotObject.IsInstanceValid(_mantle))
-            _mantle.MaterialOverride = ResolveMantleMaterial(RegimeSurfaceResolver.Resolve(regime?.RegimeId));
+            _mantle.MaterialOverride = ResolveMantleMaterial(RegimeSurfaceResolver.Resolve(regimeId));
 
         if (_statusLabel is not null && GodotObject.IsInstanceValid(_statusLabel))
-            _statusLabel.Text = $"{regime?.RegimeId ?? "world"} : t={tick:N0}";
+            _statusLabel.Text = $"{regimeId ?? "world"} : t={tick:N0}";
     }
 
     private void OnLayerSelectionChanged(TimelineLayerSelection? selection)
@@ -259,6 +287,48 @@ internal sealed class PlanetPresentationBinder : IDisposable
         if (_disposed)
             return;
         ApplyTimelineTick(_timeline.Tick);
+    }
+
+    private void ScheduleRegimeRefresh()
+    {
+        if (_regimeRefreshPending)
+            return;
+        _regimeRefreshPending = true;
+        Callable.From(RefreshPresentationForRegime).CallDeferred();
+    }
+
+    private void RefreshPresentationForRegime()
+    {
+        if (_disposed)
+        {
+            _regimeRefreshPending = false;
+            return;
+        }
+
+        var world = _registry.TryGet<WorldService>();
+        if (world is null)
+        {
+            _regimeRefreshPending = false;
+            _log.LogWarning("Planet presentation regime refresh skipped: world service is not registered.");
+            return;
+        }
+
+        PlanetPresentationDocument document;
+        try
+        {
+            document = world.GetPlanetPresentationAsync(_timeline.Tick);
+        }
+        catch (Exception ex)
+        {
+            _regimeRefreshPending = false;
+            _log.LogError(ex, "Planet presentation document failed during regime refresh at tick {Tick}.", _timeline.Tick);
+            return;
+        }
+
+        _timeline.UpdateFrom(document);
+        EnsureNodeGraphView(document);
+        BindDocument(document);
+        _regimeRefreshPending = false;
     }
 
     private void ApplyPlateMotion(long tick, bool showsPlateFeatures)
@@ -667,6 +737,7 @@ void fragment() {
         _generationSubscription?.Dispose();
         _generationSubscription = null;
         _worldRuntimeChangePending = true;
+        ResetRegimeTracking();
         Callable.From(() =>
         {
             ClearActiveRoot();

@@ -122,11 +122,14 @@ public sealed class Service : IService, IDisposable
     }
 
     public PlanetPresentationDocument GetPlanetPresentationAsync()
+        => GetPlanetPresentationAsync(SphereRegimeScheduleDefaults.PlateOnsetTick);
+
+    public PlanetPresentationDocument GetPlanetPresentationAsync(long referenceTick)
     {
         var overview = _runtime.GetOverview();
         var renderSnapshot = _runtime.GetRenderSnapshot();
         var family = WorldGenerationGraphDefaults.BuildFamily();
-        var runtime = BuildPlanetPresentationRuntime(family);
+        var runtime = BuildPlanetPresentationRuntime(family, referenceTick);
         WorldGenerationProductsView products;
         lock (_generationProductsGate)
             products = _generationProducts;
@@ -264,7 +267,9 @@ public sealed class Service : IService, IDisposable
             LayerId: address.Product[(separator + 1)..]);
     }
 
-    private static PlanetPresentationRuntime BuildPlanetPresentationRuntime(WorldGenerationGraphFamilyDocument family)
+    private static PlanetPresentationRuntime BuildPlanetPresentationRuntime(
+        WorldGenerationGraphFamilyDocument family,
+        long arcTick)
     {
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
         var renderOptions = ResolvePlanetRenderOptions(family);
@@ -283,7 +288,7 @@ public sealed class Service : IService, IDisposable
             geosphere,
             atmosphere,
             onsetTick + 20_000_000L,
-            reconstructor.BuildBoundaryArcsAt(onsetTick));
+            reconstructor.BuildBoundaryArcsAt(arcTick));
     }
 
     private static WorldGenerationRenderOptions ResolvePlanetRenderOptions(WorldGenerationGraphFamilyDocument family)

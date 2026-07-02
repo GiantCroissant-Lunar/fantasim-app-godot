@@ -60,4 +60,21 @@ public sealed record SphereRegimeSchedule(SphereId Sphere, IReadOnlyList<SphereR
         }
         return null;
     }
+
+    /// <summary>
+    /// True when the regime active at <paramref name="tick"/> differs from
+    /// <paramref name="previousRegimeId"/> — i.e. the playhead has crossed a regime boundary since
+    /// the presentation was last bound. Returns <c>false</c> when <paramref name="previousRegimeId"/>
+    /// is <c>null</c> (initial mount: no prior regime to transition from, so the first bind is not a
+    /// refresh). Lets a presentation binder re-fetch regime-gated content (e.g. plate-boundary arcs)
+    /// only on an actual regime change, never per intra-regime tick.
+    /// </summary>
+    public bool IsRegimeTransition(string? previousRegimeId, long tick)
+    {
+        if (previousRegimeId is null)
+            return false;
+
+        var current = RegimeAt(tick)?.RegimeId;
+        return !string.Equals(previousRegimeId, current, StringComparison.Ordinal);
+    }
 }
