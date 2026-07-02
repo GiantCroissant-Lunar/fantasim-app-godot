@@ -51,6 +51,8 @@ internal sealed class PlanetPresentationBinder : IDisposable
     private bool _worldRuntimeChangePending;
     private string? _boundRegimeId;
     private bool _regimeRefreshPending;
+    private long? _boundCrustSnapshotTick;
+    private IReadOnlyList<long> _boundCrustSnapshotTicks = Array.Empty<long>();
     private bool _disposed;
 
     public PlanetPresentationBinder(
@@ -86,6 +88,8 @@ internal sealed class PlanetPresentationBinder : IDisposable
     {
         _boundRegimeId = null;
         _regimeRefreshPending = false;
+        _boundCrustSnapshotTick = null;
+        _boundCrustSnapshotTicks = Array.Empty<long>();
     }
 
     public void Rebind()
@@ -232,6 +236,9 @@ internal sealed class PlanetPresentationBinder : IDisposable
         _statusLabel = BuildStatusLabel(document);
         body.AddChild(_statusLabel);
         _boundRegimeId = _timeline.GeosphereSchedule.RegimeAt(_timeline.Tick)?.RegimeId;
+        _boundCrustSnapshotTicks = document.CrustSnapshotTicks.Select(state => state.Tick).ToArray();
+        _boundCrustSnapshotTick = new CrustSnapshotTickSeries(_boundCrustSnapshotTicks)
+            .SelectSnapshotForPlayhead(_timeline.Tick);
         ApplyTimelineTick(_timeline.Tick);
 
         _log.LogInformation(
@@ -262,6 +269,24 @@ internal sealed class PlanetPresentationBinder : IDisposable
                 "Planet regime transition {Previous} -> {Current} at t={Tick}: refreshing presentation.",
                 previousRegimeId, regimeId ?? "<none>", tick);
             ScheduleRegimeRefresh();
+        }
+        else if (_boundCrustSnapshotTicks.Count > 0)
+        {
+            // Same regime, but the playhead may have crossed a crust-snapshot boundary: the
+            // presented terrain (elevation + tint) belongs to the snapshot at <= playhead, so
+            // re-fetch when the selected snapshot changes. Scrubbing within one snapshot
+            // interval stays free of re-fetches.
+            var selectedSnapshot = new CrustSnapshotTickSeries(_boundCrustSnapshotTicks)
+                .SelectSnapshotForPlayhead(tick);
+            if (selectedSnapshot != _boundCrustSnapshotTick)
+            {
+                var previousSnapshot = _boundCrustSnapshotTick;
+                _boundCrustSnapshotTick = selectedSnapshot;
+                _log.LogInformation(
+                    "Crust snapshot transition {Previous} -> {Current} at t={Tick}: refreshing presentation.",
+                    previousSnapshot?.ToString("N0") ?? "<none>", selectedSnapshot?.ToString("N0") ?? "<none>", tick);
+                ScheduleRegimeRefresh();
+            }
         }
 
         bool isMobilePlate = regimeId == "mobile-plate";
@@ -484,8 +509,11 @@ internal sealed class PlanetPresentationBinder : IDisposable
 
     private static Color ToColor(RampColor c) => new((float)c.R, (float)c.G, (float)c.B);
 
-    // Matches GlobeView's magnitude so the mantle sphere (radius 0.96 * 2) stays hidden under the caps.
-    private const float WatertightDisplacementExaggeration = 0.00012f;
+    // Scales CellElevationSystem-derived elevations (abyssal ~-1500 .. orogenic ~+3000, growing as
+    // pressure accumulates) onto the unit globe: +3500 -> ~3.5% of radius. Absolute (not normalized
+    // per snapshot) so mountains visibly GROW across crust snapshots. Deepest ocean (-1500 -> -1.5%)
+    // stays above the mantle sphere at 0.96 of the cap radius.
+    private const float WatertightDisplacementExaggeration = 0.00001f;
 
     private static MeshInstance3D BuildPlateMesh(PlateCap cap, Color[] perCellColor, float[] perCellEmission)
     {
