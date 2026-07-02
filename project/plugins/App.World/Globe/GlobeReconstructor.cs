@@ -305,10 +305,23 @@ public sealed class GlobeReconstructor
         var boundaries = PlateTopologyBuilder.ClassifyBoundariesAt(
             _tessellation, _plates, _topology, new CanonicalTick(tick));
 
+        // Pre-compute the per-plate rotation at this tick once; used by the single-sample recovery
+        // to lift the shared-edge endpoints onto the moved sphere. Same formula as CellReconstructor.
+        var rotationByPlate = BuildRotationsByPlate(tick);
+
         var arcs = new List<PlateBoundaryArc>(boundaries.Count);
         foreach (var b in boundaries)
         {
             var points = BuildArcPoints(b.SamplePoints, subdivsPerSegment);
+            if (points.Count < 2)
+            {
+                // Recovery: a boundary whose topology truth carries a single sample point (one
+                // shared cell edge) would be dropped by the >= 2 guard above. Derive the arc from
+                // the real shared-edge endpoints — the topology truth the engine DOES provide —
+                // rotated to the tick and subdivided via the Unify-based sampler. No invented
+                // geometry: both endpoints come from the tessellation's shared corner vertices.
+                points = BuildArcPointsFromSharedEdge(b, rotationByPlate, subdivsPerSegment);
+            }
             if (points.Count < 2) continue;
             arcs.Add(new PlateBoundaryArc(b.PlateA, b.PlateB, BoundaryArcSampler.MapKind(b.Type), points));
         }
@@ -337,8 +350,94 @@ public sealed class GlobeReconstructor
         return points;
     }
 
-    /// <summary>
-    /// One crust-pipeline run over <paramref name="snapshotTicks"/> (continental recipe 0,1) → per
+    // Recovery for boundaries whose topology truth carries a single sample point (one shared cell
+    // edge): find that edge from the tessellation + assignment, take its two shared corner vertices
+    // (real geometry), rotate each endpoint by BOTH adjacent plates' rotations and average — the
+    // seam midpoint, matching the engine's edge-midpoint sample model — then subdivide the great-
+    // circle arc between the two averaged endpoints. Both endpoints come from the tessellation;
+    // no boundary is invented.
+    private IReadOnlyList<GlobeVec3> BuildArcPointsFromSharedEdge(
+        Boundary b,
+        IReadOnlyDictionary<int, Quaternion> rotationByPlate,
+        int subdivsPerSegment)
+    {
+        var (endA, endB) = FindSharedEdgeEndpoints(b.PlateA, b.PlateB);
+        if (endA is null || endB is null) return Array.Empty<GlobeVec3>();
+
+        var rotA = rotationByPlate.TryGetValue(b.PlateA, out var qa) ? qa : Quaternion.Identity;
+        var rotB = rotationByPlate.TryGetValue(b.PlateB, out var qb) ? qb : Quaternion.Identity;
+
+        var p0 = NormalizeOrZero((rotA.Rotate(endA.Value) + rotB.Rotate(endA.Value)) * 0.5);
+        var p1 = NormalizeOrZero((rotA.Rotate(endB.Value) + rotB.Rotate(endB.Value)) * 0.5);
+        if (p0.Length() < 0.5 || p1.Length() < 0.5) return Array.Empty<GlobeVec3>();
+
+        return BoundaryArcSampler.SubdivideGreatCircle(p0, p1, Math.Max(2, subdivsPerSegment));
+    }
+
+    // Finds the two shared corner vertices of the single cell edge between plateA and plateB.
+    // Returns (null, null) when no shared edge exists (should not happen for a real boundary, but
+    // guards against a topology/engine mismatch — the caller drops the arc in that case).
+    private (Vector3D? EndA, Vector3D? EndB) FindSharedEdgeEndpoints(int plateA, int plateB)
+    {
+        int freq = _frequency;
+        var space = _tessellation.Space;
+        int n = _tessellation.CellCount;
+
+        for (int cell = 0; cell < n; cell++)
+        {
+            if (!_topology.Assignment.TryGetValue(cell, out var pc) || pc != plateA) continue;
+            var corners = _tessellation.GetBoundary(new GeodesicCoord(cell, freq));
+            foreach (var nb in space.Neighbors(new GeodesicCoord(cell, freq)))
+            {
+                if (!_topology.Assignment.TryGetValue(nb.FaceIndex, out var pn) || pn != plateB) continue;
+                // Found the shared edge (cell, nb). The two shared corner vertices are the two
+                // vertices both triangles have in common. Geodesic cells share exactly two corners.
+                var nbCorners = _tessellation.GetBoundary(new GeodesicCoord(nb.FaceIndex, freq));
+                Vector3D? shared0 = null, shared1 = null;
+                for (int i = 0; i < 3 && shared1 is null; i++)
+                {
+                    var ci = corners[i].ToVector3D();
+                    for (int j = 0; j < 3; j++)
+                    {
+                        var cj = nbCorners[j].ToVector3D();
+                        if (VertexEquals(ci, cj))
+                        {
+                            if (shared0 is null) { shared0 = ci; break; }
+                            if (!VertexEquals(ci, shared0.Value)) { shared1 = ci; break; }
+                        }
+                    }
+                }
+                if (shared0 is not null && shared1 is not null)
+                    return (shared0, shared1);
+            }
+        }
+        return (null, null);
+    }
+
+    // Corner vertices are exact shared icosphere vertices (identical doubles across cells), so a
+    // tight tolerance suffices to identify the shared pair.
+    private static bool VertexEquals(Vector3D a, Vector3D b)
+        => Math.Abs(a.X - b.X) < 1e-12
+            && Math.Abs(a.Y - b.Y) < 1e-12
+            && Math.Abs(a.Z - b.Z) < 1e-12;
+
+    private static Vector3D NormalizeOrZero(Vector3D v)
+    {
+        double len = v.Length();
+        return len < 1e-15 ? new Vector3D(0, 0, 0) : v * (1.0 / len);
+    }
+
+    private Dictionary<int, Quaternion> BuildRotationsByPlate(long tick)
+    {
+        var dict = new Dictionary<int, Quaternion>(_plates.Count);
+        foreach (var plate in _plates)
+        {
+            double angleRad = plate.Pole.AngularRate * tick;
+            var axis = plate.Pole.Axis.Normalize();
+            dict[plate.PlateId] = Quaternion.FromAxisAngle(axis, angleRad);
+        }
+        return dict;
+    }
     /// snapshot, the per-cell feature kind (0 None, 1 Mountain, 2 VolcanicArc, 3 Trench, 4 Ridge,
     /// 5 Fault). Fields accumulate from genesis, so a feature emerges at the tick its magnitude crosses
     /// threshold (a mountain "grows in" as orogenic-pressure passes τ).

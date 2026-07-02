@@ -1,0 +1,156 @@
+using System.Collections.Generic;
+using System.Linq;
+using FantaSim.App.World.Composition;
+using FantaSim.App.World.Dto;
+using FantaSim.App.World.Globe;
+using FantaSim.Geosphere.Plate.Topology;
+using FantaSim.World.Contracts.Units;
+using TimeDete.Time.Primitives;
+using UnifyCell;
+using Xunit;
+
+namespace FantaSim.App.World.Tests;
+
+/// <summary>
+/// Characterization / regression tests for the plate-boundary NETWORK completeness at the
+/// mobile-plate regime. The app builds its onset roster via
+/// <see cref="OnsetRoster.Build"/> with the default render-options seed/frequency and calls
+/// <see cref="GlobeReconstructor.BuildBoundaryArcsAt"/> at the onset tick. Every plate must be
+/// enclosed by closed, typed boundary polylines: every plate id appears in at least one arc,
+/// every topology boundary yields at least one arc, and every arc carries >= 2 ordered points.
+/// </summary>
+public sealed class BoundaryNetworkCompletenessTests
+{
+    // The app's default render options (WorldGenerationRenderOptions.Default): seed 7, freq 3.
+    private const int AppSeed = 7;
+    private const int AppFrequency = 3;
+
+    private static GlobeReconstructor BuildAppReconstructor(out long onsetTick)
+    {
+        onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        var roster = OnsetRoster.Build(AppSeed, onsetTick, AppFrequency);
+        var schedule = SphereRegimeScheduleDefaults.GeosphereFor(onsetTick);
+        return GlobeReconstructor.FromOnsetRoster(roster, onsetTick, schedule, AppFrequency);
+    }
+
+    [Fact]
+    public void EveryPlateIdAppearsInAtLeastOneArc()
+    {
+        var model = BuildAppReconstructor(out long onsetTick);
+        var snapshot = model.BuildGlobeAt(onsetTick);
+        var arcs = model.BuildBoundaryArcsAt(onsetTick);
+
+        var platesInArcs = new HashSet<int>();
+        foreach (var arc in arcs)
+        {
+            platesInArcs.Add(arc.PlateA);
+            platesInArcs.Add(arc.PlateB);
+        }
+
+        var allPlates = snapshot.Plates.Select(p => p.PlateId).ToHashSet();
+        Assert.NotEmpty(allPlates);
+        Assert.Subset(platesInArcs, allPlates);
+    }
+
+    [Fact]
+    public void EveryTopologyBoundaryYieldsAnArc()
+    {
+        var model = BuildAppReconstructor(out long onsetTick);
+        var arcs = model.BuildBoundaryArcsAt(onsetTick);
+
+        // Re-derive the topology truth the same way BuildBoundaryArcsAt does, to compare.
+        var tess = new GeodesicSphereTessellation(AppFrequency);
+        var roster = OnsetRoster.Build(AppSeed, onsetTick, AppFrequency);
+        var plates = roster.SeedPlatesAt(onsetTick);
+        var topology = PlateTopologyBuilder.Build(tess, plates);
+        var boundaries = PlateTopologyBuilder.ClassifyBoundariesAt(
+            tess, plates, topology, new CanonicalTick(onsetTick));
+
+        var arcPairs = arcs.Select(a => (a.PlateA, a.PlateB)).ToHashSet();
+        foreach (var b in boundaries)
+        {
+            Assert.Contains((b.PlateA, b.PlateB), arcPairs);
+        }
+    }
+
+    [Fact]
+    public void EveryArcHasAtLeastTwoPoints()
+    {
+        var model = BuildAppReconstructor(out long onsetTick);
+        var arcs = model.BuildBoundaryArcsAt(onsetTick);
+
+        Assert.NotEmpty(arcs);
+        Assert.All(arcs, a => Assert.True(a.Points.Count >= 2, $"arc {a.PlateA}|{a.PlateB} has {a.Points.Count} points"));
+    }
+
+    [Fact]
+    public void ArcKindsCoverActiveTypes()
+    {
+        var model = BuildAppReconstructor(out long onsetTick);
+        var arcs = model.BuildBoundaryArcsAt(onsetTick);
+
+        var kinds = arcs.Select(a => a.Kind).Distinct().ToArray();
+        // The network must include real motion types (not only Inactive).
+        Assert.Contains(PlateBoundaryKind.Convergent, kinds);
+        Assert.Contains(PlateBoundaryKind.Divergent, kinds);
+        Assert.Contains(PlateBoundaryKind.Transform, kinds);
+    }
+
+    [Fact]
+    public void ArcCountMatchesTopologyBoundaryCount()
+    {
+        var model = BuildAppReconstructor(out long onsetTick);
+        var arcs = model.BuildBoundaryArcsAt(onsetTick);
+
+        var tess = new GeodesicSphereTessellation(AppFrequency);
+        var roster = OnsetRoster.Build(AppSeed, onsetTick, AppFrequency);
+        var plates = roster.SeedPlatesAt(onsetTick);
+        var topology = PlateTopologyBuilder.Build(tess, plates);
+        var boundaries = PlateTopologyBuilder.ClassifyBoundariesAt(
+            tess, plates, topology, new CanonicalTick(onsetTick));
+
+        Assert.Equal(boundaries.Count, arcs.Count);
+    }
+
+    // Regression: the specific failure mode — boundaries whose topology truth carries a single
+    // sample point (one shared cell edge) were dropped by the old >= 2 sample guard. The default
+    // onset roster produces exactly two such boundaries (pairs (1,2) and (7,8)). Both must now
+    // produce a real arc with >= 2 unit-length points, so the network is closed around every plate.
+    [Fact]
+    public void SingleSampleBoundariesAreRecoveredNotDropped()
+    {
+        var model = BuildAppReconstructor(out long onsetTick);
+
+        var tess = new GeodesicSphereTessellation(AppFrequency);
+        var roster = OnsetRoster.Build(AppSeed, onsetTick, AppFrequency);
+        var plates = roster.SeedPlatesAt(onsetTick);
+        var topology = PlateTopologyBuilder.Build(tess, plates);
+        var boundaries = PlateTopologyBuilder.ClassifyBoundariesAt(
+            tess, plates, topology, new CanonicalTick(onsetTick));
+
+        var singleSamplePairs = boundaries
+            .Where(b => b.SamplePoints.Count < 2)
+            .Select(b => (b.PlateA, b.PlateB))
+            .ToArray();
+        Assert.NotEmpty(singleSamplePairs);
+
+        var arcs = model.BuildBoundaryArcsAt(onsetTick);
+        var arcByKey = arcs.ToDictionary(a => (a.PlateA, a.PlateB));
+        foreach (var pair in singleSamplePairs)
+        {
+            Assert.True(arcByKey.ContainsKey(pair),
+                $"single-sample boundary {pair} was dropped — no arc emitted");
+            var arc = arcByKey[pair];
+            Assert.True(arc.Points.Count >= 2,
+                $"recovered arc {pair} has {arc.Points.Count} points");
+            foreach (var p in arc.Points)
+                AssertUnitLength(p);
+        }
+    }
+
+    private static void AssertUnitLength(GlobeVec3 v)
+    {
+        double len = System.Math.Sqrt((double)v.X * v.X + (double)v.Y * v.Y + (double)v.Z * v.Z);
+        Assert.InRange(len, 1.0 - 1e-4, 1.0 + 1e-4);
+    }
+}
