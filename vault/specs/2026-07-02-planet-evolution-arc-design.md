@@ -105,6 +105,26 @@ W = [onset − 2M ticks, onset + 3M ticks], tunable):
   vocabulary "state-machine = regime selector · blend = crossfade"; the fracture-progress
   input is a function of playhead tick — replaceable later by engine truth.
 
+## 5b. P4 — boundary-profile topography (locked 2026-07-03)
+
+The crust/terrain view expresses boundary types TOPOGRAPHICALLY, not (only) by symbology:
+convergent = asymmetric trench + arc pair (trench on the subducting side, uplift set back on
+the overriding side); divergent = symmetric swell with an axial rift notch, floor deepening
+with crust age away from the axis (the engine's crust-age deepening already provides the
+age term); transform = subtle narrow band of linear scarps. Implementation: a Godot-free
+per-cell field (distance to nearest boundary, boundary type, side/polarity) in App.World;
+per-type cross-boundary profile functions shape the elevation the crust view already
+displaces and tints; bundled with a presentation LOD (tessellation frequency) bump so the
+profiles have cells to live in.
+
+**Fantasy-world principle (locked):** Earth is ONE world. Real-Earth references (USGS
+cross-sections, GEBCO/ETOPO relief) calibrate the DEFAULT profile parameters only. The
+profile shapes (trench depth, arc height and setback, rift width/depth, swell breadth,
+scarp amplitude, symmetry factors) are world PARAMETERS in the control plane — JSON-schema
+parameter fields addressed per truth-stream identity (variant, branch) like every other
+world property — never constants in code. A different world legitimately has different
+tectonic expression. ComfyUI is a later STYLE reference only, never a correctness source.
+
 ## 6. Verification
 
 Every packet: unit tests for the Godot-free logic (TDD), full suite green, then the exported
