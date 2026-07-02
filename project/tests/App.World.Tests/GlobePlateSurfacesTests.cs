@@ -214,6 +214,57 @@ public sealed class GlobePlateSurfacesTests
         }
     }
 
+    [Fact]
+    public void Binder_regime_flat_zero_elevation_cross_plate_boundary_vertices_match_exactly()
+    {
+        // Under a uniform/zero envelope the per-plate envelope MEAN is identical everywhere, so the
+        // only thing that could crack a shared boundary corner between two caps is the noise. Sampling
+        // noise on the shared BASE position makes it identical in both caps -> the two caps' coincident
+        // boundary vertex matches exactly. This is the property PlanetPresentationBinder now relies on.
+        var snapshot = new GlobeReconstructor(frequency: 3).BuildGlobe();
+        var surfaces = new GlobePlateSurfaces(snapshot);
+        var elevations = new double[snapshot.CellCount];
+        var caps = surfaces.BuildSurfaces(elevations, exaggeration: 0.00012)
+            .OrderBy(c => c.PlateId).ToArray();
+
+        // Gather every cap's vertex positions onto a canonical (quantized) key so corners that are
+        // the same icosphere vertex (bar a few ulps) compare equal across caps.
+        var seen = new Dictionary<(long, long, long), (int PlateId, int LocalVertex)>();
+        var matches = 0;
+        foreach (var cap in caps)
+        {
+            for (int v = 0; v < cap.Surface.VertexCount; v++)
+            {
+                var p = cap.Surface.Positions[v];
+                var key = Quantize(p);
+                if (seen.TryGetValue(key, out var prior))
+                {
+                    Assert.NotEqual(prior.PlateId, cap.PlateId);
+                    var priorCap = caps.Single(c => c.PlateId == prior.PlateId);
+                    var priorPos = priorCap.Surface.Positions[prior.LocalVertex];
+                    Assert.Equal(priorPos.X, p.X, 9);
+                    Assert.Equal(priorPos.Y, p.Y, 9);
+                    Assert.Equal(priorPos.Z, p.Z, 9);
+                    matches++;
+                }
+                else
+                {
+                    seen[key] = (cap.PlateId, v);
+                }
+            }
+        }
+
+        Assert.True(matches > 0, "expected at least one cross-plate boundary vertex match");
+    }
+
+    private const double QuantEps = 1e-5;
+    private const double QuantScale = 1.0 / QuantEps;
+
+    private static (long, long, long) Quantize(CartesianPoint3 p) => (
+        (long)Math.Round(p.X * QuantScale),
+        (long)Math.Round(p.Y * QuantScale),
+        (long)Math.Round(p.Z * QuantScale));
+
     // === seeded "peaks" relief =====================================================================
 
     // A snapshot whose two plates SHARE a boundary corner position: plate 0's face and plate 1's face
