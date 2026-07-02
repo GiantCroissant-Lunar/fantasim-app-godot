@@ -208,7 +208,8 @@ internal sealed class PlanetPresentationBinder : IDisposable
             _plateSurfaceRoot = BuildPlateSurface(document.GlobeSnapshot);
             body.AddChild(_plateSurfaceRoot);
 
-            _boundaryRenderer = new PlateBoundaryFocusRenderer(document.GlobeSnapshot);
+            _boundaryRenderer = new PlateBoundaryFocusRenderer(
+                document.BoundaryArcs ?? Array.Empty<PlateBoundaryArc>());
             body.AddChild(_boundaryRenderer);
         }
 

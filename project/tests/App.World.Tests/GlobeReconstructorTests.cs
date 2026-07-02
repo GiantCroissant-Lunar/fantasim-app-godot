@@ -71,6 +71,88 @@ public sealed class GlobeReconstructorTests
         Assert.Equal(model.ClassifyCellsAt(500_000), model.ClassifyCellsAt(500_000));
     }
 
+    // ── Typed boundary arcs (topology truth → smooth great-circle polylines) ────────────────────
+
+    [Fact]
+    public void BuildBoundaryArcsAt_seed_returns_nonempty_arcs_with_unit_length_ordered_points()
+    {
+        var model = new GlobeReconstructor(frequency: 3);
+
+        var arcs = model.BuildBoundaryArcsAt(0);
+
+        Assert.NotEmpty(arcs);
+        foreach (var arc in arcs)
+        {
+            Assert.True(arc.PlateA < arc.PlateB, "PlateA must be the lower id");
+            Assert.True(arc.Kind == PlateBoundaryKind.Convergent
+                     || arc.Kind == PlateBoundaryKind.Divergent
+                     || arc.Kind == PlateBoundaryKind.Transform
+                     || arc.Kind == PlateBoundaryKind.Inactive);
+            Assert.True(arc.Points.Count >= 2, "an arc needs at least two points");
+            foreach (var p in arc.Points)
+                AssertUnitLength(p);
+        }
+    }
+
+    [Fact]
+    public void BuildBoundaryArcsAt_seed_has_convergent_divergent_and_transform_arcs()
+    {
+        var model = new GlobeReconstructor(frequency: 3);
+
+        var kinds = model.BuildBoundaryArcsAt(0).Select(a => a.Kind).Distinct().ToArray();
+
+        Assert.Contains(PlateBoundaryKind.Convergent, kinds);
+        Assert.Contains(PlateBoundaryKind.Divergent, kinds);
+        Assert.Contains(PlateBoundaryKind.Transform, kinds);
+    }
+
+    [Fact]
+    public void BuildBoundaryArcsAt_returns_empty_before_onset()
+    {
+        var model = BuildOnsetReconstructor(out long onsetTick);
+
+        Assert.Empty(model.BuildBoundaryArcsAt(onsetTick - 1));
+    }
+
+    [Fact]
+    public void BuildBoundaryArcsAt_returns_arcs_at_onset()
+    {
+        var model = BuildOnsetReconstructor(out long onsetTick);
+
+        Assert.NotEmpty(model.BuildBoundaryArcsAt(onsetTick));
+    }
+
+    [Fact]
+    public void BuildBoundaryArcsAt_is_deterministic()
+    {
+        var model = new GlobeReconstructor(frequency: 3);
+
+        var first = model.BuildBoundaryArcsAt(500_000);
+        var second = model.BuildBoundaryArcsAt(500_000);
+
+        Assert.Equal(first.Count, second.Count);
+        for (int i = 0; i < first.Count; i++)
+        {
+            Assert.Equal(first[i].PlateA, second[i].PlateA);
+            Assert.Equal(first[i].PlateB, second[i].PlateB);
+            Assert.Equal(first[i].Kind, second[i].Kind);
+            Assert.Equal(first[i].Points.Count, second[i].Points.Count);
+        }
+    }
+
+    [Fact]
+    public void BuildBoundaryArcsAt_point_count_grows_with_subdivs()
+    {
+        var model = new GlobeReconstructor(frequency: 3);
+
+        var coarse = model.BuildBoundaryArcsAt(0, subdivsPerSegment: 4);
+        var fine = model.BuildBoundaryArcsAt(0, subdivsPerSegment: 32);
+
+        Assert.Equal(coarse.Count, fine.Count);
+        for (int i = 0; i < coarse.Count; i++)
+            Assert.True(fine[i].Points.Count > coarse[i].Points.Count);
+    }
+
     [Fact]
     public void RunCrustFeatures_grows_a_mountain_by_eight_mega_annum()
     {

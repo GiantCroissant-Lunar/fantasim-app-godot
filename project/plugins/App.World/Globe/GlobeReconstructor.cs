@@ -285,6 +285,59 @@ public sealed class GlobeReconstructor
     };
 
     /// <summary>
+    /// Typed plate-boundary arcs at <paramref name="tick"/>: each inter-plate boundary from the
+    /// topology truth (re-classified from the moved cell positions) becomes a smooth great-circle
+    /// polyline (<see cref="PlateBoundaryArc"/>), ready for the host seam to render. Returns an empty
+    /// list before onset or in non-plate regimes (same gate as <see cref="ClassifyCellsAt"/>).
+    /// </summary>
+    /// <remarks>
+    /// Boundaries here are authoritative for <paramref name="tick"/>; the topology engine re-derives
+    /// them from reconstructed cell positions, so types and sample paths evolve over time. Per-tick
+    /// reclassification across the playhead (retaining this reconstructor behind a tick-parametric
+    /// service query) is the next increment — today the document carries the reference-tick arcs.
+    /// </remarks>
+    /// <param name="subdivsPerSegment">Great-circle subdivisions between consecutive topology sample
+    /// points (higher = smoother, denser polyline). Defaults to 16.</param>
+    public IReadOnlyList<PlateBoundaryArc> BuildBoundaryArcsAt(long tick, int subdivsPerSegment = 16)
+    {
+        if (!ShowsPlateFeatures(tick)) return Array.Empty<PlateBoundaryArc>();
+
+        var boundaries = PlateTopologyBuilder.ClassifyBoundariesAt(
+            _tessellation, _plates, _topology, new CanonicalTick(tick));
+
+        var arcs = new List<PlateBoundaryArc>(boundaries.Count);
+        foreach (var b in boundaries)
+        {
+            var points = BuildArcPoints(b.SamplePoints, subdivsPerSegment);
+            if (points.Count < 2) continue;
+            arcs.Add(new PlateBoundaryArc(b.PlateA, b.PlateB, BoundaryArcSampler.MapKind(b.Type), points));
+        }
+        return arcs;
+    }
+
+    // Concatenates the great-circle subdivisions of each consecutive topology sample pair into one
+    // ordered polyline, dropping the shared endpoint between segments so no vertex is duplicated.
+    private static IReadOnlyList<GlobeVec3> BuildArcPoints(
+        IReadOnlyList<SphericalPoint> samples,
+        int subdivsPerSegment)
+    {
+        if (samples.Count < 2) return Array.Empty<GlobeVec3>();
+
+        var points = new List<GlobeVec3>(samples.Count * subdivsPerSegment + 1);
+        var firstSegment = BoundaryArcSampler.SubdivideGreatCircle(samples[0], samples[1], subdivsPerSegment);
+        points.AddRange(firstSegment);
+
+        for (int i = 1; i < samples.Count - 1; i++)
+        {
+            var segment = BoundaryArcSampler.SubdivideGreatCircle(samples[i], samples[i + 1], subdivsPerSegment);
+            for (int j = 1; j < segment.Count; j++)
+                points.Add(segment[j]);
+        }
+
+        return points;
+    }
+
+    /// <summary>
     /// One crust-pipeline run over <paramref name="snapshotTicks"/> (continental recipe 0,1) → per
     /// snapshot, the per-cell feature kind (0 None, 1 Mountain, 2 VolcanicArc, 3 Trench, 4 Ridge,
     /// 5 Fault). Fields accumulate from genesis, so a feature emerges at the tick its magnitude crosses
