@@ -1,13 +1,16 @@
 using System;
+using FantaSim.App.World.Composition;
 
 namespace FantaSim.App.World.GenerationGraph;
 
 /// <summary>
 /// Immutable cache key for one auto-triggered crust-generation run.
 /// Windowed by tick so repeated scrubbing within the same window does not re-run the pipeline.
-/// Graph revision is included so graph edits invalidate the cache.
+/// Graph revision is included so graph edits invalidate the cache. For time-varying snapshot
+/// series the key additionally identifies the canonical snapshot tick so each snapshot of a
+/// run is cached independently.
 /// </summary>
-public sealed record CrustGenerationTriggerKey(int GraphRevision, long WindowIndex);
+public sealed record CrustGenerationTriggerKey(int GraphRevision, long WindowIndex, long SnapshotTick);
 
 /// <summary>
 /// Decision produced by <see cref="CrustGenerationTriggerPolicy.Evaluate"/> for a playhead position.
@@ -16,7 +19,8 @@ public sealed record CrustGenerationTriggerDecision(
     bool ShouldRun,
     bool ShouldCancel,
     long CanonicalTick,
-    CrustGenerationTriggerKey? Key);
+    CrustGenerationTriggerKey? Key,
+    CrustSnapshotTickSeries? SnapshotTicks = null);
 
 /// <summary>
 /// Pure decision logic for automatic crust-generation triggers. Given the active regime id,
@@ -28,13 +32,17 @@ public sealed class CrustGenerationTriggerPolicy
     private const string MobilePlateRegimeId = "mobile-plate";
 
     private readonly long _windowSize;
+    private readonly long _maxTick;
 
-    public CrustGenerationTriggerPolicy(long windowSize)
+    public CrustGenerationTriggerPolicy(long windowSize, long maxTick = 120_000_000L)
     {
         if (windowSize <= 0)
             throw new ArgumentOutOfRangeException(nameof(windowSize), "Window size must be positive.");
+        if (maxTick < 0)
+            throw new ArgumentOutOfRangeException(nameof(maxTick), "Max tick must be non-negative.");
 
         _windowSize = windowSize;
+        _maxTick = maxTick;
     }
 
     /// <summary>
@@ -43,14 +51,17 @@ public sealed class CrustGenerationTriggerPolicy
     /// <param name="regimeId">Active regime id from the geosphere schedule, or null when no regime applies.</param>
     /// <param name="graphRevision">Current generation-graph family revision.</param>
     /// <param name="tick">Current playhead tick.</param>
+    /// <param name="regime">The active sphere regime; used to compute the snapshot series when in the mobile-plate regime.</param>
     /// <returns>
     /// When the playhead is in the mobile-plate regime, returns <c>ShouldRun=true</c> with a
-    /// quantized <see cref="CanonicalTick"/> and <see cref="Key"/> identifying the (revision, window).
-    /// For any other regime (or null), returns <c>ShouldCancel=true</c> so in-flight work can be dropped.
+    /// quantized <see cref="CanonicalTick"/> and <see cref="Key"/> identifying the (revision, window, snapshotTick).
+    /// The <see cref="SnapshotTicks"/> series covers the full active regime span at the configured
+    /// window spacing. For any other regime (or null), returns <c>ShouldCancel=true</c> so in-flight
+    /// work can be dropped.
     /// </returns>
-    public CrustGenerationTriggerDecision Evaluate(string? regimeId, int graphRevision, long tick)
+    public CrustGenerationTriggerDecision Evaluate(string? regimeId, int graphRevision, long tick, SphereRegime? regime)
     {
-        if (!string.Equals(regimeId, MobilePlateRegimeId, StringComparison.Ordinal))
+        if (!string.Equals(regimeId, MobilePlateRegimeId, StringComparison.Ordinal) || regime is null)
         {
             return new CrustGenerationTriggerDecision(
                 ShouldRun: false,
@@ -61,11 +72,13 @@ public sealed class CrustGenerationTriggerPolicy
 
         long windowIndex = tick / _windowSize;
         long canonicalTick = windowIndex * _windowSize;
+        var snapshotTicks = CrustSnapshotTickSeries.ForRegime(regime, _windowSize, _maxTick);
 
         return new CrustGenerationTriggerDecision(
             ShouldRun: true,
             ShouldCancel: false,
             CanonicalTick: canonicalTick,
-            Key: new CrustGenerationTriggerKey(graphRevision, windowIndex));
+            Key: new CrustGenerationTriggerKey(graphRevision, windowIndex, canonicalTick),
+            SnapshotTicks: snapshotTicks);
     }
 }

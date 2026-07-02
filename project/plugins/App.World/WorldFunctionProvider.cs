@@ -323,7 +323,9 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         var effectivePayload = MergeNestedOptions(payload);
         int frequency = ReadInt(effectivePayload, "frequency", DefaultFrequency);
         long targetTick = ReadTargetTick(effectivePayload);
-        double durationMegaAnnum = UnitConverter.TickDeltaToMegaAnnum(targetTick);
+        var snapshotTicks = ReadSnapshotTicks(effectivePayload, targetTick);
+        long endTick = snapshotTicks.Count > 0 ? snapshotTicks.Max() : targetTick;
+        double durationMegaAnnum = UnitConverter.TickDeltaToMegaAnnum(endTick);
         double rate = ReadDouble(effectivePayload, "spinRateRadiansPerMegaAnnum",
             ReadDouble(effectivePayload, "spinRate", DefaultSpinRateRadiansPerMegaAnnum));
         var rates = ReadRates(effectivePayload);
@@ -339,20 +341,20 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
             plates,
             recipe,
             startTick: 0,
-            endTick: targetTick,
-            snapshotTicks: new[] { targetTick },
+            endTick: endTick,
+            snapshotTicks: snapshotTicks,
             rates: rates,
             ct: ct).ConfigureAwait(false);
 
         return Summarize(
             functionId: CrustGenerate,
             frequency,
-            targetTick,
+            endTick,
             durationMegaAnnum,
             tessellation,
             topology,
             result,
-            targetTick);
+            snapshotTicks);
     }
 
     private static JsonObject MergeNestedOptions(JsonObject payload)
@@ -382,7 +384,7 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         GeodesicSphereTessellation tessellation,
         PlateTopology topology,
         CrustEvolutionResult result,
-        long snapshotTick)
+        IReadOnlyList<long> snapshotTicks)
     {
         // Boundary type counts (how many inter-plate boundaries classified each way).
         var boundaryTypes = new JsonObject();
@@ -392,7 +394,9 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         bool activeBoundaries = topology.Boundaries.Any(
             b => b.Type is BoundaryType.Convergent or BoundaryType.Divergent or BoundaryType.Transform);
 
-        var features = result.FeaturesByTick.TryGetValue(snapshotTick, out var f)
+        // Use the latest requested snapshot for the top-line summary metrics.
+        long summaryTick = snapshotTicks.Count > 0 ? snapshotTicks[^1] : canonicalTick;
+        var features = result.FeaturesByTick.TryGetValue(summaryTick, out var f)
             ? f
             : new Dictionary<int, CrustFeature>();
 
@@ -406,9 +410,9 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         int mountainCount = features.Values.Count(x => x.Kind == CrustFeatureKind.Mountain);
         int volcanoCount = features.Values.Count(x => x.Kind == CrustFeatureKind.VolcanicArc);
 
-        // Peak accumulated orogenic pressure at the snapshot tick.
+        // Peak accumulated orogenic pressure at the summary snapshot tick.
         double peakOrogenic = 0.0;
-        if (result.StateByTick.TryGetValue(snapshotTick, out var state) && state.Count > 0)
+        if (result.StateByTick.TryGetValue(summaryTick, out var state) && state.Count > 0)
             peakOrogenic = state.Values.Max(s => s.OrogenicPressure);
 
         var productAddress = new WorldGenerationProductAddress(
@@ -418,10 +422,27 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
             Product: "crust",
             Tick: canonicalTick).ToPath();
 
+        var snapshotTickArray = new JsonArray();
+        foreach (var t in snapshotTicks)
+            snapshotTickArray.Add(t);
+
+        var snapshotProducts = new JsonArray();
+        foreach (var t in snapshotTicks)
+        {
+            snapshotProducts.Add(new WorldGenerationProductAddress(
+                Variant: "base",
+                Branch: "main",
+                Domain: "geosphere",
+                Product: "crust",
+                Tick: t).ToPath());
+        }
+
         return new JsonObject
         {
             ["function"] = functionId,
             ["productAddress"] = productAddress,
+            ["snapshotTicks"] = snapshotTickArray,
+            ["snapshotProducts"] = snapshotProducts,
             ["frequency"] = frequency,
             ["ticks"] = canonicalTick,
             ["canonicalTick"] = canonicalTick,
@@ -647,4 +668,27 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         "hydrostatic-spheroid" => "hydrostatic-spheroid",
         _ => "planetesimal-swarm",
     };
+
+    private static IReadOnlyList<long> ReadSnapshotTicks(JsonObject payload, long targetTick)
+    {
+        if (payload.TryGetPropertyValue("snapshotTicks", out var node) && node is JsonArray array)
+        {
+            var ticks = new List<long>(array.Count);
+            foreach (var item in array)
+            {
+                if (item is JsonValue value)
+                {
+                    if (value.TryGetValue<long>(out var l))
+                        ticks.Add(l);
+                    else if (value.TryGetValue<int>(out var i))
+                        ticks.Add(i);
+                }
+            }
+
+            if (ticks.Count > 0)
+                return ticks;
+        }
+
+        return new[] { targetTick };
+    }
 }

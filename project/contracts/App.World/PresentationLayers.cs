@@ -58,7 +58,20 @@ public sealed record PlanetPresentationDocument(
     /// implementation assembly.
     /// </summary>
     public WorldGenerationGraphFamilyDocument? GenerationGraphFamily { get; init; }
+
+    /// <summary>
+    /// Crust snapshot ticks that are currently available (generated) for the mobile-plate regime.
+    /// Empty when no crust products have been generated. Sub-project B consumes this set to render
+    /// the snapshot cache strip and to know which ticks still need generation.
+    /// </summary>
+    public IReadOnlyList<CrustSnapshotTickState> CrustSnapshotTicks { get; init; } = Array.Empty<CrustSnapshotTickState>();
 }
+
+/// <summary>
+/// One crust snapshot tick exposed on the presentation document. Sub-project B uses the
+/// <see cref="Available"/> flag to render a cache strip (dark = pending, bright = ready).
+/// </summary>
+public sealed record CrustSnapshotTickState(long Tick, bool Available);
 
 /// <summary>
 /// One planet layer projected from a real world-generation product address.

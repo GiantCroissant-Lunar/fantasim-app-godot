@@ -27,14 +27,14 @@ public sealed class CrustGenerationTriggerTests
     public void MobilePlateEntry_StartsGeneration()
     {
         var controller = Controller(PlateOnsetTick);
-        var calls = new List<(long CanonicalTick, int Revision)>();
+        var calls = new List<CrustGenerationTriggerDecision>();
         using var trigger = new CrustGenerationTrigger(
             controller,
             Policy(),
             Revision,
-            (tick, rev, _) =>
+            (decision, _) =>
             {
-                calls.Add((tick, rev));
+                calls.Add(decision);
                 return Task.CompletedTask;
             });
 
@@ -42,21 +42,21 @@ public sealed class CrustGenerationTriggerTests
 
         Assert.Single(calls);
         Assert.Equal(PlateOnsetTick, calls[0].CanonicalTick);
-        Assert.Equal(Revision, calls[0].Revision);
+        Assert.Equal(Revision, calls[0].Key?.GraphRevision);
     }
 
     [Fact]
     public void SameWindowScrub_DoesNotReRun()
     {
         var controller = Controller(PlateOnsetTick);
-        var calls = new List<(long CanonicalTick, int Revision)>();
+        var calls = new List<CrustGenerationTriggerDecision>();
         using var trigger = new CrustGenerationTrigger(
             controller,
             Policy(),
             Revision,
-            (tick, rev, _) =>
+            (decision, _) =>
             {
-                calls.Add((tick, rev));
+                calls.Add(decision);
                 return Task.CompletedTask;
             });
 
@@ -71,14 +71,14 @@ public sealed class CrustGenerationTriggerTests
     public void DifferentWindow_StartsNewGeneration()
     {
         var controller = Controller(PlateOnsetTick);
-        var calls = new List<(long CanonicalTick, int Revision)>();
+        var calls = new List<CrustGenerationTriggerDecision>();
         using var trigger = new CrustGenerationTrigger(
             controller,
             Policy(),
             Revision,
-            (tick, rev, _) =>
+            (decision, _) =>
             {
-                calls.Add((tick, rev));
+                calls.Add(decision);
                 return Task.CompletedTask;
             });
 
@@ -100,7 +100,7 @@ public sealed class CrustGenerationTriggerTests
             controller,
             Policy(),
             Revision,
-            async (tick, rev, ct) =>
+            async (_, ct) =>
             {
                 started.SetResult();
                 await Task.Delay(Timeout.Infinite, ct);
@@ -125,7 +125,7 @@ public sealed class CrustGenerationTriggerTests
             controller,
             Policy(),
             Revision,
-            async (_, _, ct) =>
+            async (_, ct) =>
             {
                 started.SetResult();
                 try
@@ -152,14 +152,14 @@ public sealed class CrustGenerationTriggerTests
     public void GenerationCompletion_MarksCacheComplete()
     {
         var controller = Controller(PlateOnsetTick);
-        var calls = new List<(long CanonicalTick, int Revision)>();
+        var calls = new List<CrustGenerationTriggerDecision>();
         using var trigger = new CrustGenerationTrigger(
             controller,
             Policy(),
             Revision,
-            (tick, rev, _) =>
+            (decision, _) =>
             {
-                calls.Add((tick, rev));
+                calls.Add(decision);
                 return Task.CompletedTask;
             });
 
@@ -182,7 +182,7 @@ public sealed class CrustGenerationTriggerTests
             controller,
             Policy(),
             Revision,
-            async (_, _, ct) =>
+            async (_, ct) =>
             {
                 started.SetResult();
                 try
@@ -212,14 +212,14 @@ public sealed class CrustGenerationTriggerTests
     public void Start_EvaluatesCurrentTick()
     {
         var controller = Controller(PlateOnsetTick + WindowSize);
-        var calls = new List<(long CanonicalTick, int Revision)>();
+        var calls = new List<CrustGenerationTriggerDecision>();
         using var trigger = new CrustGenerationTrigger(
             controller,
             Policy(),
             Revision,
-            (tick, rev, _) =>
+            (decision, _) =>
             {
-                calls.Add((tick, rev));
+                calls.Add(decision);
                 return Task.CompletedTask;
             });
 
@@ -227,6 +227,52 @@ public sealed class CrustGenerationTriggerTests
 
         Assert.Single(calls);
         Assert.Equal(PlateOnsetTick + WindowSize, calls[0].CanonicalTick);
+    }
+
+    [Fact]
+    public void SameWindowDifferentSnapshot_DoesNotReRun()
+    {
+        var controller = Controller(PlateOnsetTick);
+        var calls = new List<CrustGenerationTriggerDecision>();
+        using var trigger = new CrustGenerationTrigger(
+            controller,
+            Policy(),
+            Revision,
+            (decision, _) =>
+            {
+                calls.Add(decision);
+                return Task.CompletedTask;
+            });
+
+        trigger.Start();
+        controller.PushTick(PlateOnsetTick);
+        controller.PushTick(PlateOnsetTick + WindowSize / 2);
+
+        Assert.Single(calls);
+    }
+
+    [Fact]
+    public void SnapshotSeries_CarriedIntoExecuteDecision()
+    {
+        var controller = Controller(PlateOnsetTick);
+        var calls = new List<CrustGenerationTriggerDecision>();
+        using var trigger = new CrustGenerationTrigger(
+            controller,
+            Policy(),
+            Revision,
+            (decision, _) =>
+            {
+                calls.Add(decision);
+                return Task.CompletedTask;
+            });
+
+        trigger.Start();
+
+        Assert.Single(calls);
+        Assert.NotNull(calls[0].SnapshotTicks);
+        var ticks = calls[0].SnapshotTicks!.SnapshotTicks;
+        Assert.Contains(PlateOnsetTick, ticks);
+        Assert.Contains(PlateOnsetTick + WindowSize, ticks);
     }
 
     private sealed class FakeController : ITimelineController
