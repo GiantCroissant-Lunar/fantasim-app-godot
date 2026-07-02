@@ -244,7 +244,7 @@ internal sealed class PlanetPresentationBinder : IDisposable
         ApplyPlateMotion(tick, showsPlateFeatures);
 
         if (_mantle is not null && GodotObject.IsInstanceValid(_mantle))
-            _mantle.MaterialOverride = BuildMantleMaterial(regime?.RegimeId);
+            _mantle.MaterialOverride = ResolveMantleMaterial(RegimeSurfaceResolver.Resolve(regime?.RegimeId));
 
         if (_statusLabel is not null && GodotObject.IsInstanceValid(_statusLabel))
             _statusLabel.Text = $"{regime?.RegimeId ?? "world"} : t={tick:N0}";
@@ -310,7 +310,7 @@ internal sealed class PlanetPresentationBinder : IDisposable
         camera.LookAt(Vector3.Zero, Vector3.Up);
     }
 
-    private static MeshInstance3D BuildMantle(PlanetPresentationDocument document)
+    private MeshInstance3D BuildMantle(PlanetPresentationDocument document)
     {
         var mesh = new SphereMesh
         {
@@ -325,7 +325,7 @@ internal sealed class PlanetPresentationBinder : IDisposable
             Name = "BaseSphere",
             Mesh = mesh,
             Scale = Vector3.One * 2.0f,
-            MaterialOverride = BuildMantleMaterial(null),
+            MaterialOverride = ResolveMantleMaterial(RegimeSurfaceKind.Default),
         };
     }
 
@@ -359,20 +359,21 @@ internal sealed class PlanetPresentationBinder : IDisposable
         var vertices = new Vector3[cells.Count * 3];
         var normals = new Vector3[vertices.Length];
 
+        // Per-vertex smooth normals: each corner is on the origin-centred globe sphere, so its outward
+        // normal is normalize(position) — exact, no face-normal averaging needed (Godot's sphere example).
         for (int i = 0; i < cells.Count; i++)
         {
             var cell = cells[i];
             var a = ToV3(cell.C0);
             var b = ToV3(cell.C1);
             var c = ToV3(cell.C2);
-            var normal = FaceNormal(a, b, c);
             var offset = i * 3;
             vertices[offset] = a;
             vertices[offset + 1] = b;
             vertices[offset + 2] = c;
-            normals[offset] = normal;
-            normals[offset + 1] = normal;
-            normals[offset + 2] = normal;
+            normals[offset] = a.Normalized();
+            normals[offset + 1] = b.Normalized();
+            normals[offset + 2] = c.Normalized();
         }
 
         var arrays = new Godot.Collections.Array();
@@ -440,27 +441,163 @@ internal sealed class PlanetPresentationBinder : IDisposable
         };
     }
 
-    private static StandardMaterial3D BuildMantleMaterial(string? regimeId)
-    {
-        var color = regimeId switch
+    // magma-ocean mantle: emissive molten lava with a slowly drifting fBm churn. lava-hot tracks the
+    // sibling GlobeView.MagmaAlbedoForTemperature lava endpoint so both render paths read as the same lava.
+    private const string MagmaShaderCode = @"
+shader_type spatial;
+render_mode cull_disabled;
+
+uniform vec4 u_lava_hot  : source_color = vec4(1.00, 0.46, 0.10, 1.0);
+uniform vec4 u_lava_cool : source_color = vec4(0.16, 0.04, 0.03, 1.0);
+uniform float u_emission_energy : hint_range(0.0, 8.0) = 1.6;
+uniform float u_noise_scale = 2.6;
+uniform float u_drift_speed = 0.05;
+
+varying vec3 v_obj_pos;
+
+vec3 hash3(vec3 p) {
+    p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
+             dot(p, vec3(269.5, 183.3, 246.1)),
+             dot(p, vec3(113.5, 271.9, 124.6)));
+    return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+}
+
+float noise3(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    vec3 u = f * f * (3.0 - 2.0 * f);
+    return mix(
+        mix(mix(dot(hash3(i + vec3(0.0, 0.0, 0.0)), f - vec3(0.0, 0.0, 0.0)),
+                dot(hash3(i + vec3(1.0, 0.0, 0.0)), f - vec3(1.0, 0.0, 0.0)), u.x),
+            mix(dot(hash3(i + vec3(0.0, 1.0, 0.0)), f - vec3(0.0, 1.0, 0.0)),
+                dot(hash3(i + vec3(1.0, 1.0, 0.0)), f - vec3(1.0, 1.0, 0.0)), u.x), u.y),
+        mix(mix(dot(hash3(i + vec3(0.0, 0.0, 1.0)), f - vec3(0.0, 0.0, 1.0)),
+                dot(hash3(i + vec3(1.0, 0.0, 1.0)), f - vec3(1.0, 0.0, 1.0)), u.x),
+            mix(dot(hash3(i + vec3(0.0, 1.0, 1.0)), f - vec3(0.0, 1.0, 1.0)),
+                dot(hash3(i + vec3(1.0, 1.0, 1.0)), f - vec3(1.0, 1.0, 1.0)), u.x), u.y),
+        u.z);
+}
+
+float fbm(vec3 p) {
+    float n  = noise3(p *  5.0) * 0.5000;
+          n += noise3(p * 10.0) * 0.2500;
+          n += noise3(p * 20.0) * 0.1250;
+          n += noise3(p * 40.0) * 0.0625;
+    return n;
+}
+
+void vertex() {
+    v_obj_pos = VERTEX;
+}
+
+void fragment() {
+    vec3 q = v_obj_pos * u_noise_scale + vec3(0.0, TIME * u_drift_speed, 0.0);
+    float n = fbm(q);
+    float t = smoothstep(-0.05, 0.45, n);
+    vec3 col = mix(u_lava_cool.rgb, u_lava_hot.rgb, t);
+    float vein = smoothstep(0.55, 0.80, n);
+    col += u_lava_hot.rgb * vein * 0.60;
+
+    ALBEDO = col;
+    EMISSION = col * u_emission_energy + u_lava_hot.rgb * vein * u_emission_energy;
+    ROUGHNESS = 0.62;
+    METALLIC = 0.0;
+}
+";
+
+    // stagnant-lid mantle: dark basaltic cooled crust, subtle noise-modulated albedo/roughness, and a
+    // thin faintly-emissive crack band where the fBm crosses a threshold (cheap: one smoothstep pair).
+    private const string StagnantShaderCode = @"
+shader_type spatial;
+render_mode cull_disabled;
+
+uniform vec4 u_basalt_dark  : source_color = vec4(0.05, 0.05, 0.06, 1.0);
+uniform vec4 u_basalt_light : source_color = vec4(0.20, 0.19, 0.21, 1.0);
+uniform float u_crack_glow : hint_range(0.0, 2.0) = 0.16;
+uniform float u_noise_scale = 3.2;
+
+varying vec3 v_obj_pos;
+
+vec3 hash3(vec3 p) {
+    p = vec3(dot(p, vec3(127.1, 311.7, 74.7)),
+             dot(p, vec3(269.5, 183.3, 246.1)),
+             dot(p, vec3(113.5, 271.9, 124.6)));
+    return -1.0 + 2.0 * fract(sin(p) * 43758.5453123);
+}
+
+float noise3(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    vec3 u = f * f * (3.0 - 2.0 * f);
+    return mix(
+        mix(mix(dot(hash3(i + vec3(0.0, 0.0, 0.0)), f - vec3(0.0, 0.0, 0.0)),
+                dot(hash3(i + vec3(1.0, 0.0, 0.0)), f - vec3(1.0, 0.0, 0.0)), u.x),
+            mix(dot(hash3(i + vec3(0.0, 1.0, 0.0)), f - vec3(0.0, 1.0, 0.0)),
+                dot(hash3(i + vec3(1.0, 1.0, 0.0)), f - vec3(1.0, 1.0, 0.0)), u.x), u.y),
+        mix(mix(dot(hash3(i + vec3(0.0, 0.0, 1.0)), f - vec3(0.0, 0.0, 1.0)),
+                dot(hash3(i + vec3(1.0, 0.0, 1.0)), f - vec3(1.0, 0.0, 1.0)), u.x),
+            mix(dot(hash3(i + vec3(0.0, 1.0, 1.0)), f - vec3(0.0, 1.0, 1.0)),
+                dot(hash3(i + vec3(1.0, 1.0, 1.0)), f - vec3(1.0, 1.0, 1.0)), u.x), u.y),
+        u.z);
+}
+
+float fbm(vec3 p) {
+    float n  = noise3(p *  5.0) * 0.5000;
+          n += noise3(p * 10.0) * 0.2500;
+          n += noise3(p * 20.0) * 0.1250;
+          n += noise3(p * 40.0) * 0.0625;
+    return n;
+}
+
+void vertex() {
+    v_obj_pos = VERTEX;
+}
+
+void fragment() {
+    vec3 q = v_obj_pos * u_noise_scale;
+    float n = fbm(q);
+    float t = smoothstep(-0.10, 0.40, n);
+    vec3 col = mix(u_basalt_dark.rgb, u_basalt_light.rgb, t);
+    float crack = smoothstep(0.45, 0.55, n) - smoothstep(0.55, 0.70, n);
+    col += u_basalt_light.rgb * crack * 0.40;
+
+    ALBEDO = col;
+    EMISSION = u_basalt_light.rgb * crack * u_crack_glow;
+    ROUGHNESS = mix(0.88, 0.62, t);
+    METALLIC = 0.0;
+}
+";
+
+    private static Shader? _magmaShader;
+    private static Shader? _stagnantShader;
+
+    private Material? _magmaMantleMaterial;
+    private Material? _stagnantMantleMaterial;
+    private Material? _baseMantleMaterial;
+
+    private static Shader MagmaShader => _magmaShader ??= new Shader { Code = MagmaShaderCode };
+    private static Shader StagnantShader => _stagnantShader ??= new Shader { Code = StagnantShaderCode };
+
+    private Material ResolveMantleMaterial(RegimeSurfaceKind kind) =>
+        kind switch
         {
-            "magma-ocean" => new Color(0.78f, 0.22f, 0.06f),
-            "stagnant-lid" => new Color(0.20f, 0.26f, 0.30f),
-            "mobile-plate" => new Color(0.02f, 0.20f, 0.28f),
-            _ => new Color(0.09f, 0.13f, 0.24f),
+            RegimeSurfaceKind.MagmaOcean => _magmaMantleMaterial ??= BuildMagmaMantleMaterial(),
+            RegimeSurfaceKind.StagnantLid => _stagnantMantleMaterial ??= BuildStagnantMantleMaterial(),
+            _ => _baseMantleMaterial ??= BuildBaseMantleMaterial(),
         };
 
-        return new StandardMaterial3D
+    private static ShaderMaterial BuildMagmaMantleMaterial() => new() { Shader = MagmaShader };
+
+    private static ShaderMaterial BuildStagnantMantleMaterial() => new() { Shader = StagnantShader };
+
+    private static StandardMaterial3D BuildBaseMantleMaterial() =>
+        new()
         {
-            AlbedoColor = color,
-            EmissionEnabled = true,
-            Emission = color,
-            EmissionEnergyMultiplier = 0.25f,
+            AlbedoColor = new Color(0.02f, 0.20f, 0.28f),
             Roughness = 0.82f,
             Metallic = 0.0f,
             CullMode = BaseMaterial3D.CullModeEnum.Disabled,
         };
-    }
 
     private static Color PlateColor(int plateId)
     {
@@ -492,19 +629,6 @@ internal sealed class PlanetPresentationBinder : IDisposable
 
         normalized = value.Normalized();
         return true;
-    }
-
-    private static Vector3 FaceNormal(Vector3 a, Vector3 b, Vector3 c)
-    {
-        var u = b - a;
-        var v = c - a;
-        var normal = new Vector3(
-            (u.Y * v.Z) - (u.Z * v.Y),
-            (u.Z * v.X) - (u.X * v.Z),
-            (u.X * v.Y) - (u.Y * v.X));
-        return normal.LengthSquared() > 0.000001f
-            ? normal.Normalized()
-            : a.Normalized();
     }
 
     private static string SafeNodeName(string value)
