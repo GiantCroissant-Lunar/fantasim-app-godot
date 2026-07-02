@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using FantaSim.App.NodeGraph;
+using FantaSim.App.World.Composition;
 
 namespace FantaSim.App.World;
 
@@ -158,6 +159,73 @@ public sealed record WorldGenerationNodePreview(
 public sealed record WorldGenerationTickRange(long StartTick, long EndTick)
 {
     public bool Contains(long tick) => tick >= StartTick && tick <= EndTick;
+}
+
+/// <summary>
+/// Canonical ticks for which a single crust-generation pipeline run should emit snapshots.
+/// Produced from the active mobile-plate regime span and a fixed spacing (typically the
+/// 5M-tick generation window). Sorted ascending and unique.
+/// </summary>
+public sealed record CrustSnapshotTickSeries(IReadOnlyList<long> SnapshotTicks)
+{
+    /// <summary>
+    /// Compute the snapshot-tick series for the active mobile-plate regime. Returns ticks at
+    /// every <paramref name="spacing"/> starting at the greater of the regime start and zero,
+    /// through the regime end (exclusive). When the regime has no end, the series is bounded
+    /// by <paramref name="maxTick"/>.
+    /// </summary>
+    public static CrustSnapshotTickSeries ForRegime(SphereRegime regime, long spacing, long maxTick)
+    {
+        if (regime is null)
+            throw new ArgumentNullException(nameof(regime));
+        if (spacing <= 0)
+            throw new ArgumentOutOfRangeException(nameof(spacing), "Snapshot spacing must be positive.");
+        if (maxTick < 0)
+            throw new ArgumentOutOfRangeException(nameof(maxTick), "Max tick must be non-negative.");
+
+        long start = Math.Max(0L, regime.StartTick);
+        long endExclusive = regime.EndTick == SphereRegime.OpenEnd ? maxTick + 1 : regime.EndTick;
+        if (endExclusive <= start)
+            return new CrustSnapshotTickSeries(Array.Empty<long>());
+
+        var ticks = new List<long>();
+        long firstWindowStart = (start / spacing) * spacing;
+        if (firstWindowStart < start)
+            firstWindowStart += spacing;
+
+        for (long tick = firstWindowStart; tick < endExclusive; tick += spacing)
+            ticks.Add(tick);
+
+        if (ticks.Count == 0)
+            return new CrustSnapshotTickSeries(Array.Empty<long>());
+
+        return new CrustSnapshotTickSeries(ticks);
+    }
+
+    /// <summary>
+    /// Select the snapshot tick that is the largest value less than or equal to
+    /// <paramref name="playheadTick"/>. Returns null when the series is empty or when the
+    /// playhead is before the first snapshot.
+    /// </summary>
+    public long? SelectSnapshotForPlayhead(long playheadTick)
+    {
+        if (SnapshotTicks.Count == 0)
+            return null;
+
+        if (playheadTick < SnapshotTicks[0])
+            return null;
+
+        long best = SnapshotTicks[0];
+        foreach (var tick in SnapshotTicks)
+        {
+            if (tick <= playheadTick)
+                best = tick;
+            else
+                break;
+        }
+
+        return best;
+    }
 }
 
 /// <summary>

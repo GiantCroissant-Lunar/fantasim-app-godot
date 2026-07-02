@@ -19,7 +19,7 @@ public sealed class CrustGenerationTrigger : IDisposable
     private readonly ITimelineController _timeline;
     private readonly CrustGenerationTriggerPolicy _policy;
     private readonly int _graphRevision;
-    private readonly Func<long, int, CancellationToken, Task> _execute;
+    private readonly Func<CrustGenerationTriggerDecision, CancellationToken, Task> _execute;
     private readonly ILogger _logger;
     private readonly object _gate = new();
     private readonly HashSet<CrustGenerationTriggerKey> _completed = new();
@@ -32,7 +32,7 @@ public sealed class CrustGenerationTrigger : IDisposable
         ITimelineController timeline,
         CrustGenerationTriggerPolicy policy,
         int graphRevision,
-        Func<long, int, CancellationToken, Task> execute,
+        Func<CrustGenerationTriggerDecision, CancellationToken, Task> execute,
         ILoggerFactory? loggerFactory = null)
     {
         _timeline = timeline ?? throw new ArgumentNullException(nameof(timeline));
@@ -71,7 +71,7 @@ public sealed class CrustGenerationTrigger : IDisposable
     private void OnTickChanged(long tick)
     {
         var regime = _timeline.GeosphereSchedule.RegimeAt(tick);
-        var decision = _policy.Evaluate(regime?.RegimeId, _graphRevision, tick);
+        var decision = _policy.Evaluate(regime?.RegimeId, _graphRevision, tick, regime);
 
         if (decision.ShouldCancel)
         {
@@ -108,20 +108,21 @@ public sealed class CrustGenerationTrigger : IDisposable
         }
 
         _logger.LogInformation(
-            "Crust generation triggered: tick={Tick:N0}, canonicalTick={CanonicalTick:N0}, window={WindowIndex}, revision={Revision}",
+            "Crust generation triggered: tick={Tick:N0}, canonicalTick={CanonicalTick:N0}, window={WindowIndex}, revision={Revision}, snapshots={SnapshotCount}",
             tick,
             decision.CanonicalTick,
             decision.Key.WindowIndex,
-            decision.Key.GraphRevision);
+            decision.Key.GraphRevision,
+            decision.SnapshotTicks?.SnapshotTicks.Count ?? 1);
 
-        _ = RunAsync(decision.Key, decision.CanonicalTick, token);
+        _ = RunAsync(decision.Key, decision, token);
     }
 
-    private async Task RunAsync(CrustGenerationTriggerKey key, long canonicalTick, CancellationToken cancellationToken)
+    private async Task RunAsync(CrustGenerationTriggerKey key, CrustGenerationTriggerDecision decision, CancellationToken cancellationToken)
     {
         try
         {
-            await _execute(canonicalTick, key.GraphRevision, cancellationToken).ConfigureAwait(false);
+            await _execute(decision, cancellationToken).ConfigureAwait(false);
 
             lock (_gate)
             {
@@ -133,7 +134,7 @@ public sealed class CrustGenerationTrigger : IDisposable
 
             _logger.LogInformation(
                 "Crust generation completed: canonicalTick={CanonicalTick:N0}, window={WindowIndex}, revision={Revision}",
-                canonicalTick,
+                decision.CanonicalTick,
                 key.WindowIndex,
                 key.GraphRevision);
         }
@@ -141,7 +142,7 @@ public sealed class CrustGenerationTrigger : IDisposable
         {
             _logger.LogInformation(
                 "Crust generation cancelled: canonicalTick={CanonicalTick:N0}, window={WindowIndex}",
-                canonicalTick,
+                decision.CanonicalTick,
                 key.WindowIndex);
         }
         catch (Exception ex)
@@ -149,7 +150,7 @@ public sealed class CrustGenerationTrigger : IDisposable
             _logger.LogError(
                 ex,
                 "Crust generation failed: canonicalTick={CanonicalTick:N0}, window={WindowIndex}",
-                canonicalTick,
+                decision.CanonicalTick,
                 key.WindowIndex);
         }
         finally

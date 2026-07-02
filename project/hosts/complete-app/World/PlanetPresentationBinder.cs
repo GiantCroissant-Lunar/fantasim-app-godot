@@ -417,12 +417,16 @@ internal sealed class PlanetPresentationBinder : IDisposable
 
         // Watertight per-plate caps: within a plate, cells that meet at a corner SHARE that corner,
         // so adjacent triangles meet exactly (no black cracks). Topology is cached once per snapshot.
+        // Displacement and hypsometric tint read the SAME per-cell crust elevations so color and
+        // relief stay coherent; flat-zero when crust products have not flowed yet.
         _plateSurfaces = new GlobePlateSurfaces(snapshot);
-        var elevations = new double[snapshot.CellCount];
+        IReadOnlyList<double> elevations =
+            document.CellElevations is { } cellElevations && cellElevations.Count == snapshot.CellCount
+                ? cellElevations
+                : new double[snapshot.CellCount];
         var caps = _plateSurfaces.BuildSurfaces(elevations, exaggeration: WatertightDisplacementExaggeration);
 
-        // A2: per-cell hypsometric tint + typed feature accents, driven by the document's crust data
-        // (the same per-cell elevation that displaces the mesh once A1 wires displacement to this source).
+        // A2: per-cell hypsometric tint + typed feature accents, driven by the document's crust data.
         // Bypassed (neutral mid-ramp) when the document carries no crust surface data.
         var (perCellColor, perCellEmission) = BuildCellAppearance(snapshot.CellCount, document);
 

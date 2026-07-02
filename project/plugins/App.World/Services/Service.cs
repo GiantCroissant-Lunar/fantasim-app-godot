@@ -12,6 +12,7 @@ using FantaSim.App.World.Globe;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using ServiceArchi.Contracts;
+using FantaSim.World.Contracts.Units;
 using OnsetRoster = FantaSim.App.World.Composition.OnsetRoster;
 using SphereRegimeSchedule = FantaSim.App.World.Composition.SphereRegimeSchedule;
 using SphereRegimeScheduleDefaults = FantaSim.App.World.Composition.SphereRegimeScheduleDefaults;
@@ -45,6 +46,7 @@ public sealed class Service : IService, IDisposable
     private readonly object _generationProductsGate = new();
     private WorldGenerationProductsView _generationProducts =
         new(0, Array.Empty<string>(), 0L);
+    private IReadOnlyList<long> _cachedCrustSnapshotTicks = Array.Empty<long>();
     private Exception? _lastSubscriberError;
     private bool _disposed;
 
@@ -141,14 +143,25 @@ public sealed class Service : IService, IDisposable
         var family = WorldGenerationGraphDefaults.BuildFamily();
         var runtime = BuildPlanetPresentationRuntime(family, referenceTick);
         WorldGenerationProductsView products;
+        IReadOnlyList<long> crustSnapshotTicks;
         lock (_generationProductsGate)
+        {
             products = _generationProducts;
+            crustSnapshotTicks = _cachedCrustSnapshotTicks;
+        }
+
+        var selectedCrustTick = CrustSnapshotTickSeries.ForRegime(
+            runtime.GeosphereSchedule.RegimeAt(referenceTick) ?? runtime.GeosphereSchedule.Regimes[^1],
+            UnitConverter.TicksPerMegaAnnum * 5,
+            runtime.MaxTick).SelectSnapshotForPlayhead(referenceTick);
 
         var layers = products.Products
-            .Select(address => ToPlanetLayer(address, family))
+            .Select(address => ToPlanetLayer(address, family, selectedCrustTick))
             .Where(layer => layer is not null)
             .Cast<PlanetPresentationLayer>()
             .ToArray();
+
+        var snapshotTickStates = BuildCrustSnapshotTickStates(runtime.GeosphereSchedule, crustSnapshotTicks, runtime.MaxTick);
 
         return new PlanetPresentationDocument(
             PlanetId: overview.WorldId,
@@ -167,6 +180,7 @@ public sealed class Service : IService, IDisposable
             BoundaryArcs = runtime.BoundaryArcs,
             CellElevations = runtime.CellElevations,
             CellFeatures = runtime.CellFeatures,
+            CrustSnapshotTicks = snapshotTickStates,
         };
     }
 
@@ -214,7 +228,78 @@ public sealed class Service : IService, IDisposable
     private void UpdateGenerationProducts(WorldGenerationRequest request)
     {
         lock (_generationProductsGate)
+        {
             _generationProducts = ToProductsView(request, _generationProducts);
+            _cachedCrustSnapshotTicks = ReadSnapshotTicks(request.Parameters);
+        }
+    }
+
+    private static IReadOnlyList<long> ReadSnapshotTicks(IReadOnlyDictionary<string, object>? parameters)
+    {
+        if (parameters is null)
+            return Array.Empty<long>();
+
+        if (!parameters.TryGetValue("snapshotTicks", out var value) || value is null)
+            return Array.Empty<long>();
+
+        return value switch
+        {
+            long[] ticks => ticks,
+            int[] ints => ints.Select(i => (long)i).ToArray(),
+            IEnumerable<long> ticks => ticks.ToArray(),
+            IEnumerable<int> ints => ints.Select(i => (long)i).ToArray(),
+            JsonElement json => ReadJsonLongArray(json),
+            string text => ReadStringLongArray(text),
+            _ => Array.Empty<long>(),
+        };
+    }
+
+    private static IReadOnlyList<long> ReadJsonLongArray(JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.Array)
+            return Array.Empty<long>();
+
+        var result = new List<long>();
+        foreach (var item in value.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.Number && item.TryGetInt64(out var l))
+                result.Add(l);
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<long> ReadStringLongArray(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || !text.TrimStart().StartsWith("[", StringComparison.Ordinal))
+            return Array.Empty<long>();
+
+        try
+        {
+            return JsonSerializer.Deserialize<long[]>(text) ?? Array.Empty<long>();
+        }
+        catch (JsonException)
+        {
+            return Array.Empty<long>();
+        }
+    }
+
+    private static IReadOnlyList<CrustSnapshotTickState> BuildCrustSnapshotTickStates(
+        SphereRegimeSchedule schedule,
+        IReadOnlyList<long> availableTicks,
+        long maxTick)
+    {
+        var mobilePlate = schedule.Regimes.FirstOrDefault(r =>
+            string.Equals(r.RegimeId, "mobile-plate", StringComparison.Ordinal));
+
+        if (mobilePlate is null)
+            return Array.Empty<CrustSnapshotTickState>();
+
+        var availableSet = new HashSet<long>(availableTicks);
+        var series = CrustSnapshotTickSeries.ForRegime(mobilePlate, UnitConverter.TicksPerMegaAnnum * 5, maxTick);
+        return series.SnapshotTicks
+            .Select(t => new CrustSnapshotTickState(t, availableSet.Contains(t)))
+            .ToArray();
     }
 
     private static WorldGenerationProductsView ToProductsView(
@@ -242,7 +327,8 @@ public sealed class Service : IService, IDisposable
 
     private static PlanetPresentationLayer? ToPlanetLayer(
         string productAddress,
-        WorldGenerationGraphFamilyDocument family)
+        WorldGenerationGraphFamilyDocument family,
+        long? selectedProductTick = null)
     {
         if (!WorldGenerationProductAddress.TryParse(productAddress, out var address) || address is null)
             return null;
@@ -251,6 +337,15 @@ public sealed class Service : IService, IDisposable
         var regime = string.IsNullOrEmpty(regimeId) ? null : regimeId;
         var graphId = WorldGenerationGraphFamilyComposer.TryFindLayerBinding(family, address.Domain, layerId, regime)?.GraphId;
         var source = WorldGenerationGraphFamilyComposer.TryFindDefaultLayerSourceBinding(family, address.Domain, layerId, regime);
+
+        long productTick = selectedProductTick ?? address.Tick;
+        if (selectedProductTick.HasValue
+            && string.Equals(layerId, "geosphere.crust", StringComparison.Ordinal)
+            && string.Equals(regimeId, "mobile-plate", StringComparison.Ordinal))
+        {
+            address = address with { Tick = selectedProductTick.Value };
+        }
+
         return new PlanetPresentationLayer(
             LayerId: layerId,
             RegimeId: regimeId,
@@ -258,7 +353,7 @@ public sealed class Service : IService, IDisposable
             Branch: address.Branch,
             ProductDomain: address.Domain,
             ProductName: address.Product,
-            ProductTick: address.Tick,
+            ProductTick: productTick,
             ProductAddress: address.ToPath(),
             GenerationGraphId: graphId,
             SourceId: source?.SourceId,

@@ -179,7 +179,7 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
             controller,
             policy,
             family.Revision,
-            (canonicalTick, graphRevision, ct) => ExecuteCrustGenerationAsync(_registry, family, canonicalTick, graphRevision, ct),
+            (decision, ct) => ExecuteCrustGenerationAsync(_registry, family, decision, ct),
             _loggerFactory);
         _crustTrigger.Start();
         _crustArmed = true;
@@ -218,8 +218,7 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
     private static async Task ExecuteCrustGenerationAsync(
         IRegistry registry,
         WorldGenerationGraphFamilyDocument family,
-        long canonicalTick,
-        int graphRevision,
+        CrustGenerationTriggerDecision decision,
         CancellationToken cancellationToken)
     {
         var world = registry.TryGet<FantaSim.App.World.IService>();
@@ -235,14 +234,20 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
             family,
             WorldRegimeScheduleKinds.Sphere,
             "mobile-plate",
-            canonicalTick,
+            decision.CanonicalTick,
             WorldGenerationGraphDefaults.GeosphereSphereId);
 
         var scopeKey = source.TryBuildExecutionScopeKey("base", "main", scheduleRevision: 1);
+        var snapshotTicks = decision.SnapshotTicks?.SnapshotTicks ?? new[] { decision.CanonicalTick };
+        var snapshotTickArray = new JsonArray();
+        foreach (var t in snapshotTicks)
+            snapshotTickArray.Add(t);
+
         var sharedParams = new JsonObject
         {
-            ["canonicalTick"] = canonicalTick,
-            ["graphRevision"] = graphRevision,
+            ["canonicalTick"] = decision.CanonicalTick,
+            ["graphRevision"] = decision.Key?.GraphRevision ?? family.Revision,
+            ["snapshotTicks"] = snapshotTickArray,
         };
 
         var runner = new WorldGenerationGraphRunner(providers);
