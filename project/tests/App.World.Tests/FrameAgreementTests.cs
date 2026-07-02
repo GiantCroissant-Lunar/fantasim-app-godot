@@ -4,8 +4,6 @@ using System.Linq;
 using FantaSim.App.World.Composition;
 using FantaSim.App.World.Dto;
 using FantaSim.App.World.Globe;
-using FantaSim.Cartography.Globe;
-using FantaSim.Cartography.Shared;
 using FantaSim.World.Contracts.Units;
 using UnifyCell;
 using UnifyGeometry.Spherical;
@@ -15,19 +13,28 @@ using Xunit;
 namespace FantaSim.App.World.Tests;
 
 /// <summary>
-/// Frame-agreement regression: the typed boundary arcs and the plate caps must be derived at the
-/// SAME tick. The failure mode this pins: arcs built at the playhead tick while caps sit at onset
-/// (or are faked with a clamped cosmetic rotation) — a convergent ribbon then crosses a plate's
-/// interior by up to several degrees.
+/// Frame-agreement regression: the typed boundary arcs and the plate caps must be derived from the
+/// SAME per-tick cell reassignment. The failure mode this pins: arcs built at the playhead tick
+/// while caps sit at onset (or are faked with a clamped cosmetic rotation) — a convergent ribbon then
+/// crosses a plate's interior by up to several degrees.
 ///
 /// <para>
-/// The assertion is geometric and robust against the structural offset between arc sample points
-/// (midpoints of shared cell edges) and cap vertices (shared cell corners): for each arc point at
-/// tick T, the angular distance to the nearest cap vertex of one of its two plates, when the caps
-/// are built at the SAME tick T, must be NO LARGER than the distance when the caps are built at
-/// onset. When the frames disagree (BuildGlobeAt ignores the tick and returns onset geometry), the
-/// two distances are identical and the delta is zero — the test fails. When the frames agree, the
-/// caps move with the arcs and the same-tick distance is strictly smaller.
+/// <b>Mechanism (per-tick cell reassignment):</b> the tessellation's cells are FIXED on the sphere;
+/// what changes per tick is which plate each cell belongs to. Cap geometry is the UNROTATED
+/// tessellation (watertight by construction — the sphere is tiled at every tick), while plate
+/// membership evolves with the tick via the same nearest-rotated-seed rule the engine's
+/// <see cref="FantaSim.Geosphere.Plate.Topology.PlateTopologyBuilder.AssignCells"/> uses at onset.
+/// The boundary arcs are derived from the same reassigned membership, so arcs and caps always
+/// agree: an arc's two plates are exactly the two plates that share a frontier in the reassigned
+/// cell ownership at that tick.
+/// </para>
+///
+/// <para>
+/// The previous delta-distance assertion (caps-at-tick closer to arcs than caps-at-onset) was
+/// tailored to the rigid-rotation approach this test replaces. Under reassignment the caps are
+/// always the unrotated tessellation, so the geometric delta is no longer the right signal; instead
+/// we assert the structural agreement: arcs lie along the membership boundary, and the union of
+/// caps covers every cell exactly once (no gaps, no overlaps) at every tick.
 /// </para>
 /// </summary>
 public sealed class FrameAgreementTests
@@ -43,80 +50,74 @@ public sealed class FrameAgreementTests
         return GlobeReconstructor.FromOnsetRoster(roster, onsetTick, schedule, AppFrequency);
     }
 
-    private static Dictionary<int, PlateCap> BuildCapsAtTick(GlobeReconstructor model, long tick)
-    {
-        var snapshot = model.BuildGlobeAt(tick);
-        var surfaces = new GlobePlateSurfaces(snapshot, noise: new NoiseParams(Amplitude: 0.0));
-        var elevations = new double[snapshot.CellCount];
-        return surfaces.BuildSurfaces(elevations, exaggeration: 0.0)
-            .ToDictionary(c => c.PlateId);
-    }
-
-    private static double NearestVertexAngularDistance(Vector3D epUnit, PlateCap cap)
-    {
-        double best = double.PositiveInfinity;
-        for (int v = 0; v < cap.Surface.VertexCount; v++)
-        {
-            var p = cap.Surface.Positions[v];
-            double len = Math.Sqrt(p.X * p.X + p.Y * p.Y + p.Z * p.Z);
-            if (len < 1e-9) continue;
-            double dot = Math.Clamp(Vector3D.Dot(epUnit, new Vector3D(p.X / len, p.Y / len, p.Z / len)), -1.0, 1.0);
-            double ang = Math.Acos(dot);
-            if (ang < best) best = ang;
-        }
-        return best;
-    }
-
+    /// <summary>
+    /// At a tick well past onset, every boundary arc's two plates must be adjacent in the
+    /// reassigned cell-membership: there must be at least one cell edge where one cell belongs to
+    /// arc.PlateA and its neighbour belongs to arc.PlateB. If the frames disagreed (arcs from the
+    /// onset assignment, caps from reassignment), some arc would reference a plate pair that no
+    /// longer shares a frontier — the arc would cut through a plate's interior.
+    /// </summary>
     [Fact]
-    public void Caps_built_at_the_arc_tick_are_closer_to_the_arcs_than_caps_built_at_onset()
+    public void Boundary_arcs_lie_along_the_reassigned_membership_boundary()
     {
         var model = BuildAppReconstructor(out long onsetTick);
         // 8 Ma past onset — well beyond the retired 0.08 rad preview cap, so the old frame
         // disagreement (caps at onset, arcs at tick) produces a clear multi-degree gap.
         long tick = onsetTick + 8 * UnitConverter.TicksPerMegaAnnum;
 
+        var snapshot = model.BuildGlobeAt(tick);
         var arcs = model.BuildBoundaryArcsAt(tick);
         Assert.NotEmpty(arcs);
 
-        var capsAtTick = BuildCapsAtTick(model, tick);
-        var capsAtOnset = BuildCapsAtTick(model, onsetTick);
+        var byCell = snapshot.Cells.ToDictionary(c => c.CellId, c => c.PlateId);
+        var space = new GeodesicSphereTessellation(AppFrequency).Space;
 
-        // When the frames agree, every arc point is closer to the same-tick caps than to the onset
-        // caps by a margin that reflects the plate drift over 8 Ma (~0.16 rad for the fastest
-        // plate). When the frames disagree, BuildGlobeAt(tick) returns onset geometry, so the two
-        // cap sets are identical and the margin is zero. Require a positive mean margin to fail
-        // the no-rotation (disagreement) case cleanly while absorbing per-point structural noise.
-        double marginSum = 0.0;
-        int marginCount = 0;
-        foreach (var arc in arcs)
+        // Build the set of plate pairs that share at least one cell edge in the reassigned membership.
+        var membershipPairs = new HashSet<(int, int)>();
+        foreach (var cell in snapshot.Cells)
         {
-            if (!capsAtTick.ContainsKey(arc.PlateA) || !capsAtTick.ContainsKey(arc.PlateB)) continue;
-            var tickA = capsAtTick[arc.PlateA];
-            var tickB = capsAtTick[arc.PlateB];
-            var onsetA = capsAtOnset[arc.PlateA];
-            var onsetB = capsAtOnset[arc.PlateB];
-
-            foreach (var endpoint in arc.Points)
+            int plate = cell.PlateId;
+            foreach (var nb in space.Neighbors(new GeodesicCoord(cell.CellId, AppFrequency)))
             {
-                double elen = Math.Sqrt(endpoint.X * endpoint.X + endpoint.Y * endpoint.Y + endpoint.Z * endpoint.Z);
-                var epUnit = new Vector3D(endpoint.X / elen, endpoint.Y / elen, endpoint.Z / elen);
-
-                double distTick = Math.Min(NearestVertexAngularDistance(epUnit, tickA), NearestVertexAngularDistance(epUnit, tickB));
-                double distOnset = Math.Min(NearestVertexAngularDistance(epUnit, onsetA), NearestVertexAngularDistance(epUnit, onsetB));
-
-                marginSum += distOnset - distTick;
-                marginCount++;
+                if (!byCell.TryGetValue(nb.FaceIndex, out var nbPlate) || nbPlate == plate) continue;
+                membershipPairs.Add((Math.Min(plate, nbPlate), Math.Max(plate, nbPlate)));
             }
         }
 
-        Assert.True(marginCount > 0, "no arc points were compared");
-        double meanMargin = marginSum / marginCount;
-        // The fastest plate drifts ~0.16 rad over 8 Ma; the mean margin across all arcs/points is
-        // smaller (many arcs are between slow plates), but strictly positive when frames agree.
-        // The no-rotation disagreement gives exactly 0. A 0.01 rad floor cleanly separates them.
-        Assert.True(meanMargin > 0.01,
-            $"mean (onset-distance - tick-distance) = {meanMargin:F4} rad — caps are not closer to the " +
-            $"arcs at the arc tick than at onset, so the frames disagree (BuildGlobeAt did not rotate " +
-            $"cap geometry to the tick).");
+        foreach (var arc in arcs)
+        {
+            var pair = (arc.PlateA, arc.PlateB);
+            Assert.True(membershipPairs.Contains(pair),
+                $"arc {arc.PlateA}|{arc.PlateB} at tick {tick} has no adjacent cell pair in the " +
+                "reassigned membership — the arc does not lie along the cell-membership boundary " +
+                "(frames disagree: arcs and caps are not derived from the same tick)");
+        }
+    }
+
+    /// <summary>
+    /// The union of all plate caps covers every cell exactly once at the arc tick: no cell is
+    /// unassigned (no gap → mantle visible through the surface) and no cell is doubly assigned
+    /// (no overlap → z-fighting). This is the watertight-by-construction invariant under
+    /// reassignment: the caps ARE the unrotated tessellation cells, so coverage is exact.
+    /// </summary>
+    [Fact]
+    public void Caps_at_arc_tick_cover_every_cell_exactly_once()
+    {
+        var model = BuildAppReconstructor(out long onsetTick);
+        long tick = onsetTick + 8 * UnitConverter.TicksPerMegaAnnum;
+
+        var snapshot = model.BuildGlobeAt(tick);
+
+        // No gap: every cell has a valid plate id.
+        Assert.All(snapshot.Cells, c => Assert.True(c.PlateId >= 0,
+            $"cell {c.CellId} is unassigned at tick {tick} — gap in the surface"));
+
+        // No overlap: every cell id appears exactly once.
+        var seen = new HashSet<int>();
+        foreach (var cell in snapshot.Cells)
+            Assert.True(seen.Add(cell.CellId),
+                $"cell {cell.CellId} appears more than once at tick {tick} — overlap in the surface");
+
+        Assert.Equal(snapshot.CellCount, seen.Count);
     }
 }
