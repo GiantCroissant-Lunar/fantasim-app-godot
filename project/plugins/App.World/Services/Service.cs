@@ -5,6 +5,8 @@ using System.Globalization;
 using System.Text.Json;
 using FantaSim.App.World.Cells;
 using FantaSim.App.World.Dto;
+using FantaSim.App.Ecs.Cells;
+using FantaSim.App.Ecs.Systems;
 using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Globe;
 using Microsoft.Extensions.Logging;
@@ -163,6 +165,8 @@ public sealed class Service : IService, IDisposable
             MaxTick = runtime.MaxTick,
             GenerationGraphFamily = family,
             BoundaryArcs = runtime.BoundaryArcs,
+            CellElevations = runtime.CellElevations,
+            CellFeatures = runtime.CellFeatures,
         };
     }
 
@@ -275,7 +279,7 @@ public sealed class Service : IService, IDisposable
             LayerId: address.Product[(separator + 1)..]);
     }
 
-    private static PlanetPresentationRuntime BuildPlanetPresentationRuntime(
+    private PlanetPresentationRuntime BuildPlanetPresentationRuntime(
         WorldGenerationGraphFamilyDocument family,
         long arcTick)
     {
@@ -290,13 +294,54 @@ public sealed class Service : IService, IDisposable
             geosphere,
             renderOptions.TessellationFrequency);
 
+        var (cellElevations, cellFeatures) = BuildCrustSurfaceData(reconstructor, arcTick, _logger);
+
         return new PlanetPresentationRuntime(
             reconstructor.BuildGlobeAt(onsetTick),
             onsetTick,
             geosphere,
             atmosphere,
             onsetTick + 20_000_000L,
-            reconstructor.BuildBoundaryArcsAt(arcTick));
+            reconstructor.BuildBoundaryArcsAt(arcTick),
+            cellElevations,
+            cellFeatures);
+    }
+
+    // Single pipeline run → per-cell elevation (via CellElevationSystem.Derive, the same pure formula
+    // the ECS path uses) + per-cell typed feature (kind + magnitude). Null when the tick is gated out
+    // (pre-onset / non-plate) or the pipeline produced no state, so the host falls back to untinted.
+    private static (IReadOnlyList<double>? Elevations, IReadOnlyList<CellCrustFeature>? Features)
+        BuildCrustSurfaceData(GlobeReconstructor reconstructor, long tick, ILogger logger)
+    {
+        try
+        {
+            var snapshot = reconstructor.RunCrustSnapshot(new[] { tick });
+            if (!snapshot.StateByTick.TryGetValue(tick, out var state) || state.Count == 0)
+                return (null, null);
+
+            int n = snapshot.CellCount;
+            var elevations = new double[n];
+            var features = new CellCrustFeature[n];
+            snapshot.FeaturesByTick.TryGetValue(tick, out var featureMap);
+
+            for (int cell = 0; cell < n; cell++)
+            {
+                if (state.TryGetValue(cell, out var s))
+                {
+                    var sample = new CrustSample(
+                        s.ContinentalFraction, s.OrogenicPressure, s.VolcanicActivity, s.CrustAgeTicks);
+                    elevations[cell] = CellElevationSystem.Derive(sample);
+                }
+                if (featureMap is not null && featureMap.TryGetValue(cell, out var f))
+                    features[cell] = new CellCrustFeature((byte)f.Kind, f.Magnitude);
+            }
+            return (elevations, features);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Crust surface data unavailable at tick {Tick}; presentation falls back to untinted.", tick);
+            return (null, null);
+        }
     }
 
     private static WorldGenerationRenderOptions ResolvePlanetRenderOptions(WorldGenerationGraphFamilyDocument family)
@@ -318,7 +363,9 @@ public sealed class Service : IService, IDisposable
         SphereRegimeSchedule GeosphereSchedule,
         SphereRegimeSchedule AtmosphereSchedule,
         long MaxTick,
-        IReadOnlyList<PlateBoundaryArc> BoundaryArcs);
+        IReadOnlyList<PlateBoundaryArc> BoundaryArcs,
+        IReadOnlyList<double>? CellElevations,
+        IReadOnlyList<CellCrustFeature>? CellFeatures);
 
 #if USE_PROJECT_REFERENCES
     private static string NewTruthWriterActorName()

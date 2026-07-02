@@ -92,3 +92,14 @@ public record WorldGlobeSnapshot(
     IReadOnlyList<GlobeCell> Cells,
     IReadOnlyList<GlobePlate> Plates
 );
+
+/// <summary>
+/// One cell's derived crust feature for presentation (sub-project A2). Kind mirrors
+/// <c>FantaSim.Geosphere.Crust.CrustFeatureKind</c> (0 None, 1 Mountain, 2 VolcanicArc, 3 Trench,
+/// 4 Ridge, 5 Fault); <see cref="Magnitude"/> is the driving value that produced it (accumulated
+/// orogenic-pressure / volcanic-activity for field-driven kinds, 1.0 for topology-marked kinds).
+/// Contract-local so the T1 surface carries no engine dependency.
+/// </summary>
+/// <param name="Kind">Feature kind byte (mirrors CrustFeatureKind).</param>
+/// <param name="Magnitude">The magnitude that produced the feature (drives accent intensity).</param>
+public readonly record struct CellCrustFeature(byte Kind, double Magnitude);

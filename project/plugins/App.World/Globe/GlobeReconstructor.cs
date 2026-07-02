@@ -435,6 +435,65 @@ public sealed class GlobeReconstructor
         return new CrustStateRun(n, byTick, centers);
     }
 
+    /// <summary>
+    /// One crust-pipeline run over <paramref name="snapshotTicks"/> exposing BOTH the accumulated
+    /// per-cell state AND the derived per-cell features (with magnitude) at each tick — from a SINGLE
+    /// <see cref="CrustPipeline.RunAsync"/> call. This is the combined source for elevation derivation
+    /// (<see cref="FantaSim.App.Ecs.Systems.CellElevationSystem.Derive"/> over the state) and typed
+    /// feature accents (kind + magnitude). Regime-gated like <see cref="RunCrustEvolution"/>/
+    /// <see cref="RunCrustFeatures"/>: pre-onset / non-plate ticks get empty entries.
+    /// </summary>
+    public CrustSnapshotResult RunCrustSnapshot(IReadOnlyList<long> snapshotTicks)
+    {
+        ArgumentNullException.ThrowIfNull(snapshotTicks);
+
+        int n = _tessellation.CellCount;
+        var emptyState = (IReadOnlyDictionary<int, CellCrustState>)new Dictionary<int, CellCrustState>();
+        var emptyFeatures = (IReadOnlyDictionary<int, CrustFeature>)new Dictionary<int, CrustFeature>();
+
+        var stateByTick = new Dictionary<long, IReadOnlyDictionary<int, CellCrustState>>(snapshotTicks.Count);
+        var featuresByTick = new Dictionary<long, IReadOnlyDictionary<int, CrustFeature>>(snapshotTicks.Count);
+        var activeTicks = new List<long>();
+        foreach (var tick in snapshotTicks)
+        {
+            if (!ShowsPlateFeatures(tick))
+            {
+                stateByTick[tick] = emptyState;
+                featuresByTick[tick] = emptyFeatures;
+            }
+            else
+            {
+                activeTicks.Add(tick);
+            }
+        }
+
+        if (activeTicks.Count == 0)
+            return new CrustSnapshotResult(n, stateByTick, featuresByTick);
+
+        long endTick = 0;
+        foreach (var t in activeTicks) if (t > endTick) endTick = t;
+
+        var result = CrustPipeline.RunAsync(
+            _tessellation, _plates, CrustInitRecipe.Continental(0, 1),
+            startTick: 0, endTick: endTick,
+            snapshotTicks: activeTicks,
+            rates: DefaultRates()).GetAwaiter().GetResult();
+
+        foreach (var tick in activeTicks)
+        {
+            stateByTick[tick] = result.StateByTick.TryGetValue(tick, out var state) ? state : emptyState;
+            featuresByTick[tick] = result.FeaturesByTick.TryGetValue(tick, out var features) ? features : emptyFeatures;
+        }
+
+        return new CrustSnapshotResult(n, stateByTick, featuresByTick);
+    }
+
+    /// <summary>Combined crust snapshot at one or more ticks from a single pipeline run.</summary>
+    public sealed record CrustSnapshotResult(
+        int CellCount,
+        IReadOnlyDictionary<long, IReadOnlyDictionary<int, CellCrustState>> StateByTick,
+        IReadOnlyDictionary<long, IReadOnlyDictionary<int, CrustFeature>> FeaturesByTick);
+
     private static CrustEvolutionRates DefaultRates()
     {
         static double PerTick(double perMa) => perMa / UnitConverter.TicksPerMegaAnnum;

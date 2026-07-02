@@ -58,6 +58,23 @@ public sealed record PlanetPresentationDocument(
     /// implementation assembly.
     /// </summary>
     public WorldGenerationGraphFamilyDocument? GenerationGraphFamily { get; init; }
+
+    /// <summary>
+    /// Per-cell crust elevation in metres at <see cref="ReferenceTick"/>, indexed by cell id (length =
+    /// <see cref="WorldGlobeSnapshot"/>'s CellCount). Null when crust products have not flowed for
+    /// this snapshot (the host falls back to flat-zero). Drives BOTH the mesh displacement (A1) and
+    /// the hypsometric vertex-color tint (A2) off the SAME field, so color and relief stay coherent.
+    /// </summary>
+    public IReadOnlyList<double>? CellElevations { get; init; }
+
+    /// <summary>
+    /// Per-cell typed crust feature at <see cref="ReferenceTick"/>, indexed by cell id (length =
+    /// CellCount; cells with no feature carry <see cref="CellCrustFeature"/> default = Kind 0 / 0.0).
+    /// Null when features have not been derived; the host renders the hypsometric tint without accents.
+    /// The typed boundary POLYLINES already carry boundary-type color; these surface-level accents
+    /// complement them (volcanic vent glow, trench darkening, ridge brightening), not duplicate them.
+    /// </summary>
+    public IReadOnlyList<CellCrustFeature>? CellFeatures { get; init; }
 }
 
 /// <summary>
