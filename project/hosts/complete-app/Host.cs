@@ -11,6 +11,7 @@ using FantaSim.App.GpuCompute.Seam;
 using FantaSim.App.GpuShader.Seam;
 using FantaSim.App.Iii.Seam;
 using FantaSim.App.Remote.Seam;
+using FantaSim.App.Render.Seam;
 using FantaSim.App.Resource.Bundle;
 using FantaSim.App.SceneFlow;
 using FantaSim.App.Timeline.Seam;
@@ -31,6 +32,7 @@ public partial class Host : Node
     private FantaSim.App.Ecs.IService? _ecs;
     private PlanetPresentationBinder? _planetPresentation;
     private FantaSim.App.Resource.IService? _resource;
+    private IRenderCompositionHandle? _renderComposition;
     private bool _ecsWorldReady;
     private bool _timelineReloadPending;
 
@@ -67,6 +69,7 @@ public partial class Host : Node
         ActivityComposition.ComposeActivity(ctx);
         UiComposition.ComposeUi(ctx, tree);
         RemoteIngressComposition.ComposeRemoteIngress(ctx, this);
+        _renderComposition = RenderComposition.ComposeRender(ctx, this);
 
         _log.LogInformation("composition activated.");
         _log.LogInformation("iii bridge: IiiClient registered = {IiiClientRegistered}", ClassDB.ClassExists("IiiClient"));
@@ -719,6 +722,15 @@ public partial class Host : Node
     {
         if (what == NotificationWMCloseRequest || what == NotificationExitTree)
         {
+            // Unregister the render.screenshot handler so it does not pin a collectible ALC
+            // (mirrors WorldPlugin.ShutdownAsync unregister discipline).
+            if (_renderComposition is not null && _composition is not null)
+            {
+                _renderComposition.Unregister(_composition.Bootstrap.Registry);
+                _renderComposition.Dispose();
+                _renderComposition = null;
+            }
+
             _planetPresentation?.Dispose();
             _planetPresentation = null;
             _composition?.Dispose();
