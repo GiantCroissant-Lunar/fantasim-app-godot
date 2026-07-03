@@ -125,6 +125,31 @@ parameter fields addressed per truth-stream identity (variant, branch) like ever
 world property — never constants in code. A different world legitimately has different
 tectonic expression. ComfyUI is a later STYLE reference only, never a correctness source.
 
+## 5c. The World View (locked 2026-07-03 — supersedes "which view is default")
+
+**Principle: waterless worlds are worlds.** A world reads as a world through terrain
+legibility (elevation-ramp variation, landform silhouettes, grid-hiding detail, lighting,
+atmosphere rim) — NOT through water. Water renders only when the world's hydrosphere has
+volume (a world parameter); a desert world is a world with an empty hydrosphere, never a
+missing one. (References: Mars; kenny.wtf world-synth — believability from ~41k noise-
+jittered regions + NOAA-style ramp, water incidental.)
+
+- **GlobeViewMode.World is the DEFAULT view** (no layer focused): the composed product,
+  stacking the contributions of every ACTIVE sphere — geosphere terrain (bare-rock ramp:
+  dark basalt lowlands → rust/ochre plains → pale highlands; boundary landforms; volcanic
+  glow; sub-cell detail noise to bury the cell grid), atmosphere limb glow gated on the
+  real atmosphere state, hydrosphere water when it exists (future). Boundary ribbons stay
+  OFF here — they are diagnostics.
+- Layer diagnostic views (plate identity, crust) are reached by focusing tracks, as built.
+- Lighting: warm/neutral key + ambient (the blue-grey ambient was re-costuming bare rock
+  as ocean — lighting is part of the no-costume rule).
+- **Cross-section is an INTERACTION of the world view, not a mode**: first mechanism = the
+  cutaway mask (a clipped spherical wedge revealing strata — crust thickness field,
+  lithosphere lid, asthenosphere, slab geometry at convergent boundaries — under the S1/S2
+  exaggeration + indicator rules). Zoom-in is camera behavior on top; a flat slice panel
+  (textbook style) is a later 2D readout of the same cut. Packets: W1 world view + terrain
+  legibility; W2 atmosphere rim; W3 cutaway mask.
+
 ## 6. Verification
 
 Every packet: unit tests for the Godot-free logic (TDD), full suite green, then the exported
