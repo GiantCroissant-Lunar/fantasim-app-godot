@@ -25,7 +25,9 @@ namespace FantaSim.App.World;
 public sealed partial class WorldPlugin : ILifecyclePlugin
 {
     private const string RunWorldGenerationGraphCommand = "world.run_generation_graph";
-    private const long CrustGenerationWindowTicks = 5_000_000L;
+    // Single source of truth for crust-snapshot spacing: the trigger window, the service's snapshot
+    // tick states, and product selection must all agree or playheads select never-generated ticks.
+    private const long CrustGenerationWindowTicks = CrustSnapshotTickSeries.DefaultSpacingTicks;
 
     private IDisposable? _worldCompositionHandle;
     private CrustGenerationTrigger? _crustTrigger;

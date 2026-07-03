@@ -195,7 +195,16 @@ internal sealed class PlanetPresentationBinder : IDisposable
         {
             if (_disposed)
                 return;
-            Callable.From(Rebind).CallDeferred();
+            // Once a document is bound, a completed generation must refresh AT THE PLAYHEAD.
+            // Rebind's parameterless fetch defaults to PlateOnsetTick, so routing this event
+            // through Rebind rebuilt the surface with onset terrain after every crust-trigger
+            // completion — overwriting the playhead's terrain and (because Rebind also resets
+            // snapshot tracking) leaving the crossing detector unable to recover: the
+            // 105M-vs-119M identical-terrain bug. Rebind stays for the initial mount only.
+            if (_currentDocument is not null)
+                Callable.From(ScheduleRegimeRefresh).CallDeferred();
+            else
+                Callable.From(Rebind).CallDeferred();
         });
     }
 

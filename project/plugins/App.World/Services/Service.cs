@@ -153,7 +153,7 @@ public sealed class Service : IService, IDisposable
 
         var selectedCrustTick = CrustSnapshotTickSeries.ForRegime(
             runtime.GeosphereSchedule.RegimeAt(referenceTick) ?? runtime.GeosphereSchedule.Regimes[^1],
-            UnitConverter.TicksPerMegaAnnum * 5,
+            CrustSnapshotTickSeries.DefaultSpacingTicks,
             runtime.MaxTick).SelectSnapshotForPlayhead(referenceTick);
 
         var layers = products.Products
@@ -298,7 +298,7 @@ public sealed class Service : IService, IDisposable
             return Array.Empty<CrustSnapshotTickState>();
 
         var availableSet = new HashSet<long>(availableTicks);
-        var series = CrustSnapshotTickSeries.ForRegime(mobilePlate, UnitConverter.TicksPerMegaAnnum * 5, maxTick);
+        var series = CrustSnapshotTickSeries.ForRegime(mobilePlate, CrustSnapshotTickSeries.DefaultSpacingTicks, maxTick);
         return series.SnapshotTicks
             .Select(t => new CrustSnapshotTickState(t, availableSet.Contains(t)))
             .ToArray();

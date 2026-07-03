@@ -169,6 +169,15 @@ public sealed record WorldGenerationTickRange(long StartTick, long EndTick)
 public sealed record CrustSnapshotTickSeries(IReadOnlyList<long> SnapshotTicks)
 {
     /// <summary>
+    /// The one crust-snapshot spacing every consumer must share: the generation trigger's window,
+    /// the service's snapshot-tick states, and the presentation's product selection. 5,000,000
+    /// canonical ticks (50 Ma at 100k ticks/Ma). Two spacings in play caused the 2026-07-03
+    /// identical-terrain bug: the service built series at 500k ticks ("5" read as mega-annum, not
+    /// window ticks), so playheads selected snapshot ticks no product was ever generated for.
+    /// </summary>
+    public const long DefaultSpacingTicks = 5_000_000L;
+
+    /// <summary>
     /// Compute the snapshot-tick series for the active mobile-plate regime. Returns ticks at
     /// every <paramref name="spacing"/> starting at the greater of the regime start and zero,
     /// through the regime end (exclusive). When the regime has no end, the series is bounded
