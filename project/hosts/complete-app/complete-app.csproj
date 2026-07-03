@@ -43,6 +43,10 @@
          (App.Remote.Seam, the Godot main-thread bridge node). Gated by FANTASIM_REMOTE_ENABLED=1. -->
     <ProjectReference Include="..\..\plugins\App.Remote\App.Remote.csproj" />
     <ProjectReference Include="..\..\plugins\App.Remote.Seam\App.Remote.Seam.csproj" />
+    <!-- Render seam: T4 (App.Render.Seam, Godot viewport capture) registers the render.screenshot
+         command. T3 (App.Render) holds the Godot-free payload/path/timestamp logic. -->
+    <ProjectReference Include="..\..\plugins\App.Render\App.Render.csproj" />
+    <ProjectReference Include="..\..\plugins\App.Render.Seam\App.Render.Seam.csproj" />
   </ItemGroup>
 
   <ItemGroup>
