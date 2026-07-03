@@ -36,7 +36,10 @@ internal sealed class PlanetPresentationBinder : IDisposable
         Octaves: 5,
         Lacunarity: 2.0,
         Gain: 0.5,
-        Amplitude: 350.0,
+        // 350 m read flat at the limb — the disk silhouetted as a near-perfect circle. 900 m puts
+        // ~1%-of-radius relief on the silhouette (look-dev 2026-07-03, knobbly-limb reference)
+        // while staying well under the tectonic envelope so ranges still dominate the read.
+        Amplitude: 900.0,
         Ridged: false);
 
     private readonly IRegistry _registry;
@@ -621,7 +624,7 @@ internal sealed class PlanetPresentationBinder : IDisposable
         // World view only: continental-scale albedo provinces, applied to the ramp color BEFORE the
         // typed accents so trench/ridge/volcanic signals stay legible on top of the province field.
         var provinceTint = isWorld && cells is not null
-            ? new ProvinceTint(seed: 1337, amplitude: 0.07)
+            ? new ProvinceTint(seed: 1337, amplitude: 0.12)
             : null;
         var cellCenters = provinceTint is not null ? BuildCellCenters(cellCount, cells!) : null;
 
