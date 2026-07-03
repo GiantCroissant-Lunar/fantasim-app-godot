@@ -188,11 +188,16 @@ tasks:
             FantaSim.World.Fields.Core|\
             FantaSim.World.Shared.Contracts|\
             UnifyMaths|\
+            UnifyMaths.Numerics|\
             UnifyStorage.Abstractions|\
             UnifyStorage.Runtime.LiteDb|\
             Arch|\
             MessagePack|\
-            MessagePack.Annotations)
+            MessagePack.Annotations|\
+            FantaSim.App.World.Rendering|\
+            Cartography.Globe.Core|\
+            Cartography.Globe.Contracts|\
+            Cartography.Shared.Contracts)
               return 0
               ;;
           esac
