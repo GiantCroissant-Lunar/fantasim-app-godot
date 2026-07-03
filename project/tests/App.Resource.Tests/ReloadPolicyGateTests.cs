@@ -64,6 +64,53 @@ public class ReloadPolicyGateTests
         }
     }
 
+    [Fact]
+    public async Task FrameDeferredVerify_CollectsAfterRefsDropped()
+    {
+        // The standalone verification probe (BundleHost's post-reload gate, 2026-07-03 fix): the
+        // 79bc07e Task.Delay loop probed from a threadpool thread with no frame coordination and
+        // reported false "still pinned". VerifyCollectedAsync must frame-defer each attempt like
+        // ReloadAsync's inline gate does.
+        var dir = NewTempDir(nameof(FrameDeferredVerify_CollectsAfterRefsDropped));
+        try
+        {
+            var fake = new FakeFrameProvider();
+            var policy = new FantaSim.App.Resource.ReloadPolicy(fake);
+            var (host, unloadReload) = SetUp(dir, "verify");
+
+            await host.UnmountAndWaitAsync("verify", CancellationToken.None);
+            var probe = await unloadReload(CancellationToken.None);
+
+            var task = policy.VerifyCollectedAsync("verify", probe);
+            for (var i = 0; i < 200 && !task.IsCompleted; i++)
+            {
+                fake.Advance();
+                await Task.Delay(25);
+                await Task.Yield();
+            }
+
+            var result = await task;
+            Assert.True(result.ProbeAvailable);
+            Assert.True(result.Collected, "frame-deferred verify should observe collection once refs are dropped");
+        }
+        finally
+        {
+            BestEffortDelete(dir);
+        }
+    }
+
+    [Fact]
+    public async Task FrameDeferredVerify_NoProbe_ReportsUnavailable()
+    {
+        var fake = new FakeFrameProvider();
+        var policy = new FantaSim.App.Resource.ReloadPolicy(fake);
+
+        var result = await policy.VerifyCollectedAsync("none", probe: null);
+
+        Assert.False(result.ProbeAvailable);
+        Assert.False(result.Collected);
+    }
+
     // All ALC-typed locals (dll path, alc, asm, type, source) live ONLY inside this
     // [NoInlining] helper so they do not linger on the test method's frame (which would pin
     // the ALC for the duration of the test and defeat the collection assertion).

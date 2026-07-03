@@ -298,14 +298,30 @@ public sealed class BundleHost
     {
         try
         {
-            // Run the diagnostic after the unload/reload method has returned to its caller and after
-            // deferred resident cleanup has had time to run.
-            for (var i = 0; i < 30; i++)
-            {
-                await Task.Delay(TimeSpan.FromMilliseconds(16), cancellationToken);
-            }
+            // FRAME-DEFERRED gate (2026-07-03 fix; restores the S2a/S2b-proven ReloadPolicy probe
+            // that 79bc07e replaced with a threadpool Task.Delay loop): each attempt suspends on
+            // Observable.NextFrame via the Godot frame provider, so the main thread processes the
+            // deferred resident cleanup (Callable.From(...).CallDeferred() node frees, view
+            // unmounts) between probes. The Task.Delay loop probed from a threadpool thread with
+            // no frame coordination and reported a false "still pinned" while that cleanup was
+            // still queued. 32 frame-deferred attempts (~0.5 s @60fps) is generous — a genuinely
+            // unpinned ALC collects within a few frames.
+            var policy = new FantaSim.App.Resource.ReloadPolicy(
+                R3.ObservableSystem.DefaultFrameProvider, _logger);
+            var result = await policy.VerifyCollectedAsync(
+                bundleId, unloadResult, maxAttempts: 32, cancellationToken);
 
-            await VerifyOldContextCollectedAsync(bundleId, unloadResult, cancellationToken);
+            // Keep the historic gate strings EXACT — the verify-windowed workflow greps for them.
+            if (result.Collected)
+            {
+                _logger.LogInformation("Hot-reload: old ALC collected for bundle {BundleId}", bundleId);
+            }
+            else if (result.ProbeAvailable)
+            {
+                _logger.LogWarning(
+                    "Hot-reload: old ALC still pinned for bundle {BundleId} after unload (reload degraded -- a strong ref is holding the collectible context)",
+                    bundleId);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -314,33 +330,6 @@ public sealed class BundleHost
         {
             _logger.LogWarning(ex, "Hot-reload: old ALC collection verification failed for bundle {BundleId}", bundleId);
         }
-    }
-
-    private async Task VerifyOldContextCollectedAsync(
-        string bundleId,
-        PluginUnloadResult unloadResult,
-        CancellationToken cancellationToken)
-    {
-        // The reliable "bundle unloaded" signal is the old collectible ALC being GC-collected.
-        // Directory deletion can succeed while the ALC is still alive, so poll on a bounded cadence.
-        const int maxAttempts = 300;
-
-        for (var attempt = 0; attempt < maxAttempts; attempt++)
-        {
-            await Task.Delay(TimeSpan.FromMilliseconds(16), cancellationToken);
-
-            // forceGc every attempt -- matches ReloadPolicy (the probe is meaningless without a fresh
-            // GC since IsCollected only reports true after the ALC is actually unreferenced+collected).
-            if (unloadResult.IsCollected(forceGc: true))
-            {
-                _logger.LogInformation("Hot-reload: old ALC collected for bundle {BundleId}", bundleId);
-                return;
-            }
-        }
-
-        _logger.LogWarning(
-            "Hot-reload: old ALC still pinned for bundle {BundleId} after unload (reload degraded -- a strong ref is holding the collectible context)",
-            bundleId);
     }
 }
 

@@ -46,6 +46,20 @@ public sealed class ReloadPolicy
 
         await unmount(ct).ConfigureAwait(false);
         var probe = await unloadReload(ct).ConfigureAwait(false);
+        return await VerifyCollectedAsync(bundleId, probe, maxAttempts, ct).ConfigureAwait(false);
+    }
+
+    // The frame-deferred collection probe, standalone: BundleHost's post-reload verification calls
+    // this directly (2026-07-03 fix — its 79bc07e Task.Delay loop probed from a threadpool thread
+    // with no frame coordination, reporting false "still pinned" while deferred main-thread cleanup
+    // was still queued). Each attempt suspends on Observable.NextFrame so the Godot main loop
+    // processes CallDeferred cleanup (node QueueFree, view unmounts) between probes.
+    public async Task<ReloadResult> VerifyCollectedAsync(
+        string bundleId,
+        PluginUnloadResult? probe,
+        int maxAttempts = 8,
+        CancellationToken ct = default)
+    {
         if (probe is null || !probe.UnloadInitiated)
             return new ReloadResult(ProbeAvailable: false, Collected: false, Attempts: 0);
 
@@ -58,14 +72,14 @@ public sealed class ReloadPolicy
             if (probe.IsCollected(forceGc: true))
             {
                 _logger?.LogDebug(
-                    "ReloadAsync: bundleId={BundleId} collected at attempt {Attempt}",
+                    "VerifyCollectedAsync: bundleId={BundleId} collected at attempt {Attempt}",
                     bundleId, attempt);
                 return new ReloadResult(true, true, attempt);
             }
         }
 
         _logger?.LogWarning(
-            "ReloadAsync: bundleId={BundleId} NOT collected after {Attempts} frame-deferred attempts",
+            "VerifyCollectedAsync: bundleId={BundleId} NOT collected after {Attempts} frame-deferred attempts",
             bundleId, maxAttempts);
         return new ReloadResult(true, false, maxAttempts);
     }
