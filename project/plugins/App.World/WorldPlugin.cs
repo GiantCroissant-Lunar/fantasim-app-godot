@@ -250,6 +250,10 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
             ["canonicalTick"] = decision.CanonicalTick,
             ["graphRevision"] = decision.Key?.GraphRevision ?? family.Revision,
             ["snapshotTicks"] = snapshotTickArray,
+            // Snapshot ticks are absolute world-timeline ticks; plates sit at their seed orientation
+            // at plate onset, so boundary classification must rotate by (tick - onset) — the same
+            // convention GlobeReconstructor renders with.
+            ["rotationReferenceTick"] = SphereRegimeScheduleDefaults.PlateOnsetTick,
         };
 
         var runner = new WorldGenerationGraphRunner(providers);

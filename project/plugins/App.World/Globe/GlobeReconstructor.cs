@@ -589,7 +589,8 @@ public sealed class GlobeReconstructor
             _tessellation, _plates, CrustInitRecipe.Continental(0, 1),
             startTick: 0, endTick: endTick,
             snapshotTicks: activeTicks,
-            rates: DefaultRates()).GetAwaiter().GetResult();
+            rates: DefaultRates(),
+            rotationReferenceTick: _onsetTick).GetAwaiter().GetResult();
 
         foreach (var tick in activeTicks)
         {
@@ -643,7 +644,8 @@ public sealed class GlobeReconstructor
             _tessellation, _plates, CrustInitRecipe.Continental(0, 1),
             startTick: 0, endTick: endTick,
             snapshotTicks: activeTicks,
-            rates: DefaultRates()).GetAwaiter().GetResult();
+            rates: DefaultRates(),
+            rotationReferenceTick: _onsetTick).GetAwaiter().GetResult();
 
         foreach (var tick in activeTicks)
         {
@@ -693,11 +695,14 @@ public sealed class GlobeReconstructor
         long endTick = 0;
         foreach (var t in activeTicks) if (t > endTick) endTick = t;
 
+        // rotationReferenceTick keeps the deposited boundary TYPES on the same delta-from-onset
+        // rotation convention RotationDelta/ReassignCellsAt render with (snapshot ticks are absolute).
         var result = CrustPipeline.RunAsync(
             _tessellation, _plates, CrustInitRecipe.Continental(0, 1),
             startTick: 0, endTick: endTick,
             snapshotTicks: activeTicks,
-            rates: DefaultRates()).GetAwaiter().GetResult();
+            rates: DefaultRates(),
+            rotationReferenceTick: _onsetTick).GetAwaiter().GetResult();
 
         foreach (var tick in activeTicks)
         {

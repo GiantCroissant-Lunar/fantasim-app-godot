@@ -329,6 +329,9 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         double rate = ReadDouble(effectivePayload, "spinRateRadiansPerMegaAnnum",
             ReadDouble(effectivePayload, "spinRate", DefaultSpinRateRadiansPerMegaAnnum));
         var rates = ReadRates(effectivePayload);
+        // Rotation reference (plate-onset tick): boundary classification rotates by
+        // (snapshotTick - reference), matching the presentation's delta-from-onset convention.
+        long rotationReferenceTick = ReadLong(effectivePayload, "rotationReferenceTick", 0);
 
         var tessellation = new GeodesicSphereTessellation(frequency);
         var plates = ReadPlates(effectivePayload, rate);
@@ -344,6 +347,7 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
             endTick: endTick,
             snapshotTicks: snapshotTicks,
             rates: rates,
+            rotationReferenceTick: rotationReferenceTick,
             ct: ct).ConfigureAwait(false);
 
         return Summarize(
