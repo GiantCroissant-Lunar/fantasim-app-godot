@@ -13,6 +13,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+    <!-- Rendering contracts (shared): CutawayWedge + CutawayStratumProfile moved here to keep the
+         host binder's consumption of these types in a single shared assembly (2026-07-03 ALC pin
+         diagnosis, Fix 2). The types keep their FantaSim.App.World.Composition namespace. -->
+    <ProjectReference Include="..\..\contracts\App.World.Rendering\App.World.Rendering.csproj" />
   </ItemGroup>
 
   <!--

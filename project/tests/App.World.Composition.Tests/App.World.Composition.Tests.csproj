@@ -15,5 +15,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\plugins\App.World.Composition\App.World.Composition.csproj" />
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+    <!-- Rendering contracts (shared): CutawayWedge + CutawayStratumProfile moved here. The test files
+         keep their FantaSim.App.World.Composition usings — the namespace is preserved exactly. -->
+    <ProjectReference Include="..\..\contracts\App.World.Rendering\App.World.Rendering.csproj" />
   </ItemGroup>
 </Project>
