@@ -132,6 +132,18 @@ windowed app is the gate (per verify-windowed): seams gone under elevation at mo
 hypsometric + accents visible; terrain visibly different at early vs late mobile-plate ticks;
 (B) continuous playback + regime sections; (C) fracture animation through W with no hard cut.
 
+## 6b. Vocabulary and scale rules (binding, 2026-07-03)
+
+This spec follows the doctrine note `fantasim-world/vault/architecture/
+terminology-strata-scale-resolution.md`: one term per concept (Sphere / Sub-domain /
+Regime / Layer / Field / **Stratum** / Plate / Track / Lane — "layer" ONLY for the
+composition atom); strata are Fields until the cutaway view; **no sphere-costume
+rendering** (the crust view's low-elevation tint must stop reading as ocean — recolor in
+the tuning pass); presentation exaggeration is a declared parameter (S1), indicated
+on-screen in odometer-ladder rungs (S2/S3 — the ladder gains a spatial anchor per world);
+R-adaptive cell subdivision is the roadmap answer to resolution, replacing global
+frequency bumps.
+
 ## 7. Non-goals / recorded follow-ups
 
 - Engine-side gradual fracture (truth-stream crack events) — future direction, kept pluggable.
