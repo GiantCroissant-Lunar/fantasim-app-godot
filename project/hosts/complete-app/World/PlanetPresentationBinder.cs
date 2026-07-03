@@ -51,6 +51,8 @@ internal sealed class PlanetPresentationBinder : IDisposable
     private Node3D? _plateSurfaceRoot;
     private PlateBoundaryFocusRenderer? _boundaryRenderer;
     private MeshInstance3D? _mantle;
+    private MeshInstance3D? _atmosphereRim;
+    private ShaderMaterial? _atmosphereRimMaterial;
     private Label3D? _statusLabel;
     private GlobePlateSurfaces? _plateSurfaces;
     private PlanetGenerationGraphSource? _graphSource;
@@ -234,6 +236,10 @@ internal sealed class PlanetPresentationBinder : IDisposable
         _mantle = BuildMantle(document);
         body.AddChild(_mantle);
 
+        // Built hidden; ApplyTimelineTick drives visibility/intensity from AtmosphereRimStateMapper.
+        _atmosphereRim = BuildAtmosphereRim();
+        body.AddChild(_atmosphereRim);
+
         _currentDocument = document;
         _boundRegimeId = _timeline.GeosphereSchedule.RegimeAt(_timeline.Tick)?.RegimeId;
         _currentViewMode = GlobeViewModeResolver.Resolve(_boundRegimeId, _timeline.SelectedLayer);
@@ -315,6 +321,8 @@ internal sealed class PlanetPresentationBinder : IDisposable
 
         if (_mantle is not null && GodotObject.IsInstanceValid(_mantle))
             _mantle.MaterialOverride = ResolveMantleMaterial(RegimeSurfaceResolver.Resolve(regimeId));
+
+        UpdateAtmosphereRim(tick);
 
         if (_statusLabel is not null && GodotObject.IsInstanceValid(_statusLabel))
         {
@@ -470,6 +478,51 @@ internal sealed class PlanetPresentationBinder : IDisposable
             Scale = Vector3.One * 2.0f,
             MaterialOverride = ResolveMantleMaterial(RegimeSurfaceKind.Default),
         };
+    }
+
+    private MeshInstance3D BuildAtmosphereRim()
+    {
+        var mesh = new SphereMesh
+        {
+            Radius = 1.03f,
+            Height = 2.06f,
+            RadialSegments = 64,
+            Rings = 32,
+        };
+
+        _atmosphereRimMaterial = new ShaderMaterial
+        {
+            Shader = AtmosphereRimShader,
+            RenderPriority = 2,
+        };
+
+        return new MeshInstance3D
+        {
+            Name = "AtmosphereRim",
+            Mesh = mesh,
+            Scale = Vector3.One * 2.0f,
+            Visible = false,
+            MaterialOverride = _atmosphereRimMaterial,
+        };
+    }
+
+    private void UpdateAtmosphereRim(long tick)
+    {
+        if (_atmosphereRim is null
+            || !GodotObject.IsInstanceValid(_atmosphereRim)
+            || _atmosphereRimMaterial is null)
+            return;
+
+        var state = AtmosphereRimStateMapper.Map(_timeline.AtmosphereSchedule, tick);
+        bool visible = state.Exists && WorldViewContentGate.IsActive(_timeline.SelectedLayer);
+        _atmosphereRim.Visible = visible;
+
+        if (!visible)
+            return;
+
+        _atmosphereRimMaterial.SetShaderParameter("u_intensity", (float)state.Intensity);
+        _atmosphereRimMaterial.SetShaderParameter("u_tint",
+            new Color((float)state.Tint.R, (float)state.Tint.G, (float)state.Tint.B));
     }
 
     private Node3D BuildPlateSurface(PlanetPresentationDocument document, GlobeViewMode viewMode)
@@ -887,9 +940,35 @@ void light() {
 }
 ";
 
+    // Atmosphere limb-glow shader (W2): a fresnel rim on a shell slightly larger than the surface.
+    // The rim glows only at grazing angles (the limb) and vanishes face-on, so it never occludes the
+    // surface or the label. Godot 4 docs grounding:
+    //   - render_mode blend_add: additive blend (source added to destination; the rim only ADDS light,
+    //     never darkens/occludes). Spatial Shader reference -> render_mode blend options.
+    //   - depth_draw_never: the shell writes no depth, so it cannot hide the surface behind it.
+    //   - unshaded: skip lighting; ALBEDO is the direct output color (the rim is pure glow, not lit).
+    //   - cull_disabled: render both faces (house idiom; the near-hemisphere carries the fresnel).
+    //   - NORMAL (view-space surface normal) and VIEW (fragment->camera direction, view space) are
+    //     fragment() built-ins; dot(NORMAL, VIEW) peaks face-on, so (1 - dot) peaks at the limb.
+    //   - source_color / hint_range uniform hints match the sibling shaders. RenderPriority (set on
+    //     the ShaderMaterial in BuildAtmosphereRim) draws this after the opaque surface.
+    private const string AtmosphereRimShaderCode = @"
+shader_type spatial;
+render_mode cull_disabled, blend_add, depth_draw_never, unshaded;
+
+uniform vec4 u_tint : source_color = vec4(0.46, 0.68, 1.0, 1.0);
+uniform float u_intensity : hint_range(0.0, 1.0) = 0.5;
+
+void fragment() {
+    float fresnel = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
+    ALBEDO = u_tint.rgb * (fresnel * u_intensity);
+}
+";
+
     private static Shader? _magmaShader;
     private static Shader? _stagnantShader;
     private static Shader? _hypsoPlateShader;
+    private static Shader? _atmosphereRimShader;
 
     private Material? _magmaMantleMaterial;
     private Material? _stagnantMantleMaterial;
@@ -899,6 +978,7 @@ void light() {
     private static Shader MagmaShader => _magmaShader ??= new Shader { Code = MagmaShaderCode };
     private static Shader StagnantShader => _stagnantShader ??= new Shader { Code = StagnantShaderCode };
     private static Shader HypsoPlateShader => _hypsoPlateShader ??= new Shader { Code = HypsoPlateShaderCode };
+    private static Shader AtmosphereRimShader => _atmosphereRimShader ??= new Shader { Code = AtmosphereRimShaderCode };
 
     private static Material HypsoPlateMaterial => _hypsoPlateMaterial ??= new ShaderMaterial { Shader = HypsoPlateShader };
 
@@ -990,6 +1070,8 @@ void light() {
         }
         _boundaryRenderer = null;
         _mantle = null;
+        _atmosphereRim = null;
+        _atmosphereRimMaterial = null;
         _statusLabel = null;
         _currentDocument = null;
         _currentViewMode = GlobeViewMode.Inactive;
