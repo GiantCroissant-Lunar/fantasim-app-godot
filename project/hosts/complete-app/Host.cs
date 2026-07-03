@@ -33,6 +33,7 @@ public partial class Host : Node
     private PlanetPresentationBinder? _planetPresentation;
     private FantaSim.App.Resource.IService? _resource;
     private IRenderCompositionHandle? _renderComposition;
+    private SceneTierPckWatcher? _sceneTierPckWatcher;
     private bool _ecsWorldReady;
     private bool _timelineReloadPending;
 
@@ -70,6 +71,7 @@ public partial class Host : Node
         UiComposition.ComposeUi(ctx, tree);
         RemoteIngressComposition.ComposeRemoteIngress(ctx, this);
         _renderComposition = RenderComposition.ComposeRender(ctx, this);
+        _sceneTierPckWatcher = SceneTierPckWatcher.TryCreate(ctx.Registry, _composition.Bootstrap.LoggerFactory);
 
         _log.LogInformation("composition activated.");
         _log.LogInformation("iii bridge: IiiClient registered = {IiiClientRegistered}", ClassDB.ClassExists("IiiClient"));
@@ -732,6 +734,8 @@ public partial class Host : Node
                 _renderComposition = null;
             }
 
+            _sceneTierPckWatcher?.Dispose();
+            _sceneTierPckWatcher = null;
             _planetPresentation?.Dispose();
             _renderComposition?.SetCutawayTarget(null);
             _planetPresentation = null;
