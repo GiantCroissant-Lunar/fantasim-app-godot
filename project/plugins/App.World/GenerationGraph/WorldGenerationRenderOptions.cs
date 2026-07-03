@@ -27,6 +27,27 @@ public sealed record WorldGenerationRenderOptions(int Seed, int TessellationFreq
     /// </summary>
     public BoundaryProfileParameters BoundaryProfiles { get; init; } = BoundaryProfileParameters.Default;
 
+    /// <summary>
+    /// Vertical exaggeration (scale rule S1): the factor that maps a crust elevation in metres (on the
+    /// <c>CellElevationSystem</c> scale, where continental interior is ~+500 and old abyssal ocean
+    /// ~-1500) to unit-globe radius displacement in the crust view. The crust view multiplies each
+    /// vertex height by this factor, so <c>renderedRadiusFraction = elevationMetres * VerticalExaggeration</c>.
+    ///
+    /// <para>Default 1e-5 is calibrated so a +3500 m orogenic peak displaces ~3.5% of the unit-globe
+    /// radius (mountains visibly grow across crust snapshots) and a -1500 m abyssal ocean stays above
+    /// the mantle sphere at 0.96 of the cap radius. Absolute (not normalised per snapshot) so relief
+    /// accumulates with crust age. The factor is a declared world parameter (not a buried constant): a
+    /// fantasy world with a different radius or relief scale legitimately exaggerates more or less.</para>
+    /// </summary>
+    public double VerticalExaggeration { get; init; } = DefaultVerticalExaggeration;
+
+    /// <summary>
+    /// Default vertical exaggeration. Elevation units are metres on the <c>CellElevationSystem</c>
+    /// scale; the globe is a unit sphere (radius 1.0), so 1e-5 maps 1 m to 1e-5 of the radius
+    /// (3500 m -> 3.5% of radius). See <see cref="VerticalExaggeration"/>.
+    /// </summary>
+    public const double DefaultVerticalExaggeration = 0.00001;
+
     public static WorldGenerationRenderOptions Resolve(
         WorldGenerationGraphView graph,
         WorldGenerationRenderOptions? fallback = null)
@@ -57,8 +78,20 @@ public sealed record WorldGenerationRenderOptions(int Seed, int TessellationFreq
         }
 
         var profiles = ResolveBoundaryProfiles(optionsNode.Params, options.BoundaryProfiles);
+        var verticalExaggeration = ReadDouble(optionsNode.Params, "verticalExaggeration", options.VerticalExaggeration);
+        if (verticalExaggeration <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(VerticalExaggeration),
+                verticalExaggeration,
+                "Vertical exaggeration must be positive.");
+        }
 
-        return new WorldGenerationRenderOptions(seed, frequency) { BoundaryProfiles = profiles };
+        return new WorldGenerationRenderOptions(seed, frequency)
+        {
+            BoundaryProfiles = profiles,
+            VerticalExaggeration = verticalExaggeration,
+        };
     }
 
     private static BoundaryProfileParameters ResolveBoundaryProfiles(

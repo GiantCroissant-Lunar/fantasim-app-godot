@@ -303,7 +303,12 @@ internal sealed class PlanetPresentationBinder : IDisposable
             _mantle.MaterialOverride = ResolveMantleMaterial(RegimeSurfaceResolver.Resolve(regimeId));
 
         if (_statusLabel is not null && GodotObject.IsInstanceValid(_statusLabel))
-            _statusLabel.Text = $"{regimeId ?? "world"} : t={tick:N0}";
+        {
+            var label = $"{regimeId ?? "world"} : t={tick:N0}";
+            if (VerticalScaleLabel.ShouldShowIndicator(viewMode) && _currentDocument is not null)
+                label += VerticalScaleLabel.BuildIndicatorSuffix(_currentDocument.VerticalExaggeration);
+            _statusLabel.Text = label;
+        }
     }
 
     private void OnLayerSelectionChanged(TimelineLayerSelection? selection)
@@ -465,7 +470,7 @@ internal sealed class PlanetPresentationBinder : IDisposable
                 : new double[snapshot.CellCount])
             : new double[snapshot.CellCount];
 
-        var caps = _plateSurfaces.BuildSurfaces(elevations, exaggeration: WatertightDisplacementExaggeration);
+        var caps = _plateSurfaces.BuildSurfaces(elevations, exaggeration: document.VerticalExaggeration);
 
         var (perCellColor, perCellEmission) = isTerrain
             ? BuildCellAppearance(snapshot.CellCount, document)
@@ -520,12 +525,6 @@ internal sealed class PlanetPresentationBinder : IDisposable
     }
 
     private static Color ToColor(RampColor c) => new((float)c.R, (float)c.G, (float)c.B);
-
-    // Scales CellElevationSystem-derived elevations (abyssal ~-1500 .. orogenic ~+3000, growing as
-    // pressure accumulates) onto the unit globe: +3500 -> ~3.5% of radius. Absolute (not normalized
-    // per snapshot) so mountains visibly GROW across crust snapshots. Deepest ocean (-1500 -> -1.5%)
-    // stays above the mantle sphere at 0.96 of the cap radius.
-    private const float WatertightDisplacementExaggeration = 0.00001f;
 
     private static MeshInstance3D BuildPlateMesh(PlateCap cap, Color[] perCellColor, float[] perCellEmission)
     {

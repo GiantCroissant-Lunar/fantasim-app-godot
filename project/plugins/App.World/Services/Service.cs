@@ -182,6 +182,7 @@ public sealed class Service : IService, IDisposable
             CellElevations = runtime.CellElevations,
             CellFeatures = runtime.CellFeatures,
             CrustSnapshotTicks = snapshotTickStates,
+            VerticalExaggeration = runtime.VerticalExaggeration,
         };
     }
 
@@ -400,7 +401,8 @@ public sealed class Service : IService, IDisposable
             onsetTick + 20_000_000L,
             reconstructor.BuildBoundaryArcsAt(arcTick),
             cellElevations,
-            cellFeatures);
+            cellFeatures,
+            renderOptions.VerticalExaggeration);
     }
 
     // Single pipeline run → per-cell elevation (via CellElevationSystem.Derive + the boundary-profile
@@ -470,7 +472,8 @@ public sealed class Service : IService, IDisposable
         long MaxTick,
         IReadOnlyList<PlateBoundaryArc> BoundaryArcs,
         IReadOnlyList<double>? CellElevations,
-        IReadOnlyList<CellCrustFeature>? CellFeatures);
+        IReadOnlyList<CellCrustFeature>? CellFeatures,
+        double VerticalExaggeration);
 
 #if USE_PROJECT_REFERENCES
     private static string NewTruthWriterActorName()
