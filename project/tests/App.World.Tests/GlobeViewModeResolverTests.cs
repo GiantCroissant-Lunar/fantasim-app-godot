@@ -4,9 +4,11 @@ using Xunit;
 namespace FantaSim.App.World.Tests;
 
 /// <summary>
-/// View-mode resolution proof (sub-project P1): the focused timeline layer selects the globe VIEW at
-/// mobile-plate. Plate view is the default (no selection or non-crust layer); crust layer selects the
-/// hypsometric terrain view; non-mobile-plate regimes are inactive (layer focus does not apply).
+/// View-mode resolution proof (sub-project P1 + W1): the focused timeline layer selects the globe
+/// VIEW at mobile-plate. The WORLD view is the default (no selection or non-plate/non-crust layer)
+/// — a waterless world reads as a world (§5c); the plate-identity diagnostic is reached by focusing
+/// <c>geosphere.plate</c>; the hypsometric crust diagnostic by focusing <c>geosphere.crust</c>;
+/// non-mobile-plate regimes are inactive (layer focus does not apply).
 /// </summary>
 public sealed class GlobeViewModeResolverTests
 {
@@ -31,9 +33,9 @@ public sealed class GlobeViewModeResolverTests
     }
 
     [Fact]
-    public void Mobile_plate_no_selection_defaults_to_plate_identity()
+    public void Mobile_plate_no_selection_defaults_to_world()
     {
-        Assert.Equal(GlobeViewMode.PlateIdentity,
+        Assert.Equal(GlobeViewMode.World,
             GlobeViewModeResolver.Resolve("mobile-plate", null));
     }
 
@@ -54,26 +56,26 @@ public sealed class GlobeViewModeResolverTests
     }
 
     [Fact]
-    public void Mobile_plate_unknown_layer_defaults_to_plate_identity()
+    public void Mobile_plate_unknown_layer_defaults_to_world()
     {
         var sel = new TimelineLayerSelection("geosphere", "geosphere.mystery");
-        Assert.Equal(GlobeViewMode.PlateIdentity,
+        Assert.Equal(GlobeViewMode.World,
             GlobeViewModeResolver.Resolve("mobile-plate", sel));
     }
 
     [Fact]
-    public void Mobile_plate_non_geosphere_layer_defaults_to_plate_identity()
+    public void Mobile_plate_non_geosphere_layer_defaults_to_world()
     {
         var sel = new TimelineLayerSelection("atmosphere", "atmosphere.weather");
-        Assert.Equal(GlobeViewMode.PlateIdentity,
+        Assert.Equal(GlobeViewMode.World,
             GlobeViewModeResolver.Resolve("mobile-plate", sel));
     }
 
     [Fact]
-    public void Mobile_plate_empty_layer_id_defaults_to_plate_identity()
+    public void Mobile_plate_empty_layer_id_defaults_to_world()
     {
         var sel = new TimelineLayerSelection("geosphere", "");
-        Assert.Equal(GlobeViewMode.PlateIdentity,
+        Assert.Equal(GlobeViewMode.World,
             GlobeViewModeResolver.Resolve("mobile-plate", sel));
     }
 }

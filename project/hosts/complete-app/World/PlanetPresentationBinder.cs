@@ -9,6 +9,7 @@ using FantaSim.App.World.Composition;
 using FantaSim.App.World.Dto;
 using FantaSim.App.World.Globe;
 using FantaSim.App.World.Rendering;
+using FantaSim.Cartography.Globe;
 using FantaSim.Cartography.Shared;
 using Godot;
 using Microsoft.Extensions.Logging;
@@ -24,6 +25,19 @@ internal sealed class PlanetPresentationBinder : IDisposable
     private const string WorldBundleId = "world";
     private static readonly NodePath PlanetLayerMountPath = new("Environment/PlanetMount/Planet/LayerMounts");
     private static readonly Vector3 PlanetBodyPreviewOffset = new(0.8f, 0.0f, 0.0f);
+
+    // World-view seeded peaks (W1, §5c "sub-cell detail"): tuned to bury the 5120-cell grid faceting.
+    // Lower amplitude than the diagnostic DefaultPeaks (1000 m) so the tectonic envelope still reads,
+    // higher base frequency so bumps are a few cells wide, 5 octaves for enough finer grain. The noise
+    // is cross-plate watertight-safe (sampled on shared base positions — see GlobePlateSurfaces).
+    private static readonly NoiseParams WorldPeaks = new(
+        Seed: 1337,
+        BaseFrequency: 24.0,
+        Octaves: 5,
+        Lacunarity: 2.0,
+        Gain: 0.5,
+        Amplitude: 350.0,
+        Ridged: false);
 
     private readonly IRegistry _registry;
     private readonly ResourceService _resource;
@@ -401,7 +415,11 @@ internal sealed class PlanetPresentationBinder : IDisposable
         var sun = new DirectionalLight3D
         {
             Name = "Sun",
+            // Warm key light (§5c): a slightly warm white replaces the neutral default so bare rock
+            // reads as sunlit terrain, not re-costumed as ocean. Diagnostic views share this light;
+            // their palettes assume neutral-warm illumination.
             LightEnergy = 1.8f,
+            LightColor = new Color(1.02f, 0.96f, 0.88f),
             ShadowEnabled = false,
         };
         root.AddChild(sun);
@@ -416,7 +434,10 @@ internal sealed class PlanetPresentationBinder : IDisposable
                 BackgroundMode = Godot.Environment.BGMode.Color,
                 BackgroundColor = new Color(0.015f, 0.018f, 0.022f),
                 AmbientLightSource = Godot.Environment.AmbientSource.Color,
-                AmbientLightColor = new Color(0.34f, 0.36f, 0.40f),
+                // Warm/neutral ambient (§5c): the blue-grey (0.34,0.36,0.40) was re-costuming bare
+                // rock as ocean. This is a global scene change — diagnostic views are affected too
+                // (intended; their palettes assume neutral-warm light).
+                AmbientLightColor = new Color(0.38f, 0.34f, 0.30f),
                 AmbientLightEnergy = 0.42f,
             }
         };
@@ -460,9 +481,16 @@ internal sealed class PlanetPresentationBinder : IDisposable
             Scale = Vector3.One * 2.0f,
         };
 
-        // P1: view mode selects cap appearance — terrain (elevation tint + displacement) vs plate identity (flat).
-        _plateSurfaces = new GlobePlateSurfaces(snapshot);
-        bool isTerrain = viewMode == GlobeViewMode.HypsometricTerrain;
+        // P1 + W1: view mode selects cap appearance — World (composed product) and HypsometricTerrain
+        // (crust diagnostic) both displace by elevation; PlateIdentity is flat. World uses a tuned
+        // noise amplitude (sub-cell detail that buries the cell grid) + the WorldTerrainRamp + per-
+        // vertex tint jitter; HypsometricTerrain uses the diagnostic crust palette.
+        bool isTerrain = viewMode is GlobeViewMode.World or GlobeViewMode.HypsometricTerrain;
+        bool isWorld = viewMode == GlobeViewMode.World;
+
+        _plateSurfaces = isWorld
+            ? new GlobePlateSurfaces(snapshot, noise: WorldPeaks)
+            : new GlobePlateSurfaces(snapshot);
 
         IReadOnlyList<double> elevations = isTerrain
             ? (document.CellElevations is { } cellElevations && cellElevations.Count == snapshot.CellCount
@@ -473,13 +501,15 @@ internal sealed class PlanetPresentationBinder : IDisposable
         var caps = _plateSurfaces.BuildSurfaces(elevations, exaggeration: document.VerticalExaggeration);
 
         var (perCellColor, perCellEmission) = isTerrain
-            ? BuildCellAppearance(snapshot.CellCount, document)
+            ? BuildCellAppearance(snapshot.CellCount, document, isWorld)
             : (Array.Empty<Color>(), Array.Empty<float>());
+
+        var jitter = isWorld ? new VertexTintJitter(seed: 1337, amplitude: 0.06) : null;
 
         foreach (var cap in caps.OrderBy(c => c.PlateId))
         {
             var plate = isTerrain
-                ? BuildPlateMesh(cap, perCellColor, perCellEmission)
+                ? BuildPlateMesh(cap, perCellColor, perCellEmission, jitter)
                 : BuildPlateIdentityMesh(cap);
             root.AddChild(plate);
         }
@@ -487,12 +517,14 @@ internal sealed class PlanetPresentationBinder : IDisposable
         return root;
     }
 
-    // Computes per-cell Godot.Color (hypsometric tint with trench/ridge accent baked in) and per-cell
-    // volcanic emission intensity, from the document's crust elevation + feature data. Falls back to a
-    // neutral mid-ramp tint when crust data is absent (pre-onset or pipeline unavailable).
+    // Computes per-cell Godot.Color (world or crust ramp with trench/ridge accent baked in) and
+    // per-cell volcanic emission intensity, from the document's crust elevation + feature data. The
+    // world view uses WorldTerrainRamp (bare-rock product palette); the crust diagnostic uses
+    // HypsometricTint. Falls back to a neutral mid-ramp tint when crust data is absent.
     private static (Color[] Colors, float[] Emission) BuildCellAppearance(
         int cellCount,
-        PlanetPresentationDocument document)
+        PlanetPresentationDocument document,
+        bool isWorld)
     {
         var colors = new Color[cellCount];
         var emission = new float[cellCount];
@@ -500,13 +532,18 @@ internal sealed class PlanetPresentationBinder : IDisposable
         var elevations = document.CellElevations;
         if (elevations is null || elevations.Count != cellCount)
         {
-            var fallback = ToColor(HypsometricTint.ComputeColors(new double[] { 0.0 })[0]);
+            var fallbackRamp = isWorld
+                ? WorldTerrainRamp.ComputeColors(new double[] { 0.0 })[0]
+                : HypsometricTint.ComputeColors(new double[] { 0.0 })[0];
+            var fallback = ToColor(fallbackRamp);
             for (int c = 0; c < cellCount; c++) colors[c] = fallback;
             return (colors, emission);
         }
 
         var features = document.CellFeatures;
-        var rampColors = HypsometricTint.ComputeColors(elevations);
+        var rampColors = isWorld
+            ? WorldTerrainRamp.ComputeColors(elevations)
+            : HypsometricTint.ComputeColors(elevations);
         for (int c = 0; c < cellCount; c++)
         {
             var tint = rampColors[c];
@@ -526,7 +563,11 @@ internal sealed class PlanetPresentationBinder : IDisposable
 
     private static Color ToColor(RampColor c) => new((float)c.R, (float)c.G, (float)c.B);
 
-    private static MeshInstance3D BuildPlateMesh(PlateCap cap, Color[] perCellColor, float[] perCellEmission)
+    private static MeshInstance3D BuildPlateMesh(
+        PlateCap cap,
+        Color[] perCellColor,
+        float[] perCellEmission,
+        VertexTintJitter? jitter)
     {
         var surface = cap.Surface;
         int triCount = surface.TriangleCount;
@@ -553,14 +594,16 @@ internal sealed class PlanetPresentationBinder : IDisposable
             normals[b + 2] = ToV3(surface.SmoothNormals[i2]);
         }
 
-        // A2: per-vertex hypsometric color (ArrayType.Color) + volcanic emission (ArrayType.TexUV2.x).
-        // Separate loop from positions/normals so this merges cleanly with concurrent mesh-path work.
+        // A2 + W1: per-vertex color (ArrayType.Color) + volcanic emission (ArrayType.TexUV2.x). In
+        // the world view, per-vertex tint jitter (deterministic from position + seed) breaks color
+        // banding so the cell grid stops reading as a mesh. Separate loop from positions/normals so
+        // this merges cleanly with concurrent mesh-path work.
         var colors = new Color[vertCount];
         var uv2 = new Vector2[vertCount];
         for (int t = 0; t < triCount; t++)
         {
             int cellId = cap.CellIds[t];
-            var color = cellId >= 0 && cellId < perCellColor.Length
+            var baseColor = cellId >= 0 && cellId < perCellColor.Length
                 ? perCellColor[cellId]
                 : new Color(0.3f, 0.35f, 0.28f);
             float emis = cellId >= 0 && cellId < perCellEmission.Length
@@ -568,12 +611,15 @@ internal sealed class PlanetPresentationBinder : IDisposable
                 : 0f;
 
             int b = t * 3;
-            colors[b + 0] = color;
-            colors[b + 1] = color;
-            colors[b + 2] = color;
-            uv2[b + 0] = new Vector2(emis, 0f);
-            uv2[b + 1] = new Vector2(emis, 0f);
-            uv2[b + 2] = new Vector2(emis, 0f);
+            for (int v = 0; v < 3; v++)
+            {
+                int idx = b + v;
+                int surfIdx = surface.Triangles[(t * 3) + v];
+                colors[idx] = jitter is not null
+                    ? ToColor(jitter.Apply(surface.Positions[surfIdx], ToRampColor(baseColor)))
+                    : baseColor;
+                uv2[idx] = new Vector2(emis, 0f);
+            }
         }
 
         var arrays = new Godot.Collections.Array();
@@ -593,6 +639,8 @@ internal sealed class PlanetPresentationBinder : IDisposable
             MaterialOverride = HypsoPlateMaterial,
         };
     }
+
+    private static RampColor ToRampColor(Color c) => new(c.R, c.G, c.B);
 
     // P1: plate-identity cap — every vertex in this cap gets the plate's identity color, flat-zero
     // displacement (positions are already at unit-sphere radius from BuildSurfaces with zero

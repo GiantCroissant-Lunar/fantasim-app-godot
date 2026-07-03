@@ -34,11 +34,12 @@ public static class VerticalScaleLabel
     }
 
     /// <summary>
-    /// Whether the given view mode should show the vertical-scale indicator. Only the hypsometric
-    /// terrain view (which displaces caps by the exaggeration) shows it; plate-identity (flat) and
-    /// inactive regimes do not.
+    /// Whether the given view mode should show the vertical-scale indicator. The world view and the
+    /// hypsometric terrain view both displace caps by the exaggeration, so both show it; plate-
+    /// identity (flat) and inactive regimes do not.
     /// </summary>
-    public static bool ShouldShowIndicator(GlobeViewMode viewMode) => viewMode == GlobeViewMode.HypsometricTerrain;
+    public static bool ShouldShowIndicator(GlobeViewMode viewMode)
+        => viewMode is GlobeViewMode.World or GlobeViewMode.HypsometricTerrain;
 
     /// <summary>
     /// Builds the suffix appended to the regime/tick status label text, e.g.

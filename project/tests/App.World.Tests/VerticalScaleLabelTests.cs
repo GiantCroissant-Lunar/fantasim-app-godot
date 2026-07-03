@@ -27,10 +27,11 @@ public sealed class VerticalScaleLabelTests
     }
 
     [Theory]
+    [InlineData(GlobeViewMode.World, true)]
     [InlineData(GlobeViewMode.HypsometricTerrain, true)]
     [InlineData(GlobeViewMode.PlateIdentity, false)]
     [InlineData(GlobeViewMode.Inactive, false)]
-    public void ShouldShowIndicator_OnlyForHypsometricTerrain(GlobeViewMode mode, bool expected)
+    public void ShouldShowIndicator_ForDisplacingViews(GlobeViewMode mode, bool expected)
     {
         Assert.Equal(expected, VerticalScaleLabel.ShouldShowIndicator(mode));
     }
