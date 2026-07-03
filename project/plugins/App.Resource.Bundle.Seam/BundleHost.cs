@@ -274,6 +274,11 @@ public sealed class BundleHost
             _logger.LogWarning(ex, "Failed to remove plugin group {BundleId}", bundleId);
         }
 
+        // ShutdownAsync has run and ALC.Unload is initiated; drop the shared MessagePack resolver
+        // cache's collectible-keyed entries so they don't root the dying context (the dump-verified
+        // world-bundle pin).
+        SharedMessagePackCachePurge.EvictCollectibleEntries(bundleId, _logger);
+
         _sceneHost.RemoveScene(bundleId, detachScene);
         _loaded.Remove(bundleId);
         _logger.LogInformation("Bundle unloaded: {BundleId}", bundleId);
@@ -286,7 +291,16 @@ public sealed class BundleHost
         CancellationToken cancellationToken)
     {
         if (unloadResult is null || !unloadResult.UnloadInitiated)
+        {
+            // Without this line a skipped probe is indistinguishable from a reload that never ran --
+            // exactly the "no gate line at all" ambiguity the scene-tier diagnosis hit.
+            _logger.LogWarning(
+                "Hot-reload: collection probe skipped for bundle {BundleId} (unloadResult={HasResult}, unloadInitiated={Initiated})",
+                bundleId,
+                unloadResult is not null,
+                unloadResult?.UnloadInitiated ?? false);
             return;
+        }
 
         _ = VerifyOldContextCollectedAfterReloadReturnsAsync(bundleId, unloadResult, cancellationToken);
     }
