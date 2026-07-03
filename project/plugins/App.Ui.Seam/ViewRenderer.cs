@@ -128,6 +128,10 @@ public sealed class ViewRenderer : IDisposable
             return;
 
         _logger.LogInformation("ViewRenderer: graph binder bound for view '{ViewId}'.", source.ViewId);
+
+        graphEdit.NodeSelected += selectedNode =>
+            source.Dispatch($"select-node:{selectedNode.Name}", null);
+
         Callable.From(() =>
         {
             if (GodotObject.IsInstanceValid(graphEdit))
