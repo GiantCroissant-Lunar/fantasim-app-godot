@@ -806,8 +806,9 @@ void fragment() {
 }
 ";
 
-    // Hypsometric plate-cap shader (A2): per-vertex COLOR carries the terrain tint (deep ocean →
-    // shelf → lowland → upland → mountain → snow, computed on the CPU with percentile normalization);
+    // Hypsometric plate-cap shader (A2): per-vertex COLOR carries the bare-crust tint (dark basalt →
+    // rock brown → light rock, computed on the CPU with percentile normalization — no water imagery;
+    // the hydrosphere lane owns that when it exists, per the no-sphere-costume rule);
     // UV2.x carries the volcanic-vent emission intensity (0 = none). Trench darkening and ridge
     // brightening are baked into the vertex COLOR on the CPU (CrustAccentMapper.Apply) so the shader
     // only needs albedo + a gated emission pass. Half-Lambert light keeps displaced relief readable.
