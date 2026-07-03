@@ -21,11 +21,12 @@ namespace FantaSim.App.World.Composition;
 /// (non-mobile-plate regimes, mantle owns the look) pairs with no layer focus and returns
 /// <c>true</c> -- the composed world view includes the mantle-era surfaces.</para>
 ///
-/// <para><b>Merge plan.</b> When <see cref="GlobeViewMode.World"/> lands and is resolved for every
-/// regime's no-selection case, replace this helper's body with a delegation to the resolver:
-/// <c>GlobeViewModeResolver.Resolve(regimeId, selectedLayer) == GlobeViewMode.World</c>. The signature
-/// already takes the layer selection so the swap is a one-line change; callers (the rim, and any
-/// future world-view content) are unaffected.</para>
+/// <para><b>Merge resolution (2026-07-03).</b> <see cref="GlobeViewMode.World"/> landed, but the
+/// resolver keeps <see cref="GlobeViewMode.Inactive"/> for mantle-era regimes (magma-ocean /
+/// stagnant-lid own their mantle look), so delegating this gate to
+/// <c>Resolve(...) == GlobeViewMode.World</c> would wrongly hide cross-regime composed content
+/// (the magma-ocean steam rim). The layer-focus test below IS the composed-view test across all
+/// regimes; this gate stays as written by design.</para>
 /// </summary>
 public static class WorldViewContentGate
 {
