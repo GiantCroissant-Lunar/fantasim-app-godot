@@ -32,15 +32,34 @@ internal sealed class PlanetPresentationBinder : IDisposable
     // is cross-plate watertight-safe (sampled on shared base positions — see GlobePlateSurfaces).
     private static readonly NoiseParams WorldPeaks = new(
         Seed: 1337,
-        BaseFrequency: 24.0,
-        Octaves: 5,
+        // Base fabric, not garnish (look-dev 2026-07-03, user's everywhere-relief reference): an old
+        // waterless world is rough at every point — impact history, pre-onset orogenies, erosion —
+        // none of which the crust pipeline simulates yet. This noise is the DECLARED stand-in for
+        // that unsimulated history: base freq 8 gives continental-scale lumps, 6 octaves add crag.
+        // NoiseRelief's fBm output is heavily normalized (measured std ≈ 0.15 × Amplitude, extremes
+        // ≈ ±0.45 ×), so the nominal figure is NOT metres of relief: 17,000 delivers a ~2,500 m-std
+        // fabric — ~2.5% of radius on the silhouette through the sqrt lens, extremes ~4.5%. The
+        // tectonic envelope keeps reserved contrast on top (ranges ~8%, trenches ~-5%). Known
+        // limitation: the fabric is sphere-fixed (sampled on shared base positions), so it does not
+        // drift with plates — the truth-side replacement (roughness from crust age / impact fields)
+        // is the A4-adjacent roadmap item that will.
+        BaseFrequency: 8.0,
+        Octaves: 6,
         Lacunarity: 2.0,
         Gain: 0.5,
-        // 350 m read flat at the limb — the disk silhouetted as a near-perfect circle. 900 m puts
-        // ~1%-of-radius relief on the silhouette (look-dev 2026-07-03, knobbly-limb reference)
-        // while staying well under the tectonic envelope so ranges still dominate the read.
-        Amplitude: 900.0,
+        Amplitude: 17_000.0,
         Ridged: false);
+
+    // World-view height lens (look-dev 2026-07-03, knobbly-limb references): sign(h)*|h|^0.5 * scale.
+    // The elevation field is ~±500..1,400 m interiors under 21,000+ m orogenic extremes — a ratio no
+    // LINEAR lens can render (interiors invisible or peaks become spears). The sqrt profile compresses
+    // ~48:1 to ~7:1: interiors ~1.9% of radius (knobbly limb), peaks ~7.5% (proportionate). The S2
+    // indicator names the profile (VerticalScaleLabel profile overload) — the lens is labeled, never
+    // hidden. The crust DIAGNOSTIC view stays strictly linear on document.VerticalExaggeration:
+    // diagnostics must not bend the scale. PROBE pending user sign-off — S1 doctrine amendment
+    // (non-linear labeled lens) is a design decision, not a default.
+    private const double WorldHeightExponent = 0.5;
+    private const double WorldHeightScale = 0.0005;
 
     private readonly IRegistry _registry;
     private readonly ResourceService _resource;
@@ -346,7 +365,12 @@ internal sealed class PlanetPresentationBinder : IDisposable
         {
             var label = $"{regimeId ?? "world"} : t={tick:N0}";
             if (VerticalScaleLabel.ShouldShowIndicator(viewMode) && _currentDocument is not null)
-                label += VerticalScaleLabel.BuildIndicatorSuffix(_currentDocument.VerticalExaggeration);
+            {
+                // World view renders through the sqrt height lens; the indicator must name it (S2).
+                label += viewMode == GlobeViewMode.World
+                    ? VerticalScaleLabel.BuildIndicatorSuffix(WorldHeightScale, WorldHeightExponent)
+                    : VerticalScaleLabel.BuildIndicatorSuffix(_currentDocument.VerticalExaggeration);
+            }
             _statusLabel.Text = label;
         }
     }
@@ -569,7 +593,9 @@ internal sealed class PlanetPresentationBinder : IDisposable
                 : new double[snapshot.CellCount])
             : new double[snapshot.CellCount];
 
-        var caps = _plateSurfaces.BuildSurfaces(elevations, exaggeration: document.VerticalExaggeration);
+        var caps = isWorld
+            ? _plateSurfaces.BuildSurfaces(elevations, exaggeration: WorldHeightScale, heightExponent: WorldHeightExponent)
+            : _plateSurfaces.BuildSurfaces(elevations, exaggeration: document.VerticalExaggeration);
 
         var (perCellColor, perCellEmission) = isTerrain
             ? BuildCellAppearance(snapshot.CellCount, document, isWorld, isWorld ? snapshot.Cells : null)

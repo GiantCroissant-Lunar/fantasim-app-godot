@@ -49,6 +49,17 @@ public static class VerticalScaleLabel
     public static string BuildIndicatorSuffix(double exaggeration)
         => $"{IndicatorSeparator}vertical x{HumanizeFactor(exaggeration)} units";
 
+    /// <summary>
+    /// Profile-aware indicator (S2 honesty for the non-linear lens): when the displacement is
+    /// <c>sign(h)*|h|^p * scale</c> with <paramref name="heightExponent"/> p != 1, the label names
+    /// the profile — <c>"  |  vertical h^0.5 x5e-4 units"</c> — instead of pretending the factor is
+    /// linear. Exponent 1 falls back to the plain linear form.
+    /// </summary>
+    public static string BuildIndicatorSuffix(double exaggeration, double heightExponent)
+        => heightExponent == 1.0
+            ? BuildIndicatorSuffix(exaggeration)
+            : $"{IndicatorSeparator}vertical h^{heightExponent.ToString("0.###", CultureInfo.InvariantCulture)} x{HumanizeFactor(exaggeration)} units";
+
     private static string HumanizeFactor(double factor)
     {
         // Factors below 1 are most readable in scientific notation (the default 1e-5 case, and

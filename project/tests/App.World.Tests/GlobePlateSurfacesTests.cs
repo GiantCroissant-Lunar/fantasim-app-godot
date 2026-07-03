@@ -513,4 +513,58 @@ public sealed class GlobePlateSurfacesTests
                 Assert.Equal(Radius(c.Surface.Positions[v]), Radius(c2.Surface.Positions[v]), 12);
         }
     }
+
+    [Fact]
+    public void Height_exponent_compresses_the_extreme_to_typical_relief_ratio()
+    {
+        // The non-linear height profile (look-dev 2026-07-03): displacement = sign(h)*|h|^p * scale.
+        // With interiors at ~100 m and orogenic peaks at ~10,000 m, the linear lens renders a 100:1
+        // ratio (interior relief invisible at any scale that keeps peaks sane). p = 0.5 must compress
+        // that to 10:1 so the limb reads knobbly everywhere while peaks stay proportionate.
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot(), noise: NoNoise);
+
+        // Plate 0's two cells both at 100 m (its cap sits at a uniform interior height);
+        // plate 1's lone cell at 10,000 m (the orogenic extreme).
+        var elevations = new double[] { 100.0, 100.0, 10_000.0 };
+
+        var sqrtCaps = surfaces.BuildSurfaces(elevations, exaggeration: 0.0001, heightExponent: 0.5);
+        double sqrtInterior = Radius(sqrtCaps.Single(c => c.PlateId == 0).Surface.Positions[0]) - 1.0;
+        double sqrtPeak = Radius(sqrtCaps.Single(c => c.PlateId == 1).Surface.Positions[0]) - 1.0;
+        Assert.Equal(Math.Sqrt(100.0) * 0.0001, sqrtInterior, 10);
+        Assert.Equal(Math.Sqrt(10_000.0) * 0.0001, sqrtPeak, 10);
+        Assert.Equal(10.0, sqrtPeak / sqrtInterior, 6);
+    }
+
+    [Fact]
+    public void Height_exponent_default_is_the_linear_lens()
+    {
+        // Omitting the exponent must reproduce the historical linear displacement exactly.
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot(), noise: NoNoise);
+        var elevations = new double[] { 250.0, 250.0, -4_000.0 };
+
+        var implicitLinear = surfaces.BuildSurfaces(elevations, exaggeration: 0.00001);
+        var explicitLinear = surfaces.BuildSurfaces(elevations, exaggeration: 0.00001, heightExponent: 1.0);
+
+        foreach (var cap in implicitLinear)
+        {
+            var other = explicitLinear.Single(c => c.PlateId == cap.PlateId);
+            for (int v = 0; v < cap.Surface.VertexCount; v++)
+                Assert.Equal(Radius(cap.Surface.Positions[v]), Radius(other.Surface.Positions[v]), 12);
+        }
+    }
+
+    [Fact]
+    public void Height_exponent_preserves_sign_for_basins()
+    {
+        // Basins (negative elevations) must displace INWARD under the profile: sign(h)*|h|^p.
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot(), noise: NoNoise);
+        var elevations = new double[] { -900.0, -900.0, 900.0 };
+
+        var caps = surfaces.BuildSurfaces(elevations, exaggeration: 0.0001, heightExponent: 0.5);
+        double basin = Radius(caps.Single(c => c.PlateId == 0).Surface.Positions[0]) - 1.0;
+        double peak = Radius(caps.Single(c => c.PlateId == 1).Surface.Positions[0]) - 1.0;
+
+        Assert.True(basin < 0.0, $"basin displaced outward: {basin}");
+        Assert.Equal(-peak, basin, 10);
+    }
 }

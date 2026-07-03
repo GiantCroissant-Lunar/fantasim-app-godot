@@ -42,4 +42,21 @@ public sealed class VerticalScaleLabelTests
         var suffix = VerticalScaleLabel.BuildIndicatorSuffix(0.00001);
         Assert.Equal("  |  vertical x1e-5 units", suffix);
     }
+
+    [Fact]
+    public void BuildIndicatorSuffix_WithLinearExponent_MatchesPlainForm()
+    {
+        // Exponent 1 IS the linear lens — the label must not invent a profile that isn't there.
+        var suffix = VerticalScaleLabel.BuildIndicatorSuffix(0.00001, heightExponent: 1.0);
+        Assert.Equal("  |  vertical x1e-5 units", suffix);
+    }
+
+    [Fact]
+    public void BuildIndicatorSuffix_WithProfileExponent_NamesTheProfile()
+    {
+        // S2 honesty for the non-linear lens: the indicator must say the displacement is
+        // sign(h)*|h|^0.5 * scale, not pretend it is a linear factor.
+        var suffix = VerticalScaleLabel.BuildIndicatorSuffix(0.0005, heightExponent: 0.5);
+        Assert.Equal("  |  vertical h^0.5 x5e-4 units", suffix);
+    }
 }

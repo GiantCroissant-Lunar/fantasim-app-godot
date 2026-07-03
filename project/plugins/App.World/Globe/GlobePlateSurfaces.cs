@@ -133,41 +133,61 @@ public sealed class GlobePlateSurfaces
 
     /// <summary>
     /// Per tick: build one watertight <see cref="GlobeSurface"/> cap per (non-empty) plate from the
-    /// per-cell <paramref name="elevationsByCell"/> (indexed by cell id) scaled by
-    /// <paramref name="exaggeration"/>. For each plate the face heights are gathered to per-vertex means
-    /// and fed to the cartography builder at unit radius (1.0); the height passed in is
-    /// <c>elevation * exaggeration</c>, matching the displacement magnitude the old relief used.
+    /// per-cell <paramref name="elevationsByCell"/> (indexed by cell id). For each plate the face
+    /// elevations are gathered to per-vertex means (in metres, watertight across plates), the seeded
+    /// peaks noise is added, and the total goes through the height lens:
+    /// <c>displacement = sign(m) * |m|^heightExponent * exaggeration</c>.
     /// </summary>
     /// <param name="elevationsByCell">Per-cell elevation (metres), indexed by cell id.</param>
-    /// <param name="exaggeration">Displacement exaggeration; height = elevation * exaggeration.</param>
-    public IReadOnlyList<PlateCap> BuildSurfaces(IReadOnlyList<double> elevationsByCell, double exaggeration)
+    /// <param name="exaggeration">Displacement scale applied after the profile.</param>
+    /// <param name="heightExponent">
+    /// Height-profile exponent (scale rule S1's non-linear lens). 1.0 (default) is the historical
+    /// linear lens. Below 1.0 compresses the extreme-to-typical relief ratio — e.g. 0.5 turns a
+    /// 100:1 peak-to-plains field into 10:1 — so interior relief reads at planet scale without
+    /// orogenic peaks becoming spears. The profile applies to the FINAL vertex metres (envelope
+    /// mean + noise), keeping the lens watertight: shared corners see identical inputs on every
+    /// incident plate, so they map to identical radii.
+    /// </param>
+    public IReadOnlyList<PlateCap> BuildSurfaces(
+        IReadOnlyList<double> elevationsByCell,
+        double exaggeration,
+        double heightExponent = 1.0)
     {
         ArgumentNullException.ThrowIfNull(elevationsByCell);
+        if (heightExponent <= 0.0)
+            throw new ArgumentOutOfRangeException(nameof(heightExponent), "Height exponent must be positive.");
 
-        // Global per-FACE heights in global face order, then gather to per-VERTEX means across ALL
-        // incident cells of ALL plates. A boundary corner shared by plates A and B sees both plates'
-        // cells here, so its mean (and hence radius) is identical regardless of which plate builds it.
-        var globalFaceHeights = new double[_globalCellIds.Length];
+        // Global per-FACE elevations (METRES — the lens applies at the end) in global face order,
+        // then gather to per-VERTEX means across ALL incident cells of ALL plates. A boundary corner
+        // shared by plates A and B sees both plates' cells here, so its mean (and hence radius) is
+        // identical regardless of which plate builds it.
+        var globalFaceMetres = new double[_globalCellIds.Length];
         for (int f = 0; f < _globalCellIds.Length; f++)
         {
             int cellId = _globalCellIds[f];
-            double elev = (cellId >= 0 && cellId < elevationsByCell.Count) ? elevationsByCell[cellId] : 0.0;
-            globalFaceHeights[f] = elev * exaggeration;
+            globalFaceMetres[f] = (cellId >= 0 && cellId < elevationsByCell.Count) ? elevationsByCell[cellId] : 0.0;
         }
 
-        var globalVertexHeights = GlobeSurfaceBuilder.GatherVertexHeights(
-            _globalVertices.Length, _globalTriangles, globalFaceHeights);
+        var globalVertexMetres = GlobeSurfaceBuilder.GatherVertexHeights(
+            _globalVertices.Length, _globalTriangles, globalFaceMetres);
 
+        bool linear = heightExponent == 1.0;
         var caps = new PlateCap[_plates.Count];
         for (int p = 0; p < _plates.Count; p++)
         {
             var plate = _plates[p];
 
-            // Read each local vertex's envelope height from the GLOBAL mean (watertight across plates),
-            // then add the per-plate seeded peaks (already shared across plates via the base position).
+            // Read each local vertex's envelope metres from the GLOBAL mean (watertight across
+            // plates), add the per-plate seeded peaks (already shared across plates via the base
+            // position), then apply the lens to the total.
             var perVertexHeights = new double[plate.LocalVertices.Length];
             for (int v = 0; v < perVertexHeights.Length; v++)
-                perVertexHeights[v] = globalVertexHeights[plate.LocalToGlobal[v]] + plate.VertexNoiseMetres[v] * exaggeration;
+            {
+                double metres = globalVertexMetres[plate.LocalToGlobal[v]] + plate.VertexNoiseMetres[v];
+                perVertexHeights[v] = linear
+                    ? metres * exaggeration
+                    : Math.Sign(metres) * Math.Pow(Math.Abs(metres), heightExponent) * exaggeration;
+            }
 
             var surface = _builder.Build(
                 plate.LocalVertices, plate.LocalTriangles, perVertexHeights, GlobeSurfaceBuilder.DefaultRadius);

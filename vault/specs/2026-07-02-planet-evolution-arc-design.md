@@ -150,6 +150,28 @@ jittered regions + NOAA-style ramp, water incidental.)
   (textbook style) is a later 2D readout of the same cut. Packets: W1 world view + terrain
   legibility; W2 atmosphere rim; W3 cutaway mask.
 
+### 5c-i. Height lens + relief fabric (locked 2026-07-03, look-dev on captures)
+
+- **Non-linear height lens (amends S1 for the world view).** The world view displaces
+  vertices by `sign(h)·|h|^p · scale` (shipping p=0.5, scale=5e-4). Rationale: the truth
+  elevation field is ~±1,400 m interiors under 21,000+ m unbounded orogenic extremes — a
+  ratio NO linear factor can render (interiors invisible or peaks become spears). S1 still
+  holds in spirit: the lens is a declared parameter and the S2 indicator NAMES the profile
+  (`vertical h^0.5 x5e-4 units` — VerticalScaleLabel profile overload). **Diagnostic views
+  (crust hypsometric) stay strictly LINEAR** — diagnostics must not bend scale. The lens
+  relaxes back toward linear when truth-side erosion/orogenic saturation lands (A4).
+- **Everywhere-relief fabric (user-locked from references).** An old waterless world is
+  rough at every point — impact history, pre-onset orogenies, erosion — none of which the
+  crust pipeline simulates yet. The WorldPeaks noise is the DECLARED stand-in for that
+  unsimulated history, promoted from grid-hiding garnish to base fabric (freq 8, 6 octaves,
+  nominal amplitude 17,000 → ~2,500 m-std relief ≈ 2.5% of radius through the lens), with
+  tectonic contrast reserved on top (ranges ≈ 8%, trenches ≈ −5%). Calibration gotcha:
+  NoiseRelief's `Amplitude` is a BOUND, not typical magnitude (std ≈ 0.15×A — documented +
+  characterization-tested upstream in fantasim-cartography). Known limitation: the fabric
+  is sphere-fixed (sampled on base positions), so it does not drift with plates; the
+  truth-side replacement (roughness from crust age / impact fields) is the A4-adjacent
+  roadmap item that will.
+
 ## 6. Verification
 
 Every packet: unit tests for the Godot-free logic (TDD), full suite green, then the exported
