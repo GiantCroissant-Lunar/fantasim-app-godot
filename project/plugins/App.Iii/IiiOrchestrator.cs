@@ -68,7 +68,12 @@ public sealed class IiiOrchestrator : IIiiOrchestration
             var shared = new JsonObject { ["job_id"] = jobId };
             var result = await _executor.ExecuteAsync(graph, shared, ct).ConfigureAwait(false);
             var glb = result["glb_path"]?.ToString() ?? "(none)";
-            return new CommandResult(commandId, true, ResultJson: $"{{\"glb_path\":\"{glb}\"}}");
+            // Serialize, never interpolate: a provider path containing quotes/backslashes/newlines
+            // must still produce valid JSON (2026-07-03 review fix).
+            return new CommandResult(
+                commandId,
+                true,
+                ResultJson: System.Text.Json.JsonSerializer.Serialize(new { glb_path = glb }));
         }
         catch (Exception ex)
         {
