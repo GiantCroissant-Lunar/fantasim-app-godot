@@ -23,6 +23,12 @@
   <ItemGroup>
     <ProjectReference Include="..\..\plugins\App.World\App.World.csproj" />
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+    <!-- Rendering contracts (shared): the moved rendering/globe types (GlobePlateSurfaces,
+         VertexColorEnvelope, VerticalScaleLabel, HypsometricTint, WorldTerrainRamp, ProvinceTint,
+         VertexTintJitter, CrustAccentMapper, AtmosphereRimStateMapper, BoundaryStyleMapper,
+         PlateIdentityPalette, RampColor) now live here. The test files keep their existing usings
+         (FantaSim.App.World.Rendering / .Globe) — the namespaces are preserved exactly. -->
+    <ProjectReference Include="..\..\contracts\App.World.Rendering\App.World.Rendering.csproj" />
     <!-- The general graph executor (plugin) + its contracts: the crust recipe is run through the REAL
          GraphExecutor with the WorldFunctionProvider, no Godot. -->
     <ProjectReference Include="..\..\plugins\App.NodeGraph\App.NodeGraph.csproj" />

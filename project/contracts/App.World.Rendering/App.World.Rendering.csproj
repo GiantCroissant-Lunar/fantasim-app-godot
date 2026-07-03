@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>FantaSim.App.World.Rendering</RootNamespace>
+    <AssemblyName>FantaSim.App.World.Rendering</AssemblyName>
+    <ServiceArchiTier>T1</ServiceArchiTier>
+  </PropertyGroup>
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+
+  <!--
+    SHARED rendering contracts extracted from the collectible App.World / App.World.Composition plugins
+    (2026-07-03 ALC pin diagnosis, Suspect G / Fix 2). The resident host (complete-app) and the
+    collectible world bundle both consume these types; keeping them in a SHARED contract assembly
+    eliminates the dual-copy type-identity split that made FantaSim.App.World.dll load into BOTH the
+    resident ALC (via the host's ProjectReference) and the collectible ALC (via the bundle).
+
+    The moved types preserve their original namespaces exactly (FantaSim.App.World.Rendering,
+    FantaSim.App.World.Globe, FantaSim.App.World.Composition) — this is a RELOCATION, not a rename,
+    so all consumers (host binder, world plugin, tests) compile without a single using change.
+
+    Dependencies mirror the App.World plugin's cartography refs (watertight surface + noise relief):
+      * Cartography.Shared (CartesianPoint3) + Cartography.Globe (NoiseParams, GlobeSurface,
+        IGlobeSurfaceBuilder) + Cartography.Globe.Core (GlobeSurfaceBuilder, NoiseRelief) — the
+        same three project refs the plugin had.
+      * contracts/App.World for PlateBoundaryKind, WorldGlobeSnapshot/GlobeCell/GlobeVec3 (Dto),
+        GlobeViewMode, SphereRegimeSchedule (Composition sub-namespace).
+      * UnifyMaths for Vector3D (CutawayWedge geometry).
+
+    ALC discipline: this assembly + its cartography closure must be SHARED (resident, exactly once).
+    See Bootstrap.cs SharedAssemblyPolicy + Taskfile.yml bundle:world:build mirror.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\App.World\App.World.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-cartography\project\contracts\Cartography.Shared\Cartography.Shared.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-cartography\project\contracts\Cartography.Globe\Cartography.Globe.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-cartography\project\plugins\Cartography.Globe.Core\Cartography.Globe.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="UnifyMaths" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <!-- NU1603 (UnifyGeometry floor versions vs the 1.0.0 feed line) is informational, non-fatal. -->
+    <NoWarn>$(NoWarn);NU1603</NoWarn>
+  </PropertyGroup>
+
+</Project>

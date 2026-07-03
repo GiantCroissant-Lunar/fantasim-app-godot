@@ -32,6 +32,7 @@
   <ItemGroup>
     <ProjectReference Include="..\App.Common\App.Common.csproj" />
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+    <ProjectReference Include="..\..\contracts\App.World.Rendering\App.World.Rendering.csproj" />
     <ProjectReference Include="..\..\contracts\App.NodeGraph\App.NodeGraph.csproj" />
     <ProjectReference Include="..\..\contracts\App.Ecs\App.Ecs.csproj" />
     <ProjectReference Include="..\..\contracts\App.Command\App.Command.csproj" />
@@ -56,6 +57,13 @@
     NOT packed to the NuGet feed (publishing needs owner approval / out of scope). These refs are
     UNGATED: unlike the engine refs there is no published cartography package to fall back to, and the
     watertight surface is the app's geometry now, not an optional co-dev path.
+
+    NOTE (2026-07-03 rendering-contracts extraction): the rendering types that consumed cartography
+    (GlobePlateSurfaces, ProvinceTint, VertexTintJitter, VertexColorEnvelope) moved to the shared
+    contracts/App.World.Rendering project, which carries these cartography refs. The App.World PLUGIN
+    keeps its cartography refs for now — the plugin still pulls the cartography assemblies into its
+    compile scope transitively via App.World.Rendering, and the explicit refs document the dependency
+    for the bundle staging audit. They can be removed once the bundle staging is re-verified.
   -->
   <ItemGroup>
     <ProjectReference Include="$(YokanProjectsRoot)\fantasim-cartography\project\contracts\Cartography.Shared\Cartography.Shared.csproj" />

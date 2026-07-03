@@ -9,11 +9,19 @@
   <ItemGroup>
     <ProjectReference Include="..\..\plugins\App.Common\App.Common.csproj" />
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
-    <!-- App.World PLUGIN (not just contracts): GlobePlateSurfaces wraps the cartography
-         GlobeSurfaceBuilder to produce WATERTIGHT per-plate caps; PlanetPresentationBinder uses it
-         as the mesh source so plate boundaries share vertices (no black cracks). Transitive refs
-         bring Cartography.Globe / Cartography.Shared into the host's compile scope. -->
-    <ProjectReference Include="..\..\plugins\App.World\App.World.csproj" />
+    <!-- SHARED rendering contracts (2026-07-03 ALC pin diagnosis, Fix 2): the resident host's
+         PlanetPresentationBinder consumes GlobePlateSurfaces, the RampColor mappers, CutawayWedge/
+         StratumProfile, VerticalScaleLabel etc. These types now live in a shared contract assembly
+         (FantaSim.App.World.Rendering) that loads ONCE into the resident ALC — the collectible world
+         bundle gets its own copy via the same ProjectReference, but the SharedAssemblyPolicy
+         (Bootstrap.cs) keeps both sides on the RESIDENT copy so there is no type-identity split.
+
+         The PREVIOUS ProjectReference to plugins\App.World\App.World.csproj (the collectible bundle's
+         own plugin assembly) is REMOVED: it caused FantaSim.App.World.dll to load into BOTH the resident
+         ALC (startup) AND the collectible ALC (bundle load), splitting type identity for
+         GlobePlateSurfaces and every rendering helper. The host now compiles against the shared
+         rendering contracts only; the world bundle's plugin assembly stays collectible. -->
+    <ProjectReference Include="..\..\contracts\App.World.Rendering\App.World.Rendering.csproj" />
     <ProjectReference Include="..\..\plugins\App.Resource\App.Resource.csproj" />
     <ProjectReference Include="..\..\plugins\App.Resource.Bundle.Seam\App.Resource.Bundle.Seam.csproj" />
     <ProjectReference Include="..\..\plugins\App.SceneFlow\App.SceneFlow.csproj" />
