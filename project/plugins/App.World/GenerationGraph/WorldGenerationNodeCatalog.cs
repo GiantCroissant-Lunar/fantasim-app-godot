@@ -52,6 +52,11 @@ public static class WorldGenerationNodeCatalog
                 new WorldGenerationGraphParameter("transformScarpAmplitude", "Transform Scarp Amplitude", "250", "double"),
                 new WorldGenerationGraphParameter("transformHalfWidthRad", "Transform Half-Width (rad)", "0.04", "double"),
                 new WorldGenerationGraphParameter("transformScarpPeriodPoints", "Transform Scarp Period (points)", "32", "double"),
+                // Vertical exaggeration (scale rule S1). The factor that maps crust elevation (metres
+                // on the CellElevationSystem scale) to unit-globe displacement in the crust view. A
+                // declared world parameter, never a buried constant; a different world may legitimately
+                // exaggerate more or less. See WorldGenerationRenderOptions.VerticalExaggeration.
+                new WorldGenerationGraphParameter("verticalExaggeration", "Vertical Exaggeration", "0.00001", "double"),
             },
             ProviderMetadata: CSharpMetadata,
             ExecutionTraits: NativeExecutionTraits),

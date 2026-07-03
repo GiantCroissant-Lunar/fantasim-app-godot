@@ -82,6 +82,15 @@ public sealed record PlanetPresentationDocument(
     /// the snapshot cache strip and to know which ticks still need generation.
     /// </summary>
     public IReadOnlyList<CrustSnapshotTickState> CrustSnapshotTicks { get; init; } = Array.Empty<CrustSnapshotTickState>();
+
+    /// <summary>
+    /// Vertical exaggeration (scale rule S1): the factor mapping crust elevation (metres on the
+    /// <c>CellElevationSystem</c> scale) to unit-globe radius displacement in the crust view. The host
+    /// applies this when displacing plate caps instead of a buried constant, and surfaces it as the
+    /// on-screen scale indicator (rule S2) when the hypsometric terrain view is active. Default 1e-5
+    /// (matches <c>WorldGenerationRenderOptions.DefaultVerticalExaggeration</c>).
+    /// </summary>
+    public double VerticalExaggeration { get; init; } = 0.00001;
 }
 
 /// <summary>
