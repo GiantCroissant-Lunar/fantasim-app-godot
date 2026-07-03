@@ -320,7 +320,13 @@ internal sealed class PlanetPresentationBinder : IDisposable
             _boundaryRenderer.Visible = showBoundaries;
 
         if (_mantle is not null && GodotObject.IsInstanceValid(_mantle))
+        {
             _mantle.MaterialOverride = ResolveMantleMaterial(RegimeSurfaceResolver.Resolve(regimeId));
+            _mantle.Visible = MantleSurfaceGate.IsVisible(
+                viewMode,
+                platesShown: showsPlateFeatures,
+                hasPlateSurface: _plateSurfaceRoot is not null && GodotObject.IsInstanceValid(_plateSurfaceRoot));
+        }
 
         UpdateAtmosphereRim(tick);
 
@@ -958,9 +964,12 @@ render_mode cull_disabled, blend_add, depth_draw_never, unshaded;
 
 uniform vec4 u_tint : source_color = vec4(0.46, 0.68, 1.0, 1.0);
 uniform float u_intensity : hint_range(0.0, 1.0) = 0.5;
+// Falloff exponent: how tightly the glow hugs the limb. 3.0 washed an additive tint over most of
+// the disk (2026-07-03 world-view finding: the whole planet read navy); 6.0 confines it to a rim.
+uniform float u_falloff : hint_range(1.0, 12.0) = 6.0;
 
 void fragment() {
-    float fresnel = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
+    float fresnel = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), u_falloff);
     ALBEDO = u_tint.rgb * (fresnel * u_intensity);
 }
 ";
