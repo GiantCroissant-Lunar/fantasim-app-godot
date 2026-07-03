@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using FantaSim.App.World.Dto;
+using FantaSim.App.World.Rendering;
 using FantaSim.Cartography.Globe;
 using FantaSim.Cartography.Globe.Core;
 using FantaSim.Cartography.Shared;
@@ -176,6 +177,61 @@ public sealed class GlobePlateSurfaces
         return caps;
     }
 
+    /// <summary>
+    /// Per tick (or per regime): the colour analogue of <see cref="BuildSurfaces"/>. Turns a per-cell
+    /// ramp colour field into ONE per-vertex colour array per plate, where each shared vertex gets
+    /// the component-wise MEAN of the ramp colours of every cell incident to it — GLOBALLY across all
+    /// plates. A boundary corner shared by plates A and B sees both plates' cells in the gather, so
+    /// both caps read the same colour at that corner and the cross-plate seam shows no colour step:
+    /// the colour envelope is watertight the same way the elevation envelope is.
+    /// </summary>
+    /// <para>
+    /// Reuses the SAME cached global topology (shared-vertex array, global triangle/cell-id buffers,
+    /// per-plate <c>LocalToGlobal</c> maps) the constructor built for the elevation gather — no
+    /// parallel topology, no second dedupe. Only the per-face values change between calls.
+    /// </para>
+    /// <param name="perCellColor">
+    /// Per-cell <see cref="RampColor"/> (the ramp output for that cell's elevation), indexed by cell
+    /// id. Cells outside the array's range contribute black, matching the elevation fallback to 0.0.
+    /// </param>
+    /// <returns>
+    /// One <see cref="PlateVertexColors"/> per non-empty plate (ascending <see cref="GlobeCell.PlateId"/>
+    /// order, same order as <see cref="BuildSurfaces"/>). Each <see cref="PlateVertexColors.Colors"/>
+    /// array is parallel to that plate's local shared-vertex array — index it by the same local
+    /// vertex id used for <c>Surface.Positions</c>.
+    /// </returns>
+    public IReadOnlyList<PlateVertexColors> BuildVertexColors(IReadOnlyList<RampColor> perCellColor)
+    {
+        ArgumentNullException.ThrowIfNull(perCellColor);
+
+        // Global per-FACE colors in global face order, then gather to per-VERTEX means across ALL
+        // incident cells of ALL plates — the exact shape of BuildSurfaces' elevation gather. A
+        // boundary corner shared by plates A and B sees both plates' cells here, so its mean is
+        // identical regardless of which plate reads it back through LocalToGlobal.
+        var globalFaceColors = new RampColor[_globalCellIds.Length];
+        for (int f = 0; f < _globalCellIds.Length; f++)
+        {
+            int cellId = _globalCellIds[f];
+            globalFaceColors[f] = (cellId >= 0 && cellId < perCellColor.Count)
+                ? perCellColor[cellId]
+                : default;
+        }
+
+        var globalVertexColors = VertexColorEnvelope.GatherVertexColors(
+            _globalVertices.Length, _globalTriangles, globalFaceColors);
+
+        var result = new PlateVertexColors[_plates.Count];
+        for (int p = 0; p < _plates.Count; p++)
+        {
+            var plate = _plates[p];
+            var local = new RampColor[plate.LocalVertices.Length];
+            for (int v = 0; v < local.Length; v++)
+                local[v] = globalVertexColors[plate.LocalToGlobal[v]];
+            result[p] = new PlateVertexColors(plate.PlateId, local);
+        }
+        return result;
+    }
+
     // --- cached per-plate topology (built once) ----------------------------------------------------
 
     // Build a single global shared-vertex topology over the whole snapshot: dedupes every cell's
@@ -316,6 +372,14 @@ public sealed class GlobePlateSurfaces
         double[] VertexNoiseMetres,      // parallel to LocalVertices: seeded peaks (metres), tick-invariant
         int[] LocalToGlobal);            // parallel to LocalVertices: index into the global shared-vertex array
 }
+
+/// <summary>
+/// One plate's per-vertex colour envelope: the per-local-vertex <see cref="RampColor"/> array
+/// (parallel to the cap's shared-vertex array) plus the plate id. Produced by
+/// <see cref="GlobePlateSurfaces.BuildVertexColors"/>; consumed by the render seam to Gouraud-shade
+/// terrain across cell and plate boundaries instead of flat per-cell triangles.
+/// </summary>
+public sealed record PlateVertexColors(int PlateId, RampColor[] Colors);
 
 /// <summary>
 /// One plate's watertight cap for a tick: the cartography <see cref="GlobeSurface"/> plus the parallel

@@ -563,12 +563,20 @@ internal sealed class PlanetPresentationBinder : IDisposable
             ? BuildCellAppearance(snapshot.CellCount, document, isWorld)
             : (Array.Empty<Color>(), Array.Empty<float>());
 
+        // Per-vertex color envelope (terrain views): smooth per-cell ramp colours across cell AND
+        // plate boundaries so terrain reads as Gouraud-shaded gradients instead of chunky per-cell
+        // triangles. Mirrors the elevation envelope in GlobePlateSurfaces — same global shared-vertex
+        // topology, component-wise mean — so cross-plate seams show no colour step either.
+        var perPlateVertexColors = isTerrain
+            ? BuildPerPlateVertexColors(_plateSurfaces!, perCellColor)
+            : null;
+
         var jitter = isWorld ? new VertexTintJitter(seed: 1337, amplitude: 0.06) : null;
 
         foreach (var cap in caps.OrderBy(c => c.PlateId))
         {
             var plate = isTerrain
-                ? BuildPlateMesh(cap, perCellColor, perCellEmission, jitter)
+                ? BuildPlateMesh(cap, perPlateVertexColors!, perCellEmission, jitter)
                 : BuildPlateIdentityMesh(cap);
             root.AddChild(plate);
         }
@@ -622,9 +630,27 @@ internal sealed class PlanetPresentationBinder : IDisposable
 
     private static Color ToColor(RampColor c) => new((float)c.R, (float)c.G, (float)c.B);
 
+    // Converts the host-side per-cell Godot.Color ramp output back to the Godot-free RampColor the
+    // App.World plugin envelope consumes, runs the global per-vertex colour gather, and indexes the
+    // result by plate id so BuildPlateMesh can look up each cap's per-vertex colours in one read.
+    private static IReadOnlyDictionary<int, RampColor[]> BuildPerPlateVertexColors(
+        GlobePlateSurfaces surfaces,
+        Color[] perCellColor)
+    {
+        var ramp = new RampColor[perCellColor.Length];
+        for (int c = 0; c < perCellColor.Length; c++)
+            ramp[c] = new RampColor(perCellColor[c].R, perCellColor[c].G, perCellColor[c].B);
+
+        var perPlate = surfaces.BuildVertexColors(ramp);
+        var byId = new Dictionary<int, RampColor[]>(perPlate.Count);
+        foreach (var p in perPlate)
+            byId[p.PlateId] = p.Colors;
+        return byId;
+    }
+
     private static MeshInstance3D BuildPlateMesh(
         PlateCap cap,
-        Color[] perCellColor,
+        IReadOnlyDictionary<int, RampColor[]> perPlateVertexColors,
         float[] perCellEmission,
         VertexTintJitter? jitter)
     {
@@ -653,18 +679,18 @@ internal sealed class PlanetPresentationBinder : IDisposable
             normals[b + 2] = ToV3(surface.SmoothNormals[i2]);
         }
 
-        // A2 + W1: per-vertex color (ArrayType.Color) + volcanic emission (ArrayType.TexUV2.x). In
-        // the world view, per-vertex tint jitter (deterministic from position + seed) breaks color
-        // banding so the cell grid stops reading as a mesh. Separate loop from positions/normals so
-        // this merges cleanly with concurrent mesh-path work.
+        // Per-vertex smoothed colour envelope: each corner takes its global-vertex mean ramp colour
+        // (averaged across all incident cells of all plates), so cell and plate boundaries read as
+        // Gouraud gradients instead of hard per-triangle steps. Volcanic emission (UV2.x) stays
+        // per-cell — a vent is a property of the cell, not the shared corner. VertexTintJitter is
+        // applied on top of the smoothed colour exactly as before, so the cell-grid anti-banding
+        // noise still rides the smoothed base.
+        var vertexColors = perPlateVertexColors[cap.PlateId];
         var colors = new Color[vertCount];
         var uv2 = new Vector2[vertCount];
         for (int t = 0; t < triCount; t++)
         {
             int cellId = cap.CellIds[t];
-            var baseColor = cellId >= 0 && cellId < perCellColor.Length
-                ? perCellColor[cellId]
-                : new Color(0.3f, 0.35f, 0.28f);
             float emis = cellId >= 0 && cellId < perCellEmission.Length
                 ? perCellEmission[cellId]
                 : 0f;
@@ -674,6 +700,9 @@ internal sealed class PlanetPresentationBinder : IDisposable
             {
                 int idx = b + v;
                 int surfIdx = surface.Triangles[(t * 3) + v];
+                var baseColor = surfIdx >= 0 && surfIdx < vertexColors.Length
+                    ? ToColor(vertexColors[surfIdx])
+                    : new Color(0.3f, 0.35f, 0.28f);
                 colors[idx] = jitter is not null
                     ? ToColor(jitter.Apply(surface.Positions[surfIdx], ToRampColor(baseColor)))
                     : baseColor;
