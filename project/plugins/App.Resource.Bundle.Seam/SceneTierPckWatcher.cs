@@ -8,7 +8,7 @@ using Godot;
 using Microsoft.Extensions.Logging;
 using ServiceArchi.Contracts;
 
-namespace FantaSim.App.Common.Entry;
+namespace FantaSim.App.Resource.Bundle;
 
 /// <summary>
 /// Resident watcher for scene-tier bundle PCKs (manifest metadata bundleType == "scene-tier":
@@ -19,7 +19,7 @@ namespace FantaSim.App.Common.Entry;
 /// events arrive on threadpool threads, so the dispatch marshals via Callable.From(...).CallDeferred
 /// (the same cross-thread entry ViewHost uses for RuntimeChanged rebinds).
 /// </summary>
-internal sealed class SceneTierPckWatcher : IDisposable
+public sealed class SceneTierPckWatcher : IDisposable
 {
     private const string SceneTierBundleType = "scene-tier";
     private static readonly TimeSpan Debounce = TimeSpan.FromMilliseconds(500);

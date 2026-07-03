@@ -1,0 +1,31 @@
+<Project Sdk="Godot.NET.Sdk/4.7.0">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.Presentation</RootNamespace>
+    <AssemblyName>FantaSim.App.Presentation</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ServiceArchiTier>T4</ServiceArchiTier>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+  <!-- Planet presentation seam (host-slim move, 2026-07-03): the PlanetPresentationBinder and its
+       node-graph/boundary companions, extracted from the complete-app host so the host stays a thin
+       composition root. RESIDENT for now; the file layout is bundle-ready — flipping this project
+       into a collectible presentation bundle later needs only the mount-protocol contracts and a
+       manifest (alc-pin diagnosis report §4, P3-P5), not another file move. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
+    <ProjectReference Include="..\..\contracts\App.World.Rendering\App.World.Rendering.csproj" />
+    <ProjectReference Include="..\..\contracts\App.Ui\App.Ui.csproj" />
+    <ProjectReference Include="..\..\contracts\App.Resource\App.Resource.csproj" />
+    <ProjectReference Include="..\App.Ui.NodeGraph\App.Ui.NodeGraph.csproj" />
+    <ProjectReference Include="..\App.NodeGraph\App.NodeGraph.csproj" />
+    <ProjectReference Include="..\App.Resource.Bundle.Seam\App.Resource.Bundle.Seam.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="GiantCroissant.RegistryArchi.Contracts" Version="0.1.2" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.1" />
+  </ItemGroup>
+</Project>

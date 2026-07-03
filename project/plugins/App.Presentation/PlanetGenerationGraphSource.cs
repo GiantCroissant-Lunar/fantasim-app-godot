@@ -4,7 +4,7 @@ using FantaSim.App.NodeGraph;
 using FantaSim.App.World;
 using FantaSim.App.World.Composition;
 
-namespace FantaSim.App.Common.Entry;
+namespace FantaSim.App.Presentation;
 
 internal sealed class PlanetGenerationGraphSource :
     IGraphSource,

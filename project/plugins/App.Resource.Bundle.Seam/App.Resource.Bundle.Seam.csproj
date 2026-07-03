@@ -12,6 +12,9 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\contracts\App.Resource\App.Resource.csproj" />
+    <!-- SceneTierPckWatcher (moved here from the host, 2026-07-03) dispatches
+         resource.reload_bundle through the command contract. -->
+    <ProjectReference Include="..\..\contracts\App.Command\App.Command.csproj" />
     <ProjectReference Include="..\App.Resource\App.Resource.csproj" />
     <ProjectReference Include="..\App.Common\App.Common.csproj" />
   </ItemGroup>

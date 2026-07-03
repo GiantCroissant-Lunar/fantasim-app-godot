@@ -17,9 +17,9 @@ using ServiceArchi.Contracts;
 using ResourceService = FantaSim.App.Resource.IService;
 using WorldService = FantaSim.App.World.IService;
 
-namespace FantaSim.App.Common.Entry;
+namespace FantaSim.App.Presentation;
 
-internal sealed class PlanetPresentationBinder : IDisposable
+internal sealed class PlanetPresentationBinder : IPlanetPresentation
 {
     private const string StageBundleId = "stage";
     private const string WorldBundleId = "world";

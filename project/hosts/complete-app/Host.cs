@@ -10,6 +10,7 @@ using FantaSim.App.Ecs;
 using FantaSim.App.GpuCompute.Seam;
 using FantaSim.App.GpuShader.Seam;
 using FantaSim.App.Iii.Seam;
+using FantaSim.App.Presentation;
 using FantaSim.App.Remote.Seam;
 using FantaSim.App.Render.Seam;
 using FantaSim.App.Resource.Bundle;
@@ -30,7 +31,7 @@ public partial class Host : Node
     private CrosscutFoundation.Config.IService? _config;
     private CollectibleBundles? _collectibleBundles;
     private FantaSim.App.Ecs.IService? _ecs;
-    private PlanetPresentationBinder? _planetPresentation;
+    private IPlanetPresentation? _planetPresentation;
     private FantaSim.App.Resource.IService? _resource;
     private IRenderCompositionHandle? _renderComposition;
     private SceneTierPckWatcher? _sceneTierPckWatcher;
@@ -682,7 +683,7 @@ public partial class Host : Node
 
         var sceneRegistry = registry.Get<IBundleSceneRegistry>();
         _planetPresentation?.Dispose();
-        _planetPresentation = new PlanetPresentationBinder(
+        _planetPresentation = PresentationComposition.CreatePlanetPresentation(
             registry,
             resource,
             sceneRegistry,

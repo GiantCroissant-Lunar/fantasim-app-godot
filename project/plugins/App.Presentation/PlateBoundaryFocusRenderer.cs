@@ -4,7 +4,7 @@ using FantaSim.App.World.Dto;
 using FantaSim.App.World.Rendering;
 using Godot;
 
-namespace FantaSim.App.Common.Entry;
+namespace FantaSim.App.Presentation;
 
 /// <summary>
 /// Renders plate boundaries as SMOOTH great-circle polylines coloured by boundary kind, driven by
