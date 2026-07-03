@@ -569,7 +569,7 @@ internal sealed class PlanetPresentationBinder : IDisposable
         var caps = _plateSurfaces.BuildSurfaces(elevations, exaggeration: document.VerticalExaggeration);
 
         var (perCellColor, perCellEmission) = isTerrain
-            ? BuildCellAppearance(snapshot.CellCount, document, isWorld)
+            ? BuildCellAppearance(snapshot.CellCount, document, isWorld, isWorld ? snapshot.Cells : null)
             : (Array.Empty<Color>(), Array.Empty<float>());
 
         // Per-vertex color envelope (terrain views): smooth per-cell ramp colours across cell AND
@@ -595,12 +595,14 @@ internal sealed class PlanetPresentationBinder : IDisposable
 
     // Computes per-cell Godot.Color (world or crust ramp with trench/ridge accent baked in) and
     // per-cell volcanic emission intensity, from the document's crust elevation + feature data. The
-    // world view uses WorldTerrainRamp (bare-rock product palette); the crust diagnostic uses
-    // HypsometricTint. Falls back to a neutral mid-ramp tint when crust data is absent.
+    // world view uses WorldTerrainRamp (bare-rock product palette) modulated by the continental
+    // ProvinceTint (cells indexed by CellId supply the sample direction); the crust diagnostic uses
+    // HypsometricTint, un-tinted. Falls back to a neutral mid-ramp tint when crust data is absent.
     private static (Color[] Colors, float[] Emission) BuildCellAppearance(
         int cellCount,
         PlanetPresentationDocument document,
-        bool isWorld)
+        bool isWorld,
+        IReadOnlyList<GlobeCell>? cells)
     {
         var colors = new Color[cellCount];
         var emission = new float[cellCount];
@@ -616,6 +618,13 @@ internal sealed class PlanetPresentationBinder : IDisposable
             return (colors, emission);
         }
 
+        // World view only: continental-scale albedo provinces, applied to the ramp color BEFORE the
+        // typed accents so trench/ridge/volcanic signals stay legible on top of the province field.
+        var provinceTint = isWorld && cells is not null
+            ? new ProvinceTint(seed: 1337, amplitude: 0.07)
+            : null;
+        var cellCenters = provinceTint is not null ? BuildCellCenters(cellCount, cells!) : null;
+
         var features = document.CellFeatures;
         var rampColors = isWorld
             ? WorldTerrainRamp.ComputeColors(elevations)
@@ -623,6 +632,8 @@ internal sealed class PlanetPresentationBinder : IDisposable
         for (int c = 0; c < cellCount; c++)
         {
             var tint = rampColors[c];
+            if (provinceTint is not null && cellCenters![c] is { } center)
+                tint = provinceTint.Apply(center, tint);
             byte kind = 0;
             double magnitude = 0.0;
             if (features is not null && c < features.Count)
@@ -635,6 +646,26 @@ internal sealed class PlanetPresentationBinder : IDisposable
             emission[c] = (float)accent.VolcanicEmission;
         }
         return (colors, emission);
+    }
+
+    // Unit-sphere center per cell id: normalized corner mean of the snapshot's triangular cells.
+    // Indexed by CellId (not list order) so the tint samples the direction of the cell it colors.
+    private static CartesianPoint3?[] BuildCellCenters(int cellCount, IReadOnlyList<GlobeCell> cells)
+    {
+        var centers = new CartesianPoint3?[cellCount];
+        foreach (var cell in cells)
+        {
+            if (cell.CellId < 0 || cell.CellId >= cellCount)
+                continue;
+            double x = (cell.C0.X + cell.C1.X + cell.C2.X) / 3.0;
+            double y = (cell.C0.Y + cell.C1.Y + cell.C2.Y) / 3.0;
+            double z = (cell.C0.Z + cell.C1.Z + cell.C2.Z) / 3.0;
+            double len = Math.Sqrt((x * x) + (y * y) + (z * z));
+            if (len < 1e-9)
+                continue;
+            centers[cell.CellId] = new CartesianPoint3(x / len, y / len, z / len);
+        }
+        return centers;
     }
 
     private static Color ToColor(RampColor c) => new((float)c.R, (float)c.G, (float)c.B);
