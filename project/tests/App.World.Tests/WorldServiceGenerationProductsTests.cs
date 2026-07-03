@@ -140,4 +140,23 @@ public sealed class WorldServiceGenerationProductsTests
         var layer = Assert.Single(document.Layers);
         Assert.Null(layer.GenerationGraphId);
     }
+
+    [Fact]
+    public void PlanetPresentation_CarriesCellCrustThicknessAtOnset()
+    {
+        using var service = new Service(new ServiceRegistry());
+        var document = service.GetPlanetPresentationAsync();
+
+        Assert.NotNull(document.CellCrustThickness);
+        Assert.Equal(document.GlobeSnapshot?.CellCount ?? 0, document.CellCrustThickness!.Count);
+    }
+
+    [Fact]
+    public void PlanetPresentation_CutawayExaggerationHasDeclaredDefault()
+    {
+        using var service = new Service(new ServiceRegistry());
+        var document = service.GetPlanetPresentationAsync();
+
+        Assert.True(document.CutawayExaggeration > 0.0);
+    }
 }
