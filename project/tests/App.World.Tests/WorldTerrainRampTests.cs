@@ -141,20 +141,34 @@ public sealed class WorldTerrainRampTests
     }
 
     [Fact]
-    public void Custom_percentile_options_are_respected()
+    public void Skewed_low_heavy_distribution_still_shows_mid_tone_plains()
     {
-        var bulk = Enumerable.Range(0, 10).Select(i => (double)i).ToArray();
-        var elevations = new[] { -100_000.0 }
-            .Concat(bulk)
-            .Concat(new[] { 100_000.0 })
+        // The failure mode seen in the windowed world view (2026-07-03): most cells sit in a thin
+        // low-elevation band with a small high tail. Value-linear normalization parks the low bulk
+        // at the near-black ramp bottom and the rust/ochre mid plains never appear. Rank
+        // equalization must spread the bulk across the vocabulary instead.
+        var elevations = Enumerable.Range(0, 80).Select(i => (double)i)              // 80 cells: 0..79 m
+            .Concat(Enumerable.Range(0, 20).Select(i => 4000.0 + i * 300.0))         // 20 cells: high tail
             .ToArray();
 
-        var tightColors = WorldTerrainRamp.ComputeColors(elevations, new HypsometricRampOptions(0.10, 0.90));
-        var defaultColors = WorldTerrainRamp.ComputeColors(elevations);
+        var colors = WorldTerrainRamp.ComputeColors(elevations);
 
-        var midIdx = 1 + 5;
-        Assert.True(Luma(tightColors[midIdx]) > Luma(defaultColors[midIdx]),
-            "tight percentile should stretch the bulk more than the default");
+        var rustLuma = Luma(new RampColor(0.42, 0.26, 0.16));
+        int atOrAboveRust = colors.Count(c => Luma(c) >= rustLuma - 0.02);
+        Assert.True(atOrAboveRust >= 40,
+            $"low-heavy world collapsed to the ramp bottom: only {atOrAboveRust}/100 cells reached the rust mid-tones");
+    }
+
+    [Fact]
+    public void Equal_elevations_get_equal_colors_regardless_of_position()
+    {
+        var elevations = new double[] { 100, 500, 100, 900, 500, 100 };
+
+        var colors = WorldTerrainRamp.ComputeColors(elevations);
+
+        Assert.Equal(colors[0], colors[2]);
+        Assert.Equal(colors[0], colors[5]);
+        Assert.Equal(colors[1], colors[4]);
     }
 
     private static double Luma(RampColor c) => 0.2126 * c.R + 0.7152 * c.G + 0.0722 * c.B;

@@ -6,11 +6,16 @@ namespace FantaSim.App.World.Rendering;
 /// waterless planet reads as from space — dark basalt lowlands -> rust/ochre mid plains -> pale
 /// rock highlands — warmer and more oxidized than the greyer crust-diagnostic palette.
 ///
-/// <para>Reuses the same percentile-clamp normalization (<see cref="HypsometricRampOptions"/>) so an
-/// early low-relief world still renders the full terrain vocabulary instead of collapsing to one
-/// band. Every stop is a warm rock tone with R >= G >= B (no sphere-costume rendering: no blue, so
-/// no cell can read as ocean — water belongs to the future hydrosphere lane). Luminance (Rec. 709)
-/// is strictly ascending so darker-is-lower reads correctly under the half-Lambert light.</para>
+/// <para>Normalizes by RANK (histogram equalization), not by elevation value: each cell's ramp
+/// position is its percentile rank in the world's own elevation distribution, with ties sharing the
+/// average rank so equal elevations always get equal colors. Value-linear normalization (what the
+/// crust-diagnostic <see cref="HypsometricTint"/> uses) parks a low-heavy distribution at the
+/// near-black bottom stop and the rust/ochre mid plains never appear — the 2026-07-03 world-view
+/// failure. The product view instead guarantees the full terrain vocabulary on every world,
+/// whatever its relief histogram. Every stop is a warm rock tone with R >= G >= B (no
+/// sphere-costume rendering: no blue, so no cell can read as ocean — water belongs to the future
+/// hydrosphere lane). Luminance (Rec. 709) is strictly ascending so darker-is-lower reads correctly
+/// under the half-Lambert light.</para>
 /// </summary>
 public static class WorldTerrainRamp
 {
@@ -31,12 +36,10 @@ public static class WorldTerrainRamp
 
     /// <summary>
     /// One world-ramp color per cell, indexed identically to <paramref name="elevationsByCell"/>.
-    /// Normalized via percentile clamp over the input distribution (same options as
-    /// <see cref="HypsometricTint"/>).
+    /// Normalized by percentile RANK over the input distribution (histogram equalization); ties get
+    /// the average rank of their run, so equal elevations map to equal colors.
     /// </summary>
-    public static IReadOnlyList<RampColor> ComputeColors(
-        IReadOnlyList<double> elevationsByCell,
-        HypsometricRampOptions? options = null)
+    public static IReadOnlyList<RampColor> ComputeColors(IReadOnlyList<double> elevationsByCell)
     {
         ArgumentNullException.ThrowIfNull(elevationsByCell);
 
@@ -44,49 +47,50 @@ public static class WorldTerrainRamp
         if (n == 0)
             return Array.Empty<RampColor>();
 
-        var opts = options ?? new HypsometricRampOptions();
-        var (lo, hi) = PercentileBounds(elevationsByCell, opts);
-
         var colors = new RampColor[n];
-        double range = hi - lo;
-        bool degenerate = range < 1e-9;
+        if (n == 1)
+        {
+            colors[0] = SampleRamp(DegenerateNormalized);
+            return colors;
+        }
+
+        var sorted = new double[n];
+        for (int i = 0; i < n; i++) sorted[i] = elevationsByCell[i];
+        Array.Sort(sorted);
 
         for (int i = 0; i < n; i++)
         {
-            double t = degenerate
-                ? DegenerateNormalized
-                : Clamp((elevationsByCell[i] - lo) / range, 0.0, 1.0);
-            colors[i] = SampleRamp(t);
+            double v = elevationsByCell[i];
+            int first = LowerBound(sorted, v);
+            int last = UpperBound(sorted, v) - 1;
+            double rank = (first + last) * 0.5;
+            colors[i] = SampleRamp(rank / (n - 1));
         }
         return colors;
     }
 
-    private static (double Lo, double Hi) PercentileBounds(
-        IReadOnlyList<double> values,
-        HypsometricRampOptions opts)
+    /// <summary>Index of the first element >= <paramref name="v"/>.</summary>
+    private static int LowerBound(double[] sorted, double v)
     {
-        int n = values.Count;
-        if (n == 1)
-            return (values[0], values[0]);
-
-        var sorted = new double[n];
-        for (int i = 0; i < n; i++) sorted[i] = values[i];
-        Array.Sort(sorted);
-
-        double lo = Percentile(sorted, opts.LowerPercentile);
-        double hi = Percentile(sorted, opts.UpperPercentile);
-        if (hi < lo) (lo, hi) = (hi, lo);
-        return (lo, hi);
+        int lo = 0, hi = sorted.Length;
+        while (lo < hi)
+        {
+            int mid = (lo + hi) >> 1;
+            if (sorted[mid] < v) lo = mid + 1; else hi = mid;
+        }
+        return lo;
     }
 
-    private static double Percentile(double[] sorted, double p)
+    /// <summary>Index one past the last element <= <paramref name="v"/>.</summary>
+    private static int UpperBound(double[] sorted, double v)
     {
-        int n = sorted.Length;
-        double rank = p * (n - 1);
-        int lower = (int)Math.Floor(rank);
-        int upper = Math.Min(lower + 1, n - 1);
-        double frac = rank - lower;
-        return sorted[lower] * (1.0 - frac) + sorted[upper] * frac;
+        int lo = 0, hi = sorted.Length;
+        while (lo < hi)
+        {
+            int mid = (lo + hi) >> 1;
+            if (sorted[mid] <= v) lo = mid + 1; else hi = mid;
+        }
+        return lo;
     }
 
     private static RampColor SampleRamp(double t)
