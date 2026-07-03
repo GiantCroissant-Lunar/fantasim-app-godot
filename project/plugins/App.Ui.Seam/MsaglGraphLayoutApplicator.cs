@@ -46,7 +46,8 @@ internal static class MsaglGraphLayoutApplicator
 
         try
         {
-            var nodes = ReadNodes(viewModel).ToList();
+            var compact = ReadBool(viewModel, "CompactCards");
+            var nodes = ReadNodes(viewModel, compact).ToList();
             if (nodes.Count == 0)
                 return false;
 
@@ -164,7 +165,7 @@ internal static class MsaglGraphLayoutApplicator
             StringComparer.Ordinal);
     }
 
-    private static IEnumerable<LayoutNode> ReadNodes(object viewModel)
+    private static IEnumerable<LayoutNode> ReadNodes(object viewModel, bool compact)
     {
         var property = viewModel.GetType().GetProperty("Nodes", BindingFlags.Public | BindingFlags.Instance);
         if (property?.GetValue(viewModel) is not IEnumerable items)
@@ -180,16 +181,18 @@ internal static class MsaglGraphLayoutApplicator
                 .GetProperty("RuntimeState", BindingFlags.Public | BindingFlags.Instance)
                 ?.GetValue(item);
 
-            var extraDetailLines = CountExtraDetailLines(
-                item.GetType()
-                    .GetProperty("ProviderMetadata", BindingFlags.Public | BindingFlags.Instance)
-                    ?.GetValue(item),
-                item.GetType()
-                    .GetProperty("ExecutionTraits", BindingFlags.Public | BindingFlags.Instance)
-                    ?.GetValue(item));
+            var extraDetailLines = compact
+                ? 0
+                : CountExtraDetailLines(
+                    item.GetType()
+                        .GetProperty("ProviderMetadata", BindingFlags.Public | BindingFlags.Instance)
+                        ?.GetValue(item),
+                    item.GetType()
+                        .GetProperty("ExecutionTraits", BindingFlags.Public | BindingFlags.Instance)
+                        ?.GetValue(item));
 
             var runtimeLines = CountRuntimeLines(runtime);
-            var hasPreview = ReadHasPreview(item);
+            var hasPreview = !compact && ReadHasPreview(item);
 
             yield return new LayoutNode(
                 nodeId,
@@ -198,10 +201,11 @@ internal static class MsaglGraphLayoutApplicator
                 ReadInt(item, "OutputCount", 1),
                 ReadString(item, "Summary") ?? string.Empty,
                 ReadString(item, "Detail") ?? string.Empty,
-                ReadListCount(item, "ParameterLines"),
+                compact ? 0 : ReadListCount(item, "ParameterLines"),
                 extraDetailLines,
                 runtimeLines,
-                hasPreview);
+                hasPreview,
+                compact);
         }
     }
 
@@ -252,6 +256,9 @@ internal static class MsaglGraphLayoutApplicator
     // detail is present.
     private static int CountDetailLines(LayoutNode node)
     {
+        if (node.Compact)
+            return string.IsNullOrWhiteSpace(node.Summary) ? 0 : 1;
+
         var lines = 0;
         if (!string.IsNullOrWhiteSpace(node.Summary))
             lines++;
@@ -424,7 +431,8 @@ internal static class MsaglGraphLayoutApplicator
         int ParameterLineCount,
         int ExtraDetailLineCount,
         int RuntimeLineCount,
-        bool HasPreview);
+        bool HasPreview,
+        bool Compact = false);
 
     private sealed record LayoutWire(string FromNodeId, string ToNodeId);
 

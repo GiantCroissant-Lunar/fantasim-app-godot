@@ -37,6 +37,8 @@ internal static class GraphNodeVisualEnhancer
 
             ApplyGraphStyle(graphEdit);
 
+            var compact = ReadBool(viewModel, "CompactCards");
+
             var applied = 0;
             foreach (var child in graphEdit.GetChildren())
             {
@@ -50,7 +52,7 @@ internal static class GraphNodeVisualEnhancer
                 RemoveMetadata(graphNode);
                 ApplyNodeStyle(graphNode, node);
                 ApplySlotLabels(graphNode, node);
-                AddNodeBody(graphNode, node);
+                AddNodeBody(graphNode, node, compact);
                 applied++;
             }
 
@@ -127,7 +129,7 @@ internal static class GraphNodeVisualEnhancer
         }
     }
 
-    private static void AddNodeBody(GraphNode graphNode, VisualNode node)
+    private static void AddNodeBody(GraphNode graphNode, VisualNode node, bool compact)
     {
         var color = CategoryColor(node.Category);
         graphNode.AddChild(new ColorRect
@@ -138,24 +140,24 @@ internal static class GraphNodeVisualEnhancer
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
         });
 
-        var detailText = $"{node.Summary}\n{NodeFacts(node)}\n{PortKindSummary(node)}";
-        var extraLines = FunctionProviderDetailFormatter.Format(node.ProviderMetadata, node.ExecutionTraits);
-        if (extraLines.Count > 0)
-        {
-            detailText += "\n" + string.Join("\n", extraLines);
-        }
+        var detailText = compact
+            ? (string.IsNullOrWhiteSpace(node.Summary) ? string.Empty : node.Summary)
+            : BuildFullDetail(node);
 
-        var detail = new Label
+        if (!string.IsNullOrWhiteSpace(detailText))
         {
-            Name = $"{MetadataPrefix}detail",
-            Text = detailText,
-            AutowrapMode = TextServer.AutowrapMode.WordSmart,
-            ClipText = false,
-            CustomMinimumSize = new Vector2(NodeContentWidth, 0),
-        };
-        detail.AddThemeColorOverride("font_color", new Color(0.90f, 0.93f, 0.97f, 0.98f));
-        detail.AddThemeFontSizeOverride("font_size", 11);
-        graphNode.AddChild(detail);
+            var detail = new Label
+            {
+                Name = $"{MetadataPrefix}detail",
+                Text = detailText,
+                AutowrapMode = TextServer.AutowrapMode.WordSmart,
+                ClipText = false,
+                CustomMinimumSize = new Vector2(NodeContentWidth, 0),
+            };
+            detail.AddThemeColorOverride("font_color", new Color(0.90f, 0.93f, 0.97f, 0.98f));
+            detail.AddThemeFontSizeOverride("font_size", 11);
+            graphNode.AddChild(detail);
+        }
 
         AddRuntimeBody(graphNode, node);
 
@@ -179,7 +181,7 @@ internal static class GraphNodeVisualEnhancer
             graphNode.AddChild(subgraphLabel);
         }
 
-        if (node.ParameterLines is { Count: > 0 })
+        if (!compact && node.ParameterLines is { Count: > 0 })
         {
             foreach (var line in node.ParameterLines)
             {
@@ -197,7 +199,7 @@ internal static class GraphNodeVisualEnhancer
             }
         }
 
-        if (node.PreviewRgba is { Length: > 0 } && node.PreviewWidth > 0 && node.PreviewHeight > 0
+        if (!compact && node.PreviewRgba is { Length: > 0 } && node.PreviewWidth > 0 && node.PreviewHeight > 0
             && node.PreviewRgba.Length == node.PreviewWidth * node.PreviewHeight * 4)
         {
             try
@@ -219,6 +221,18 @@ internal static class GraphNodeVisualEnhancer
                 // Malformed preview bytes - skip silently.
             }
         }
+    }
+
+    private static string BuildFullDetail(VisualNode node)
+    {
+        var detailText = $"{node.Summary}\n{NodeFacts(node)}\n{PortKindSummary(node)}";
+        var extraLines = FunctionProviderDetailFormatter.Format(node.ProviderMetadata, node.ExecutionTraits);
+        if (extraLines.Count > 0)
+        {
+            detailText += "\n" + string.Join("\n", extraLines);
+        }
+
+        return detailText;
     }
 
     private static void AddRuntimeBody(GraphNode graphNode, VisualNode node)
