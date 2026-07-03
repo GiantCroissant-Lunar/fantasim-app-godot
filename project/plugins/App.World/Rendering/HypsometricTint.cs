@@ -23,24 +23,29 @@ public sealed record HypsometricRampOptions(
 /// <summary>
 /// Maps per-cell elevation (metres) to a hypsometric terrain ramp (sub-project A2). The ramp is
 /// NORMALIZED over the snapshot's actual relief via percentile clamping, so an early low-relief
-/// world (small elevation spread) still renders the full terrain vocabulary (ocean → shelf →
-/// lowland → upland → mountain → snow) instead of collapsing to all-green.
+/// world (small elevation spread) still renders the full terrain vocabulary (deep basalt → basalt
+/// brown → rock tan → light rock) instead of collapsing to a single band.
 ///
-/// <para>The ramp stops are luminance-monotonic (Rec. 709) so darker-is-lower reads correctly under
-/// the half-Lambert light the host applies. Color stops: deep ocean (dark blue) → shallow shelf
-/// (medium blue) → lowland (green) → upland (brown/tan) → highland (grey) → snow (near-white).</para>
+/// <para>BARE-CRUST PALETTE (doctrine: no sphere-costume rendering — terminology-strata-scale-
+/// resolution §1 rule 3). This view renders bare geosphere crust; water belongs to the future
+/// hydrosphere lane, so the ramp contains NO blue. Every stop is a warm rock tone with R ≥ G ≥ B,
+/// so the blue channel never dominates. Luminance (Rec. 709) is strictly ascending so darker-is-
+/// lower reads correctly under the half-Lambert light the host applies. Color stops: deep basalt
+/// (near-black warm grey) → basalt grey → basalt brown → rock tan/brown → lighter rock → grey/
+/// white rock.</para>
 /// </summary>
 public static class HypsometricTint
 {
-    // (normalized-position, color). Positions are strictly ascending in [0,1]. Luma is ascending.
+    // (normalized-position, color). Positions are strictly ascending in [0,1]. Luma is strictly
+    // ascending. Every stop is warm (R ≥ G ≥ B) so no stop reads as water (no blue dominance).
     private static readonly (double Pos, RampColor Color)[] RampStops =
     {
-        (0.00, new RampColor(0.03, 0.10, 0.28)),  // deep ocean — dark blue
-        (0.18, new RampColor(0.08, 0.24, 0.40)),  // shallow shelf — medium blue
-        (0.36, new RampColor(0.16, 0.38, 0.18)),  // lowland — green
-        (0.58, new RampColor(0.42, 0.36, 0.24)),  // upland — brown/tan
-        (0.80, new RampColor(0.52, 0.50, 0.48)),  // highland — grey
-        (1.00, new RampColor(0.88, 0.90, 0.93)),  // snow — near-white
+        (0.00, new RampColor(0.07, 0.06, 0.055)),  // deep basalt — near-black warm grey
+        (0.20, new RampColor(0.16, 0.14, 0.12)),   // basalt grey
+        (0.42, new RampColor(0.27, 0.22, 0.18)),   // basalt brown
+        (0.64, new RampColor(0.45, 0.38, 0.30)),   // rock tan/brown
+        (0.84, new RampColor(0.62, 0.56, 0.50)),   // lighter rock
+        (1.00, new RampColor(0.84, 0.82, 0.78)),   // grey/white rock — near-white
     };
 
     private const double DegenerateNormalized = 0.5; // mid-ramp when all elevations are equal

@@ -18,13 +18,15 @@ public readonly record struct CrustAccent(double AlbedoScale, double AlbedoBrigh
 
 /// <summary>
 /// Maps a cell's crust feature (kind byte mirroring <c>CrustFeatureKind</c>, + magnitude) to a
-/// surface accent (sub-project A2). Only VolcanicArc / Trench / Ridge produce an accent;
-/// Mountain is already the ramp's highest band, Fault is carried by the boundary polylines, and
-/// None is a no-op. Unknown kinds are neutral (forward-compatible).
+/// surface accent (sub-project A2). VolcanicArc / Trench / Ridge / Mountain each produce an
+/// accent that gives the boundary-profile bands a face-on identity (the bands are 2-4 cells wide
+/// and otherwise vanish without relief silhouetting them); Fault is carried by the boundary
+/// polylines, and None is a no-op. Unknown kinds are neutral (forward-compatible).
 /// </summary>
 public static class CrustAccentMapper
 {
     // Mirrors FantaSim.Geosphere.Crust.CrustFeatureKind byte values (None=0..Fault=5).
+    public const byte KindMountain = 1;
     public const byte KindVolcanicArc = 2;
     public const byte KindTrench = 3;
     public const byte KindRidge = 4;
@@ -35,11 +37,19 @@ public static class CrustAccentMapper
     private const double ArcThreshold = 3.0;
     private const double ArcReferenceMagnitude = 25.0;
 
-    private const double TrenchAlbedoScale = 0.40;
-    private const double RidgeBrighten = 0.12;
+    // Face-on band contrast: these modulate the hypsometric base so a trench reads as a dark groove
+    // and ridges/mountains read as bright caps even with zero perceived relief (no silhouette).
+    private const double TrenchAlbedoScale = 0.30;
+    private const double RidgeBrighten = 0.22;
+    private const double MountainBrighten = 0.18;
 
     public static CrustAccent Map(byte featureKind, double magnitude) => featureKind switch
     {
+        KindMountain => new CrustAccent(
+            AlbedoScale: 1.0,
+            AlbedoBrighten: MountainBrighten,
+            VolcanicEmission: 0.0),
+
         KindVolcanicArc => new CrustAccent(
             AlbedoScale: 1.0,
             AlbedoBrighten: 0.0,
