@@ -34,6 +34,7 @@ public class NodeGraphViewSource : IViewSource, IDisposable
     private string? _activeGraphId;
     private string? _activeGraphLabel;
     private string? _expectedGraphId;
+    private string? _selectedNodeId;
     private int _revision;
     private bool _disposed;
 
@@ -58,6 +59,10 @@ public class NodeGraphViewSource : IViewSource, IDisposable
 
     public event Action? Changed;
 
+    /// <summary>Reflected by name by the App.Ui.Seam enhancer/MSAGL applicator to render
+    /// compact cards (title + summary + ports). Defaults to true.</summary>
+    public bool CompactCards { get; set; } = true;
+
     public void Dispose()
     {
         if (_disposed) return;
@@ -75,13 +80,6 @@ public class NodeGraphViewSource : IViewSource, IDisposable
 
     public RuntimeSurfaceDocument BuildDocument()
     {
-        JsonObject MkLabel(string id, string text) => new()
-        {
-            ["id"] = id,
-            ["type"] = "label",
-            ["properties"] = new JsonObject { ["text"] = new JsonObject { ["literal"] = text } },
-        };
-
         JsonObject MkButton(string id, string text, string command) => new()
         {
             ["id"] = id,
@@ -134,27 +132,37 @@ public class NodeGraphViewSource : IViewSource, IDisposable
                     MkLabel("lbl-title", ActiveTitle()),
                     new JsonObject
                     {
-                        ["id"] = "graph",
-                        ["type"] = "nodeGraph",
-                        ["layout"] = new JsonObject { ["minHeight"] = 480 },
-                        ["properties"] = new JsonObject
+                        ["id"] = "graph-and-inspector",
+                        ["type"] = "container",
+                        ["layout"] = new JsonObject { ["type"] = "horizontal", ["gap"] = 8 },
+                        ["children"] = new JsonArray
                         {
-                            ["items"] = new JsonObject
+                            new JsonObject
                             {
-                                ["binding"] = new JsonObject
+                                ["id"] = "graph",
+                                ["type"] = "nodeGraph",
+                                ["layout"] = new JsonObject { ["minHeight"] = 480 },
+                                ["properties"] = new JsonObject
                                 {
-                                    ["path"] = "/graph/nodes",
-                                    ["fallback"] = new JsonArray(),
+                                    ["items"] = new JsonObject
+                                    {
+                                        ["binding"] = new JsonObject
+                                        {
+                                            ["path"] = "/graph/nodes",
+                                            ["fallback"] = new JsonArray(),
+                                        },
+                                    },
+                                    ["wires"] = new JsonObject
+                                    {
+                                        ["binding"] = new JsonObject
+                                        {
+                                            ["path"] = "/graph/wires",
+                                            ["fallback"] = new JsonArray(),
+                                        },
+                                    },
                                 },
                             },
-                            ["wires"] = new JsonObject
-                            {
-                                ["binding"] = new JsonObject
-                                {
-                                    ["path"] = "/graph/wires",
-                                    ["fallback"] = new JsonArray(),
-                                },
-                            },
+                            BuildInspector(),
                         },
                     },
                 },
@@ -164,6 +172,33 @@ public class NodeGraphViewSource : IViewSource, IDisposable
         return root.Deserialize<RuntimeSurfaceDocument>(JsonOptions)
             ?? throw new InvalidOperationException("node-graph view document failed to deserialize.");
     }
+
+    private JsonObject BuildInspector()
+    {
+        var children = new JsonArray
+        {
+            MkLabel("lbl-inspector-title", "Inspector"),
+        };
+
+        var lines = NodeInspectorFormatter.Format(Nodes, Subgraphs, _selectedNodeId);
+        for (var i = 0; i < lines.Count; i++)
+            children.Add(MkLabel($"lbl-inspector-{i}", lines[i].Text));
+
+        return new JsonObject
+        {
+            ["id"] = "inspector",
+            ["type"] = "container",
+            ["layout"] = new JsonObject { ["type"] = "vertical", ["gap"] = 4, ["minWidth"] = 300 },
+            ["children"] = children,
+        };
+    }
+
+    private static JsonObject MkLabel(string id, string text) => new()
+    {
+        ["id"] = id,
+        ["type"] = "label",
+        ["properties"] = new JsonObject { ["text"] = new JsonObject { ["literal"] = text } },
+    };
 
     public async void Dispatch(string action, string? componentId)
     {
@@ -183,6 +218,13 @@ public class NodeGraphViewSource : IViewSource, IDisposable
         if (action.StartsWith(openSubgraphPrefix, StringComparison.Ordinal))
         {
             OpenSubgraph(action[openSubgraphPrefix.Length..]);
+            return;
+        }
+
+        const string selectNodePrefix = "select-node:";
+        if (action.StartsWith(selectNodePrefix, StringComparison.Ordinal))
+        {
+            SelectNode(action[selectNodePrefix.Length..]);
             return;
         }
 
@@ -304,6 +346,27 @@ public class NodeGraphViewSource : IViewSource, IDisposable
         }
 
         _status = "ready";
+        Changed?.Invoke();
+    }
+
+    private void SelectNode(string nodeId)
+    {
+        if (string.IsNullOrWhiteSpace(nodeId))
+            return;
+
+        var subgraph = Subgraphs.FirstOrDefault(candidate =>
+            string.Equals(candidate.ParentNodeId, nodeId, StringComparison.Ordinal));
+        if (subgraph is not null)
+        {
+            _selectedNodeId = nodeId;
+            OpenSubgraph(subgraph.SubgraphId);
+            return;
+        }
+
+        if (string.Equals(_selectedNodeId, nodeId, StringComparison.Ordinal))
+            return;
+
+        _selectedNodeId = nodeId;
         Changed?.Invoke();
     }
 
@@ -619,6 +682,12 @@ public class NodeGraphViewSource : IViewSource, IDisposable
                     subgraph.InputPortMap,
                     subgraph.OutputPortMap));
             }
+        }
+
+        if (_selectedNodeId is not null
+            && !Nodes.Any(node => string.Equals(node.NodeId, _selectedNodeId, StringComparison.Ordinal)))
+        {
+            _selectedNodeId = null;
         }
     }
 

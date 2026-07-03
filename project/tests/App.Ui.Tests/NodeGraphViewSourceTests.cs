@@ -284,6 +284,110 @@ public sealed class NodeGraphViewSourceTests
         Assert.Contains("outputsJson", json);
     }
 
+    [Fact]
+    public void BuildDocument_shows_inspector_hint_when_no_node_selected()
+    {
+        var graph = new GraphDocument(
+            Nodes: new[] { new GraphNode("n", "my-fn", new JsonObject()) },
+            Wires: Array.Empty<GraphWire>(),
+            SinkNodeId: "n");
+        var source = new EditableGraphSource("editable", graph);
+        var view = new NodeGraphViewSource(source);
+
+        var json = JsonSerializer.SerializeToNode(view.BuildDocument())?.ToJsonString();
+
+        Assert.Contains("Inspector", json);
+        Assert.Contains("select a node", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Dispatch_select_node_updates_inspector_to_show_selected_node_detail()
+    {
+        var graph = new GraphDocument(
+            Nodes: new[] { new GraphNode("n", "my-fn", new JsonObject { ["seed"] = 42 }) },
+            Wires: Array.Empty<GraphWire>(),
+            SinkNodeId: "n");
+        var source = new EditableGraphSource("editable", graph);
+        var view = new NodeGraphViewSource(source);
+
+        view.Dispatch("select-node:n", "n");
+
+        var json = JsonSerializer.SerializeToNode(view.BuildDocument())?.ToJsonString();
+        Assert.Contains("my-fn", json);
+        Assert.DoesNotContain("select a node", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Dispatch_select_node_with_same_id_emits_changed_only_once()
+    {
+        var graph = new GraphDocument(
+            Nodes: new[] { new GraphNode("n", "fn", new JsonObject()) },
+            Wires: Array.Empty<GraphWire>(),
+            SinkNodeId: "n");
+        var source = new EditableGraphSource("editable", graph);
+        var view = new NodeGraphViewSource(source);
+        var changes = 0;
+        view.Changed += () => changes++;
+
+        view.Dispatch("select-node:n", "n");
+        view.Dispatch("select-node:n", "n");
+
+        Assert.Equal(1, changes);
+    }
+
+    [Fact]
+    public void Dispatch_select_node_on_subgraph_owner_opens_the_subgraph()
+    {
+        var root = new GraphDocument(
+            Nodes: new[] { new GraphNode("parent", "fn.parent", new JsonObject()) },
+            Wires: Array.Empty<GraphWire>(),
+            SinkNodeId: "parent");
+        var child = new GraphDocument(
+            Nodes: new[] { new GraphNode("child", "fn.child", new JsonObject()) },
+            Wires: Array.Empty<GraphWire>(),
+            SinkNodeId: "child");
+        var source = new NavigableGraphSource("navigable", root, child);
+        var view = new NodeGraphViewSource(source);
+
+        view.Dispatch("select-node:parent", "parent");
+
+        Assert.Equal("child.graph", source.ActiveGraphId);
+    }
+
+    [Fact]
+    public void Dispatch_select_node_then_navigate_clears_stale_selection_to_hint()
+    {
+        var root = new GraphDocument(
+            Nodes: new[] { new GraphNode("parent", "fn.parent", new JsonObject()) },
+            Wires: Array.Empty<GraphWire>(),
+            SinkNodeId: "parent");
+        var child = new GraphDocument(
+            Nodes: new[] { new GraphNode("child", "fn.child", new JsonObject()) },
+            Wires: Array.Empty<GraphWire>(),
+            SinkNodeId: "child");
+        var source = new NavigableGraphSource("navigable", root, child);
+        var view = new NodeGraphViewSource(source);
+
+        view.Dispatch("select-node:parent", "parent");
+        Assert.Equal("child.graph", source.ActiveGraphId);
+
+        var json = JsonSerializer.SerializeToNode(view.BuildDocument())?.ToJsonString();
+        Assert.Contains("select a node", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void CompactCards_defaults_to_true()
+    {
+        var graph = new GraphDocument(
+            Nodes: new[] { new GraphNode("n", "fn", new JsonObject()) },
+            Wires: Array.Empty<GraphWire>(),
+            SinkNodeId: "n");
+        var source = new EditableGraphSource("editable", graph);
+        var view = new NodeGraphViewSource(source);
+
+        Assert.True(view.CompactCards);
+    }
+
     private sealed class AnnotatedGraphSource : IGraphSource, IGraphAnnotationSource
     {
         public AnnotatedGraphSource(
