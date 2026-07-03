@@ -686,6 +686,7 @@ public partial class Host : Node
             sceneRegistry,
             _composition!.Bootstrap.LoggerFactory);
         _planetPresentation.Rebind();
+        _renderComposition?.SetCutawayTarget(_planetPresentation.UpdateCutaway);
     }
 
     private void RecordSceneActivity(string sceneId, string? parentSceneId, bool bundleLoaded, int activeScenes)
@@ -732,6 +733,7 @@ public partial class Host : Node
             }
 
             _planetPresentation?.Dispose();
+            _renderComposition?.SetCutawayTarget(null);
             _planetPresentation = null;
             _composition?.Dispose();
         }

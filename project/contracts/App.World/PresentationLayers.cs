@@ -60,6 +60,25 @@ public sealed record PlanetPresentationDocument(
     public WorldGenerationGraphFamilyDocument? GenerationGraphFamily { get; init; }
 
     /// <summary>
+    /// Per-cell crust THICKNESS in metres at <see cref="ReferenceTick"/>, indexed by cell id (length =
+    /// CellCount). Null when crust-thickness products have not flowed for this snapshot (the cutaway
+    /// falls back to the declared default). Drives the cutaway's outer CRUST stratum band — the one
+    /// honest band on the cut faces (§5c, W3a). Mirrors the <see cref="CellElevations"/> precedent:
+    /// plumbed from the world's <c>crust-thickness-m</c> field (<see cref="FantaSim.App.World.Composition.GeosphereFieldCatalog.CrustThickness"/>)
+    /// onto the document so the cut-face renderer reads truth, not a buried constant.
+    /// </summary>
+    public IReadOnlyList<double>? CellCrustThickness { get; init; }
+
+    /// <summary>
+    /// Declared exaggeration (scale rule S1) for the cutaway STRATUM bands on the cut faces —
+    /// SEPARATE from the world view's sqrt height lens (<see cref="VerticalExaggeration"/> and the
+    /// non-linear lens in §5c-i). The cut faces use their own labeled exaggeration so the two do not
+    /// entangle. The S2 indicator names this (<c>CutawayStratumProfile.FormatExaggerationIndicator</c>)
+    /// when the cutaway is active. Default 1.0 (honest scale; look-dev tunes it).
+    /// </summary>
+    public double CutawayExaggeration { get; init; } = 1.0;
+
+    /// <summary>
     /// Per-cell crust elevation in metres at <see cref="ReferenceTick"/>, indexed by cell id (length =
     /// <see cref="WorldGlobeSnapshot"/>'s CellCount). Null when crust products have not flowed for
     /// this snapshot (the host falls back to flat-zero). Drives BOTH the mesh displacement (A1) and

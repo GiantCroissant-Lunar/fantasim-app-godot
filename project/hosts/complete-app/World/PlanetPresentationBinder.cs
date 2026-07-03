@@ -90,6 +90,13 @@ internal sealed class PlanetPresentationBinder : IDisposable
     private IReadOnlyList<long> _boundCrustSnapshotTicks = Array.Empty<long>();
     private PlanetPresentationDocument? _currentDocument;
     private GlobeViewMode _currentViewMode;
+
+    // W3a cutaway wedge state (inactive by default; width 0 = zero render change).
+    private CutawayWedge _cutawayWedge = new(new UnifyMaths.Vector3D(0, 0, 1), 0, 0);
+    private double _cutawayAzimuthDeg;
+    private double _cutawayWidthDeg;
+    private Node3D? _cutawayFaceRoot;
+    private ShaderMaterial? _hypsoPlateMaterialOverride;
     private bool _disposed;
 
     public PlanetPresentationBinder(
@@ -371,8 +378,204 @@ internal sealed class PlanetPresentationBinder : IDisposable
                     ? VerticalScaleLabel.BuildIndicatorSuffix(WorldHeightScale, WorldHeightExponent)
                     : VerticalScaleLabel.BuildIndicatorSuffix(_currentDocument.VerticalExaggeration);
             }
+            // W3a: cutaway stratum exaggeration is a separate declared parameter (S1) — name it
+            // alongside the surface lens so the two exaggerations are visually distinct (S2).
+            if (!_cutawayWedge.IsInactive && _currentDocument is not null)
+            {
+                label += CutawayStratumProfile.FormatExaggerationIndicator(_currentDocument.CutawayExaggeration);
+            }
             _statusLabel.Text = label;
         }
+    }
+
+    // W3a: entry from render.cutaway. Width 0 = inactive: clears the wedge, disables the shader
+    // discard, frees the cut-face root — zero render change vs. today.
+    public void UpdateCutaway(double azimuthDeg, double widthDeg)
+    {
+        if (_disposed)
+            return;
+
+        _cutawayAzimuthDeg = azimuthDeg;
+        _cutawayWidthDeg = widthDeg;
+        _cutawayWedge = new CutawayWedge(new UnifyMaths.Vector3D(0, 0, 1), azimuthDeg, widthDeg);
+
+        UpdateCutawayPlateShader();
+        RebuildCutawayFaces();
+        ApplyTimelineTick(_timeline.Tick);
+    }
+
+    private void UpdateCutawayPlateShader()
+    {
+        var mat = HypsoPlateMaterialOverride;
+        mat.SetShaderParameter("u_wedge_active", !_cutawayWedge.IsInactive);
+        if (_cutawayWedge.IsInactive)
+            return;
+
+        var axis = _cutawayWedge.Axis;
+        var reference = _cutawayWedge.Reference;
+        var referenceCross = new UnifyMaths.Vector3D(
+            axis.Y * reference.Z - axis.Z * reference.Y,
+            axis.Z * reference.X - axis.X * reference.Z,
+            axis.X * reference.Y - axis.Y * reference.X);
+
+        mat.SetShaderParameter("u_wedge_axis", new Vector3((float)axis.X, (float)axis.Y, (float)axis.Z));
+        mat.SetShaderParameter("u_wedge_reference", new Vector3((float)reference.X, (float)reference.Y, (float)reference.Z));
+        mat.SetShaderParameter("u_wedge_reference_cross", new Vector3((float)referenceCross.X, (float)referenceCross.Y, (float)referenceCross.Z));
+        mat.SetShaderParameter("u_wedge_start_rad", (float)(_cutawayWedge.NormalizedStart * Math.PI / 180.0));
+        mat.SetShaderParameter("u_wedge_width_rad", (float)(_cutawayWedge.WidthDeg * Math.PI / 180.0));
+    }
+
+    private void RebuildCutawayFaces()
+    {
+        if (_cutawayFaceRoot is not null && GodotObject.IsInstanceValid(_cutawayFaceRoot))
+        {
+            _cutawayFaceRoot.GetParent()?.RemoveChild(_cutawayFaceRoot);
+            _cutawayFaceRoot.QueueFree();
+        }
+        _cutawayFaceRoot = null;
+
+        if (_cutawayWedge.IsInactive)
+            return;
+
+        if (_activeRoot is null || !GodotObject.IsInstanceValid(_activeRoot))
+            return;
+
+        var body = _activeRoot.GetNodeOrNull<Node3D>("PlanetBody");
+        if (body is null)
+            return;
+
+        _cutawayFaceRoot = BuildCutawayFaces();
+        body.AddChild(_cutawayFaceRoot);
+    }
+
+    // W3a: two flat half-disc cut faces (one per wedge boundary azimuth), per-vertex COLOR encodes
+    // stratum bands. Crust thickness from CellCrustThickness when available (mean), else default.
+    private Node3D BuildCutawayFaces()
+    {
+        var root = new Node3D { Name = "CutawayFaces" };
+
+        var document = _currentDocument;
+        var exaggeration = document?.CutawayExaggeration ?? 1.0;
+        var planetRadiusMetres = 6_371_000.0;
+
+        var crustThickness = document?.CellCrustThickness;
+        double meanCrust = CutawayStratumProfile.DefaultCrustThicknessMetres;
+        if (crustThickness is { Count: > 0 })
+        {
+            double sum = 0;
+            int n = 0;
+            foreach (var t in crustThickness)
+            {
+                if (t > 0) { sum += t; n++; }
+            }
+            if (n > 0)
+                meanCrust = sum / n;
+        }
+
+        var bands = CutawayStratumProfile.ComputeBands(
+            meanCrust,
+            CutawayStratumProfile.DefaultLithosphereLidThicknessMetres,
+            exaggeration,
+            planetRadiusMetres);
+
+        var axis = _cutawayWedge.Axis;
+        var reference = _cutawayWedge.Reference;
+        var referenceCross = new UnifyMaths.Vector3D(
+            axis.Y * reference.Z - axis.Z * reference.Y,
+            axis.Z * reference.X - axis.X * reference.Z,
+            axis.X * reference.Y - axis.Y * reference.X);
+
+        var startDeg = _cutawayWedge.NormalizedStart;
+        var endDeg = startDeg + _cutawayWedge.WidthDeg;
+
+        root.AddChild(BuildCutawayFaceSector("CutFaceStart", startDeg, axis, reference, referenceCross, bands));
+        root.AddChild(BuildCutawayFaceSector("CutFaceEnd", endDeg, axis, reference, referenceCross, bands));
+
+        return root;
+    }
+
+    // Half-disc in plane(boundaryDir, axis): point = r*(cos(theta)*boundaryDir + sin(theta)*axis),
+    // theta in [-pi/2, pi/2], r in [0,1]. Strata are concentric rings colored per band.
+    private MeshInstance3D BuildCutawayFaceSector(
+        string name,
+        double azimuthDeg,
+        UnifyMaths.Vector3D axis,
+        UnifyMaths.Vector3D reference,
+        UnifyMaths.Vector3D referenceCross,
+        IReadOnlyList<StratumBand> bands)
+    {
+        const int angularSegments = 32;
+
+        var boundaryDir = new UnifyMaths.Vector3D(
+            reference.X * Math.Cos(azimuthDeg * Math.PI / 180.0) + referenceCross.X * Math.Sin(azimuthDeg * Math.PI / 180.0),
+            reference.Y * Math.Cos(azimuthDeg * Math.PI / 180.0) + referenceCross.Y * Math.Sin(azimuthDeg * Math.PI / 180.0),
+            reference.Z * Math.Cos(azimuthDeg * Math.PI / 180.0) + referenceCross.Z * Math.Sin(azimuthDeg * Math.PI / 180.0));
+
+        var vertices = new List<Vector3>();
+        var colors = new List<Color>();
+
+        for (int b = 0; b < bands.Count; b++)
+        {
+            var band = bands[b];
+            var outerR = Math.Max(0.0, band.OuterRadius);
+            var innerR = Math.Max(0.0, band.InnerRadius);
+            if (outerR <= innerR)
+                continue;
+
+            var bandColor = new Color(
+                (float)band.Color.R,
+                (float)band.Color.G,
+                (float)band.Color.B);
+
+            for (int s = 0; s < angularSegments; s++)
+            {
+                double t0 = -Math.PI / 2 + (s * Math.PI / angularSegments);
+                double t1 = -Math.PI / 2 + ((s + 1) * Math.PI / angularSegments);
+
+                var p0_outer = PolarToCartesian(outerR, t0, boundaryDir, axis);
+                var p1_outer = PolarToCartesian(outerR, t1, boundaryDir, axis);
+                var p0_inner = PolarToCartesian(innerR, t0, boundaryDir, axis);
+                var p1_inner = PolarToCartesian(innerR, t1, boundaryDir, axis);
+
+                vertices.Add(p0_outer); colors.Add(bandColor);
+                vertices.Add(p1_outer); colors.Add(bandColor);
+                vertices.Add(p0_inner); colors.Add(bandColor);
+
+                vertices.Add(p1_outer); colors.Add(bandColor);
+                vertices.Add(p1_inner); colors.Add(bandColor);
+                vertices.Add(p0_inner); colors.Add(bandColor);
+            }
+        }
+
+        var arrays = new Godot.Collections.Array();
+        arrays.Resize((int)Mesh.ArrayType.Max);
+        arrays[(int)Mesh.ArrayType.Vertex] = vertices.ToArray();
+        arrays[(int)Mesh.ArrayType.Color] = colors.ToArray();
+
+        var mesh = new ArrayMesh();
+        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+
+        return new MeshInstance3D
+        {
+            Name = name,
+            Mesh = mesh,
+            Scale = Vector3.One * 2.0f,
+            MaterialOverride = HypsoPlateMaterialOverride,
+        };
+    }
+
+    private static Vector3 PolarToCartesian(
+        double radius,
+        double theta,
+        UnifyMaths.Vector3D boundaryDir,
+        UnifyMaths.Vector3D axis)
+    {
+        var cosT = Math.Cos(theta);
+        var sinT = Math.Sin(theta);
+        return new Vector3(
+            (float)(radius * (cosT * boundaryDir.X + sinT * axis.X)),
+            (float)(radius * (cosT * boundaryDir.Y + sinT * axis.Y)),
+            (float)(radius * (cosT * boundaryDir.Z + sinT * axis.Z)));
     }
 
     private void OnLayerSelectionChanged(TimelineLayerSelection? selection)
@@ -614,8 +817,8 @@ internal sealed class PlanetPresentationBinder : IDisposable
         foreach (var cap in caps.OrderBy(c => c.PlateId))
         {
             var plate = isTerrain
-                ? BuildPlateMesh(cap, perPlateVertexColors!, perCellEmission, jitter)
-                : BuildPlateIdentityMesh(cap);
+                ? BuildPlateMesh(cap, perPlateVertexColors!, perCellEmission, jitter, HypsoPlateMaterialOverride)
+                : BuildPlateIdentityMesh(cap, HypsoPlateMaterialOverride);
             root.AddChild(plate);
         }
 
@@ -721,7 +924,8 @@ internal sealed class PlanetPresentationBinder : IDisposable
         PlateCap cap,
         IReadOnlyDictionary<int, RampColor[]> perPlateVertexColors,
         float[] perCellEmission,
-        VertexTintJitter? jitter)
+        VertexTintJitter? jitter,
+        Material plateMaterial)
     {
         var surface = cap.Surface;
         int triCount = surface.TriangleCount;
@@ -793,7 +997,7 @@ internal sealed class PlanetPresentationBinder : IDisposable
         {
             Name = $"Plate_{cap.PlateId}",
             Mesh = mesh,
-            MaterialOverride = HypsoPlateMaterial,
+            MaterialOverride = plateMaterial,
         };
     }
 
@@ -803,7 +1007,7 @@ internal sealed class PlanetPresentationBinder : IDisposable
     // displacement (positions are already at unit-sphere radius from BuildSurfaces with zero
     // elevations), no volcanic emission. Reuses HypsoPlateMaterial: the shader reads COLOR.rgb for
     // albedo and only emits when UV2.x > 0, which is absent here.
-    private static MeshInstance3D BuildPlateIdentityMesh(PlateCap cap)
+    private static MeshInstance3D BuildPlateIdentityMesh(PlateCap cap, Material plateMaterial)
     {
         var surface = cap.Surface;
         int triCount = surface.TriangleCount;
@@ -846,7 +1050,7 @@ internal sealed class PlanetPresentationBinder : IDisposable
         {
             Name = $"Plate_{cap.PlateId}",
             Mesh = mesh,
-            MaterialOverride = HypsoPlateMaterial,
+            MaterialOverride = plateMaterial,
         };
     }
 
@@ -1011,12 +1215,17 @@ void fragment() {
 }
 ";
 
-    // Hypsometric plate-cap shader (A2): per-vertex COLOR carries the bare-crust tint (dark basalt →
-    // rock brown → light rock, computed on the CPU with percentile normalization — no water imagery;
-    // the hydrosphere lane owns that when it exists, per the no-sphere-costume rule);
+    // Hypsometric plate-cap shader (A2 + W3a cutaway discard): per-vertex COLOR carries the bare-crust
+    // tint (dark basalt → rock brown → light rock, computed on the CPU with percentile normalization —
+    // no water imagery; the hydrosphere lane owns that when it exists, per the no-sphere-costume rule);
     // UV2.x carries the volcanic-vent emission intensity (0 = none). Trench darkening and ridge
     // brightening are baked into the vertex COLOR on the CPU (CrustAccentMapper.Apply) so the shader
     // only needs albedo + a gated emission pass. Half-Lambert light keeps displaced relief readable.
+    // W3a: the wedge discard (u_wedge_active) drops fragments whose object-space position direction
+    // falls inside the dihedral wedge — the planet reads as a solid with a wedge cut out. Inactive
+    // (u_wedge_active=false, width 0) = zero discard = today's render unchanged. The discard test
+    // mirrors CutawayWedge.Contains (pure, unit-tested): project onto the perpendicular plane, measure
+    // azimuth via atan2 against a basis derived the same way as the C# model.
     // Godot 4 docs: COLOR (vec4, auto-populated from ArrayType.Color, no flag on ShaderMaterial) and
     // UV2 (vec2, auto-populated from ArrayType.TexUV2); EMISSION is out-vec3 in fragment().
     private const string HypsoPlateShaderCode = @"
@@ -1026,7 +1235,45 @@ render_mode cull_disabled;
 uniform vec4 u_volcanic_glow : source_color = vec4(1.0, 0.42, 0.10, 1.0);
 uniform float u_volcanic_energy : hint_range(0.0, 8.0) = 1.4;
 
+// W3a cutaway wedge (inactive by default; zero discard when u_wedge_active is false).
+uniform bool u_wedge_active = false;
+uniform vec3 u_wedge_axis = vec3(0.0, 0.0, 1.0);
+uniform vec3 u_wedge_reference = vec3(1.0, 0.0, 0.0);
+uniform vec3 u_wedge_reference_cross = vec3(0.0, 1.0, 0.0);
+uniform float u_wedge_start_rad = 0.0;
+uniform float u_wedge_width_rad = 0.0;
+
+const float TWO_PI = 6.28318530718;
+
+float wedge_azimuth(vec3 dir) {
+    vec3 proj = dir - dot(dir, u_wedge_axis) * u_wedge_axis;
+    float pl = length(proj);
+    if (pl < 1e-7) return -1.0;
+    vec3 unit = proj / pl;
+    float x = dot(unit, u_wedge_reference);
+    float y = dot(unit, u_wedge_reference_cross);
+    float a = atan(y, x);
+    if (a < 0.0) a += TWO_PI;
+    return a;
+}
+
+bool wedge_contains(float azimuth) {
+    if (azimuth < 0.0) return false;
+    float end = u_wedge_start_rad + u_wedge_width_rad;
+    if (end <= TWO_PI) {
+        return azimuth >= u_wedge_start_rad && azimuth < end;
+    }
+    return azimuth >= u_wedge_start_rad || azimuth < (end - TWO_PI);
+}
+
 void fragment() {
+    if (u_wedge_active) {
+        vec3 dir = normalize(VERTEX);
+        float az = wedge_azimuth(dir);
+        if (wedge_contains(az)) {
+            discard;
+        }
+    }
     ALBEDO = COLOR.rgb;
     float vent = UV2.x;
     if (vent > 0.001) {
@@ -1088,6 +1335,15 @@ void fragment() {
     private static Shader AtmosphereRimShader => _atmosphereRimShader ??= new Shader { Code = AtmosphereRimShaderCode };
 
     private static Material HypsoPlateMaterial => _hypsoPlateMaterial ??= new ShaderMaterial { Shader = HypsoPlateShader };
+
+    // W3a: per-instance plate material so the cutaway wedge uniforms are binder-scoped (a static
+    // singleton would let one binder's cutaway leak into another). Lazily built; the wedge uniforms
+    // are updated by UpdateCutaway. Falls back to the shared static when the cutaway is inactive
+    // (zero-cost default: same material reference as before, so inactive = truly zero render change).
+    private ShaderMaterial HypsoPlateMaterialOverride => _hypsoPlateMaterialOverride ??= new ShaderMaterial
+    {
+        Shader = HypsoPlateShader,
+    };
 
     private Material ResolveMantleMaterial(RegimeSurfaceKind kind) =>
         kind switch
@@ -1182,6 +1438,13 @@ void fragment() {
         _statusLabel = null;
         _currentDocument = null;
         _currentViewMode = GlobeViewMode.Inactive;
+
+        if (_cutawayFaceRoot is not null && GodotObject.IsInstanceValid(_cutawayFaceRoot))
+        {
+            _cutawayFaceRoot.GetParent()?.RemoveChild(_cutawayFaceRoot);
+            _cutawayFaceRoot.QueueFree();
+        }
+        _cutawayFaceRoot = null;
     }
 
     private void ReleaseNodeGraphView()
