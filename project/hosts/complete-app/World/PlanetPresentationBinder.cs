@@ -298,6 +298,10 @@ internal sealed class PlanetPresentationBinder : IDisposable
         _boundCrustSnapshotTicks = document.CrustSnapshotTicks.Select(state => state.Tick).ToArray();
         _boundCrustSnapshotTick = new CrustSnapshotTickSeries(_boundCrustSnapshotTicks)
             .SelectSnapshotForPlayhead(_timeline.Tick);
+        // W3a: a rebind replaces the whole PlanetBody, taking any mounted cut faces with it — an
+        // active wedge must survive regime/snapshot refreshes, so re-apply uniforms + faces here.
+        UpdateCutawayPlateShader();
+        RebuildCutawayFaces();
         ApplyTimelineTick(_timeline.Tick);
 
         _log.LogInformation(
@@ -365,6 +369,14 @@ internal sealed class PlanetPresentationBinder : IDisposable
                 platesShown: showsPlateFeatures,
                 hasPlateSurface: _plateSurfaceRoot is not null && GodotObject.IsInstanceValid(_plateSurfaceRoot));
         }
+
+        // W3a: the cutaway is a WORLD-view interaction only — diagnostic views are never clipped
+        // (they share the plate material, so the wedge must gate on the resolved view mode here,
+        // not just on wedge width). The cut faces follow the same gate.
+        bool cutawayVisible = !_cutawayWedge.IsInactive && viewMode == GlobeViewMode.World;
+        _hypsoPlateMaterialOverride?.SetShaderParameter("u_wedge_active", cutawayVisible);
+        if (_cutawayFaceRoot is not null && GodotObject.IsInstanceValid(_cutawayFaceRoot))
+            _cutawayFaceRoot.Visible = cutawayVisible;
 
         UpdateAtmosphereRim(tick);
 
@@ -456,7 +468,11 @@ internal sealed class PlanetPresentationBinder : IDisposable
 
         var document = _currentDocument;
         var exaggeration = document?.CutawayExaggeration ?? 1.0;
-        var planetRadiusMetres = 6_371_000.0;
+        // INTERIM spatial anchor: the S3 world-radius parameter is roadmap (see the terminology
+        // doctrine note) — until it lands, Earth's mean radius is the declared default converting
+        // stratum metres to unit-globe fractions. Upgrade path: replace with the document's
+        // world-radius parameter alongside VerticalScaleLabel's honest xN switch.
+        const double planetRadiusMetres = 6_371_000.0;
 
         var crustThickness = document?.CellCrustThickness;
         double meanCrust = CutawayStratumProfile.DefaultCrustThicknessMetres;
@@ -1245,6 +1261,15 @@ uniform float u_wedge_width_rad = 0.0;
 
 const float TWO_PI = 6.28318530718;
 
+// Wedge test needs the MODEL-space direction: in fragment() VERTEX is VIEW-space, so testing it
+// there would make the wedge camera-relative (it would swing with the camera instead of cutting
+// the planet). Capture object-space VERTEX in vertex() — where it IS model space — via a varying.
+varying vec3 v_wedge_obj;
+
+void vertex() {
+    v_wedge_obj = VERTEX;
+}
+
 float wedge_azimuth(vec3 dir) {
     vec3 proj = dir - dot(dir, u_wedge_axis) * u_wedge_axis;
     float pl = length(proj);
@@ -1268,7 +1293,7 @@ bool wedge_contains(float azimuth) {
 
 void fragment() {
     if (u_wedge_active) {
-        vec3 dir = normalize(VERTEX);
+        vec3 dir = normalize(v_wedge_obj);
         float az = wedge_azimuth(dir);
         if (wedge_contains(az)) {
             discard;
