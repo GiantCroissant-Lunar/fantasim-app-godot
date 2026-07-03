@@ -148,3 +148,34 @@ The first option is safer (fewer trigger fires, matching the original design int
 4. **Why does `BuildCrustSnapshotTickStates` use 500K spacing while the trigger uses 5M?** This appears to be an oversight — the service's spacing was likely set independently of the trigger's window size. The `CrustSnapshotTickState.Available` flag was intended to distinguish generated from ungenerated snapshots, but the binder ignores it (`PlanetPresentationBinder.cs:260` selects `.Tick` only). Confirm with the commit history (the task brief cites commits 2fc518b, 5c1f8c7, 9e36306, 8771c42, 97d4f2b).
 
 5. **Does the engine's `CellReconstructor` use raw ticks vs. the app's onset-relative delta?** The engine's `CellReconstructor.ReconstructCellCenters` (`CellReconstructor.cs:44`) uses `targetTick.Value` directly as the rotation time, while the app's `GlobeReconstructor.RotationDelta` (`GlobeReconstructor.cs:322`) uses `tick - _onsetTick`. This means the engine classifies boundaries at a different rotation angle than the app renders. This mismatch affects which boundary TYPE is deposited at each snapshot but does not affect whether accumulation happens. It may cause visual mismatches between boundary types and cell membership but is not the root cause of identical terrain. Worth a separate investigation.
+---
+
+## 5. RESOLUTION — Open Question 5 (2026-07-03, follow-up session)
+
+**Confirmed real and fixed.** The mismatch was not in `CellReconstructor` itself (its contract is
+delta-based: "tick 0 = identity") but in what the callers feed it: the app's crust runs
+(`GlobeReconstructor.RunCrustFeatures/RunCrustEvolution/RunCrustSnapshot`) and the generation-graph
+path (`WorldPlugin` → `WorldFunctionProvider.crust.generate`) pass ABSOLUTE snapshot ticks into
+`CrustPipeline.RunAsync`, whose internal `BoundaryTypesAt` fed the raw tick to
+`ClassifyBoundariesAt` — while all rendering (`RotationDelta`, `ReassignCellsAt`,
+`BuildBoundaryArcsAt`) rotates at `tick − onset`.
+
+**Quantified** (app default seed, 0.02 rad/Ma, onset 100M ticks = 1000 Ma): constant angular offset
+`rate × onset` = 20 rad ≡ **1.1504 rad ≈ 65.9°** (mod 2π). Comparing raw vs onset-delta
+classification on the 4-plate seed at freq 4: **1–5 of 6 plate-pair boundary types differ at every
+snapshot tick** in 100M–120M (e.g. at 105M the raw path classifies the rendered 2|3 mid-ocean ridge
+as Convergent and the colliding 0|1 pair as Divergent).
+
+**Fix** (rotation convention only; deposit magnitudes/accumulation window unchanged):
+- engine `fantasim-world`: `CrustPipeline.RunAsync` gained `rotationReferenceTick` (default 0 =
+  historical behavior); `BoundaryTypesAt` classifies at `snapshotTick − rotationReferenceTick`.
+  TDD-proven by `CrustEvolutionTests.RunAsync_rotationReferenceTick_classifies_at_delta_from_reference`.
+- app: all three `GlobeReconstructor` crust runs pass `rotationReferenceTick: _onsetTick`;
+  `WorldPlugin.ExecuteCrustGenerationAsync` adds `rotationReferenceTick = PlateOnsetTick` to
+  sharedParams, read by `WorldFunctionProvider.GenerateCrustAsync`.
+
+Windowed-verified via world-bundle hot-reload into the running exported app: crust generation
+re-ran clean at 105M/115M, snapshot-transition refresh fired, terrain differs across snapshots with
+boundary-anchored feature accents. Known pre-existing caveat: the world bundle reload logged
+`old ALC still pinned … reload degraded` (the scene-tier pin issue tracked separately); the new
+assemblies are live regardless (fresh extract dir, new trigger runs).
