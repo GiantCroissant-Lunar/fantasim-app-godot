@@ -70,6 +70,14 @@ public sealed class Service : IService, IDisposable
             _handlers.Remove(commandId);
     }
 
+    /// <summary>
+    /// Executes a registered command. TWO-LEVEL Ok semantics: the returned result's
+    /// <c>Ok</c> means "the handler ran without throwing" (transport-level success);
+    /// domain-level success/failure lives inside <c>ResultJson</c>, whose shape each
+    /// command owns. A handler that needs to fail the TRANSPORT-level result (e.g. a
+    /// built-in that wraps an inner command) throws <see cref="CommandFailedException"/>,
+    /// which propagates its <see cref="CommandError"/> as the outer failure.
+    /// </summary>
     public async Task<CommandResult> ExecuteAsync(CommandRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -108,6 +116,16 @@ public sealed class Service : IService, IDisposable
         {
             throw;
         }
+        catch (CommandFailedException ex)
+        {
+            // A handler deliberately failing the transport-level result (see ExecuteAsync docs):
+            // propagate its typed error without the exception-name wrapping below.
+            _logger.LogWarning("Command {Command} reported failure: {Type} {Message}",
+                request.Command, ex.Error.Type, ex.Error.Message);
+            var result = new CommandResult(commandId, false, Error: ex.Error);
+            RecordCommandResult(request, entry.Descriptor, commandId, requestEntryId, result);
+            return result;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Command {Command} failed: {Message}", request.Command, ex.Message);
@@ -129,10 +147,32 @@ public sealed class Service : IService, IDisposable
                 Category: "orchestration"),
             async (payloadJson, ct) =>
             {
+                // PROPAGATE the inner result (2026-07-03 review fix): a failed inner command must
+                // fail the OUTER result too — the old shape serialized the whole inner
+                // CommandResult as the ResultJson of a successful outer result, so the HTTP
+                // ingress and automation reading transport-level Ok saw success on inner failure.
                 var inner = ParseInnerRequest(payloadJson) ?? new CommandRequest(Command: "world.refresh");
                 var result = await _orchestration.TriggerAsync(inner, ct);
-                return System.Text.Json.JsonSerializer.Serialize(result);
+                if (!result.Ok)
+                {
+                    throw new CommandFailedException(
+                        result.Error ?? new CommandError("orchestration-failed", $"Inner command '{inner.Command}' failed."));
+                }
+                return result.ResultJson;
             });
+    }
+
+    /// <summary>
+    /// Thrown by a command handler to fail the TRANSPORT-level <see cref="CommandResult"/> with a
+    /// typed <see cref="CommandError"/> (instead of the generic exception-name wrapping). Used by
+    /// built-ins that wrap an inner command and must propagate its failure outward.
+    /// </summary>
+    internal sealed class CommandFailedException : Exception
+    {
+        public CommandFailedException(CommandError error) : base(error.Message)
+            => Error = error;
+
+        public CommandError Error { get; }
     }
 
     private static CommandRequest? ParseInnerRequest(string? payloadJson)

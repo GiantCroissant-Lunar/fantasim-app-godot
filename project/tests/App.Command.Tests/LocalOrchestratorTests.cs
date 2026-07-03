@@ -297,6 +297,67 @@ public class CommandServiceTests
     }
 
     // ---------------------------------------------------------------------
+    // Behavior 10b: world.orchestrate PROPAGATES the inner result instead of
+    // nesting it — an inner failure (unknown command / missing service) must
+    // surface as outer Ok=false with the inner error, and an inner success
+    // must pass the inner ResultJson through un-nested. Before 2026-07-03 the
+    // built-in serialized the whole inner CommandResult as the ResultJson of
+    // a SUCCESSFUL outer result, so automation reading the transport-level Ok
+    // saw success on inner failure.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public async Task ExecuteAsync_world_orchestrate_propagates_inner_failure()
+    {
+        // Given a registry with NO world service registered
+        var registry = new ServiceRegistry();
+        var service = new Service(
+            new ImmediateMainThreadDispatcher(),
+            registry,
+            NullLoggerFactory.Instance);
+
+        // When the orchestrate command wraps an inner command that must fail
+        var innerJson = System.Text.Json.JsonSerializer.Serialize(new CommandRequest(Command: "world.refresh"));
+        var result = await service.ExecuteAsync(new CommandRequest(
+            Command: Service.OrchestrateCommandId,
+            PayloadJson: innerJson));
+
+        // Then the OUTER result reports the failure with the inner error attached
+        Assert.False(result.Ok);
+        Assert.NotNull(result.Error);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_world_orchestrate_passes_inner_result_json_through_unnested()
+    {
+        var registry = new ServiceRegistry();
+        var world = new FakeWorldService();
+        registry.Register<WorldService>(world, new ServiceRegistration { Tags = new[] { "world" } });
+        registry.Register<EcsService>(new FakeEcsService(), new ServiceRegistration { Tags = new[] { "ecs" } });
+        var service = new Service(
+            new ImmediateMainThreadDispatcher(),
+            registry,
+            NullLoggerFactory.Instance);
+
+        var innerJson = System.Text.Json.JsonSerializer.Serialize(new CommandRequest(Command: "world.refresh"));
+        var result = await service.ExecuteAsync(new CommandRequest(
+            Command: Service.OrchestrateCommandId,
+            PayloadJson: innerJson));
+
+        Assert.True(result.Ok);
+        // No double-nesting: the ResultJson must NOT itself be a serialized CommandResult
+        // (the pre-fix shape had Ok/CommandId fields at the top level of ResultJson).
+        if (!string.IsNullOrEmpty(result.ResultJson))
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(result.ResultJson);
+            Assert.False(
+                doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("Ok", out _)
+                && doc.RootElement.TryGetProperty("CommandId", out _),
+                "world.orchestrate ResultJson is still a nested CommandResult");
+        }
+    }
+
+    // ---------------------------------------------------------------------
     // Behavior 11: ExecuteAsync records structured command-card payloads for
     // both the request and the result entry, including descriptor, actor,
     // correlation/causation, and payload/result JSON.
