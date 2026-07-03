@@ -142,6 +142,56 @@ public sealed class WorldServiceGenerationProductsTests
     }
 
     [Fact]
+    public void PlanetPresentation_NonCrustLayer_KeepsItsAddressTick_WhenSnapshotSelected()
+    {
+        // Review fix 2026-07-03: the selected crust-snapshot tick must rewrite ProductTick AND
+        // ProductAddress for the mobile-plate crust layer ONLY. A non-crust layer advertising the
+        // selected tick against its unchanged address is contradictory metadata.
+        using var service = new Service(new ServiceRegistry());
+        var productAddress = "/base/main/formation/body-set@1234";
+        service.RunGenerationAsync(new WorldGenerationRequest(
+            WorldId: "graph-world",
+            GenerationSpec: "body-formation:planetesimal-swarm",
+            Parameters: new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["source"] = "world-generation.graph",
+                ["graphRevision"] = 1,
+                ["canonicalTick"] = 1_234L,
+                ["productAddresses"] = new[] { productAddress },
+            }));
+
+        // Reference tick deep in mobile-plate so a crust snapshot tick IS selected internally.
+        var document = service.GetPlanetPresentationAsync(105_000_000L);
+
+        var layer = Assert.Single(document.Layers);
+        Assert.Equal(1_234L, layer.ProductTick);
+        Assert.EndsWith("@1234", layer.ProductAddress);
+    }
+
+    [Fact]
+    public void PlanetPresentation_CrustLayer_TickAndAddressRewrittenConsistently()
+    {
+        using var service = new Service(new ServiceRegistry());
+        var productAddress = "/base/main/geosphere/mobile-plate.geosphere.crust@1234";
+        service.RunGenerationAsync(new WorldGenerationRequest(
+            WorldId: "graph-world",
+            GenerationSpec: "world.layer-scope:mobile-plate",
+            Parameters: new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["source"] = "world-generation.graph",
+                ["graphRevision"] = 3,
+                ["canonicalTick"] = 1_234L,
+                ["productAddresses"] = new[] { productAddress },
+            }));
+
+        var document = service.GetPlanetPresentationAsync(105_000_000L);
+
+        var layer = Assert.Single(document.Layers);
+        Assert.Equal(105_000_000L, layer.ProductTick);
+        Assert.EndsWith($"@{105_000_000L}", layer.ProductAddress);
+    }
+
+    [Fact]
     public void PlanetPresentation_CarriesCellCrustThicknessAtOnset()
     {
         using var service = new Service(new ServiceRegistry());

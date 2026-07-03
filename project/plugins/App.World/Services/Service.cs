@@ -347,11 +347,16 @@ public sealed class Service : IService, IDisposable
         var graphId = WorldGenerationGraphFamilyComposer.TryFindLayerBinding(family, address.Domain, layerId, regime)?.GraphId;
         var source = WorldGenerationGraphFamilyComposer.TryFindDefaultLayerSourceBinding(family, address.Domain, layerId, regime);
 
-        long productTick = selectedProductTick ?? address.Tick;
+        // The selected crust-snapshot tick applies to the mobile-plate crust layer ONLY, and it
+        // rewrites ProductTick and ProductAddress TOGETHER — a layer whose advertised tick
+        // contradicts its address is corrupt metadata (2026-07-03 review fix: the tick override
+        // used to apply to every layer while the address rewrite was crust-scoped).
+        long productTick = address.Tick;
         if (selectedProductTick.HasValue
             && string.Equals(layerId, "geosphere.crust", StringComparison.Ordinal)
             && string.Equals(regimeId, "mobile-plate", StringComparison.Ordinal))
         {
+            productTick = selectedProductTick.Value;
             address = address with { Tick = selectedProductTick.Value };
         }
 
