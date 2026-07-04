@@ -18,15 +18,16 @@ internal static class PlateSurfaceReliefFabric
         Amplitude: 17_000.0,
         Ridged: false);
 
-    // Crust diagnostic keeps the linear height scale, but it still needs a visible dry-rock fabric.
-    // This remains render-only presentation detail; simulation truth stays in CellElevations.
+    // Crust diagnostic keeps the linear height scale, so its fabric must stay inside a stricter
+    // displacement budget than world view. This remains render-only presentation detail; simulation
+    // truth stays in CellElevations.
     private static readonly NoiseParams CrustDiagnosticPeaks = new(
         Seed: 1337,
         BaseFrequency: 20.0,
-        Octaves: 6,
+        Octaves: 5,
         Lacunarity: 2.0,
         Gain: 0.5,
-        Amplitude: 22_000.0,
+        Amplitude: 2_500.0,
         Ridged: false);
 
     private static readonly NoiseParams FlatIdentity = new(Amplitude: 0.0);

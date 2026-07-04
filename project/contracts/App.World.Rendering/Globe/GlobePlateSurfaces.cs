@@ -85,7 +85,7 @@ public sealed class GlobePlateSurfaces
         Octaves: 4,
         Lacunarity: 2.0,
         Gain: 0.5,
-        Amplitude: 1000.0,   // metres  [DIAGNOSTIC crank: was 300]
+        Amplitude: 300.0,    // metres
         Ridged: false);
 
     private readonly IGlobeSurfaceBuilder _builder;

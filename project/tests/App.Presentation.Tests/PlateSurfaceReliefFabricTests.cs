@@ -8,14 +8,20 @@ namespace App.Presentation.Tests;
 public sealed class PlateSurfaceReliefFabricTests
 {
     [Fact]
-    public void ForView_gives_crust_diagnostic_a_visible_dry_rock_fabric()
+    public void ForView_keeps_crust_diagnostic_fabric_inside_linear_displacement_budget()
     {
         var crust = PlateSurfaceReliefFabric.ForView(GlobeViewMode.HypsometricTerrain);
 
         Assert.True(crust.Amplitude > GlobePlateSurfaces.DefaultPeaks.Amplitude);
-        Assert.True(crust.Amplitude >= 20_000.0);
-        Assert.True(crust.BaseFrequency >= 18.0);
-        Assert.True(crust.Octaves >= 6);
+        Assert.True(crust.BaseFrequency >= 16.0);
+        Assert.True(crust.Octaves >= 4);
+
+        const double defaultCrustMetresToUnitRadius = 0.00001;
+        const double maxTectonicAmplitudeMultiplier = 1.45;
+        double worstCaseFeatureDisplacement =
+            crust.Amplitude * maxTectonicAmplitudeMultiplier * defaultCrustMetresToUnitRadius;
+
+        Assert.InRange(worstCaseFeatureDisplacement, 0.015, 0.04);
     }
 
     [Fact]
