@@ -11,6 +11,56 @@ public enum SurfaceSubdivisionMode
     Adaptive = 1,
 }
 
+/// <summary>Contract-side projection product used to turn one world layer into render geometry.</summary>
+public enum PlanetLayerProjectionKind
+{
+    GlobeSurface = 0,
+    BoundarySection = 1,
+}
+
+/// <summary>
+/// Declares how a world layer's truth units are projected into render geometry. This is presentation
+/// metadata only: it does not create cells, change plate ownership, or replace the truth grid.
+/// </summary>
+public sealed record PlanetLayerProjectionProfile(
+    string LayerId,
+    PlanetLayerProjectionKind ProjectionKind,
+    string SourceGrid,
+    string SourceUnit,
+    string DisplacementUnit,
+    double BaseRadius,
+    double MetresToUnitRadius,
+    double HeightExponent,
+    SurfaceSubdivisionMode SurfaceSubdivision,
+    int AdaptiveSubdivisionMaxDepth,
+    double AdaptiveSubdivisionEdgeHeightDelta,
+    bool PreservesCellProvenance)
+{
+    public const string CrustLayerId = "geosphere.crust";
+    public const string UnifyCellGeodesicSourceGrid = "UnifyCell.GeodesicSphereTessellation";
+    public const string PhysicalMetresUnit = "physical-metres";
+    public const string UnitSphereDisplacementUnit = "unit-sphere-displacement";
+
+    public static PlanetLayerProjectionProfile Crust(
+        double metresToUnitRadius,
+        SurfaceSubdivisionMode surfaceSubdivision,
+        int adaptiveSubdivisionMaxDepth,
+        double adaptiveSubdivisionEdgeHeightDelta)
+        => new(
+            LayerId: CrustLayerId,
+            ProjectionKind: PlanetLayerProjectionKind.GlobeSurface,
+            SourceGrid: UnifyCellGeodesicSourceGrid,
+            SourceUnit: PhysicalMetresUnit,
+            DisplacementUnit: UnitSphereDisplacementUnit,
+            BaseRadius: 1.0,
+            MetresToUnitRadius: metresToUnitRadius,
+            HeightExponent: 1.0,
+            SurfaceSubdivision: surfaceSubdivision,
+            AdaptiveSubdivisionMaxDepth: adaptiveSubdivisionMaxDepth,
+            AdaptiveSubdivisionEdgeHeightDelta: adaptiveSubdivisionEdgeHeightDelta,
+            PreservesCellProvenance: true);
+}
+
 /// <summary>
 /// Data-first description of the planet surface the Stage-owned Environment scene can bind.
 /// This contract carries product/layer provenance only; engine-specific nodes, materials, and
@@ -72,6 +122,14 @@ public sealed record PlanetPresentationDocument(
     /// implementation assembly.
     /// </summary>
     public WorldGenerationGraphFamilyDocument? GenerationGraphFamily { get; init; }
+
+    /// <summary>
+    /// Render projection profiles for focused world layers. These profiles name scale/provenance
+    /// explicitly so a host can render the crust with a different visual lens and subdivision policy
+    /// while preserving the source cell grid as truth.
+    /// </summary>
+    public IReadOnlyList<PlanetLayerProjectionProfile> LayerProjectionProfiles { get; init; } =
+        Array.Empty<PlanetLayerProjectionProfile>();
 
     /// <summary>
     /// Per-cell crust THICKNESS in metres at <see cref="ReferenceTick"/>, indexed by cell id (length =

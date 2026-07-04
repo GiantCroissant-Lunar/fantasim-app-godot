@@ -116,7 +116,30 @@ H3 is **absent** from the current stack unless proven otherwise. Do not assume i
 future slice wants hex hierarchical refinement, verify the dependency exists in the workspace first
 and route it through Unify the same way.
 
-## 7. Chunked LOD is a later slice
+## 7. Mixed grids are projection products until migrated
+
+`UnifyCell` is intentionally a family of cell/tessellation contracts: planar rect/hex grids,
+spherical lat-lon maps, geodesic spherical tessellations, and future Voronoi/dual forms can all be
+represented through Unify-owned APIs. That does **not** make every grid interchangeable inside one
+running world product. A crust field indexed by geodesic cell id, a boundary stream keyed by
+geodesic arcs, and a render chunk keyed by S2/H3 are different coordinate products unless a bridge
+explicitly maps between them.
+
+For the current planet presentation:
+
+- The **truth grid** remains `UnifyCell.GeodesicSphereTessellation`.
+- Alternate grids may be used as **render projection / spatial index / chunk paging** products.
+- Mixed-grid products must carry labelled provenance back to the truth cells, plates, and boundary
+  samples they refine.
+- A future replacement of the truth grid with hex, Voronoi, or another spherical tessellation is a
+  migration project: field storage, plate ownership, boundary streams, topology materialization, and
+  renderer provenance must move together.
+
+So the answer to "can we replace with grid, hex, Voronoi, or mix and match?" is: yes at the Unify
+architecture level, but only through explicit contracts and bridges. In this slice, we mix only at
+the projection layer; we do not silently combine multiple truth grids.
+
+## 8. Chunked LOD is a later slice
 
 Full chunked LOD - explicit geodesic chunks/fragments with their own `MeshInstance3D`, visibility
 policy, and camera-distance refinement - is **not in this slice**. The current adaptive subdivision
@@ -135,13 +158,16 @@ When chunked LOD arrives, it should be:
   behaviour; it belongs in its own `vault/plans/` document, not folded into the adaptive subdivision
   plan.
 
-## 8. What this slice actually changed
+## 9. What this slice actually changed
 
 - `AdaptiveGlobeSurface` now carries `VertexProvenance[]` parallel to `Surface.Positions`, so a
   consumer can reattach base-parallel attributes (colours today, uv/tangents later) to appended
   midpoint vertices without a fallback. `PlateCapMeshBuilder.BuildTerrain` uses it to interpolate
   midpoint terrain colours from the two endpoint base colours, fixing the silent
   `MissingTerrainColor` fallback on refined vertices.
+- `PlanetPresentationDocument.LayerProjectionProfiles` now declares the crust globe projection
+  profile explicitly: source grid, physical source units, unit-sphere displacement units, metre-to-
+  radius scale, height lens, adaptive subdivision policy, and cell-provenance preservation.
 - `AdaptiveSubdivisionOptions.MaxDepth` is now honest: values > 1 throw
   `ArgumentOutOfRangeException` instead of silently running depth-1. Recursive subdivision is
   deferred to the chunked-LOD slice.

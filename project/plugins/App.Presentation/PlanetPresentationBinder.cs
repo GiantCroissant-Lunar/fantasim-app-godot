@@ -836,18 +836,24 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
                 : new double[snapshot.CellCount])
             : new double[snapshot.CellCount];
 
-        bool useAdaptiveSurface = isWorld && document.SurfaceSubdivision == SurfaceSubdivisionMode.Adaptive;
+        var projection = LayerProjectionProfileResolver.ResolveForView(
+            document,
+            viewMode,
+            worldMetresToUnitRadius: WorldHeightScale,
+            worldHeightExponent: WorldHeightExponent);
+        bool useAdaptiveSurface = projection.UseAdaptiveSurface;
         var caps = useAdaptiveSurface
             ? _plateSurfaces.BuildAdaptiveSurfaces(
                 elevations,
-                exaggeration: WorldHeightScale,
+                exaggeration: projection.MetresToUnitRadius,
                 options: new AdaptiveSubdivisionOptions(
-                    MaxDepth: document.AdaptiveSubdivisionMaxDepth,
-                    EdgeHeightDeltaThreshold: document.AdaptiveSubdivisionEdgeHeightDelta),
-                heightExponent: WorldHeightExponent)
-            : isWorld
-                ? _plateSurfaces.BuildSurfaces(elevations, exaggeration: WorldHeightScale, heightExponent: WorldHeightExponent)
-                : _plateSurfaces.BuildSurfaces(elevations, exaggeration: document.VerticalExaggeration);
+                    MaxDepth: projection.AdaptiveSubdivisionMaxDepth,
+                    EdgeHeightDeltaThreshold: projection.AdaptiveSubdivisionEdgeHeightDelta),
+                heightExponent: projection.HeightExponent)
+            : _plateSurfaces.BuildSurfaces(
+                elevations,
+                exaggeration: projection.MetresToUnitRadius,
+                heightExponent: projection.HeightExponent);
 
         var (perCellColor, perCellEmission) = isTerrain
             ? BuildCellAppearance(snapshot.CellCount, document, isWorld, isWorld ? snapshot.Cells : null)

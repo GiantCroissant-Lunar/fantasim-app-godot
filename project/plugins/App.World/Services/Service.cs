@@ -176,6 +176,7 @@ public sealed class Service : IService, IDisposable
             AtmosphereSchedule = runtime.AtmosphereSchedule,
             MaxTick = runtime.MaxTick,
             GenerationGraphFamily = family,
+            LayerProjectionProfiles = BuildLayerProjectionProfiles(runtime),
             BoundaryArcs = runtime.BoundaryArcs,
             BoundarySections = runtime.BoundarySections,
             CellElevations = runtime.CellElevations,
@@ -188,6 +189,17 @@ public sealed class Service : IService, IDisposable
             AdaptiveSubdivisionEdgeHeightDelta = runtime.AdaptiveSubdivisionEdgeHeightDelta,
         };
     }
+
+    private static IReadOnlyList<PlanetLayerProjectionProfile> BuildLayerProjectionProfiles(
+        PlanetPresentationRuntime runtime)
+        => new[]
+        {
+            PlanetLayerProjectionProfile.Crust(
+                runtime.VerticalExaggeration,
+                runtime.SurfaceSubdivision,
+                runtime.AdaptiveSubdivisionMaxDepth,
+                runtime.AdaptiveSubdivisionEdgeHeightDelta)
+        };
 
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
     {

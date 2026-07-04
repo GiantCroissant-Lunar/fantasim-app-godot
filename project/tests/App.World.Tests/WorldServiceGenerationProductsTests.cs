@@ -227,4 +227,24 @@ public sealed class WorldServiceGenerationProductsTests
 
         Assert.True(document.CutawayExaggeration > 0.0);
     }
+
+    [Fact]
+    public void PlanetPresentation_CarriesCrustLayerProjectionProfile()
+    {
+        using var service = new Service(new ServiceRegistry());
+        var document = service.GetPlanetPresentationAsync();
+
+        var crust = Assert.Single(document.LayerProjectionProfiles, profile => profile.LayerId == "geosphere.crust");
+        Assert.Equal(PlanetLayerProjectionKind.GlobeSurface, crust.ProjectionKind);
+        Assert.Equal("UnifyCell.GeodesicSphereTessellation", crust.SourceGrid);
+        Assert.Equal("physical-metres", crust.SourceUnit);
+        Assert.Equal("unit-sphere-displacement", crust.DisplacementUnit);
+        Assert.Equal(1.0, crust.BaseRadius);
+        Assert.Equal(document.VerticalExaggeration, crust.MetresToUnitRadius);
+        Assert.Equal(1.0, crust.HeightExponent);
+        Assert.Equal(document.SurfaceSubdivision, crust.SurfaceSubdivision);
+        Assert.Equal(document.AdaptiveSubdivisionMaxDepth, crust.AdaptiveSubdivisionMaxDepth);
+        Assert.Equal(document.AdaptiveSubdivisionEdgeHeightDelta, crust.AdaptiveSubdivisionEdgeHeightDelta);
+        Assert.True(crust.PreservesCellProvenance);
+    }
 }
