@@ -70,13 +70,13 @@
     <PackageVersion Include="GiantCroissant.FantaSim.World.Shared.Contracts" Version="0.1.5" />
     <!-- Geometry / math / time deps in the crust closure (local feed). Pinned so CPM
          resolves them deterministically. -->
-    <PackageVersion Include="UnifyCell.Core" Version="1.0.0" />
-    <PackageVersion Include="UnifyCell.Abstractions" Version="1.0.0" />
-    <PackageVersion Include="UnifyGeometry.Spherical" Version="1.0.0" />
-    <PackageVersion Include="UnifyGeometry.Kernel" Version="1.0.0" />
-    <PackageVersion Include="UnifyGeometry.Primitives" Version="1.0.0" />
-    <PackageVersion Include="UnifyMaths" Version="1.0.0" />
-    <PackageVersion Include="UnifyMaths.Numerics" Version="1.0.0" />
+    <PackageVersion Include="UnifyCell.Core" Version="0.1.1" />
+    <PackageVersion Include="UnifyCell.Abstractions" Version="0.1.1" />
+    <PackageVersion Include="UnifyGeometry.Spherical" Version="0.1.5" />
+    <PackageVersion Include="UnifyGeometry.Kernel" Version="0.1.5" />
+    <PackageVersion Include="UnifyGeometry.Primitives" Version="0.1.5" />
+    <PackageVersion Include="UnifyMaths" Version="0.1.5" />
+    <PackageVersion Include="UnifyMaths.Numerics" Version="0.1.5" />
   </ItemGroup>
 
   <ItemGroup>
