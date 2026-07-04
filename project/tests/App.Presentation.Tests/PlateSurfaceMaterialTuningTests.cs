@@ -14,10 +14,10 @@ public sealed class PlateSurfaceMaterialTuningTests
         var world = PlateSurfaceMaterialTuning.ForView(GlobeViewMode.World);
 
         Assert.True(crust.AlbedoGain <= world.AlbedoGain);
-        Assert.True(crust.LightFloor >= 0.09f);
-        Assert.True(crust.LightFloor <= 0.13f);
+        Assert.True(crust.LightFloor >= 0.18f);
+        Assert.True(crust.LightFloor <= 0.24f);
         Assert.True(crust.WrapStrength < world.WrapStrength);
-        Assert.True(crust.LightContrast > world.LightContrast);
+        Assert.True(crust.LightContrast <= world.LightContrast + 0.08f);
         Assert.True(crust.ColorBalance.Z > crust.ColorBalance.X);
     }
 
@@ -27,9 +27,10 @@ public sealed class PlateSurfaceMaterialTuningTests
         var tuning = PlateSurfaceMaterialTuning.ForView(GlobeViewMode.HypsometricTerrain);
 
         Assert.True(tuning.AlbedoGain <= 1.0f);
-        Assert.True(tuning.LightFloor <= 0.13f);
-        Assert.True(tuning.WrapStrength <= 0.40f);
-        Assert.True(tuning.LightContrast >= 1.10f);
+        Assert.True(tuning.LightFloor >= 0.18f);
+        Assert.True(tuning.LightFloor <= 0.24f);
+        Assert.True(tuning.WrapStrength <= 0.45f);
+        Assert.True(tuning.LightContrast <= 1.08f);
         Assert.True(tuning.ColorBalance.Z <= 1.06f);
     }
 

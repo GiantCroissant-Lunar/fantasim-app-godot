@@ -12,6 +12,12 @@ public enum PlateCapMeshNormalMode
     Smooth = 1,
 }
 
+public enum PlateCapMeshColorMode
+{
+    VertexEnvelope = 0,
+    SourceCellFacet = 1,
+}
+
 /// <summary>
 /// Godot-free, non-indexed triangle mesh payload for one plate cap.
 /// Arrays are packed as XYZ / RGB / UV pairs, with one duplicated vertex per triangle corner.
@@ -37,7 +43,9 @@ public static class PlateCapMeshBuilder
         PlateCap cap,
         IReadOnlyDictionary<int, RampColor[]> perPlateVertexColors,
         IReadOnlyList<float> perCellEmission,
-        VertexTintJitter? jitter)
+        VertexTintJitter? jitter,
+        PlateCapMeshColorMode colorMode = PlateCapMeshColorMode.VertexEnvelope,
+        IReadOnlyList<RampColor>? perCellColors = null)
     {
         ArgumentNullException.ThrowIfNull(cap);
         ArgumentNullException.ThrowIfNull(perPlateVertexColors);
@@ -65,6 +73,13 @@ public static class PlateCapMeshBuilder
             int cellId = t >= 0 && t < cap.CellIds.Length ? cap.CellIds[t] : -1;
             float emission = cellId >= 0 && cellId < perCellEmission.Count ? perCellEmission[cellId] : 0f;
             var flatNormal = surface.FlatNormals[t];
+            RampColor? facetColor = null;
+            if (colorMode == PlateCapMeshColorMode.SourceCellFacet)
+            {
+                facetColor = ResolveCellColor(cellId, perCellColors);
+                if (jitter is not null)
+                    facetColor = jitter.Apply(TriangleCenter(surface, t), facetColor.Value);
+            }
 
             for (int v = 0; v < 3; v++)
             {
@@ -73,12 +88,12 @@ public static class PlateCapMeshBuilder
                 PackPoint(positions, meshVertex, surface.Positions[surfaceVertex]);
                 PackPoint(normals, meshVertex, flatNormal);
 
-                RampColor color = ResolveTerrainColor(
-                    surfaceVertex,
-                    vertexColors,
-                    provenance,
-                    colorCache);
-                if (jitter is not null)
+                RampColor color = facetColor ?? ResolveTerrainColor(
+                        surfaceVertex,
+                        vertexColors,
+                        provenance,
+                        colorCache);
+                if (jitter is not null && colorMode == PlateCapMeshColorMode.VertexEnvelope)
                     color = jitter.Apply(surface.Positions[surfaceVertex], color);
                 PackColor(colors, meshVertex, color);
 
@@ -149,6 +164,26 @@ public static class PlateCapMeshBuilder
         target[b + 0] = (float)color.R;
         target[b + 1] = (float)color.G;
         target[b + 2] = (float)color.B;
+    }
+
+    private static RampColor ResolveCellColor(int cellId, IReadOnlyList<RampColor>? perCellColors)
+        => perCellColors is not null && cellId >= 0 && cellId < perCellColors.Count
+            ? perCellColors[cellId]
+            : MissingTerrainColor;
+
+    private static CartesianPoint3 TriangleCenter(GlobeSurface surface, int triangleIndex)
+    {
+        int b = triangleIndex * 3;
+        var p0 = surface.Positions[surface.Triangles[b + 0]];
+        var p1 = surface.Positions[surface.Triangles[b + 1]];
+        var p2 = surface.Positions[surface.Triangles[b + 2]];
+        double x = (p0.X + p1.X + p2.X) / 3.0;
+        double y = (p0.Y + p1.Y + p2.Y) / 3.0;
+        double z = (p0.Z + p1.Z + p2.Z) / 3.0;
+        double len = Math.Sqrt((x * x) + (y * y) + (z * z));
+        return len > 1e-9
+            ? new CartesianPoint3(x / len, y / len, z / len)
+            : new CartesianPoint3(x, y, z);
     }
 
     // Resolves the terrain colour for one generated surface vertex. For fixed caps (no provenance)

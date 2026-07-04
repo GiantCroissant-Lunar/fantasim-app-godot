@@ -13,8 +13,8 @@ public sealed class PlateSurfaceReliefFabricTests
         var crust = PlateSurfaceReliefFabric.ForView(GlobeViewMode.HypsometricTerrain);
 
         Assert.True(crust.Amplitude > GlobePlateSurfaces.DefaultPeaks.Amplitude);
-        Assert.True(crust.Amplitude >= 12_000.0);
-        Assert.True(crust.BaseFrequency >= 14.0);
+        Assert.True(crust.Amplitude >= 20_000.0);
+        Assert.True(crust.BaseFrequency >= 18.0);
         Assert.True(crust.Octaves >= 6);
     }
 

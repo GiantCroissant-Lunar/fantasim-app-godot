@@ -85,6 +85,81 @@ public sealed class PlateCapMeshBuilderTests
     }
 
     [Fact]
+    public void BuildTerrain_SourceCellFacetColorMode_uses_source_cell_color_for_every_triangle_corner()
+    {
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot(), noise: new NoiseParams(Amplitude: 0.0));
+        var elevations = new double[] { 0.0, 1000.0, 0.0 };
+        var options = new AdaptiveSubdivisionOptions(MaxDepth: 1, EdgeHeightDeltaThreshold: 100.0);
+
+        var cap = surfaces.BuildAdaptiveSurfaces(elevations, exaggeration: 1.0, options)
+            .Single(c => c.PlateId == 0);
+        var surface = cap.Surface;
+        var smoothedVertexColors = Enumerable.Range(0, surface.VertexCount)
+            .Select(i => new RampColor(0.05 + i * 0.01, 0.15 + i * 0.01, 0.25 + i * 0.01))
+            .ToArray();
+        var perCellColors = new[]
+        {
+            new RampColor(0.88, 0.82, 0.74),
+            new RampColor(0.28, 0.30, 0.32),
+            new RampColor(0.10, 0.12, 0.14),
+        };
+
+        var mesh = PlateCapMeshBuilder.BuildTerrain(
+            cap,
+            new Dictionary<int, RampColor[]> { [cap.PlateId] = smoothedVertexColors },
+            perCellEmission: new[] { 0f, 0f, 0f },
+            jitter: null,
+            colorMode: PlateCapMeshColorMode.SourceCellFacet,
+            perCellColors: perCellColors);
+
+        for (int t = 0; t < surface.TriangleCount; t++)
+        {
+            var expected = perCellColors[cap.CellIds[t]];
+            for (int v = 0; v < 3; v++)
+            {
+                int colorBase = ((t * 3) + v) * 3;
+                Assert.Equal((float)expected.R, mesh.Colors[colorBase + 0], 5);
+                Assert.Equal((float)expected.G, mesh.Colors[colorBase + 1], 5);
+                Assert.Equal((float)expected.B, mesh.Colors[colorBase + 2], 5);
+            }
+        }
+    }
+
+    [Fact]
+    public void BuildTerrain_SourceCellFacetColorMode_applies_tint_once_per_triangle()
+    {
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot(), noise: new NoiseParams(Amplitude: 0.0));
+        var cap = surfaces.BuildSurfaces(new double[] { 0.0, 0.0, 0.0 }, exaggeration: 1.0)
+            .Single(c => c.PlateId == 0);
+        var perCellColors = new[]
+        {
+            new RampColor(0.55, 0.52, 0.48),
+            new RampColor(0.42, 0.40, 0.36),
+            new RampColor(0.10, 0.12, 0.14),
+        };
+
+        var mesh = PlateCapMeshBuilder.BuildTerrain(
+            cap,
+            new Dictionary<int, RampColor[]> { [cap.PlateId] = Array.Empty<RampColor>() },
+            perCellEmission: new[] { 0f, 0f, 0f },
+            jitter: new VertexTintJitter(seed: 1777, amplitude: 0.15),
+            colorMode: PlateCapMeshColorMode.SourceCellFacet,
+            perCellColors: perCellColors);
+
+        for (int t = 0; t < cap.Surface.TriangleCount; t++)
+        {
+            int first = t * 9;
+            for (int v = 1; v < 3; v++)
+            {
+                int colorBase = ((t * 3) + v) * 3;
+                Assert.Equal(mesh.Colors[first + 0], mesh.Colors[colorBase + 0]);
+                Assert.Equal(mesh.Colors[first + 1], mesh.Colors[colorBase + 1]);
+                Assert.Equal(mesh.Colors[first + 2], mesh.Colors[colorBase + 2]);
+            }
+        }
+    }
+
+    [Fact]
     public void Plate_identity_mesh_uses_smooth_normals_identity_color_and_zero_emission()
     {
         var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot());

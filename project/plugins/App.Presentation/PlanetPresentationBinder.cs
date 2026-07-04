@@ -52,6 +52,8 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     private MeshInstance3D? _mantle;
     private MeshInstance3D? _atmosphereRim;
     private ShaderMaterial? _atmosphereRimMaterial;
+    private DirectionalLight3D? _sunLight;
+    private WorldEnvironment? _planetEnvironment;
     private Label3D? _statusLabel;
     private GlobePlateSurfaces? _plateSurfaces;
     private PlanetGenerationGraphSource? _graphSource;
@@ -239,7 +241,9 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         mount.AddChild(root);
         _activeRoot = root;
 
-        AddLightingAndCamera(root);
+        _boundRegimeId = _timeline.GeosphereSchedule.RegimeAt(_timeline.Tick)?.RegimeId;
+        _currentViewMode = GlobeViewModeResolver.Resolve(_boundRegimeId, _timeline.SelectedLayer);
+        AddLightingAndCamera(root, _currentViewMode);
 
         var body = new Node3D
         {
@@ -256,8 +260,6 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         body.AddChild(_atmosphereRim);
 
         _currentDocument = document;
-        _boundRegimeId = _timeline.GeosphereSchedule.RegimeAt(_timeline.Tick)?.RegimeId;
-        _currentViewMode = GlobeViewModeResolver.Resolve(_boundRegimeId, _timeline.SelectedLayer);
 
         if (document.GlobeSnapshot is not null)
         {
@@ -344,6 +346,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
 
         var viewMode = GlobeViewModeResolver.Resolve(regimeId, _timeline.SelectedLayer);
         bool showBoundaries = viewMode == GlobeViewMode.PlateIdentity;
+        ApplyLightingForView(viewMode);
 
         if (_plateSurfaceRoot is not null && GodotObject.IsInstanceValid(_plateSurfaceRoot))
             _plateSurfaceRoot.Visible = showsPlateFeatures;
@@ -679,19 +682,18 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
          _regimeRefreshPending = false;
      }
 
-    private static void AddLightingAndCamera(Node3D root)
+    private void AddLightingAndCamera(Node3D root, GlobeViewMode viewMode)
     {
+        var tuning = PlanetLightingTuning.ForView(viewMode);
         var sun = new DirectionalLight3D
         {
             Name = "Sun",
-            // Warm key light (§5c): a slightly warm white replaces the neutral default so bare rock
-            // reads as sunlit terrain, not re-costumed as ocean. Diagnostic views share this light;
-            // their palettes assume neutral-warm illumination.
-            LightEnergy = 1.8f,
-            LightColor = new Color(1.02f, 0.96f, 0.88f),
+            LightEnergy = tuning.SunLightEnergy,
+            LightColor = tuning.SunColor,
             ShadowEnabled = false,
         };
         root.AddChild(sun);
+        _sunLight = sun;
         sun.Position = new Vector3(5.2f, 2.2f, 4.3f);
         sun.LookAt(Vector3.Zero, Vector3.Up);
 
@@ -703,14 +705,12 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
                 BackgroundMode = Godot.Environment.BGMode.Color,
                 BackgroundColor = new Color(0.015f, 0.018f, 0.022f),
                 AmbientLightSource = Godot.Environment.AmbientSource.Color,
-                // Warm/neutral ambient (§5c): the blue-grey (0.34,0.36,0.40) was re-costuming bare
-                // rock as ocean. This is a global scene change — diagnostic views are affected too
-                // (intended; their palettes assume neutral-warm light).
-                AmbientLightColor = new Color(0.38f, 0.34f, 0.30f),
-                AmbientLightEnergy = 0.42f,
+                AmbientLightColor = tuning.AmbientColor,
+                AmbientLightEnergy = tuning.AmbientLightEnergy,
             }
         };
         root.AddChild(environment);
+        _planetEnvironment = environment;
 
         var camera = new Camera3D
         {
@@ -720,6 +720,16 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         };
         root.AddChild(camera);
         camera.LookAt(Vector3.Zero, Vector3.Up);
+    }
+
+    private void ApplyLightingForView(GlobeViewMode viewMode)
+    {
+        if (_sunLight is null || !GodotObject.IsInstanceValid(_sunLight))
+            return;
+        if (_planetEnvironment is null || !GodotObject.IsInstanceValid(_planetEnvironment))
+            return;
+
+        PlanetLightingTuning.ForView(viewMode).ApplyTo(_sunLight, _planetEnvironment);
     }
 
     private MeshInstance3D BuildMantle(PlanetPresentationDocument document)
@@ -841,13 +851,14 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             ? BuildCellAppearance(snapshot.CellCount, document, viewMode, isWorld ? snapshot.Cells : null)
             : (Array.Empty<RampColor>(), Array.Empty<float>());
 
-        // Per-vertex color envelope (terrain views): smooth per-cell ramp colours across cell AND
+        var colorMode = PlateSurfaceColorModePolicy.ForView(viewMode);
+        // Per-vertex color envelope (world terrain): smooth per-cell ramp colours across cell AND
         // plate boundaries so terrain reads as Gouraud-shaded gradients instead of chunky per-cell
-        // triangles. Mirrors the elevation envelope in GlobePlateSurfaces — same global shared-vertex
-        // topology, component-wise mean — so cross-plate seams show no colour step either.
-        var perPlateVertexColors = isTerrain
+        // triangles. The crust diagnostic intentionally bypasses this smoothing and uses source-cell
+        // facet colours so the dry crust stays readable from the front face, not only on the limb.
+        var perPlateVertexColors = isTerrain && colorMode == PlateCapMeshColorMode.VertexEnvelope
             ? BuildPerPlateVertexColors(_plateSurfaces!, perCellColor)
-            : null;
+            : new Dictionary<int, RampColor[]>();
 
         var jitter = PlateSurfaceTintFabric.ForView(viewMode);
         var meshes = new List<PlateCapMeshDto>(caps.Count);
@@ -855,7 +866,13 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         foreach (var cap in caps.OrderBy(c => c.PlateId))
         {
             var mesh = isTerrain
-                ? PlateCapMeshBuilder.BuildTerrain(cap, perPlateVertexColors!, perCellEmission, jitter)
+                ? PlateCapMeshBuilder.BuildTerrain(
+                    cap,
+                    perPlateVertexColors!,
+                    perCellEmission,
+                    jitter,
+                    colorMode,
+                    perCellColor)
                 : PlateCapMeshBuilder.BuildPlateIdentity(cap);
             meshes.Add(mesh);
         }
@@ -1396,6 +1413,8 @@ void fragment() {
         _mantle = null;
         _atmosphereRim = null;
         _atmosphereRimMaterial = null;
+        _sunLight = null;
+        _planetEnvironment = null;
         _statusLabel = null;
         _currentDocument = null;
         _currentViewMode = GlobeViewMode.Inactive;
