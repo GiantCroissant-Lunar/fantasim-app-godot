@@ -83,4 +83,16 @@ public sealed class CellElevationSystemTests
             CellElevationSystem.Derive(YoungOcean) > CellElevationSystem.Derive(OldOcean),
             "oceanic cells must deepen with age");
     }
+
+    [Fact]
+    public void Dry_mode_exposes_oceanic_crust_without_sea_level_or_age_deepening()
+    {
+        double youngDry = CellElevationSystem.Derive(YoungOcean, CellElevationHydrosphereMode.Absent);
+        double oldDry = CellElevationSystem.Derive(OldOcean, CellElevationHydrosphereMode.Absent);
+
+        Assert.Equal(youngDry, oldDry, 6);
+        Assert.True(youngDry >= 0.0, $"dry oceanic crust should be exposed lowland, not below sea level: {youngDry}");
+        Assert.True(CellElevationSystem.Derive(YoungOcean) > CellElevationSystem.Derive(OldOcean),
+            "legacy default must still model age-deepened oceanic crust");
+    }
 }

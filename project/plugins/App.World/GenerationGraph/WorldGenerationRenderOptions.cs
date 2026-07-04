@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
+using FantaSim.App.Ecs.Systems;
 using FantaSim.App.World.Topography;
 
 namespace FantaSim.App.World.GenerationGraph;
@@ -18,7 +19,10 @@ public sealed record WorldGenerationRenderOptions(int Seed, int TessellationFreq
     // frequency 4 the same angular parameters span ~4 cells. Measured one-shot pipeline cost (crust
     // evolution + topology + boundary-profile contribution): ~0.18s at freq 4 vs ~0.10s at freq 3 — no
     // explosion, and the parameter remains overridable per world. See BoundaryProfileLodTests.
-    public static WorldGenerationRenderOptions Default { get; } = new(Seed: 7, TessellationFrequency: 4);
+    public static WorldGenerationRenderOptions Default { get; } = new(Seed: 7, TessellationFrequency: 4)
+    {
+        SurfaceSubdivision = SurfaceSubdivisionMode.Adaptive,
+    };
 
     /// <summary>
     /// Boundary-profile topography shape numbers (P4). Defaults to the Earth-like reference
@@ -40,6 +44,28 @@ public sealed record WorldGenerationRenderOptions(int Seed, int TessellationFreq
     /// fantasy world with a different radius or relief scale legitimately exaggerates more or less.</para>
     /// </summary>
     public double VerticalExaggeration { get; init; } = DefaultVerticalExaggeration;
+
+    /// <summary>
+    /// Hydrosphere/elevation interpretation for crust-derived terrain. Default is dry because the
+    /// current world product is explicitly waterless; hydrosphere-present keeps the legacy oceanic
+    /// sea-level and age-deepening formula available for diagnostics and future wet worlds.
+    /// </summary>
+    public CellElevationHydrosphereMode HydrosphereMode { get; init; } = CellElevationHydrosphereMode.Absent;
+
+    /// <summary>
+    /// Derived render-mesh subdivision mode. Fixed stays the default until adaptive has visual proof in
+    /// the exported app; authored worlds can opt in through the options node.
+    /// </summary>
+    public SurfaceSubdivisionMode SurfaceSubdivision { get; init; } = SurfaceSubdivisionMode.Fixed;
+
+    /// <summary>Maximum adaptive subdivision depth. The first implementation supports depth 1.</summary>
+    public int AdaptiveSubdivisionMaxDepth { get; init; } = 1;
+
+    /// <summary>
+    /// Height-delta threshold, in post-exaggeration unit-sphere displacement, that decides whether an
+    /// edge is split by adaptive subdivision.
+    /// </summary>
+    public double AdaptiveSubdivisionEdgeHeightDelta { get; init; } = 0.02;
 
     /// <summary>
     /// Default vertical exaggeration. Elevation units are metres on the <c>CellElevationSystem</c>
@@ -87,10 +113,32 @@ public sealed record WorldGenerationRenderOptions(int Seed, int TessellationFreq
                 "Vertical exaggeration must be positive.");
         }
 
+        var adaptiveDepth = ReadInt(optionsNode.Params, "adaptiveSubdivisionMaxDepth", options.AdaptiveSubdivisionMaxDepth);
+        if (adaptiveDepth < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(AdaptiveSubdivisionMaxDepth),
+                adaptiveDepth,
+                "Adaptive subdivision max depth must be non-negative.");
+        }
+
+        var adaptiveThreshold = ReadDouble(optionsNode.Params, "adaptiveSubdivisionEdgeHeightDelta", options.AdaptiveSubdivisionEdgeHeightDelta);
+        if (adaptiveThreshold < 0 || double.IsNaN(adaptiveThreshold) || double.IsInfinity(adaptiveThreshold))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(AdaptiveSubdivisionEdgeHeightDelta),
+                adaptiveThreshold,
+                "Adaptive subdivision edge-height delta must be non-negative and finite.");
+        }
+
         return new WorldGenerationRenderOptions(seed, frequency)
         {
             BoundaryProfiles = profiles,
             VerticalExaggeration = verticalExaggeration,
+            HydrosphereMode = ReadHydrosphereMode(optionsNode.Params, options.HydrosphereMode),
+            SurfaceSubdivision = ReadSurfaceSubdivisionMode(optionsNode.Params, options.SurfaceSubdivision),
+            AdaptiveSubdivisionMaxDepth = adaptiveDepth,
+            AdaptiveSubdivisionEdgeHeightDelta = adaptiveThreshold,
         };
     }
 
@@ -152,5 +200,45 @@ public sealed record WorldGenerationRenderOptions(int Seed, int TessellationFreq
         }
 
         return fallback;
+    }
+
+    private static CellElevationHydrosphereMode ReadHydrosphereMode(
+        JsonObject payload,
+        CellElevationHydrosphereMode fallback)
+    {
+        if (!payload.TryGetPropertyValue("hydrosphereMode", out var node)
+            || node is not JsonValue value
+            || !value.TryGetValue<string>(out var text))
+        {
+            return fallback;
+        }
+
+        var normalized = text.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "dry" or "absent" or "none" or "no-hydrosphere" or "waterless" => CellElevationHydrosphereMode.Absent,
+            "present" or "hydrosphere" or "oceanic" or "wet" => CellElevationHydrosphereMode.Present,
+            _ => fallback,
+        };
+    }
+
+    private static SurfaceSubdivisionMode ReadSurfaceSubdivisionMode(
+        JsonObject payload,
+        SurfaceSubdivisionMode fallback)
+    {
+        if (!payload.TryGetPropertyValue("surfaceSubdivision", out var node)
+            || node is not JsonValue value
+            || !value.TryGetValue<string>(out var text))
+        {
+            return fallback;
+        }
+
+        var normalized = text.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "fixed" or "none" or "off" => SurfaceSubdivisionMode.Fixed,
+            "adaptive" or "adaptive-subdivision" or "lod" => SurfaceSubdivisionMode.Adaptive,
+            _ => fallback,
+        };
     }
 }

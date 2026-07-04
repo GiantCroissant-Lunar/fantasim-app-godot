@@ -192,13 +192,31 @@ public sealed class WorldServiceGenerationProductsTests
     }
 
     [Fact]
-    public void PlanetPresentation_CarriesCellCrustThicknessAtOnset()
+    public void PlanetPresentation_CarriesGlobeSizedCrustArraysAtOnset()
+    {
+        using var service = new Service(new ServiceRegistry());
+        var document = service.GetPlanetPresentationAsync();
+        var expectedCount = document.GlobeSnapshot?.CellCount ?? 0;
+
+        Assert.NotNull(document.CellCrustThickness);
+        Assert.NotNull(document.CellElevations);
+        Assert.NotNull(document.CellFeatures);
+        Assert.Equal(expectedCount, document.CellCrustThickness!.Count);
+        Assert.Equal(expectedCount, document.CellElevations!.Count);
+        Assert.Equal(expectedCount, document.CellFeatures!.Count);
+    }
+
+    [Fact]
+    public void PlanetPresentation_CarriesBoundarySectionsAtOnset()
     {
         using var service = new Service(new ServiceRegistry());
         var document = service.GetPlanetPresentationAsync();
 
-        Assert.NotNull(document.CellCrustThickness);
-        Assert.Equal(document.GlobeSnapshot?.CellCount ?? 0, document.CellCrustThickness!.Count);
+        Assert.NotNull(document.BoundarySections);
+        Assert.Contains(document.BoundarySections!, section => section.Kind == PlateBoundaryKind.Convergent);
+        Assert.Contains(document.BoundarySections!, section => section.Kind == PlateBoundaryKind.Divergent);
+        Assert.Contains(document.BoundarySections!, section => section.Kind == PlateBoundaryKind.Transform);
+        Assert.All(document.BoundarySections!, section => Assert.NotEmpty(section.Samples));
     }
 
     [Fact]

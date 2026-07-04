@@ -5,6 +5,12 @@ using ArchWorld = Arch.Core.World;
 
 namespace FantaSim.App.Ecs.Systems;
 
+public enum CellElevationHydrosphereMode
+{
+    Present = 0,
+    Absent = 1,
+}
+
 /// <summary>
 /// Derives a per-cell <see cref="Elevation"/> scalar from each cell-entity's <see cref="CrustSample"/>
 /// (app T3). Primitive in/out (no engine types), so this system is ALWAYS compiled — it is the
@@ -26,6 +32,8 @@ namespace FantaSim.App.Ecs.Systems;
 /// </summary>
 public sealed class CellElevationSystem : IUnifySystem, IArchSystem
 {
+    private readonly CellElevationHydrosphereMode _hydrosphereMode;
+
     // Sea level on the [0,1] continental-fraction axis: cf above is land, below is ocean.
     public const double SeaLevel = 0.5;
 
@@ -47,11 +55,16 @@ public sealed class CellElevationSystem : IUnifySystem, IArchSystem
 
     private readonly QueryDescription _query = new QueryDescription().WithAll<CrustSample, Elevation>();
 
+    public CellElevationSystem(CellElevationHydrosphereMode hydrosphereMode = CellElevationHydrosphereMode.Present)
+    {
+        _hydrosphereMode = hydrosphereMode;
+    }
+
     public void Execute(ArchWorld world, float deltaTime)
     {
         world.Query(in _query, (ref CrustSample sample, ref Elevation elevation) =>
         {
-            elevation = new Elevation(Derive(sample));
+            elevation = new Elevation(Derive(sample, _hydrosphereMode));
         });
     }
 
@@ -60,10 +73,20 @@ public sealed class CellElevationSystem : IUnifySystem, IArchSystem
     /// Arch world, and so the formula has a single definition.
     /// </summary>
     public static double Derive(in CrustSample sample)
+        => Derive(sample, CellElevationHydrosphereMode.Present);
+
+    public static double Derive(in CrustSample sample, CellElevationHydrosphereMode hydrosphereMode)
     {
-        double @base = (sample.ContinentalFraction - SeaLevel) * ContinentalAmp;
         double uplift = sample.OrogenicPressure * OrogenicGain;
         double volcano = sample.VolcanicActivity * VolcanoGain;
+
+        if (hydrosphereMode == CellElevationHydrosphereMode.Absent)
+        {
+            double dryBase = sample.ContinentalFraction * ContinentalAmp;
+            return dryBase + uplift + volcano;
+        }
+
+        double @base = (sample.ContinentalFraction - SeaLevel) * ContinentalAmp;
 
         // Only oceanic crust (below sea level) deepens with age; continental cells ignore age.
         double oceanDepth = 0.0;

@@ -6,17 +6,14 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using FantaSim.App.NodeGraph;
+using FantaSim.App.World.Crust;
 using FantaSim.App.World.GenerationGraph;
 using FantaSim.Geosphere.Crust;
 using FantaSim.Geosphere.Plate.Topology;
-using FantaSim.World.Contracts.Time;
 using FantaSim.World.Contracts.Units;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using UnifyCell;
-using UnifyGeometry.Spherical;
-using UnifyMaths;
-using TopoPlate = global::FantaSim.Geosphere.Plate.Topology.Plate;
 
 namespace FantaSim.App.World;
 
@@ -51,17 +48,6 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
     /// <summary>Function id for the crust-evolution pipeline run.</summary>
     public const string CrustGenerate = "crust.generate";
 
-    // The proven 3-plate setup from fantasim-world's crust fixtures: three seeds 120 deg apart on the
-    // equator give three OPEN boundary arcs meeting at the poles, so plate 0's spin drives a NET
-    // convergence across the 0|1 boundary (no antipodal cancellation). Plates 0 and 1 continental ⇒
-    // that convergent boundary is continent-continent ⇒ orogeny ⇒ mountains.
-    private const int DefaultFrequency = 3;     // 20 * 3^2 = 1280 triangular cells
-    private const double DefaultDurationMegaAnnum = 8.0;
-    private const double DefaultSpinRateRadiansPerMegaAnnum = 0.02; // about +Z
-    private const double DefaultOrogenicPerMegaAnnum = 1.0;
-    private const double DefaultArcVolcanismPerMegaAnnum = 0.6;
-    private const double DefaultIslandArcVolcanismPerMegaAnnum = 0.4;
-    private const double DefaultRidgeVolcanismPerMegaAnnum = 0.5;
     private const double DefaultFormationTotalMassKg = 5.972e24;
     private const double DefaultFormationSpecificHeatJPerKg = 1.0e7;
     private const double DefaultFormationVolatileMassFraction = 0.02;
@@ -320,64 +306,18 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
 
     private static async Task<JsonObject> GenerateCrustAsync(JsonObject payload, CancellationToken ct)
     {
-        var effectivePayload = MergeNestedOptions(payload);
-        int frequency = ReadInt(effectivePayload, "frequency", DefaultFrequency);
-        long targetTick = ReadTargetTick(effectivePayload);
-        var snapshotTicks = ReadSnapshotTicks(effectivePayload, targetTick);
-        long endTick = snapshotTicks.Count > 0 ? snapshotTicks.Max() : targetTick;
-        double durationMegaAnnum = UnitConverter.TickDeltaToMegaAnnum(endTick);
-        double rate = ReadDouble(effectivePayload, "spinRateRadiansPerMegaAnnum",
-            ReadDouble(effectivePayload, "spinRate", DefaultSpinRateRadiansPerMegaAnnum));
-        var rates = ReadRates(effectivePayload);
-        // Rotation reference (plate-onset tick): boundary classification rotates by
-        // (snapshotTick - reference), matching the presentation's delta-from-onset convention.
-        long rotationReferenceTick = ReadLong(effectivePayload, "rotationReferenceTick", 0);
-
-        var tessellation = new GeodesicSphereTessellation(frequency);
-        var plates = ReadPlates(effectivePayload, rate);
-        var recipe = ReadRecipe(effectivePayload);
-
-        var topology = PlateTopologyBuilder.Build(tessellation, plates);
-
-        var result = await CrustPipeline.RunAsync(
-            tessellation,
-            plates,
-            recipe,
-            startTick: 0,
-            endTick: endTick,
-            snapshotTicks: snapshotTicks,
-            rates: rates,
-            rotationReferenceTick: rotationReferenceTick,
-            ct: ct).ConfigureAwait(false);
+        var spec = WorldCrustRunSpec.FromExecutionPayload(payload);
+        var materialization = await WorldCrustMaterializer.MaterializeAsync(spec, ct).ConfigureAwait(false);
 
         return Summarize(
             functionId: CrustGenerate,
-            frequency,
-            endTick,
-            durationMegaAnnum,
-            tessellation,
-            topology,
-            result,
-            snapshotTicks);
-    }
-
-    private static JsonObject MergeNestedOptions(JsonObject payload)
-    {
-        var result = new JsonObject();
-        if (payload.TryGetPropertyValue("options", out var optionsNode) && optionsNode is JsonObject options)
-        {
-            foreach (var kv in options)
-                result[kv.Key] = kv.Value?.DeepClone();
-        }
-
-        foreach (var kv in payload)
-        {
-            if (string.Equals(kv.Key, "options", StringComparison.Ordinal))
-                continue;
-            result[kv.Key] = kv.Value?.DeepClone();
-        }
-
-        return result;
+            spec.TessellationFrequency,
+            spec.EndTick,
+            spec.DurationMegaAnnum,
+            materialization.Tessellation,
+            materialization.Topology,
+            materialization.Result,
+            spec.SnapshotTicks);
     }
 
     private static JsonObject Summarize(
@@ -474,117 +414,6 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
 
     // ---------------------------------------------------------------- payload decoding
 
-    /// <summary>
-    /// Decode the plate set. Shape (all optional): <c>"plates": [{ "id":0, "lat":0, "lon":0,
-    /// "axis":[0,0,1], "rate":0.02 }, ...]</c>. When absent, the proven 3-plate default is used:
-    /// plate 0 spins about +Z at <paramref name="defaultRate"/>; plates 1 and 2 are still.
-    /// </summary>
-    private static IReadOnlyList<TopoPlate> ReadPlates(JsonObject payload, double defaultRate)
-    {
-        if (payload.TryGetPropertyValue("plates", out var node) && node is JsonArray arr && arr.Count > 0)
-        {
-            var plates = new List<TopoPlate>(arr.Count);
-            foreach (var item in arr)
-            {
-                if (item is not JsonObject po) continue;
-                int id = ReadInt(po, "id", plates.Count);
-                double lat = ReadDouble(po, "lat", 0.0);
-                double lon = ReadDouble(po, "lon", 0.0);
-                var axis = ReadAxis(po, "axis", new Vector3D(0, 0, 1));
-                double ratePerMegaAnnum = ReadDouble(po, "rate", 0.0);
-                double ratePerTick = UnitConverter.RadiansPerMegaAnnumToRadiansPerTick(ratePerMegaAnnum);
-                plates.Add(new TopoPlate(id, SphericalPoint.FromDegrees(lat, lon), new EulerPole(axis, ratePerTick)));
-            }
-
-            if (plates.Count > 0) return plates;
-        }
-
-        return DefaultThreePlates(defaultRate);
-    }
-
-    /// <summary>Three equatorial plates 120 deg apart; plate 0 spins eastward (0|1 converges, 0|2 diverges).
-    /// <paramref name="ratePerMegaAnnum"/> is the authored spin in rad/Ma; converted to the engine's
-    /// rad/tick <c>EulerPole.AngularRate</c> at this boundary (engine main is tick-native).</summary>
-    private static IReadOnlyList<TopoPlate> DefaultThreePlates(double ratePerMegaAnnum)
-    {
-        double ratePerTick = UnitConverter.RadiansPerMegaAnnumToRadiansPerTick(ratePerMegaAnnum);
-        return new[]
-        {
-            new TopoPlate(0, SphericalPoint.FromDegrees(0, 0), new EulerPole(new Vector3D(0, 0, 1), +ratePerTick)),
-            new TopoPlate(1, SphericalPoint.FromDegrees(0, 120), new EulerPole(new Vector3D(0, 0, 1), 0.0)),
-            new TopoPlate(2, SphericalPoint.FromDegrees(0, -120), new EulerPole(new Vector3D(0, 0, 1), 0.0)),
-        };
-    }
-
-    /// <summary>
-    /// Decode the crust-init recipe. <c>"continentalPlates": [0, 1]</c> designates those plate ids
-    /// continental; the default makes plates 0 and 1 continental so the convergent 0|1 boundary is
-    /// continent-continent (orogeny).
-    /// </summary>
-    private static CrustInitRecipe ReadRecipe(JsonObject payload)
-    {
-        if (payload.TryGetPropertyValue("continentalPlates", out var node) && node is JsonArray arr)
-        {
-            var ids = new HashSet<int>();
-            foreach (var item in arr)
-                if (item is JsonValue v && v.TryGetValue<int>(out var id)) ids.Add(id);
-            return new CrustInitRecipe(ids);
-        }
-
-        return CrustInitRecipe.Continental(0, 1);
-    }
-
-    private static long ReadTargetTick(JsonObject payload)
-    {
-        if (TryReadLong(payload, "canonicalTick", out var canonicalTick))
-            return NonNegativeTick(canonicalTick, "canonicalTick");
-        if (TryReadLong(payload, "targetTick", out var targetTick))
-            return NonNegativeTick(targetTick, "targetTick");
-        if (TryReadDouble(payload, "durationMegaAnnum", out var durationMegaAnnum))
-            return NonNegativeTick(GeologicTimeScale.FromMegaAnnumDelta(durationMegaAnnum), "durationMegaAnnum");
-        if (TryReadDouble(payload, "durationMa", out var durationMa))
-            return NonNegativeTick(GeologicTimeScale.FromMegaAnnumDelta(durationMa), "durationMa");
-        if (TryReadLong(payload, "ticks", out var legacyTicks))
-            return NonNegativeTick(legacyTicks, "ticks");
-
-        return GeologicTimeScale.FromMegaAnnumDelta(DefaultDurationMegaAnnum);
-    }
-
-    private static CrustEvolutionRates ReadRates(JsonObject payload) => new(
-        OrogenicPerTick: ReadRatePerTick(payload, "orogenicPerMegaAnnum", "orogenicPerTick", DefaultOrogenicPerMegaAnnum),
-        ArcVolcanismPerTick: ReadRatePerTick(payload, "arcVolcanismPerMegaAnnum", "arcVolcanismPerTick", DefaultArcVolcanismPerMegaAnnum),
-        IslandArcVolcanismPerTick: ReadRatePerTick(payload, "islandArcVolcanismPerMegaAnnum", "islandArcVolcanismPerTick", DefaultIslandArcVolcanismPerMegaAnnum),
-        RidgeVolcanismPerTick: ReadRatePerTick(payload, "ridgeVolcanismPerMegaAnnum", "ridgeVolcanismPerTick", DefaultRidgeVolcanismPerMegaAnnum));
-
-    private static double ReadRatePerTick(JsonObject payload, string perMegaAnnumKey, string perTickKey, double defaultPerMegaAnnum)
-    {
-        if (TryReadDouble(payload, perTickKey, out var perTick))
-            return perTick;
-
-        var perMegaAnnum = ReadDouble(payload, perMegaAnnumKey, defaultPerMegaAnnum);
-        return perMegaAnnum / UnitConverter.TicksPerMegaAnnum;
-    }
-
-    private static long NonNegativeTick(long tick, string fieldName)
-    {
-        if (tick < 0)
-            throw new ArgumentOutOfRangeException(fieldName, "Canonical ticks must be non-negative.");
-        return tick;
-    }
-
-    private static Vector3D ReadAxis(JsonObject po, string key, Vector3D fallback)
-    {
-        if (po.TryGetPropertyValue(key, out var node) && node is JsonArray arr && arr.Count == 3)
-        {
-            double x = ToDouble(arr[0], fallback.X);
-            double y = ToDouble(arr[1], fallback.Y);
-            double z = ToDouble(arr[2], fallback.Z);
-            return new Vector3D(x, y, z);
-        }
-
-        return fallback;
-    }
-
     private static int ReadInt(JsonObject o, string key, int fallback)
         => o.TryGetPropertyValue(key, out var n) && n is JsonValue v && v.TryGetValue<int>(out var i) ? i : fallback;
 
@@ -637,18 +466,6 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
     private static double ReadDouble(JsonObject o, string key, double fallback)
         => o.TryGetPropertyValue(key, out var n) ? ToDouble(n, fallback) : fallback;
 
-    private static bool TryReadDouble(JsonObject o, string key, out double value)
-    {
-        if (o.TryGetPropertyValue(key, out var n) && n is JsonValue)
-        {
-            value = ToDouble(n, double.NaN);
-            return !double.IsNaN(value);
-        }
-
-        value = default;
-        return false;
-    }
-
     private static double ToDouble(JsonNode? node, double fallback)
     {
         if (node is JsonValue v)
@@ -673,26 +490,4 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         _ => "planetesimal-swarm",
     };
 
-    private static IReadOnlyList<long> ReadSnapshotTicks(JsonObject payload, long targetTick)
-    {
-        if (payload.TryGetPropertyValue("snapshotTicks", out var node) && node is JsonArray array)
-        {
-            var ticks = new List<long>(array.Count);
-            foreach (var item in array)
-            {
-                if (item is JsonValue value)
-                {
-                    if (value.TryGetValue<long>(out var l))
-                        ticks.Add(l);
-                    else if (value.TryGetValue<int>(out var i))
-                        ticks.Add(i);
-                }
-            }
-
-            if (ticks.Count > 0)
-                return ticks;
-        }
-
-        return new[] { targetTick };
-    }
 }

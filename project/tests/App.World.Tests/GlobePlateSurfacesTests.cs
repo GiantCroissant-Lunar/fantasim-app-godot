@@ -52,6 +52,30 @@ public sealed class GlobePlateSurfacesTests
         return new WorldGlobeSnapshot(0, 3, 2, 100_000, cells, plates);
     }
 
+    private static WorldGlobeSnapshot TwoPlatesSharingBoundaryEdgeWithEndpointRelief()
+    {
+        var s0 = new GlobeVec3(0f, 0f, 1f);
+        var s1 = new GlobeVec3(0f, 1f, 1f);
+        var a0 = new GlobeVec3(1f, 0f, 1f);
+        var a1 = new GlobeVec3(1f, -1f, 1f);
+        var b0 = new GlobeVec3(-1f, 0f, 1f);
+        var b1 = new GlobeVec3(-1f, 1f, 1f);
+
+        var cells = new List<GlobeCell>
+        {
+            new(0, 0, s0, s1, a0),
+            new(1, 0, s0, a0, a1),
+            new(2, 1, s1, s0, b0),
+            new(3, 1, s1, b1, b0),
+        };
+        var plates = new List<GlobePlate>
+        {
+            new(0, new GlobeVec3(1, 0, 1), 0.0),
+            new(1, new GlobeVec3(-1, 0, 1), 0.0),
+        };
+        return new WorldGlobeSnapshot(0, 4, 2, 100_000, cells, plates);
+    }
+
     [Fact]
     public void Partition_covers_all_cells_exactly_once_and_lands_them_in_the_right_plate()
     {
@@ -215,6 +239,61 @@ public sealed class GlobePlateSurfacesTests
     }
 
     [Fact]
+    public void BuildAdaptiveSurfaces_ProducesMoreTrianglesWhenReliefCrossesSharedEdges()
+    {
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot(), noise: NoNoise);
+        var elevations = new double[] { 0.0, 1000.0, 0.0 };
+
+        var fixedCaps = surfaces.BuildSurfaces(elevations, exaggeration: 1.0);
+        var adaptiveCaps = surfaces.BuildAdaptiveSurfaces(
+            elevations,
+            exaggeration: 1.0,
+            new AdaptiveSubdivisionOptions(MaxDepth: 1, EdgeHeightDeltaThreshold: 100.0));
+
+        var fixedPlate0 = fixedCaps.Single(c => c.PlateId == 0);
+        var adaptivePlate0 = adaptiveCaps.Single(c => c.PlateId == 0);
+        Assert.True(adaptivePlate0.Surface.TriangleCount > fixedPlate0.Surface.TriangleCount);
+    }
+
+    [Fact]
+    public void BuildAdaptiveSurfaces_MapsGeneratedSubfacesToParentCellIds()
+    {
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot(), noise: NoNoise);
+        var elevations = new double[] { 0.0, 1000.0, 0.0 };
+
+        var plate0 = surfaces.BuildAdaptiveSurfaces(
+                elevations,
+                exaggeration: 1.0,
+                new AdaptiveSubdivisionOptions(MaxDepth: 1, EdgeHeightDeltaThreshold: 100.0))
+            .Single(c => c.PlateId == 0);
+
+        Assert.Equal(plate0.Surface.TriangleCount, plate0.CellIds.Length);
+        Assert.All(plate0.CellIds, id => Assert.Contains(id, new[] { 0, 1 }));
+        Assert.True(plate0.CellIds.Count(id => id == 0) > 1);
+        Assert.True(plate0.CellIds.Count(id => id == 1) > 1);
+    }
+
+    [Fact]
+    public void BuildAdaptiveSurfaces_PreservesCrossPlateSharedMidpoints()
+    {
+        var snapshot = TwoPlatesSharingBoundaryEdgeWithEndpointRelief();
+        var surfaces = new GlobePlateSurfaces(snapshot, noise: NoNoise);
+        var elevations = new double[] { 0.0, 1000.0, 0.0, -1000.0 };
+
+        var fixedCrossGroups = CountCrossPlateDirectionGroups(
+            surfaces.BuildSurfaces(elevations, exaggeration: 1.0).OrderBy(c => c.PlateId).ToArray());
+        var adaptiveCaps = surfaces.BuildAdaptiveSurfaces(
+                elevations,
+                exaggeration: 1.0,
+                new AdaptiveSubdivisionOptions(MaxDepth: 1, EdgeHeightDeltaThreshold: 100.0))
+            .OrderBy(c => c.PlateId)
+            .ToArray();
+
+        Assert.True(CountCrossPlateDirectionGroups(adaptiveCaps) > fixedCrossGroups);
+        AssertEveryCrossPlateBoundaryVertexMatchesExactly(adaptiveCaps);
+    }
+
+    [Fact]
     public void Binder_regime_flat_zero_elevation_cross_plate_boundary_vertices_match_exactly()
     {
         // Under a uniform/zero envelope the per-plate envelope MEAN is identical everywhere, so the
@@ -308,6 +387,39 @@ public sealed class GlobePlateSurfacesTests
         }
 
         Assert.True(crossGroups > 0, "expected at least one cross-plate boundary vertex group");
+    }
+
+    private static int CountCrossPlateDirectionGroups(PlateCap[] caps)
+    {
+        const double DirEps = 1e-5;
+        const double DirScale = 1.0 / DirEps;
+
+        static (long, long, long) DirKey(CartesianPoint3 p)
+        {
+            double r = Math.Sqrt(p.X * p.X + p.Y * p.Y + p.Z * p.Z);
+            double inv = r > 0 ? 1.0 / r : 0.0;
+            return (
+                (long)Math.Round(p.X * inv * DirScale),
+                (long)Math.Round(p.Y * inv * DirScale),
+                (long)Math.Round(p.Z * inv * DirScale));
+        }
+
+        var groups = new Dictionary<(long, long, long), HashSet<int>>();
+        foreach (var cap in caps)
+        {
+            for (int v = 0; v < cap.Surface.VertexCount; v++)
+            {
+                var key = DirKey(cap.Surface.Positions[v]);
+                if (!groups.TryGetValue(key, out var plateIds))
+                {
+                    plateIds = new HashSet<int>();
+                    groups[key] = plateIds;
+                }
+                plateIds.Add(cap.PlateId);
+            }
+        }
+
+        return groups.Values.Count(plateIds => plateIds.Count > 1);
     }
 
     // Shared assertion: every cross-plate coincident boundary vertex matches exactly (same quantized

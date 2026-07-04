@@ -250,6 +250,29 @@ public sealed class GlobeReconstructorTests
     }
 
     [Fact]
+    public void RunCrustSnapshot_returns_empty_before_onset_and_real_state_after()
+    {
+        var model = BuildOnsetReconstructor(out long onsetTick);
+        long preTick = onsetTick - 1;
+        long postTick = onsetTick + 8 * 100_000;
+
+        var snapshot = model.RunCrustSnapshot(new long[] { preTick, postTick });
+
+        Assert.True(snapshot.StateByTick.ContainsKey(preTick),
+            "StateByTick must include the pre-onset key");
+        Assert.True(snapshot.FeaturesByTick.ContainsKey(preTick),
+            "FeaturesByTick must include the pre-onset key");
+        Assert.Empty(snapshot.StateByTick[preTick]);
+        Assert.Empty(snapshot.FeaturesByTick[preTick]);
+
+        Assert.True(snapshot.StateByTick.ContainsKey(postTick),
+            "StateByTick must include the post-onset key");
+        Assert.True(snapshot.FeaturesByTick.ContainsKey(postTick),
+            "FeaturesByTick must include the post-onset key");
+        Assert.NotEmpty(snapshot.StateByTick[postTick]);
+    }
+
+    [Fact]
     public void RunCrustEvolution_legacy_path_returns_nonempty_state_at_tick_zero()
     {
         // The parameterless (legacy) constructor has no gating — pipeline always runs.

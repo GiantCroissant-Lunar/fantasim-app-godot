@@ -3,23 +3,15 @@ using Akka.Actor;
 #endif
 using System.Globalization;
 using System.Text.Json;
-using FantaSim.App.World.Cells;
 using FantaSim.App.World.Dto;
-using FieldValueResolver = FantaSim.App.World.Composition.FieldValueResolver;
-using FieldComposer = FantaSim.App.World.Composition.FieldComposer;
-using GeospherePlateLayer = FantaSim.App.World.Composition.GeospherePlateLayer;
-using SyntheticCrustLayer = FantaSim.App.World.Composition.SyntheticCrustLayer;
-using GeosphereFieldCatalog = FantaSim.App.World.Composition.GeosphereFieldCatalog;
-using ILayer = FantaSim.App.World.Composition.ILayer;
-using FantaSim.App.Ecs.Cells;
-using FantaSim.App.Ecs.Systems;
+using FantaSim.App.World.Crust;
 using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Globe;
-using FantaSim.App.World.Topography;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using ServiceArchi.Contracts;
 using FantaSim.World.Contracts.Units;
+using BoundarySectionDocument = FantaSim.App.World.Composition.BoundarySectionDocument;
 using OnsetRoster = FantaSim.App.World.Composition.OnsetRoster;
 using SphereRegimeSchedule = FantaSim.App.World.Composition.SphereRegimeSchedule;
 using SphereRegimeScheduleDefaults = FantaSim.App.World.Composition.SphereRegimeScheduleDefaults;
@@ -185,11 +177,15 @@ public sealed class Service : IService, IDisposable
             MaxTick = runtime.MaxTick,
             GenerationGraphFamily = family,
             BoundaryArcs = runtime.BoundaryArcs,
+            BoundarySections = runtime.BoundarySections,
             CellElevations = runtime.CellElevations,
             CellCrustThickness = runtime.CellCrustThickness,
             CellFeatures = runtime.CellFeatures,
             CrustSnapshotTicks = snapshotTickStates,
             VerticalExaggeration = runtime.VerticalExaggeration,
+            SurfaceSubdivision = runtime.SurfaceSubdivision,
+            AdaptiveSubdivisionMaxDepth = runtime.AdaptiveSubdivisionMaxDepth,
+            AdaptiveSubdivisionEdgeHeightDelta = runtime.AdaptiveSubdivisionEdgeHeightDelta,
         };
     }
 
@@ -403,8 +399,15 @@ public sealed class Service : IService, IDisposable
             geosphere,
             renderOptions.TessellationFrequency);
 
-        var (cellElevations, cellFeatures) = BuildCrustSurfaceData(reconstructor, arcTick, renderOptions.BoundaryProfiles, _logger);
-        var cellCrustThickness = BuildCrustThicknessData(reconstructor, arcTick, _logger);
+        var spec = WorldCrustRunSpec.ForPresentation(renderOptions, onsetTick, arcTick);
+        var materialization = WorldCrustMaterializer.MaterializeAsync(spec).GetAwaiter().GetResult();
+        var globeAtOnset = reconstructor.BuildGlobeAt(onsetTick);
+        var arcsAtOnset = reconstructor.BuildBoundaryArcsAt(onsetTick);
+
+        var (cellElevations, cellFeatures) = materialization.BuildSurfaceData(
+            globeAtOnset, arcsAtOnset, arcTick, _logger);
+        var cellCrustThickness = materialization.BuildCrustThickness(globeAtOnset, arcTick, _logger);
+        var boundarySections = materialization.BuildBoundarySections(globeAtOnset, arcsAtOnset, arcTick, _logger);
 
         return new PlanetPresentationRuntime(
             reconstructor.BuildGlobeAt(arcTick),
@@ -413,145 +416,14 @@ public sealed class Service : IService, IDisposable
             atmosphere,
             onsetTick + 20_000_000L,
             reconstructor.BuildBoundaryArcsAt(arcTick),
+            boundarySections,
             cellElevations,
             cellCrustThickness,
             cellFeatures,
-            renderOptions.VerticalExaggeration);
-    }
-
-    // Single pipeline run → per-cell elevation (via CellElevationSystem.Derive + the boundary-profile
-    // contribution from P4, the same pure formula the ECS path uses) + per-cell typed feature
-    // (kind + magnitude). Null when the tick is gated out (pre-onset / non-plate) or the pipeline produced
-    // no state, so the host falls back to untinted.
-    private static (IReadOnlyList<double>? Elevations, IReadOnlyList<CellCrustFeature>? Features)
-        BuildCrustSurfaceData(GlobeReconstructor reconstructor, long tick, BoundaryProfileParameters boundaryProfiles, ILogger logger)
-    {
-        try
-        {
-            var snapshot = reconstructor.RunCrustSnapshot(new[] { tick });
-            if (!snapshot.StateByTick.TryGetValue(tick, out var state) || state.Count == 0)
-                return (null, null);
-
-            int n = snapshot.CellCount;
-            var elevations = new double[n];
-            var features = new CellCrustFeature[n];
-            snapshot.FeaturesByTick.TryGetValue(tick, out var featureMap);
-
-            // Boundary-profile topography (P4): the per-cell trench/arc/swell/rift/scarp contribution on top
-            // of CellElevationSystem.Derive. The field geometry uses the ONSET (tick-0) frame so it aligns
-            // with the static mesh the elevations displace (BuildGlobeAt returns tick-0 corners; the boundary
-            // arcs at the onset tick trace the unmoved shared edges). Godot-free, pure composition.
-            var globe = reconstructor.BuildGlobeAt(reconstructor.OnsetTick);
-            var arcs = reconstructor.BuildBoundaryArcsAt(reconstructor.OnsetTick);
-            var boundaryContributions = BoundaryProfileContribution.Build(globe, arcs, state, featureMap, boundaryProfiles);
-
-            for (int cell = 0; cell < n; cell++)
-            {
-                if (state.TryGetValue(cell, out var s))
-                {
-                    var sample = new CrustSample(
-                        s.ContinentalFraction, s.OrogenicPressure, s.VolcanicActivity, s.CrustAgeTicks);
-                    elevations[cell] = CellElevationSystem.Derive(sample) + boundaryContributions[cell];
-                }
-                if (featureMap is not null && featureMap.TryGetValue(cell, out var f))
-                    features[cell] = new CellCrustFeature((byte)f.Kind, f.Magnitude);
-            }
-            return (elevations, features);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Crust surface data unavailable at tick {Tick}; presentation falls back to untinted.", tick);
-            return (null, null);
-        }
-    }
-
-    // Per-cell crust THICKNESS (metres) from the field composition: the plate layer produces
-    // plate-boundary-distance-m, the synthetic crust layer consumes it and produces crust-thickness-m.
-    // This is the TRUTH the cutaway's outer stratum band reads (§5c, W3a). Null when the tick is
-    // gated out (pre-onset / non-plate) or composition fails, so the cutaway falls back to the
-    // declared default thickness. Mirrors BuildCrustSurfaceData's gating + fallback discipline.
-    private static IReadOnlyList<double>? BuildCrustThicknessData(
-        GlobeReconstructor reconstructor,
-        long tick,
-        ILogger logger)
-    {
-        try
-        {
-            if (tick < reconstructor.OnsetTick)
-                return null;
-
-            var globe = reconstructor.BuildGlobeAt(reconstructor.OnsetTick);
-            if (globe.PlateCount == 0)
-                return null;
-
-            var geometry = BuildGlobeGeometryFromSnapshot(globe);
-
-            var plateLayer = new GeospherePlateLayer();
-            var crustLayer = new SyntheticCrustLayer();
-            var composer = new FieldComposer();
-            GeosphereFieldCatalog.DeclareInto(composer);
-            composer.AddLayer(plateLayer.Fields);
-            composer.AddLayer(crustLayer.Fields);
-            var composition = composer.Compose();
-            if (!composition.IsValid)
-            {
-                logger.LogWarning("Cutaway crust-thickness composition invalid: {Errors}", string.Join("; ", composition.Errors));
-                return null;
-            }
-
-            var values = new FieldValueResolver().Resolve(
-                composition,
-                new ILayer[] { plateLayer, crustLayer },
-                geometry,
-                tick);
-
-            return values.Scalars
-                .First(s => s.Field == GeosphereFieldCatalog.CrustThickness)
-                .Values;
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Crust thickness data unavailable at tick {Tick}; cutaway falls back to default.", tick);
-            return null;
-        }
-    }
-
-    // Builds a WorldGlobeGeometry (geodetic) from a WorldGlobeSnapshot (cartesian) for field composition.
-    // Each cell's three cartesian corners convert to lat/lon via the standard spherical-to-geodetic
-    // map; boundary segments are approximated from the snapshot's plate-adjacency (the plate layer's
-    // distance computation only needs cells + which segments border each plate, not exact arc shapes).
-    private static WorldGlobeGeometry BuildGlobeGeometryFromSnapshot(WorldGlobeSnapshot snapshot)
-    {
-        var plateIds = snapshot.Plates.Count > 0
-            ? snapshot.Plates.Select(p => p.PlateId.ToString(System.Globalization.CultureInfo.InvariantCulture)).ToArray()
-            : new[] { "0" };
-
-        var cells = new List<PlateCellPolygon>(snapshot.CellCount);
-        foreach (var cell in snapshot.Cells)
-        {
-            var ring = new[]
-            {
-                ToGeoPoint(cell.C0),
-                ToGeoPoint(cell.C1),
-                ToGeoPoint(cell.C2),
-            };
-            var plateId = cell.PlateId >= 0 && cell.PlateId < snapshot.Plates.Count
-                ? snapshot.Plates[cell.PlateId].PlateId.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                : cell.PlateId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            cells.Add(new PlateCellPolygon(plateId, ring));
-        }
-
-        return new WorldGlobeGeometry(plateIds, cells, BoundarySegments: Array.Empty<BoundaryGeoSegment>());
-    }
-
-    private static GeoPoint ToGeoPoint(GlobeVec3 v)
-    {
-        var len = Math.Sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z);
-        if (len < 1e-9)
-            return new GeoPoint(0, 0);
-        var lat = Math.Asin(Math.Clamp(v.Z / len, -1.0, 1.0)) * 180.0 / Math.PI;
-        var lon = Math.Atan2(v.Y, v.X) * 180.0 / Math.PI;
-        return new GeoPoint(lat, lon);
+            renderOptions.VerticalExaggeration,
+            renderOptions.SurfaceSubdivision,
+            renderOptions.AdaptiveSubdivisionMaxDepth,
+            renderOptions.AdaptiveSubdivisionEdgeHeightDelta);
     }
 
     private static WorldGenerationRenderOptions ResolvePlanetRenderOptions(WorldGenerationGraphFamilyDocument family)
@@ -574,10 +446,14 @@ public sealed class Service : IService, IDisposable
         SphereRegimeSchedule AtmosphereSchedule,
         long MaxTick,
         IReadOnlyList<PlateBoundaryArc> BoundaryArcs,
+        IReadOnlyList<BoundarySectionDocument> BoundarySections,
         IReadOnlyList<double>? CellElevations,
         IReadOnlyList<double>? CellCrustThickness,
         IReadOnlyList<CellCrustFeature>? CellFeatures,
-        double VerticalExaggeration);
+        double VerticalExaggeration,
+        SurfaceSubdivisionMode SurfaceSubdivision,
+        int AdaptiveSubdivisionMaxDepth,
+        double AdaptiveSubdivisionEdgeHeightDelta);
 
 #if USE_PROJECT_REFERENCES
     private static string NewTruthWriterActorName()

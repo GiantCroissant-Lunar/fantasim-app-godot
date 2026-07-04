@@ -1,6 +1,7 @@
 using System;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
+using FantaSim.App.Ecs.Systems;
 using FantaSim.App.NodeGraph;
 using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Topography;
@@ -50,6 +51,56 @@ public sealed class WorldGenerationRenderOptionsTests
 
         Assert.Equal(1234, options.Seed);
         Assert.Equal(4, options.TessellationFrequency);
+    }
+
+    [Fact]
+    public void Default_uses_dry_no_hydrosphere_elevation_mode()
+    {
+        Assert.Equal(CellElevationHydrosphereMode.Absent, WorldGenerationRenderOptions.Default.HydrosphereMode);
+    }
+
+    [Fact]
+    public void Default_uses_adaptive_surface_subdivision()
+    {
+        Assert.Equal(SurfaceSubdivisionMode.Adaptive, WorldGenerationRenderOptions.Default.SurfaceSubdivision);
+    }
+
+    [Fact]
+    public void Resolve_uses_adaptive_surface_subdivision_from_default_graph()
+    {
+        var options = WorldGenerationRenderOptions.Resolve(WorldGenerationGraphDefaults.BuildCrustGraph());
+
+        Assert.Equal(SurfaceSubdivisionMode.Adaptive, options.SurfaceSubdivision);
+    }
+
+    [Fact]
+    public async Task Resolve_reads_hydrosphere_mode_override()
+    {
+        var source = new WorldGenerationGraphSource(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildCrustGraph());
+        await source.ApplyEditAsync(new GraphEdit.SetParam("options", "hydrosphereMode", JsonValue.Create("present")));
+
+        var options = WorldGenerationRenderOptions.Resolve(source.Graph);
+
+        Assert.Equal(CellElevationHydrosphereMode.Present, options.HydrosphereMode);
+    }
+
+    [Fact]
+    public async Task Resolve_reads_adaptive_surface_subdivision_overrides()
+    {
+        var source = new WorldGenerationGraphSource(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildCrustGraph());
+        await source.ApplyEditAsync(new GraphEdit.SetParam("options", "surfaceSubdivision", JsonValue.Create("adaptive")));
+        await source.ApplyEditAsync(new GraphEdit.SetParam("options", "adaptiveSubdivisionMaxDepth", JsonValue.Create(1)));
+        await source.ApplyEditAsync(new GraphEdit.SetParam("options", "adaptiveSubdivisionEdgeHeightDelta", JsonValue.Create(0.02)));
+
+        var options = WorldGenerationRenderOptions.Resolve(source.Graph);
+
+        Assert.Equal(SurfaceSubdivisionMode.Adaptive, options.SurfaceSubdivision);
+        Assert.Equal(1, options.AdaptiveSubdivisionMaxDepth);
+        Assert.Equal(0.02, options.AdaptiveSubdivisionEdgeHeightDelta);
     }
 
     [Fact]

@@ -47,7 +47,10 @@ public sealed class CellElevationModel : IDisposable
     /// </summary>
     /// <param name="run">The crust state run (StateByTick + cell centers).</param>
     /// <param name="plateIdByCell">Owning plate id per cell, indexed by cell id (length = cell count).</param>
-    public CellElevationModel(CrustStateRun run, IReadOnlyList<int> plateIdByCell)
+    public CellElevationModel(
+        CrustStateRun run,
+        IReadOnlyList<int> plateIdByCell,
+        CellElevationHydrosphereMode hydrosphereMode = CellElevationHydrosphereMode.Present)
     {
         ArgumentNullException.ThrowIfNull(run);
         ArgumentNullException.ThrowIfNull(plateIdByCell);
@@ -77,7 +80,7 @@ public sealed class CellElevationModel : IDisposable
         });
         _runner = new ArchSystemRunner(wrapper);
         _world = _runner.InnerWorld;
-        _system = new CellElevationSystem();
+        _system = new CellElevationSystem(hydrosphereMode);
         _runner.Register(_system);
         _runner.Initialize();
 
@@ -159,7 +162,10 @@ public sealed class CellElevationModel : IDisposable
     /// <paramref name="snapshotTicks"/> and build a populated model. The plate ids come from the
     /// reconstructor's globe snapshot (cell id → plate id).
     /// </summary>
-    public static CellElevationModel Build(GlobeReconstructor reconstructor, IReadOnlyList<long> snapshotTicks)
+    public static CellElevationModel Build(
+        GlobeReconstructor reconstructor,
+        IReadOnlyList<long> snapshotTicks,
+        CellElevationHydrosphereMode hydrosphereMode = CellElevationHydrosphereMode.Present)
     {
         ArgumentNullException.ThrowIfNull(reconstructor);
         ArgumentNullException.ThrowIfNull(snapshotTicks);
@@ -171,6 +177,6 @@ public sealed class CellElevationModel : IDisposable
                 plateIdByCell[c.CellId] = c.PlateId;
 
         var run = reconstructor.RunCrustEvolution(snapshotTicks);
-        return new CellElevationModel(run, plateIdByCell);
+        return new CellElevationModel(run, plateIdByCell, hydrosphereMode);
     }
 }

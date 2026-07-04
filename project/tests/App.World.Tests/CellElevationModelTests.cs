@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using FantaSim.App.Ecs.Systems;
 using FantaSim.App.World.Cells;
 using FantaSim.App.World.Composition;
 using FantaSim.App.World.Dto;
@@ -36,6 +37,22 @@ public sealed class CellElevationModelTests
             new GlobeVec3(0, 0, 1), new GlobeVec3(-1, 0, 0),
         };
         return new CrustStateRun(CellCount: 4, stateByTick, centers);
+    }
+
+    [Fact]
+    public void UpdateForTick_dry_mode_exposes_oceanic_crust_without_age_deepening()
+    {
+        const long tick = 500_000L;
+        using var model = new CellElevationModel(
+            BuildRun(tick),
+            plateIdByCell: new[] { 0, 0, 1, 1 },
+            CellElevationHydrosphereMode.Absent);
+
+        model.UpdateForTick(tick);
+        var elevations = model.GetElevations();
+
+        Assert.True(elevations[2] >= 0, $"expected exposed young oceanic crust, got {elevations[2]}");
+        Assert.Equal(elevations[2], elevations[3], precision: 6);
     }
 
     [Fact]

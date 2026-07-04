@@ -89,6 +89,7 @@ public sealed class GlobePlateSurfaces
         Ridged: false);
 
     private readonly IGlobeSurfaceBuilder _builder;
+    private readonly IAdaptiveGlobeSurfaceBuilder _adaptiveBuilder;
     private readonly IReadOnlyList<PlateTopology> _plates;
     private readonly NoiseParams _peaks;
 
@@ -115,6 +116,7 @@ public sealed class GlobePlateSurfaces
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         _builder = builder ?? new GlobeSurfaceBuilder();
+        _adaptiveBuilder = _builder as IAdaptiveGlobeSurfaceBuilder ?? new AdaptiveGlobeSurfaceBuilder(_builder);
         _peaks = noise ?? DefaultPeaks;
         (_globalVertices, _globalTriangles, _globalCellIds) = BuildGlobalTopology(snapshot);
         _plates = BuildPlateTopologies(snapshot, _peaks, _globalVertices);
@@ -153,47 +155,42 @@ public sealed class GlobePlateSurfaces
         double exaggeration,
         double heightExponent = 1.0)
     {
-        ArgumentNullException.ThrowIfNull(elevationsByCell);
-        if (heightExponent <= 0.0)
-            throw new ArgumentOutOfRangeException(nameof(heightExponent), "Height exponent must be positive.");
-
-        // Global per-FACE elevations (METRES — the lens applies at the end) in global face order,
-        // then gather to per-VERTEX means across ALL incident cells of ALL plates. A boundary corner
-        // shared by plates A and B sees both plates' cells here, so its mean (and hence radius) is
-        // identical regardless of which plate builds it.
-        var globalFaceMetres = new double[_globalCellIds.Length];
-        for (int f = 0; f < _globalCellIds.Length; f++)
-        {
-            int cellId = _globalCellIds[f];
-            globalFaceMetres[f] = (cellId >= 0 && cellId < elevationsByCell.Count) ? elevationsByCell[cellId] : 0.0;
-        }
-
-        var globalVertexMetres = GlobeSurfaceBuilder.GatherVertexHeights(
-            _globalVertices.Length, _globalTriangles, globalFaceMetres);
-
-        bool linear = heightExponent == 1.0;
+        var plateVertexHeights = BuildPlateVertexHeights(elevationsByCell, exaggeration, heightExponent);
         var caps = new PlateCap[_plates.Count];
         for (int p = 0; p < _plates.Count; p++)
         {
             var plate = _plates[p];
 
-            // Read each local vertex's envelope metres from the GLOBAL mean (watertight across
-            // plates), add the per-plate seeded peaks (already shared across plates via the base
-            // position), then apply the lens to the total.
-            var perVertexHeights = new double[plate.LocalVertices.Length];
-            for (int v = 0; v < perVertexHeights.Length; v++)
-            {
-                double metres = globalVertexMetres[plate.LocalToGlobal[v]] + plate.VertexNoiseMetres[v];
-                perVertexHeights[v] = linear
-                    ? metres * exaggeration
-                    : Math.Sign(metres) * Math.Pow(Math.Abs(metres), heightExponent) * exaggeration;
-            }
-
             var surface = _builder.Build(
-                plate.LocalVertices, plate.LocalTriangles, perVertexHeights, GlobeSurfaceBuilder.DefaultRadius);
+                plate.LocalVertices, plate.LocalTriangles, plateVertexHeights[p], GlobeSurfaceBuilder.DefaultRadius);
 
-            caps[p] = new PlateCap(plate.PlateId, plate.CellIds, surface);
+            caps[p] = new PlateCap(plate.PlateId, plate.CellIds, surface, VertexProvenance: null);
         }
+        return caps;
+    }
+
+    public IReadOnlyList<PlateCap> BuildAdaptiveSurfaces(
+        IReadOnlyList<double> elevationsByCell,
+        double exaggeration,
+        AdaptiveSubdivisionOptions options,
+        double heightExponent = 1.0)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var plateVertexHeights = BuildPlateVertexHeights(elevationsByCell, exaggeration, heightExponent);
+        var caps = new PlateCap[_plates.Count];
+        for (int p = 0; p < _plates.Count; p++)
+        {
+            var plate = _plates[p];
+            var adaptive = _adaptiveBuilder.BuildAdaptive(
+                plate.LocalVertices,
+                plate.LocalTriangles,
+                plateVertexHeights[p],
+                options);
+            var cellIds = MapSourceTriangleIdsToCellIds(adaptive.SourceTriangleIds, plate.CellIds);
+            caps[p] = new PlateCap(plate.PlateId, cellIds, adaptive.Surface, adaptive.VertexProvenance);
+        }
+
         return caps;
     }
 
@@ -250,6 +247,59 @@ public sealed class GlobePlateSurfaces
             result[p] = new PlateVertexColors(plate.PlateId, local);
         }
         return result;
+    }
+
+    private double[][] BuildPlateVertexHeights(
+        IReadOnlyList<double> elevationsByCell,
+        double exaggeration,
+        double heightExponent)
+    {
+        ArgumentNullException.ThrowIfNull(elevationsByCell);
+        if (heightExponent <= 0.0)
+            throw new ArgumentOutOfRangeException(nameof(heightExponent), "Height exponent must be positive.");
+
+        // Global per-FACE elevations (METRES — the lens applies at the end) in global face order,
+        // then gather to per-VERTEX means across ALL incident cells of ALL plates. A boundary corner
+        // shared by plates A and B sees both plates' cells here, so its mean (and hence radius) is
+        // identical regardless of which plate builds it.
+        var globalFaceMetres = new double[_globalCellIds.Length];
+        for (int f = 0; f < _globalCellIds.Length; f++)
+        {
+            int cellId = _globalCellIds[f];
+            globalFaceMetres[f] = (cellId >= 0 && cellId < elevationsByCell.Count) ? elevationsByCell[cellId] : 0.0;
+        }
+
+        var globalVertexMetres = GlobeSurfaceBuilder.GatherVertexHeights(
+            _globalVertices.Length, _globalTriangles, globalFaceMetres);
+
+        bool linear = heightExponent == 1.0;
+        var result = new double[_plates.Count][];
+        for (int p = 0; p < _plates.Count; p++)
+        {
+            var plate = _plates[p];
+            var perVertexHeights = new double[plate.LocalVertices.Length];
+            for (int v = 0; v < perVertexHeights.Length; v++)
+            {
+                double metres = globalVertexMetres[plate.LocalToGlobal[v]] + plate.VertexNoiseMetres[v];
+                perVertexHeights[v] = linear
+                    ? metres * exaggeration
+                    : Math.Sign(metres) * Math.Pow(Math.Abs(metres), heightExponent) * exaggeration;
+            }
+            result[p] = perVertexHeights;
+        }
+
+        return result;
+    }
+
+    private static int[] MapSourceTriangleIdsToCellIds(int[] sourceTriangleIds, int[] cellIds)
+    {
+        var mapped = new int[sourceTriangleIds.Length];
+        for (int i = 0; i < sourceTriangleIds.Length; i++)
+        {
+            int source = sourceTriangleIds[i];
+            mapped[i] = source >= 0 && source < cellIds.Length ? cellIds[source] : -1;
+        }
+        return mapped;
     }
 
     // --- cached per-plate topology (built once) ----------------------------------------------------
@@ -406,4 +456,15 @@ public sealed record PlateVertexColors(int PlateId, RampColor[] Colors);
 /// per-face <see cref="CellIds"/> (face <c>t</c> came from cell <c>CellIds[t]</c>) so the render seam can
 /// tag each face with its cell (tectonic-type texture U, per-cell elevation for the biome ramp).
 /// </summary>
-public sealed record PlateCap(int PlateId, int[] CellIds, GlobeSurface Surface);
+/// <param name="VertexProvenance">
+/// Per-<see cref="GlobeSurface"/>-vertex provenance from the adaptive subdivision builder: original
+/// input vertex vs. midpoint of two endpoints. <c>null</c> for fixed (non-adaptive) caps; non-null
+/// and parallel to <see cref="GlobeSurface.Positions"/> for adaptive caps. The render seam uses it to
+/// reattach base-vertex colours (and other base-parallel attributes) to the appended midpoint
+/// vertices instead of falling back to a placeholder colour.
+/// </param>
+public sealed record PlateCap(
+    int PlateId,
+    int[] CellIds,
+    GlobeSurface Surface,
+    VertexProvenance[]? VertexProvenance);

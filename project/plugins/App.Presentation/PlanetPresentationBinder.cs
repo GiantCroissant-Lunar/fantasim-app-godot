@@ -72,6 +72,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     private Node3D? _activeRoot;
     private Node3D? _plateSurfaceRoot;
     private PlateBoundaryFocusRenderer? _boundaryRenderer;
+    private BoundarySectionRenderer? _boundarySectionRenderer;
     private MeshInstance3D? _mantle;
     private MeshInstance3D? _atmosphereRim;
     private ShaderMaterial? _atmosphereRimMaterial;
@@ -83,7 +84,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     private IDisposable? _graphViewRegistration;
     private bool _graphViewMounted;
     private int? _subscribedWorldHash;
-    private bool _worldRuntimeChangePending;
+    private readonly PlanetPresentationReloadGate _worldRuntimeReload = new();
     private string? _boundRegimeId;
     private bool _regimeRefreshPending;
     private long? _boundCrustSnapshotTick;
@@ -290,6 +291,17 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             _boundaryRenderer = new PlateBoundaryFocusRenderer(
                 document.BoundaryArcs ?? Array.Empty<PlateBoundaryArc>());
             body.AddChild(_boundaryRenderer);
+
+            if (document.BoundarySections is { Count: > 0 } sections)
+            {
+                _boundarySectionRenderer = new BoundarySectionRenderer(sections)
+                {
+                    Position = new Vector3(0.0f, -2.2f, 0.8f),
+                    RotationDegrees = new Vector3(-10.0f, 0.0f, 0.0f),
+                    Scale = Vector3.One * 0.42f,
+                };
+                body.AddChild(_boundarySectionRenderer);
+            }
         }
 
         body.AddChild(BuildProductLayerRoot(document));
@@ -311,6 +323,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             document.GlobeSnapshot?.CellCount ?? 0,
             document.Layers.Count,
             document.Revision);
+        _worldRuntimeReload.MarkMounted();
     }
 
     private void ApplyTimelineTick(long tick)
@@ -360,6 +373,9 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
 
         if (_boundaryRenderer is not null && GodotObject.IsInstanceValid(_boundaryRenderer))
             _boundaryRenderer.Visible = showBoundaries;
+
+        if (_boundarySectionRenderer is not null && GodotObject.IsInstanceValid(_boundarySectionRenderer))
+            _boundarySectionRenderer.Visible = showsPlateFeatures && viewMode == GlobeViewMode.World;
 
         if (_mantle is not null && GodotObject.IsInstanceValid(_mantle))
         {
@@ -625,8 +641,15 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         if (body is null)
             return;
 
+        if (_plateSurfaceRoot is PlateSurfaceRenderer renderer && GodotObject.IsInstanceValid(renderer))
+        {
+            BindPlateSurface(renderer, _currentDocument, _currentViewMode);
+            return;
+        }
+
         if (_plateSurfaceRoot is not null && GodotObject.IsInstanceValid(_plateSurfaceRoot))
         {
+            ReleasePlateSurfaceRenderer();
             body.RemoveChild(_plateSurfaceRoot);
             _plateSurfaceRoot.QueueFree();
         }
@@ -786,15 +809,16 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             new Color((float)state.Tint.R, (float)state.Tint.G, (float)state.Tint.B));
     }
 
-    private Node3D BuildPlateSurface(PlanetPresentationDocument document, GlobeViewMode viewMode)
+    private PlateSurfaceRenderer BuildPlateSurface(PlanetPresentationDocument document, GlobeViewMode viewMode)
+    {
+        var renderer = new PlateSurfaceRenderer();
+        BindPlateSurface(renderer, document, viewMode);
+        return renderer;
+    }
+
+    private void BindPlateSurface(PlateSurfaceRenderer renderer, PlanetPresentationDocument document, GlobeViewMode viewMode)
     {
         var snapshot = document.GlobeSnapshot!;
-        var root = new Node3D
-        {
-            Name = "PlateSurface",
-            Scale = Vector3.One * 2.0f,
-        };
-
         // P1 + W1: view mode selects cap appearance — World (composed product) and HypsometricTerrain
         // (crust diagnostic) both displace by elevation; PlateIdentity is flat. World uses a tuned
         // noise amplitude (sub-cell detail that buries the cell grid) + the WorldTerrainRamp + per-
@@ -812,13 +836,22 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
                 : new double[snapshot.CellCount])
             : new double[snapshot.CellCount];
 
-        var caps = isWorld
-            ? _plateSurfaces.BuildSurfaces(elevations, exaggeration: WorldHeightScale, heightExponent: WorldHeightExponent)
-            : _plateSurfaces.BuildSurfaces(elevations, exaggeration: document.VerticalExaggeration);
+        bool useAdaptiveSurface = isWorld && document.SurfaceSubdivision == SurfaceSubdivisionMode.Adaptive;
+        var caps = useAdaptiveSurface
+            ? _plateSurfaces.BuildAdaptiveSurfaces(
+                elevations,
+                exaggeration: WorldHeightScale,
+                options: new AdaptiveSubdivisionOptions(
+                    MaxDepth: document.AdaptiveSubdivisionMaxDepth,
+                    EdgeHeightDeltaThreshold: document.AdaptiveSubdivisionEdgeHeightDelta),
+                heightExponent: WorldHeightExponent)
+            : isWorld
+                ? _plateSurfaces.BuildSurfaces(elevations, exaggeration: WorldHeightScale, heightExponent: WorldHeightExponent)
+                : _plateSurfaces.BuildSurfaces(elevations, exaggeration: document.VerticalExaggeration);
 
         var (perCellColor, perCellEmission) = isTerrain
             ? BuildCellAppearance(snapshot.CellCount, document, isWorld, isWorld ? snapshot.Cells : null)
-            : (Array.Empty<Color>(), Array.Empty<float>());
+            : (Array.Empty<RampColor>(), Array.Empty<float>());
 
         // Per-vertex color envelope (terrain views): smooth per-cell ramp colours across cell AND
         // plate boundaries so terrain reads as Gouraud-shaded gradients instead of chunky per-cell
@@ -829,30 +862,38 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             : null;
 
         var jitter = isWorld ? new VertexTintJitter(seed: 1337, amplitude: 0.06) : null;
+        var meshes = new List<PlateCapMeshDto>(caps.Count);
 
         foreach (var cap in caps.OrderBy(c => c.PlateId))
         {
-            var plate = isTerrain
-                ? BuildPlateMesh(cap, perPlateVertexColors!, perCellEmission, jitter, HypsoPlateMaterialOverride)
-                : BuildPlateIdentityMesh(cap, HypsoPlateMaterialOverride);
-            root.AddChild(plate);
+            var mesh = isTerrain
+                ? PlateCapMeshBuilder.BuildTerrain(cap, perPlateVertexColors!, perCellEmission, jitter)
+                : PlateCapMeshBuilder.BuildPlateIdentity(cap);
+            meshes.Add(mesh);
         }
 
-        return root;
+        renderer.SetMeshes(meshes, HypsoPlateMaterialOverride);
+        _log.LogInformation(
+            "Planet plate surface bound: view={ViewMode}, subdivision={Subdivision}, plates={PlateCount}, triangles={TriangleCount}, meshVertices={VertexCount}.",
+            viewMode,
+            useAdaptiveSurface ? "adaptive" : "fixed",
+            caps.Count,
+            caps.Sum(cap => cap.Surface.TriangleCount),
+            meshes.Sum(mesh => mesh.VertexCount));
     }
 
-    // Computes per-cell Godot.Color (world or crust ramp with trench/ridge accent baked in) and
+    // Computes per-cell color (world or crust ramp with trench/ridge accent baked in) and
     // per-cell volcanic emission intensity, from the document's crust elevation + feature data. The
     // world view uses WorldTerrainRamp (bare-rock product palette) modulated by the continental
     // ProvinceTint (cells indexed by CellId supply the sample direction); the crust diagnostic uses
     // HypsometricTint, un-tinted. Falls back to a neutral mid-ramp tint when crust data is absent.
-    private static (Color[] Colors, float[] Emission) BuildCellAppearance(
+    private static (RampColor[] Colors, float[] Emission) BuildCellAppearance(
         int cellCount,
         PlanetPresentationDocument document,
         bool isWorld,
         IReadOnlyList<GlobeCell>? cells)
     {
-        var colors = new Color[cellCount];
+        var colors = new RampColor[cellCount];
         var emission = new float[cellCount];
 
         var elevations = document.CellElevations;
@@ -861,8 +902,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             var fallbackRamp = isWorld
                 ? WorldTerrainRamp.ComputeColors(new double[] { 0.0 })[0]
                 : HypsometricTint.ComputeColors(new double[] { 0.0 })[0];
-            var fallback = ToColor(fallbackRamp);
-            for (int c = 0; c < cellCount; c++) colors[c] = fallback;
+            for (int c = 0; c < cellCount; c++) colors[c] = fallbackRamp;
             return (colors, emission);
         }
 
@@ -890,7 +930,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
                 magnitude = features[c].Magnitude;
             }
             var accent = CrustAccentMapper.Map(kind, magnitude);
-            colors[c] = ToColor(CrustAccentMapper.Apply(tint, accent));
+            colors[c] = CrustAccentMapper.Apply(tint, accent);
             emission[c] = (float)accent.VolcanicEmission;
         }
         return (colors, emission);
@@ -923,151 +963,13 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     // result by plate id so BuildPlateMesh can look up each cap's per-vertex colours in one read.
     private static IReadOnlyDictionary<int, RampColor[]> BuildPerPlateVertexColors(
         GlobePlateSurfaces surfaces,
-        Color[] perCellColor)
+        RampColor[] perCellColor)
     {
-        var ramp = new RampColor[perCellColor.Length];
-        for (int c = 0; c < perCellColor.Length; c++)
-            ramp[c] = new RampColor(perCellColor[c].R, perCellColor[c].G, perCellColor[c].B);
-
-        var perPlate = surfaces.BuildVertexColors(ramp);
+        var perPlate = surfaces.BuildVertexColors(perCellColor);
         var byId = new Dictionary<int, RampColor[]>(perPlate.Count);
         foreach (var p in perPlate)
             byId[p.PlateId] = p.Colors;
         return byId;
-    }
-
-    private static MeshInstance3D BuildPlateMesh(
-        PlateCap cap,
-        IReadOnlyDictionary<int, RampColor[]> perPlateVertexColors,
-        float[] perCellEmission,
-        VertexTintJitter? jitter,
-        Material plateMaterial)
-    {
-        var surface = cap.Surface;
-        int triCount = surface.TriangleCount;
-        int vertCount = triCount * 3;
-
-        // Watertight + smooth: positions come from the shared-vertex GlobeSurface.Positions, so
-        // adjacent triangles meet EXACTLY at shared corners (no black cracks), while per-vertex
-        // SmoothNormals keep the silhouette round instead of faceted.
-        var vertices = new Vector3[vertCount];
-        var normals = new Vector3[vertCount];
-
-        for (int t = 0; t < triCount; t++)
-        {
-            int i0 = surface.Triangles[(t * 3) + 0];
-            int i1 = surface.Triangles[(t * 3) + 1];
-            int i2 = surface.Triangles[(t * 3) + 2];
-
-            int b = t * 3;
-            vertices[b + 0] = ToV3(surface.Positions[i0]);
-            vertices[b + 1] = ToV3(surface.Positions[i1]);
-            vertices[b + 2] = ToV3(surface.Positions[i2]);
-            normals[b + 0] = ToV3(surface.SmoothNormals[i0]);
-            normals[b + 1] = ToV3(surface.SmoothNormals[i1]);
-            normals[b + 2] = ToV3(surface.SmoothNormals[i2]);
-        }
-
-        // Per-vertex smoothed colour envelope: each corner takes its global-vertex mean ramp colour
-        // (averaged across all incident cells of all plates), so cell and plate boundaries read as
-        // Gouraud gradients instead of hard per-triangle steps. Volcanic emission (UV2.x) stays
-        // per-cell — a vent is a property of the cell, not the shared corner. VertexTintJitter is
-        // applied on top of the smoothed colour exactly as before, so the cell-grid anti-banding
-        // noise still rides the smoothed base.
-        var vertexColors = perPlateVertexColors[cap.PlateId];
-        var colors = new Color[vertCount];
-        var uv2 = new Vector2[vertCount];
-        for (int t = 0; t < triCount; t++)
-        {
-            int cellId = cap.CellIds[t];
-            float emis = cellId >= 0 && cellId < perCellEmission.Length
-                ? perCellEmission[cellId]
-                : 0f;
-
-            int b = t * 3;
-            for (int v = 0; v < 3; v++)
-            {
-                int idx = b + v;
-                int surfIdx = surface.Triangles[(t * 3) + v];
-                var baseColor = surfIdx >= 0 && surfIdx < vertexColors.Length
-                    ? ToColor(vertexColors[surfIdx])
-                    : new Color(0.3f, 0.35f, 0.28f);
-                colors[idx] = jitter is not null
-                    ? ToColor(jitter.Apply(surface.Positions[surfIdx], ToRampColor(baseColor)))
-                    : baseColor;
-                uv2[idx] = new Vector2(emis, 0f);
-            }
-        }
-
-        var arrays = new Godot.Collections.Array();
-        arrays.Resize((int)Mesh.ArrayType.Max);
-        arrays[(int)Mesh.ArrayType.Vertex] = vertices;
-        arrays[(int)Mesh.ArrayType.Normal] = normals;
-        arrays[(int)Mesh.ArrayType.Color] = colors;
-        arrays[(int)Mesh.ArrayType.TexUV2] = uv2;
-
-        var mesh = new ArrayMesh();
-        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-
-        return new MeshInstance3D
-        {
-            Name = $"Plate_{cap.PlateId}",
-            Mesh = mesh,
-            MaterialOverride = plateMaterial,
-        };
-    }
-
-    private static RampColor ToRampColor(Color c) => new(c.R, c.G, c.B);
-
-    // P1: plate-identity cap — every vertex in this cap gets the plate's identity color, flat-zero
-    // displacement (positions are already at unit-sphere radius from BuildSurfaces with zero
-    // elevations), no volcanic emission. Reuses HypsoPlateMaterial: the shader reads COLOR.rgb for
-    // albedo and only emits when UV2.x > 0, which is absent here.
-    private static MeshInstance3D BuildPlateIdentityMesh(PlateCap cap, Material plateMaterial)
-    {
-        var surface = cap.Surface;
-        int triCount = surface.TriangleCount;
-        int vertCount = triCount * 3;
-
-        var vertices = new Vector3[vertCount];
-        var normals = new Vector3[vertCount];
-        var colors = new Color[vertCount];
-
-        var plateColor = ToColor(PlateIdentityPalette.ColorFor(cap.PlateId));
-
-        for (int t = 0; t < triCount; t++)
-        {
-            int i0 = surface.Triangles[(t * 3) + 0];
-            int i1 = surface.Triangles[(t * 3) + 1];
-            int i2 = surface.Triangles[(t * 3) + 2];
-
-            int b = t * 3;
-            vertices[b + 0] = ToV3(surface.Positions[i0]);
-            vertices[b + 1] = ToV3(surface.Positions[i1]);
-            vertices[b + 2] = ToV3(surface.Positions[i2]);
-            normals[b + 0] = ToV3(surface.SmoothNormals[i0]);
-            normals[b + 1] = ToV3(surface.SmoothNormals[i1]);
-            normals[b + 2] = ToV3(surface.SmoothNormals[i2]);
-            colors[b + 0] = plateColor;
-            colors[b + 1] = plateColor;
-            colors[b + 2] = plateColor;
-        }
-
-        var arrays = new Godot.Collections.Array();
-        arrays.Resize((int)Mesh.ArrayType.Max);
-        arrays[(int)Mesh.ArrayType.Vertex] = vertices;
-        arrays[(int)Mesh.ArrayType.Normal] = normals;
-        arrays[(int)Mesh.ArrayType.Color] = colors;
-
-        var mesh = new ArrayMesh();
-        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-
-        return new MeshInstance3D
-        {
-            Name = $"Plate_{cap.PlateId}",
-            Mesh = mesh,
-            MaterialOverride = plateMaterial,
-        };
     }
 
     private static Vector3 ToV3(CartesianPoint3 p) => new((float)p.X, (float)p.Y, (float)p.Z);
@@ -1421,7 +1323,7 @@ void fragment() {
         _subscribedWorldHash = null;
         _generationSubscription?.Dispose();
         _generationSubscription = null;
-        _worldRuntimeChangePending = true;
+        _worldRuntimeReload.MarkRuntimeChanging();
         ResetRegimeTracking();
         Callable.From(() =>
         {
@@ -1433,15 +1335,25 @@ void fragment() {
 
     private void OnResourceRuntimeChanged(object? sender, EventArgs args)
     {
-        if (_disposed || !_worldRuntimeChangePending || !_resource.IsLoaded(WorldBundleId))
+        if (_disposed || !_worldRuntimeReload.TryScheduleDeferredAttempt())
             return;
 
-        _worldRuntimeChangePending = false;
-        Callable.From(Rebind).CallDeferred();
+        Callable.From(TryRebindAfterWorldRuntimeChange).CallDeferred();
+    }
+
+    private void TryRebindAfterWorldRuntimeChange()
+    {
+        _worldRuntimeReload.CompleteDeferredAttempt();
+        if (_disposed || !_worldRuntimeReload.IsPending || !_resource.IsLoaded(WorldBundleId))
+            return;
+
+        Rebind();
     }
 
     private void ClearActiveRoot()
     {
+        ReleasePlateSurfaceRenderer();
+
         if (_activeRoot is not null && GodotObject.IsInstanceValid(_activeRoot))
         {
             _activeRoot.GetParent()?.RemoveChild(_activeRoot);
@@ -1470,6 +1382,12 @@ void fragment() {
             _cutawayFaceRoot.QueueFree();
         }
         _cutawayFaceRoot = null;
+    }
+
+    private void ReleasePlateSurfaceRenderer()
+    {
+        if (_plateSurfaceRoot is PlateSurfaceRenderer renderer && GodotObject.IsInstanceValid(renderer))
+            renderer.ReleaseRenderingResources();
     }
 
     private void ReleaseNodeGraphView()

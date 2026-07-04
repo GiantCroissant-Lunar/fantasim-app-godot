@@ -32,7 +32,7 @@ public static class CellElevationComposition
 
             // Build populates one ECS entity per cell and registers CellElevationSystem into the model's
             // ArchSystemRunner (mirrors how ReduceFieldsSystem registers into EcsWorldActor's runner).
-            var cellElevation = CellElevationModel.Build(reconstructor, snapshotTicks);
+            var cellElevation = CellElevationModel.Build(reconstructor, snapshotTicks, renderOptions.HydrosphereMode);
 
             // Populate/derive for the onset tick (first active tick — pre-onset would be empty)
             // and report the relief extent C will upload.

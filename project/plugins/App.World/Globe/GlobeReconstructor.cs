@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using FantaSim.App.World.Cells;
 using FantaSim.App.World.Composition;
+using FantaSim.App.World.Crust;
 using FantaSim.App.World.Dto;
 using FantaSim.Geosphere.Crust;
 using FantaSim.Geosphere.Plate.Topology;
@@ -582,15 +583,7 @@ public sealed class GlobeReconstructor
 
         if (activeTicks.Count == 0) return byTick;
 
-        long endTick = 0;
-        foreach (var t in activeTicks) if (t > endTick) endTick = t;
-
-        var result = CrustPipeline.RunAsync(
-            _tessellation, _plates, CrustInitRecipe.Continental(0, 1),
-            startTick: 0, endTick: endTick,
-            snapshotTicks: activeTicks,
-            rates: DefaultRates(),
-            rotationReferenceTick: _onsetTick).GetAwaiter().GetResult();
+        var result = RunCrustPipeline(activeTicks);
 
         foreach (var tick in activeTicks)
         {
@@ -637,15 +630,7 @@ public sealed class GlobeReconstructor
         if (activeTicks.Count == 0)
             return new CrustStateRun(n, byTick, centers);
 
-        long endTick = 0;
-        foreach (var t in activeTicks) if (t > endTick) endTick = t;
-
-        var result = CrustPipeline.RunAsync(
-            _tessellation, _plates, CrustInitRecipe.Continental(0, 1),
-            startTick: 0, endTick: endTick,
-            snapshotTicks: activeTicks,
-            rates: DefaultRates(),
-            rotationReferenceTick: _onsetTick).GetAwaiter().GetResult();
+        var result = RunCrustPipeline(activeTicks);
 
         foreach (var tick in activeTicks)
         {
@@ -692,17 +677,9 @@ public sealed class GlobeReconstructor
         if (activeTicks.Count == 0)
             return new CrustSnapshotResult(n, stateByTick, featuresByTick);
 
-        long endTick = 0;
-        foreach (var t in activeTicks) if (t > endTick) endTick = t;
-
         // rotationReferenceTick keeps the deposited boundary TYPES on the same delta-from-onset
         // rotation convention RotationDelta/ReassignCellsAt render with (snapshot ticks are absolute).
-        var result = CrustPipeline.RunAsync(
-            _tessellation, _plates, CrustInitRecipe.Continental(0, 1),
-            startTick: 0, endTick: endTick,
-            snapshotTicks: activeTicks,
-            rates: DefaultRates(),
-            rotationReferenceTick: _onsetTick).GetAwaiter().GetResult();
+        var result = RunCrustPipeline(activeTicks);
 
         foreach (var tick in activeTicks)
         {
@@ -719,14 +696,23 @@ public sealed class GlobeReconstructor
         IReadOnlyDictionary<long, IReadOnlyDictionary<int, CellCrustState>> StateByTick,
         IReadOnlyDictionary<long, IReadOnlyDictionary<int, CrustFeature>> FeaturesByTick);
 
-    private static CrustEvolutionRates DefaultRates()
+    private CrustEvolutionResult RunCrustPipeline(IReadOnlyList<long> activeTicks)
     {
-        static double PerTick(double perMa) => perMa / UnitConverter.TicksPerMegaAnnum;
-        return new CrustEvolutionRates(
-            OrogenicPerTick: PerTick(1.0),
-            ArcVolcanismPerTick: PerTick(0.6),
-            IslandArcVolcanismPerTick: PerTick(0.4),
-            RidgeVolcanismPerTick: PerTick(0.5));
+        var spec = WorldCrustRunSpec.ForReconstructor(
+            _frequency,
+            _onsetTick,
+            activeTicks,
+            _plates);
+
+        return CrustPipeline.RunAsync(
+            _tessellation,
+            spec.Plates,
+            spec.Recipe,
+            startTick: spec.StartTick,
+            endTick: spec.EndTick,
+            snapshotTicks: spec.SnapshotTicks,
+            rates: spec.Rates,
+            rotationReferenceTick: spec.RotationReferenceTick).GetAwaiter().GetResult();
     }
 
     /// <summary>

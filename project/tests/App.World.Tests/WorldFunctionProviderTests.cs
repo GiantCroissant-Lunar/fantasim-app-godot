@@ -2,6 +2,9 @@ using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using FantaSim.App.NodeGraph;
 using FantaSim.App.World;
+using FantaSim.App.World.Composition;
+using FantaSim.App.World.Crust;
+using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Recipes;
 using FantaSim.World.Contracts.Units;
 using Xunit;
@@ -37,12 +40,10 @@ public sealed class WorldFunctionProviderTests
     // ---------------------------------------------------------------------
     // Behavior 2: the CrustGenerationGraph recipe, run through the REAL
     // GraphExecutor with the WorldFunctionProvider, produces a crust run whose
-    // topology has active boundaries and whose features include at least one
-    // mountain (the 3-plate default ⇒ a convergent continent-continent boundary
-    // ⇒ non-zero orogenic pressure crossing the threshold).
+    // topology uses the shared presentation defaults and has active boundaries.
     // ---------------------------------------------------------------------
     [Fact]
-    public async Task CrustGenerationGraph_through_executor_yields_active_boundaries_and_a_mountain()
+    public async Task CrustGenerationGraph_through_executor_yields_active_boundaries_for_default_roster()
     {
         // Given the general executor wired with ONLY the World function provider
         var provider = new WorldFunctionProvider();
@@ -56,16 +57,14 @@ public sealed class WorldFunctionProviderTests
         Assert.True((int)result["cellCount"]! > 0, "expected a non-empty tessellation");
         Assert.True((int)result["boundaryCount"]! > 0, "expected inter-plate boundaries");
         Assert.True((bool)result["activeBoundaries"]!, "expected at least one active (non-inactive) boundary");
+        Assert.Equal(WorldGenerationRenderOptions.Default.TessellationFrequency, (int)result["frequency"]!);
+        Assert.Equal(DefaultPresentationPlateCount(), (int)result["plateCount"]!);
         Assert.Equal(UnitConverter.MegaAnnumToTickDelta(8.0), (long)result["canonicalTick"]!);
         Assert.Equal(8.0, (double)result["durationMegaAnnum"]!, 12);
 
         // And the boundary classification includes a convergent boundary (drives orogeny)
         var boundaryTypes = result["boundaryTypes"]!.AsObject();
-        Assert.True(boundaryTypes.ContainsKey("Convergent"), "expected a convergent boundary in the 3-plate setup");
-
-        // And orogenic pressure accumulated above zero, yielding at least one mountain feature
-        Assert.True((double)result["peakOrogenicPressure"]! > 0.0, "expected non-zero peak orogenic pressure");
-        Assert.True((int)result["mountainCount"]! >= 1, "expected at least one mountain feature");
+        Assert.True(boundaryTypes.ContainsKey("Convergent"), "expected a convergent boundary in the default setup");
     }
 
     // ---------------------------------------------------------------------
@@ -80,7 +79,8 @@ public sealed class WorldFunctionProviderTests
         var summary = await provider.InvokeAsync("crust.generate", new JsonObject());
 
         Assert.Equal("crust.generate", (string?)summary["function"]);
-        Assert.True((int)summary["plateCount"]! == 3, "default setup is the proven 3-plate world");
+        Assert.Equal(WorldGenerationRenderOptions.Default.TessellationFrequency, (int)summary["frequency"]!);
+        Assert.Equal(DefaultPresentationPlateCount(), (int)summary["plateCount"]!);
         Assert.True((int)summary["featureCount"]! > 0, "expected derived crust features");
     }
 
@@ -111,4 +111,27 @@ public sealed class WorldFunctionProviderTests
         Assert.Equal(12_345L, (long)result["canonicalTick"]!);
         Assert.Equal(UnitConverter.TickDeltaToMegaAnnum(12_345), (double)result["durationMegaAnnum"]!, 12);
     }
+
+    [Fact]
+    public async Task InvokeAsync_crust_generate_explicit_frequency_and_plates_override_defaults()
+    {
+        var provider = new WorldFunctionProvider();
+
+        var summary = await provider.InvokeAsync("crust.generate", new JsonObject
+        {
+            ["frequency"] = 2,
+            ["plates"] = new JsonArray(
+                new JsonObject { ["id"] = 0, ["lat"] = 10.0, ["lon"] = 20.0, ["rate"] = 0.1 },
+                new JsonObject { ["id"] = 1, ["lat"] = -10.0, ["lon"] = -20.0, ["rate"] = 0.05 }),
+        });
+
+        Assert.Equal(2, (int)summary["frequency"]!);
+        Assert.Equal(2, (int)summary["plateCount"]!);
+    }
+
+    private static int DefaultPresentationPlateCount()
+        => WorldCrustRunSpec.ForPresentation(
+            WorldGenerationRenderOptions.Default,
+            SphereRegimeScheduleDefaults.PlateOnsetTick,
+            UnitConverter.MegaAnnumToTickDelta(8.0)).Plates.Count;
 }
