@@ -71,13 +71,82 @@ public sealed class HypsometricTintTests
     }
 
     [Fact]
-    public void Mid_elevation_reads_as_neutral_rock_grey_not_brown()
+    public void Mid_elevation_reads_as_warm_rock_not_neutral_grey()
     {
+        // North-star spec §2: "The dry crust is NOT monochrome" — mid-elevation must carry warm
+        // saturation (R > B), not neutral grey (R ≈ B).
         var colors = HypsometricTint.ComputeColors(new double[] { -2000, 0, 2000 });
         var mid = colors[1];
 
-        Assert.True(mid.R - mid.B <= 0.06,
-            $"mid crust tint is too warm/brown for the diagnostic view: R-B={mid.R - mid.B:F3}");
+        Assert.True(mid.R - mid.B > 0.08,
+            $"mid crust tint is neutral grey (R-B={mid.R - mid.B:F3}); spec §2 requires saturated warm bands");
+    }
+
+    // === Color-first dry crust (north-star spec §2) ==============================================
+
+    [Fact]
+    public void Ramp_is_saturated_not_monochrome_grey()
+    {
+        // Spec §2: "The dry crust is NOT monochrome: hypsometric ramp with distinct, saturated bands."
+        var colors = HypsometricTint.ComputeColors(UniformElevations(101));
+
+        var mid = colors[50];
+        Assert.True(mid.R - mid.B > 0.08,
+            $"mid-elevation is monochrome grey (R-B={mid.R - mid.B:F3}); spec §2 requires saturated bands");
+    }
+
+    [Fact]
+    public void Ramp_has_bimodal_base_basin_tonally_separated_from_continent()
+    {
+        // Spec §2: "bimodal base — ocean-basin level tonally separated from continental level
+        // (shelf ramp between) even with no water." Basin and continent must differ in warmth
+        // (R-B), not just lightness — they are different tone families.
+        var colors = HypsometricTint.ComputeColors(UniformElevations(101));
+
+        double Warmth(RampColor c) => c.R - c.B;
+        var basin = colors[15];
+        var continent = colors[65];
+
+        Assert.True(Math.Abs(Warmth(continent) - Warmth(basin)) > 0.04,
+            $"basin and continent are the same tone family (warmth delta {Warmth(continent) - Warmth(basin):F3}); spec §2 requires bimodal tonal separation");
+    }
+
+    [Fact]
+    public void Shelf_transition_is_steeper_than_basin_or_continent_interior()
+    {
+        // Spec §2: "shelf ramp between" the bimodal modes — warmth change per unit rank is steeper
+        // in the shelf zone than in either mode's interior.
+        var colors = HypsometricTint.ComputeColors(UniformElevations(101));
+
+        double Warmth(int i) => colors[i].R - colors[i].B;
+
+        double basinSlope = Math.Abs(Warmth(20) - Warmth(10));
+        double shelfSlope = Math.Abs(Warmth(40) - Warmth(30));
+        double continentSlope = Math.Abs(Warmth(70) - Warmth(60));
+
+        Assert.True(shelfSlope > basinSlope,
+            $"shelf ({shelfSlope:F3}) not steeper than basin interior ({basinSlope:F3})");
+        Assert.True(shelfSlope > continentSlope,
+            $"shelf ({shelfSlope:F3}) not steeper than continental interior ({continentSlope:F3})");
+    }
+
+    [Fact]
+    public void Belt_accents_stay_visible_on_top_of_ramp()
+    {
+        // Spec §2: "Belt accents (trench/ridge/arc) stay visible on top of the ramp." Trench
+        // darkening and ridge brightening must produce a visible face-on delta against actual
+        // ramp colors, not just hardcoded bases.
+        var colors = HypsometricTint.ComputeColors(UniformElevations(101));
+        var baseColor = colors[50];
+        double baseLuma = Luma(baseColor);
+
+        var trench = CrustAccentMapper.Apply(baseColor, CrustAccentMapper.Map(3, 1.0));
+        var ridge = CrustAccentMapper.Apply(baseColor, CrustAccentMapper.Map(4, 1.0));
+
+        Assert.True(baseLuma - Luma(trench) >= 0.025,
+            $"trench not visible on ramp: delta {baseLuma - Luma(trench):F3}");
+        Assert.True(Luma(ridge) - baseLuma >= 0.025,
+            $"ridge not visible on ramp: delta {Luma(ridge) - baseLuma:F3}");
     }
 
     [Fact]
@@ -205,4 +274,7 @@ public sealed class HypsometricTintTests
     {
         Assert.InRange(Luma(actual), Luma(expected) - tolerance, Luma(expected) + tolerance);
     }
+
+    private static double[] UniformElevations(int count)
+        => Enumerable.Range(0, count).Select(i => (double)i).ToArray();
 }

@@ -24,28 +24,30 @@ public sealed record HypsometricRampOptions(
 /// Maps per-cell elevation (metres) to a hypsometric terrain ramp (sub-project A2). The ramp is
 /// NORMALIZED over the snapshot's actual relief via percentile-clamped rank, so an early low-relief
 /// world (small elevation spread) or a world with broad lowland plateaus still renders the full
-/// terrain vocabulary (dark basalt grey → weathered rock grey → light rock) instead of collapsing
-/// to a nearly black band.
+/// terrain vocabulary instead of collapsing to a single band.
 ///
-/// <para>BARE-CRUST PALETTE (doctrine: no sphere-costume rendering — terminology-strata-scale-
-/// resolution §1 rule 3). This view renders bare geosphere crust; water belongs to the future
-/// hydrosphere lane, so the ramp contains NO blue. Every stop is neutral-to-warm grey rock with
-/// R ≥ G ≥ B, so the blue channel never dominates. Luminance (Rec. 709) is strictly ascending so
-/// darker-is-lower reads correctly while still leaving exposed crust readable. Color stops:
-/// dark basalt grey → basalt grey → weathered rock grey → lighter rock → pale fractured rock.</para>
+/// <para>BIMODAL SATURATED PALETTE (north-star spec §2 — color-first dry crust): the dry crust is
+/// NOT monochrome. The ramp has distinct saturated bands with a bimodal base — ocean-basin level
+/// tonally separated from continental level by a shelf ramp between them, even with no water.
+/// Basin mode (low ranks) is cool-warm grey rock; the shelf break transitions steeply in warmth
+/// (R-B delta); continental mode (high ranks) is warmer saturated rock. Belt accents
+/// (trench/ridge/arc) stay visible on top. Every stop is warm (R >= G >= B) so no stop reads as
+/// water (doctrine: no sphere-costume rendering — water belongs to the future hydrosphere lane).
+/// Luminance (Rec. 709) is strictly ascending so darker-is-lower reads correctly.</para>
 /// </summary>
 public static class HypsometricTint
 {
-    // (normalized-position, color). Positions are strictly ascending in [0,1]. Luma is strictly
-    // ascending. Every stop is neutral/warm grey (R ≥ G ≥ B) so no stop reads as water.
+    // (normalized-position, color). Positions strictly ascending in [0,1]. Luma strictly ascending.
+    // Every stop is warm (R >= G >= B). Bimodal: basin mode (0.00-0.28, low warmth), shelf transition
+    // (0.28-0.58, steep warmth ramp), continent mode (0.58-1.00, high warmth).
     private static readonly (double Pos, RampColor Color)[] RampStops =
     {
-        (0.00, new RampColor(0.22, 0.22, 0.21)),   // dark basalt grey, still readable
-        (0.18, new RampColor(0.34, 0.34, 0.32)),   // basalt grey
-        (0.40, new RampColor(0.46, 0.45, 0.42)),   // weathered rock grey
-        (0.62, new RampColor(0.56, 0.55, 0.52)),   // light fractured rock
-        (0.82, new RampColor(0.64, 0.63, 0.60)),   // pale highland rock
-        (1.00, new RampColor(0.70, 0.69, 0.66)),   // light grey summit rock
+        (0.00, new RampColor(0.21, 0.20, 0.18)),   // basin floor — dark warm grey
+        (0.28, new RampColor(0.32, 0.29, 0.24)),   // basin plains — settled basin tone family
+        (0.48, new RampColor(0.52, 0.42, 0.30)),   // shelf break — warmth transition begins
+        (0.58, new RampColor(0.60, 0.46, 0.32)),   // continental plains — warm saturated rock
+        (0.78, new RampColor(0.70, 0.56, 0.40)),   // continental highlands — warm rock
+        (1.00, new RampColor(0.72, 0.66, 0.55)),   // peaks — light warm rock
     };
 
     private const double DegenerateNormalized = 0.5; // mid-ramp when all elevations are equal
