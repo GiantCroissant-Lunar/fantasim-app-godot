@@ -884,7 +884,9 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             meshes.Add(mesh);
         }
 
-        renderer.SetMeshes(meshes, HypsoPlateMaterialOverride);
+        var material = HypsoPlateMaterialOverride;
+        PlateSurfaceMaterialTuning.ForView(viewMode).ApplyTo(material);
+        renderer.SetMeshes(meshes, material);
         _log.LogInformation(
             "Planet plate surface bound: view={ViewMode}, subdivision={Subdivision}, plates={PlateCount}, triangles={TriangleCount}, meshVertices={VertexCount}.",
             viewMode,
@@ -1188,6 +1190,8 @@ render_mode cull_disabled;
 
 uniform vec4 u_volcanic_glow : source_color = vec4(1.0, 0.42, 0.10, 1.0);
 uniform float u_volcanic_energy : hint_range(0.0, 8.0) = 1.4;
+uniform float u_albedo_gain : hint_range(0.5, 2.0) = 1.0;
+uniform float u_light_floor : hint_range(0.0, 1.0) = 0.08;
 
 // W3a cutaway wedge (inactive by default; zero discard when u_wedge_active is false).
 uniform bool u_wedge_active = false;
@@ -1237,7 +1241,7 @@ void fragment() {
             discard;
         }
     }
-    ALBEDO = COLOR.rgb;
+    ALBEDO = clamp(COLOR.rgb * u_albedo_gain, vec3(0.0), vec3(1.0));
     float vent = UV2.x;
     if (vent > 0.001) {
         EMISSION = u_volcanic_glow.rgb * vent * u_volcanic_energy;
@@ -1250,7 +1254,7 @@ void light() {
     float ndotl = dot(normalize(NORMAL), normalize(LIGHT));
     float wrap = ndotl * 0.5 + 0.5;
     wrap *= wrap;
-    DIFFUSE_LIGHT += ALBEDO * LIGHT_COLOR * ATTENUATION * wrap;
+    DIFFUSE_LIGHT += ALBEDO * LIGHT_COLOR * ATTENUATION * max(wrap, u_light_floor);
 }
 ";
 

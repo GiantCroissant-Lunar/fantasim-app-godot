@@ -8,16 +8,16 @@ namespace FantaSim.App.World.Tests;
 /// <summary>
 /// Hypsometric tint proof (sub-project A2): per-cell elevation must map to a terrain ramp whose
 /// normalized range is robust to the snapshot's actual relief. The ramp reads as BARE CRUST
-/// (doctrine: no sphere-costume rendering): deep basalt (near-black warm grey) → basalt brown →
-/// rock tan → light rock. No blue anywhere — water belongs to the future hydrosphere lane.
+/// (doctrine: no sphere-costume rendering): dark basalt grey → weathered rock grey → light rock.
+/// No blue anywhere — water belongs to the future hydrosphere lane.
 /// </summary>
 public sealed class HypsometricTintTests
 {
     // Ramp stop expectations (must match HypsometricRamp definition). Checked loosely — the exact
     // RGB is a look-and-feel constant, but the BAND ORDERING and band-head colors are contracts the
     // normalization + ramp must honour so the globe reads as bare crust, not ocean.
-    private static readonly RampColor DeepBasalt = new(0.07, 0.06, 0.055);
-    private static readonly RampColor LightRock = new(0.84, 0.82, 0.78);
+    private static readonly RampColor DarkBasaltGrey = new(0.22, 0.22, 0.21);
+    private static readonly RampColor LightRock = new(0.88, 0.87, 0.84);
 
     [Fact]
     public void ComputeColors_returns_one_color_per_cell()
@@ -37,16 +37,48 @@ public sealed class HypsometricTintTests
     }
 
     [Fact]
-    public void Lowest_elevation_maps_near_deep_basalt_and_highest_near_light_rock()
+    public void Lowest_elevation_maps_to_readable_dark_grey_and_highest_near_light_rock()
     {
         var elevations = new double[] { -2000, 0, 2000 };
 
         var colors = HypsometricTint.ComputeColors(elevations);
         var ordered = colors.ToArray();
 
-        // Min is at the deep-basalt end of the ramp; max at the light-rock end.
-        AssertLuma(ordered[0], DeepBasalt, 0.08);
+        // Min is at the readable dark-grey end of the ramp; max at the light-rock end.
+        AssertLuma(ordered[0], DarkBasaltGrey, 0.08);
         AssertLuma(ordered[2], LightRock, 0.08);
+    }
+
+    [Fact]
+    public void Lowest_elevation_remains_readable_grey_rock_not_near_black()
+    {
+        var colors = HypsometricTint.ComputeColors(new double[] { -2000, 0, 2000 });
+
+        Assert.True(Luma(colors[0]) >= 0.18,
+            $"lowest crust tint is too dark for a dry exposed crust diagnostic: luma={Luma(colors[0]):F3}");
+    }
+
+    [Fact]
+    public void Mid_elevation_reads_as_neutral_rock_grey_not_brown()
+    {
+        var colors = HypsometricTint.ComputeColors(new double[] { -2000, 0, 2000 });
+        var mid = colors[1];
+
+        Assert.True(mid.R - mid.B <= 0.06,
+            $"mid crust tint is too warm/brown for the diagnostic view: R-B={mid.R - mid.B:F3}");
+    }
+
+    [Fact]
+    public void Dominant_lowland_plateau_still_reads_as_mid_grey_crust_when_high_features_are_sparse()
+    {
+        var elevations = Enumerable.Repeat(0.0, 90)
+            .Concat(Enumerable.Range(1, 10).Select(i => i * 1000.0))
+            .ToArray();
+
+        var colors = HypsometricTint.ComputeColors(elevations);
+
+        Assert.True(Luma(colors[0]) >= 0.36,
+            $"dominant lowland plateau collapsed to too-dark crust: luma={Luma(colors[0]):F3}");
     }
 
     [Fact]
@@ -79,7 +111,7 @@ public sealed class HypsometricTintTests
             Assert.True(c.B <= c.G + 1e-9,
                 $"blue dominates (B {c.B:F3} > G {c.G:F3}) — stop reads as water, not bare crust");
             Assert.True(c.G <= c.R + 1e-9,
-                $"green dominates R (G {c.G:F3} > R {c.R:F3}) — stop is not a warm rock tone");
+                $"green dominates R (G {c.G:F3} > R {c.R:F3}) — stop is not neutral/warm rock");
         });
     }
 
@@ -102,7 +134,7 @@ public sealed class HypsometricTintTests
     {
         // A realistic bulk (100 cells with small variation 0..10) + one extreme outlier at 50_000.
         // Without percentile clamping the outlier would pin the top of the range and every bulk cell
-        // would collapse to the deep-basalt end. At 1280-cell scale (real terrain) the default 2/98
+        // would collapse to the dark-grey end. At 1280-cell scale (real terrain) the default 2/98
         // clamp excludes ~25 cells per tail; here 100 bulk cells lets the 98th percentile land inside
         // the bulk so the outlier is clamped and the bulk spreads across the ramp.
         var bulk = Enumerable.Range(0, 100).Select(i => i * 0.1).ToArray();
@@ -110,41 +142,38 @@ public sealed class HypsometricTintTests
 
         var colors = HypsometricTint.ComputeColors(elevations);
 
-        // The bulk cells must NOT all sit at the deep-basalt end: the highest bulk cell (elevation
-        // 9.9) must land clearly above the deep-basalt luma (it should reach at least the brown/tan
-        // band).
+        // The bulk cells must NOT all sit at the dark-grey end: the highest bulk cell (elevation
+        // 9.9) must land clearly above the lowland luma.
         var bulkMaxLuma = colors.Take(100).Select(Luma).Max();
-        var deepBasaltLuma = Luma(DeepBasalt);
-        Assert.True(bulkMaxLuma > deepBasaltLuma + 0.10,
-            $"outlier compressed the bulk: max bulk-luma {bulkMaxLuma:F3} not clearly above deep-basalt {deepBasaltLuma:F3}");
+        var darkBasaltLuma = Luma(DarkBasaltGrey);
+        Assert.True(bulkMaxLuma > darkBasaltLuma + 0.10,
+            $"outlier compressed the bulk: max bulk-luma {bulkMaxLuma:F3} not clearly above dark basalt grey {darkBasaltLuma:F3}");
     }
 
     [Fact]
     public void Low_relief_world_uses_full_ramp_not_a_single_band()
     {
         // The spec's concern: an early low-relief world (±10 m) must NOT render as one flat band.
-        // With percentile normalization the tiny range stretches across the full ramp so the lowest
-        // cells read as deep basalt and the highest as light rock — not a uniform mid-toned field.
+        // With rank normalization the tiny range stretches across the full ramp so the lowest
+        // cells read as dark grey crust and the highest as light rock — not a uniform field.
         var elevations = new double[] { -10, -7, -3, 0, 2, 5, 8, 10 };
 
         var colors = HypsometricTint.ComputeColors(elevations);
 
         var luma = colors.Select(Luma).ToArray();
-        // Lowest cell reads clearly darker (deep-basalt band) than the highest (light-rock band).
-        Assert.True(luma[^1] - luma[0] > 0.20,
+        // Lowest cell reads clearly darker than the highest, while staying readable.
+        Assert.True(luma[^1] - luma[0] > 0.35,
             $"low-relief world did not spread the ramp: luma range [{luma[0]:F3}, {luma[^1]:F3}] too narrow");
-        // And specifically: the lowest is NOT in the mid basalt-brown band (luma clearly below it).
-        var midRampLuma = Luma(new RampColor(0.27, 0.22, 0.18));
-        Assert.True(luma[0] < midRampLuma - 0.05,
-            $"lowest low-relief cell landed in the mid band, luma {luma[0]:F3} — expected deep basalt");
+        Assert.True(luma[0] >= Luma(DarkBasaltGrey) - 0.02,
+            $"lowest low-relief cell became unreadably dark, luma {luma[0]:F3}");
     }
 
     [Fact]
     public void Custom_percentile_options_are_respected()
     {
-        // A bulk with real variation (0..10) bracketed by two extreme outliers. A wider percentile
-        // (default 2/98 over 12 pts) would let the outliers widen the range; a tight 10/90 clamps
-        // them so the bulk's tiny [0,10] range stretches further across the ramp.
+        // A bulk with real variation (0..10) bracketed by two extreme outliers. A tight 10/90 clamp
+        // should pull the low outlier into the clamped low tail instead of leaving it as a unique
+        // rank-zero sample.
         var bulk = Enumerable.Range(0, 10).Select(i => (double)i).ToArray();
         var elevations = new[] { -100_000.0 }
             .Concat(bulk)
@@ -154,11 +183,8 @@ public sealed class HypsometricTintTests
         var tightColors = HypsometricTint.ComputeColors(elevations, new HypsometricRampOptions(0.10, 0.90));
         var defaultColors = HypsometricTint.ComputeColors(elevations);
 
-        // The tight clamp stretches the bulk more: the mid-bulk cell must reach a higher ramp
-        // position (brighter) under the tight clamp than under the default.
-        var midIdx = 1 + 5; // the -100_000 outlier is index 0, bulk starts at 1
-        Assert.True(Luma(tightColors[midIdx]) > Luma(defaultColors[midIdx]),
-            "tight percentile should stretch the bulk more than the default");
+        Assert.True(Luma(tightColors[0]) > Luma(defaultColors[0]),
+            "tight percentile should clamp the low outlier into a shared low tail rank");
     }
 
     private static double Luma(RampColor c) => 0.2126 * c.R + 0.7152 * c.G + 0.0722 * c.B;
