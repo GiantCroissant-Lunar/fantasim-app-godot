@@ -813,9 +813,11 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         bool isTerrain = viewMode is GlobeViewMode.World or GlobeViewMode.HypsometricTerrain;
         bool isWorld = viewMode == GlobeViewMode.World;
 
+        var relief = PlateSurfaceReliefFabric.ForView(viewMode);
         _plateSurfaces = new GlobePlateSurfaces(
             snapshot,
-            noise: PlateSurfaceReliefFabric.ForView(viewMode));
+            noise: relief,
+            detailSampler: BuildTectonicDetailSampler(snapshot, document.CellFeatures, relief, isTerrain));
 
         IReadOnlyList<double> elevations = isTerrain
             ? (document.CellElevations is { } cellElevations && cellElevations.Count == snapshot.CellCount
@@ -911,6 +913,19 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         }
 
         return weights;
+    }
+
+    private static Func<CartesianPoint3, double>? BuildTectonicDetailSampler(
+        WorldGlobeSnapshot snapshot,
+        IReadOnlyList<CellCrustFeature>? features,
+        NoiseParams relief,
+        bool isTerrain)
+    {
+        if (!isTerrain || relief.Amplitude == 0.0 || features is null || features.Count == 0)
+            return null;
+
+        var sampler = new TectonicDetailSampler(snapshot, features, relief);
+        return sampler.Sample;
     }
 
     // Computes per-cell color (world or crust ramp with trench/ridge accent baked in) and

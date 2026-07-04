@@ -546,6 +546,57 @@ public sealed class GlobePlateSurfacesTests
 
     private static double Radius(CartesianPoint3 p) => Math.Sqrt(p.X * p.X + p.Y * p.Y + p.Z * p.Z);
 
+    private static CartesianPoint3 CellCenter(GlobeCell cell)
+    {
+        var p = new CartesianPoint3(
+            cell.C0.X + cell.C1.X + cell.C2.X,
+            cell.C0.Y + cell.C1.Y + cell.C2.Y,
+            cell.C0.Z + cell.C1.Z + cell.C2.Z);
+        double len = Radius(p);
+        return new CartesianPoint3(p.X / len, p.Y / len, p.Z / len);
+    }
+
+    [Fact]
+    public void TectonicDetailSampler_UsesWeakerInteriorAndRidgedActiveFeatureProfiles()
+    {
+        var snapshot = TwoPlateSnapshot();
+        var features = new[]
+        {
+            new CellCrustFeature(0, 0.0),
+            new CellCrustFeature(1, 10.0),
+            new CellCrustFeature(5, 10.0),
+        };
+        var sampler = new TectonicDetailSampler(snapshot, features, StrongCrustFabric);
+
+        var interior = sampler.ResolveProfile(CellCenter(snapshot.Cells[0]));
+        var mountain = sampler.ResolveProfile(CellCenter(snapshot.Cells[1]));
+        var fault = sampler.ResolveProfile(CellCenter(snapshot.Cells[2]));
+
+        Assert.True(interior.Noise.Amplitude < StrongCrustFabric.Amplitude);
+        Assert.True(mountain.Noise.Amplitude > interior.Noise.Amplitude);
+        Assert.True(mountain.Noise.Ridged);
+        Assert.False(interior.Noise.Ridged);
+        Assert.True(fault.Noise.Amplitude > interior.Noise.Amplitude);
+        Assert.True(fault.Noise.Amplitude < mountain.Noise.Amplitude);
+    }
+
+    [Fact]
+    public void TectonicDetailSampler_IsDeterministicForIdenticalPositions()
+    {
+        var snapshot = TwoPlateSnapshot();
+        var features = new[]
+        {
+            new CellCrustFeature(0, 0.0),
+            new CellCrustFeature(4, 2.0),
+            new CellCrustFeature(0, 0.0),
+        };
+        var sampler = new TectonicDetailSampler(snapshot, features, StrongCrustFabric);
+        var position = CellCenter(snapshot.Cells[1]);
+
+        Assert.Equal(sampler.ResolveProfile(position), sampler.ResolveProfile(position));
+        Assert.Equal(sampler.Sample(position), sampler.Sample(position), 12);
+    }
+
     // Find the local vertex index in a cap whose unit direction matches `dir` (the shared corner).
     private static int VertexClosestTo(PlateCap cap, GlobeVec3 dir)
     {
@@ -788,6 +839,37 @@ public sealed class GlobePlateSurfacesTests
         var pShared = plate0.Surface.Positions[sharedMidV];
         double rShared = Math.Sqrt(pShared.X * pShared.X + pShared.Y * pShared.Y + pShared.Z * pShared.Z);
         Assert.Equal(expectedRadius, rShared, 9);
+    }
+
+    [Fact]
+    public void BuildAdaptiveSurfaces_CustomDetailSamplerResamplesMidpointDetail()
+    {
+        var snap = TwoPlateSnapshot();
+        static double Detail(CartesianPoint3 pos) => (pos.X * 100.0) + (pos.Y * 250.0) + (pos.Z * 500.0);
+        var surfaces = new GlobePlateSurfaces(snap, noise: NoNoise, detailSampler: Detail);
+        var elevations = new double[] { 0.0, 1000.0, 0.0 };
+        const double exaggeration = 0.00012;
+
+        var caps = surfaces.BuildAdaptiveSurfaces(
+            elevations,
+            exaggeration,
+            new AdaptiveSubdivisionOptions(MaxDepth: 1, EdgeHeightDeltaThreshold: 1e-5));
+        var plate0 = caps.Single(c => c.PlateId == 0);
+
+        var v0 = new CartesianPoint3(0, 0, 1);
+        var v2 = new CartesianPoint3(0, 1, 1);
+        var sumPos = new CartesianPoint3(v0.X + v2.X, v0.Y + v2.Y, v0.Z + v2.Z);
+        double sumLen = Radius(sumPos);
+        var midUnit = new CartesianPoint3(sumPos.X / sumLen, sumPos.Y / sumLen, sumPos.Z / sumLen);
+        double envelopeMid = (elevations[0] + elevations[1]) * 0.5;
+        double expectedRadius = 1.0 + ((envelopeMid + Detail(midUnit)) * exaggeration);
+
+        var sharedMidV = Enumerable.Range(0, plate0.VertexProvenance!.Length)
+            .Single(i => plate0.VertexProvenance[i] is VertexProvenance.Midpoint mp
+                         && ((mp.EndpointA == 0 && mp.EndpointB == 2)
+                             || (mp.EndpointA == 2 && mp.EndpointB == 0)));
+        var pShared = plate0.Surface.Positions[sharedMidV];
+        Assert.Equal(expectedRadius, Radius(pShared), 9);
     }
 
     [Fact]

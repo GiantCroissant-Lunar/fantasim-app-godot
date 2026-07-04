@@ -91,7 +91,7 @@ public sealed class GlobePlateSurfaces
     private readonly IGlobeSurfaceBuilder _builder;
     private readonly IAdaptiveGlobeSurfaceBuilder _adaptiveBuilder;
     private readonly IReadOnlyList<PlateTopology> _plates;
-    private readonly NoiseParams _peaks;
+    private readonly Func<CartesianPoint3, double> _detailSampler;
 
     // Global shared-vertex topology across ALL plates (built once, tick-invariant). A corner on the
     // boundary between plate A and plate B is ONE global vertex; its envelope height is the mean over
@@ -112,14 +112,24 @@ public sealed class GlobePlateSurfaces
     /// Seeded peaks-relief parameters (defaults to <see cref="DefaultPeaks"/>). Pass
     /// <c>new NoiseParams(Amplitude: 0)</c> to disable the relief (pure tectonic envelope).
     /// </param>
-    public GlobePlateSurfaces(WorldGlobeSnapshot snapshot, IGlobeSurfaceBuilder? builder = null, NoiseParams? noise = null)
+    /// <param name="detailSampler">
+    /// Optional pure relief sampler in metres. When supplied, it supersedes <paramref name="noise"/>
+    /// for original vertices and adaptive subdivision midpoints; identical base positions must return
+    /// identical values to preserve cross-plate watertightness.
+    /// </param>
+    public GlobePlateSurfaces(
+        WorldGlobeSnapshot snapshot,
+        IGlobeSurfaceBuilder? builder = null,
+        NoiseParams? noise = null,
+        Func<CartesianPoint3, double>? detailSampler = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         _builder = builder ?? new GlobeSurfaceBuilder();
         _adaptiveBuilder = _builder as IAdaptiveGlobeSurfaceBuilder ?? new AdaptiveGlobeSurfaceBuilder(_builder);
-        _peaks = noise ?? DefaultPeaks;
+        var peaks = noise ?? DefaultPeaks;
+        _detailSampler = detailSampler ?? (pos => NoiseRelief.Sample(pos, peaks));
         (_globalVertices, _globalTriangles, _globalCellIds) = BuildGlobalTopology(snapshot);
-        _plates = BuildPlateTopologies(snapshot, _peaks, _globalVertices);
+        _plates = BuildPlateTopologies(snapshot, _detailSampler, _globalVertices);
     }
 
     /// <summary>The plate ids that have at least one cell (ascending), in cap order.</summary>
@@ -191,7 +201,7 @@ public sealed class GlobePlateSurfaces
         double Finalizer(double m) => linear
             ? m * exaggeration
             : Math.Sign(m) * Math.Pow(Math.Abs(m), heightExponent) * exaggeration;
-        double Sampler(CartesianPoint3 pos) => NoiseRelief.Sample(pos, _peaks);
+        double Sampler(CartesianPoint3 pos) => _detailSampler(pos);
 
         var caps = new PlateCap[_plates.Count];
         for (int p = 0; p < _plates.Count; p++)
@@ -400,7 +410,10 @@ public sealed class GlobePlateSurfaces
         return (vertices.ToArray(), triangles, cellIds);
     }
 
-    private static IReadOnlyList<PlateTopology> BuildPlateTopologies(WorldGlobeSnapshot snapshot, NoiseParams peaks, CartesianPoint3[] globalVertices)
+    private static IReadOnlyList<PlateTopology> BuildPlateTopologies(
+        WorldGlobeSnapshot snapshot,
+        Func<CartesianPoint3, double> detailSampler,
+        CartesianPoint3[] globalVertices)
     {
         // Reverse index: global vertex id -> its quantized base position (already the dedupe key).
         var globalKeyById = new (long, long, long)[globalVertices.Length];
@@ -427,11 +440,15 @@ public sealed class GlobePlateSurfaces
 
         var result = new List<PlateTopology>(byPlate.Count);
         foreach (var kvp in byPlate)
-            result.Add(BuildOnePlate(kvp.Key, kvp.Value, peaks, globalKeyById));
+            result.Add(BuildOnePlate(kvp.Key, kvp.Value, detailSampler, globalKeyById));
         return result;
     }
 
-    private static PlateTopology BuildOnePlate(int plateId, List<GlobeCell> cells, NoiseParams peaks, (long, long, long)[] globalKeyById)
+    private static PlateTopology BuildOnePlate(
+        int plateId,
+        List<GlobeCell> cells,
+        Func<CartesianPoint3, double> detailSampler,
+        (long, long, long)[] globalKeyById)
     {
         // Dedupe the three corners of every face within the plate into shared local vertex ids, and
         // record the global vertex each local vertex corresponds to (same quantized base position).
@@ -457,7 +474,7 @@ public sealed class GlobePlateSurfaces
         // stay watertight — a corner shared with another plate has the same base position → same noise.
         var vertexNoiseMetres = new double[vertices.Length];
         for (int v = 0; v < vertices.Length; v++)
-            vertexNoiseMetres[v] = NoiseRelief.Sample(vertices[v], peaks);
+            vertexNoiseMetres[v] = detailSampler(vertices[v]);
 
         return new PlateTopology(plateId, vertices, localTriangles, cellIds, vertexNoiseMetres, localToGlobal.ToArray());
     }
