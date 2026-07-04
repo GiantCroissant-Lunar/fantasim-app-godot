@@ -41,7 +41,20 @@ public static class LayerProjectionProfileResolver
         var crust = ResolveCrustProfile(document);
         bool terrainView = viewMode is GlobeViewMode.World or GlobeViewMode.HypsometricTerrain;
         bool worldLens = viewMode == GlobeViewMode.World;
-        double metresToUnitRadius = worldLens ? worldMetresToUnitRadius : crust.MetresToUnitRadius;
+        double declaredScale = worldLens ? worldMetresToUnitRadius : crust.MetresToUnitRadius;
+        double heightExponent = worldLens ? worldHeightExponent : crust.HeightExponent;
+
+        // Silhouette budget fit (north-star spec §1): the declared scale is FITTED so the profile's
+        // reference max relief maps to at most the budget — the clamp in GlobePlateSurfaces then
+        // only guards outliers instead of saturating the whole field into a plateau shell. Pure
+        // arithmetic from declared values (budget / refMax^exponent); no eye-tuned numbers. The
+        // adaptive edge threshold is declared in post-lens display units, so it scales by the same
+        // ratio to keep the split behaviour invariant under the fit.
+        double fitCap = double.IsInfinity(crust.MaxDisplacementUnitRadius)
+            ? double.PositiveInfinity
+            : crust.MaxDisplacementUnitRadius / Math.Pow(crust.ReferenceMaxReliefMetres, heightExponent);
+        double metresToUnitRadius = Math.Min(declaredScale, fitCap);
+        double fitRatio = metresToUnitRadius / declaredScale;
 
         return new ResolvedLayerProjection(
             Profile: crust,
@@ -50,10 +63,10 @@ public static class LayerProjectionProfileResolver
             PlanetRadiusMetres: crust.PlanetRadiusMetres,
             TrueScaleMetresToUnitRadius: crust.TrueScaleMetresToUnitRadius,
             ReliefAmplification: metresToUnitRadius / crust.TrueScaleMetresToUnitRadius,
-            HeightExponent: worldLens ? worldHeightExponent : crust.HeightExponent,
+            HeightExponent: heightExponent,
             UseAdaptiveSurface: terrainView && crust.SurfaceSubdivision == SurfaceSubdivisionMode.Adaptive,
             AdaptiveSubdivisionMaxDepth: crust.AdaptiveSubdivisionMaxDepth,
-            AdaptiveSubdivisionEdgeHeightDelta: crust.AdaptiveSubdivisionEdgeHeightDelta,
+            AdaptiveSubdivisionEdgeHeightDelta: crust.AdaptiveSubdivisionEdgeHeightDelta * fitRatio,
             AdaptiveSubdivisionFeatureWeightDelta: crust.AdaptiveSubdivisionFeatureWeightDelta,
             PreservesCellProvenance: crust.PreservesCellProvenance,
             MaxDisplacementUnitRadius: crust.MaxDisplacementUnitRadius);

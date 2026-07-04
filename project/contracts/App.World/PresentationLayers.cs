@@ -46,13 +46,26 @@ public sealed record PlanetLayerProjectionProfile(
     /// units, applied as a pure clamp on the FINALIZED displacement. Default +inf preserves the
     /// legacy unclamped behaviour for callers that do not declare a budget.
     /// </summary>
-    double MaxDisplacementUnitRadius = double.PositiveInfinity)
+    double MaxDisplacementUnitRadius = double.PositiveInfinity,
+    /// <summary>
+    /// The relief (metres) the projection expects at the top of its working range: envelope plus
+    /// the strongest fabric belt. The resolver FITS the declared metre-to-unit-radius scale so this
+    /// relief maps to at most <see cref="MaxDisplacementUnitRadius"/> — the clamp then only guards
+    /// outliers instead of saturating the whole field.
+    /// </summary>
+    double ReferenceMaxReliefMetres = 18_000.0)
 {
     public const string CrustLayerId = "geosphere.crust";
     public const string UnifyCellGeodesicSourceGrid = "UnifyCell.GeodesicSphereTessellation";
     public const string PhysicalMetresUnit = "physical-metres";
     public const string UnitSphereDisplacementUnit = "unit-sphere-displacement";
     public const double EarthLikePlanetRadiusMetres = 6_371_000.0;
+
+    /// <summary>North-star spec §1: the stylized silhouette allowance (0.5% of base radius).</summary>
+    public const double DefaultSilhouetteBudgetUnitRadius = 0.005;
+
+    /// <summary>Default <see cref="ReferenceMaxReliefMetres"/>: ±500 m envelope + strongest fabric belt.</summary>
+    public const double DefaultReferenceMaxReliefMetres = 18_000.0;
 
     /// <summary>Non-amplified physical metre scale for the declared planet radius.</summary>
     public double TrueScaleMetresToUnitRadius => 1.0 / PlanetRadiusMetres;
@@ -68,10 +81,13 @@ public sealed record PlanetLayerProjectionProfile(
         double adaptiveSubdivisionFeatureWeightDelta = 0.25,
         double baseRadius = 1.0,
         double planetRadiusMetres = EarthLikePlanetRadiusMetres,
-        double maxDisplacementUnitRadius = double.PositiveInfinity)
+        double maxDisplacementUnitRadius = DefaultSilhouetteBudgetUnitRadius,
+        double referenceMaxReliefMetres = DefaultReferenceMaxReliefMetres)
     {
         if (planetRadiusMetres <= 0.0 || double.IsNaN(planetRadiusMetres) || double.IsInfinity(planetRadiusMetres))
             throw new ArgumentOutOfRangeException(nameof(planetRadiusMetres), planetRadiusMetres, "Planet radius must be positive and finite.");
+        if (referenceMaxReliefMetres <= 0.0 || double.IsNaN(referenceMaxReliefMetres) || double.IsInfinity(referenceMaxReliefMetres))
+            throw new ArgumentOutOfRangeException(nameof(referenceMaxReliefMetres), referenceMaxReliefMetres, "Reference max relief must be positive and finite.");
 
         return new(
             LayerId: CrustLayerId,
@@ -88,7 +104,8 @@ public sealed record PlanetLayerProjectionProfile(
             AdaptiveSubdivisionFeatureWeightDelta: adaptiveSubdivisionFeatureWeightDelta,
             PreservesCellProvenance: true,
             PlanetRadiusMetres: planetRadiusMetres,
-            MaxDisplacementUnitRadius: maxDisplacementUnitRadius);
+            MaxDisplacementUnitRadius: maxDisplacementUnitRadius,
+            ReferenceMaxReliefMetres: referenceMaxReliefMetres);
     }
 }
 
