@@ -25,28 +25,29 @@ public partial class BoundarySectionRenderer : Node3D
     private const float SlabHalfThickness = 0.02f;
     private const float StrataZ = -0.015f;
     private const float AccentZ = 0.04f;
-    private const int MaxPanels = 3;
 
     public BoundarySectionRenderer(IReadOnlyList<BoundarySectionDocument> sections)
     {
         Name = "BoundarySectionRenderer";
-        if (sections is null || sections.Count == 0)
+        var plans = BoundarySectionPanelPlanner.Create(sections);
+        if (plans.Count == 0)
             return;
 
-        int count = Math.Min(MaxPanels, sections.Count);
+        int count = plans.Count;
         float groupOffset = -((count - 1) * PanelSpacing) * 0.5f;
 
         for (int i = 0; i < count; i++)
         {
-            var panel = BuildPanel(sections[i]);
+            var panel = BuildPanel(plans[i]);
             panel.Position = new Vector3(groupOffset + i * PanelSpacing, 0.0f, 0.0f);
             AddChild(panel);
         }
     }
 
-    private static Node3D BuildPanel(BoundarySectionDocument section)
+    private static Node3D BuildPanel(BoundarySectionPanelPlan plan)
     {
-        var root = new Node3D { Name = SafeName(section) };
+        var section = plan.Section;
+        var root = new Node3D { Name = plan.Name };
 
         var style = BoundaryStyleMapper.Resolve(section.Kind);
         var accent = ToColor(style.Color);
@@ -55,7 +56,7 @@ public partial class BoundarySectionRenderer : Node3D
         if (stratumMesh is not null)
             root.AddChild(BuildMeshInstance("Strata", stratumMesh, BuildStratumMaterial()));
 
-        var accentMesh = BuildAccentMesh(section, accent);
+        var accentMesh = BuildAccentMesh(plan);
         if (accentMesh is not null)
             root.AddChild(BuildMeshInstance("Accent", accentMesh, BuildAccentMaterial(accent, (float)style.EmissionEnergy)));
 
@@ -96,14 +97,15 @@ public partial class BoundarySectionRenderer : Node3D
         return BuildColoredMesh(vertices, normals, colors);
     }
 
-    private static ArrayMesh? BuildAccentMesh(BoundarySectionDocument section, Color accent)
+    private static ArrayMesh? BuildAccentMesh(BoundarySectionPanelPlan plan)
     {
+        var section = plan.Section;
         var vertices = new List<Vector3>();
         var normals = new List<Vector3>();
 
         AppendProfileRibbon(vertices, normals, section);
         AppendFrame(vertices, normals);
-        AppendSlabGuide(vertices, normals, section);
+        AppendSlabGuide(vertices, normals, section, plan.DrawSlabGuide);
 
         if (vertices.Count == 0)
             return null;
@@ -192,11 +194,13 @@ public partial class BoundarySectionRenderer : Node3D
 
     // Slab dips from the boundary (x=0, surface) down into the negative signed-distance side,
     // the subducting plate's hanging wall.
-    private static void AppendSlabGuide(List<Vector3> vertices, List<Vector3> normals, BoundarySectionDocument section)
+    private static void AppendSlabGuide(
+        List<Vector3> vertices,
+        List<Vector3> normals,
+        BoundarySectionDocument section,
+        bool drawSlabGuide)
     {
-        if (section.Kind != PlateBoundaryKind.Convergent) return;
-        if (section.IsCollision) return;
-        if (!section.SubductingPlateId.HasValue) return;
+        if (!drawSlabGuide) return;
 
         var start = new Vector3(0f, PanelHeight * 0.5f, AccentZ);
         var end = new Vector3(-PanelWidth * 0.25f, -PanelHeight * 0.25f, AccentZ);
@@ -216,9 +220,6 @@ public partial class BoundarySectionRenderer : Node3D
     // Radius 1.0 maps to the panel top, radius 0.0 to the panel bottom (planet center).
     private static float RadiusToY(double radius)
         => PanelHeight * (float)(radius - 0.5);
-
-    private static string SafeName(BoundarySectionDocument section)
-        => $"Section_{section.PlateA}_{section.PlateB}_{section.Kind}";
 
     private static Color ToColor(RampColor c)
         => new((float)c.R, (float)c.G, (float)c.B);
