@@ -838,7 +838,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
                 heightExponent: projection.HeightExponent);
 
         var (perCellColor, perCellEmission) = isTerrain
-            ? BuildCellAppearance(snapshot.CellCount, document, isWorld, isWorld ? snapshot.Cells : null)
+            ? BuildCellAppearance(snapshot.CellCount, document, viewMode, isWorld ? snapshot.Cells : null)
             : (Array.Empty<RampColor>(), Array.Empty<float>());
 
         // Per-vertex color envelope (terrain views): smooth per-cell ramp colours across cell AND
@@ -849,7 +849,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             ? BuildPerPlateVertexColors(_plateSurfaces!, perCellColor)
             : null;
 
-        var jitter = isWorld ? new VertexTintJitter(seed: 1337, amplitude: 0.06) : null;
+        var jitter = PlateSurfaceTintFabric.ForView(viewMode);
         var meshes = new List<PlateCapMeshDto>(caps.Count);
 
         foreach (var cap in caps.OrderBy(c => c.PlateId))
@@ -904,11 +904,13 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     private static (RampColor[] Colors, float[] Emission) BuildCellAppearance(
         int cellCount,
         PlanetPresentationDocument document,
-        bool isWorld,
+        GlobeViewMode viewMode,
         IReadOnlyList<GlobeCell>? cells)
     {
         var colors = new RampColor[cellCount];
         var emission = new float[cellCount];
+        bool isWorld = viewMode == GlobeViewMode.World;
+        bool showsVolcanicGlow = PlateSurfaceEmissionPolicy.ShowsVolcanicGlow(viewMode);
 
         var elevations = document.CellElevations;
         if (elevations is null || elevations.Count != cellCount)
@@ -945,7 +947,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             }
             var accent = CrustAccentMapper.Map(kind, magnitude);
             colors[c] = CrustAccentMapper.Apply(tint, accent);
-            emission[c] = (float)accent.VolcanicEmission;
+            emission[c] = showsVolcanicGlow ? (float)accent.VolcanicEmission : 0f;
         }
         return (colors, emission);
     }
@@ -1168,6 +1170,9 @@ uniform vec4 u_volcanic_glow : source_color = vec4(1.0, 0.42, 0.10, 1.0);
 uniform float u_volcanic_energy : hint_range(0.0, 8.0) = 1.4;
 uniform float u_albedo_gain : hint_range(0.5, 2.0) = 1.0;
 uniform float u_light_floor : hint_range(0.0, 1.0) = 0.08;
+uniform float u_wrap_strength : hint_range(0.0, 1.0) = 1.0;
+uniform float u_light_contrast : hint_range(0.5, 2.0) = 1.0;
+uniform vec3 u_color_balance = vec3(1.0, 1.0, 1.0);
 
 // W3a cutaway wedge (inactive by default; zero discard when u_wedge_active is false).
 uniform bool u_wedge_active = false;
@@ -1217,7 +1222,7 @@ void fragment() {
             discard;
         }
     }
-    ALBEDO = clamp(COLOR.rgb * u_albedo_gain, vec3(0.0), vec3(1.0));
+    ALBEDO = clamp(COLOR.rgb * u_color_balance * u_albedo_gain, vec3(0.0), vec3(1.0));
     float vent = UV2.x;
     if (vent > 0.001) {
         EMISSION = u_volcanic_glow.rgb * vent * u_volcanic_energy;
@@ -1228,9 +1233,12 @@ void fragment() {
 
 void light() {
     float ndotl = dot(normalize(NORMAL), normalize(LIGHT));
-    float wrap = ndotl * 0.5 + 0.5;
-    wrap *= wrap;
-    DIFFUSE_LIGHT += ALBEDO * LIGHT_COLOR * ATTENUATION * max(wrap, u_light_floor);
+    float lambert = max(ndotl, 0.0);
+    float wrapped = ndotl * 0.5 + 0.5;
+    wrapped *= wrapped;
+    float lit = mix(lambert, wrapped, u_wrap_strength);
+    lit = pow(max(lit, u_light_floor), u_light_contrast);
+    DIFFUSE_LIGHT += ALBEDO * LIGHT_COLOR * ATTENUATION * lit;
 }
 ";
 

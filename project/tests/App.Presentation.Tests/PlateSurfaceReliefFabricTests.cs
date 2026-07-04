@@ -14,8 +14,8 @@ public sealed class PlateSurfaceReliefFabricTests
 
         Assert.True(crust.Amplitude > GlobePlateSurfaces.DefaultPeaks.Amplitude);
         Assert.True(crust.Amplitude >= 12_000.0);
-        Assert.True(crust.BaseFrequency >= 8.0);
-        Assert.True(crust.Octaves >= 5);
+        Assert.True(crust.BaseFrequency >= 14.0);
+        Assert.True(crust.Octaves >= 6);
     }
 
     [Fact]

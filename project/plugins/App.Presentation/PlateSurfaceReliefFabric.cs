@@ -22,8 +22,8 @@ internal static class PlateSurfaceReliefFabric
     // This remains render-only presentation detail; simulation truth stays in CellElevations.
     private static readonly NoiseParams CrustDiagnosticPeaks = new(
         Seed: 1337,
-        BaseFrequency: 9.0,
-        Octaves: 5,
+        BaseFrequency: 16.0,
+        Octaves: 6,
         Lacunarity: 2.0,
         Gain: 0.5,
         Amplitude: 14_000.0,
