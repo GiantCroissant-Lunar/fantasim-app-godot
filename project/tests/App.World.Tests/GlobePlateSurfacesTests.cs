@@ -4,6 +4,7 @@ using System.Linq;
 using FantaSim.App.World.Dto;
 using FantaSim.App.World.Globe;
 using FantaSim.Cartography.Globe;
+using FantaSim.Cartography.Globe.Core;
 using FantaSim.Cartography.Shared;
 using Xunit;
 
@@ -727,5 +728,174 @@ public sealed class GlobePlateSurfacesTests
 
         Assert.True(basin < 0.0, $"basin displaced outward: {basin}");
         Assert.Equal(-peak, basin, 10);
+    }
+
+    // === Adaptive midpoint detail resample (Slice 2) ==============================================
+    //
+    // BuildAdaptiveSurfaces now passes PRE-LENS metres plus a HeightFinalizer (the lens) and a
+    // DetailSampler (NoiseRelief.Sample). The adaptive builder resamples the high-frequency noise at
+    // the midpoint's base position in pre-lens metres, then applies the lens. The tests below pin
+    // that contract: an adaptive midpoint's final displacement must equal the analytic
+    // lens(envelope_interp + NoiseRelief.Sample(midPos, peaks)), the real-snapshot cross-plate seam
+    // stays exact under boundary-edge splits, and disabling the noise reproduces the pre-change
+    // behaviour byte-for-byte.
+
+    [Fact]
+    public void BuildAdaptiveSurfaces_MidpointFinalDisplacementMatchesAnalyticLensOfResampledDetail()
+    {
+        // Two-plate snapshot, peaks ON. Plate 0's two faces share edge (v0,v2); with a threshold that
+        // forces that edge to split, the midpoint lands at the normalized (v0+v2) direction. Its
+        // FINAL radius must equal 1 + lens(envelope_mid + NoiseRelief.Sample(midPos, _peaks)), where
+        // envelope_mid is the mean of the endpoint envelope metres (both endpoints are incident to
+        // BOTH faces, so each endpoint envelope = (elev[0] + elev[1]) / 2 = 500), and midPos is the
+        // BASE midpoint direction (normalize(v0 + v2)) — the exact position the builder samples at.
+        var snap = TwoPlateSnapshot();
+        var surfaces = new GlobePlateSurfaces(snap); // peaks ON (DefaultPeaks)
+        var elevations = new double[] { 0.0, 1000.0, 0.0 };
+        const double exaggeration = 0.00012;
+
+        var caps = surfaces.BuildAdaptiveSurfaces(
+            elevations,
+            exaggeration,
+            new AdaptiveSubdivisionOptions(MaxDepth: 1, EdgeHeightDeltaThreshold: 1e-5));
+        var plate0 = caps.Single(c => c.PlateId == 0);
+
+        // Find a midpoint vertex (an appended one, past the base vertex count).
+        var fixedCaps = surfaces.BuildSurfaces(elevations, exaggeration);
+        int baseVertCount = fixedCaps.Single(c => c.PlateId == 0).Surface.VertexCount;
+        var midIndices = Enumerable.Range(baseVertCount, plate0.Surface.VertexCount - baseVertCount).ToArray();
+        Assert.NotEmpty(midIndices);
+
+        // The shared edge is (v0, v2) from TwoPlateSnapshot (LocalTriangles 0,1,2 / 0,2,3). The base
+        // midpoint direction is normalize(v0 + v2) — exactly what the builder passes to DetailSampler.
+        var v0 = new CartesianPoint3(0, 0, 1);
+        var v2 = new CartesianPoint3(0, 1, 1);
+        var sumPos = new CartesianPoint3(v0.X + v2.X, v0.Y + v2.Y, v0.Z + v2.Z);
+        double sumLen = Math.Sqrt(sumPos.X * sumPos.X + sumPos.Y * sumPos.Y + sumPos.Z * sumPos.Z);
+        var midUnit = new CartesianPoint3(sumPos.X / sumLen, sumPos.Y / sumLen, sumPos.Z / sumLen);
+        double envelopeMid = (elevations[0] + elevations[1]) * 0.5; // both endpoints see both cells
+        double detailMid = NoiseRelief.Sample(midUnit, GlobePlateSurfaces.DefaultPeaks);
+        double metres = envelopeMid + detailMid;
+        double expectedRadius = 1.0 + (metres * exaggeration); // linear lens (default heightExponent)
+
+        // Target the midpoint of the SHARED edge (0,2) via provenance — only its endpoints are both
+        // incident to both faces, so only it has envelope_mid = (elev[0]+elev[1])/2. Other midpoints
+        // on the same cap have endpoints incident to a single face and different envelopes.
+        var sharedMidV = Enumerable.Range(0, plate0.VertexProvenance!.Length)
+            .Single(i => plate0.VertexProvenance[i] is VertexProvenance.Midpoint mp
+                         && ((mp.EndpointA == 0 && mp.EndpointB == 2)
+                             || (mp.EndpointA == 2 && mp.EndpointB == 0)));
+        var pShared = plate0.Surface.Positions[sharedMidV];
+        double rShared = Math.Sqrt(pShared.X * pShared.X + pShared.Y * pShared.Y + pShared.Z * pShared.Z);
+        Assert.Equal(expectedRadius, rShared, 9);
+    }
+
+    [Fact]
+    public void BuildAdaptiveSurfaces_RealSnapshotCrossPlateBoundaryVerticesMatchExactlyUnderBoundarySplits()
+    {
+        // Mirror Binder_regime_nonuniform_elevation... but through the ADAPTIVE path with a threshold
+        // that forces boundary-adjacent edges to split. Every coincident cross-plate boundary vertex
+        // (originals AND midpoints) must still match exactly across caps: the DetailSampler is a pure
+        // function of the shared base position, so two caps sampling at the same boundary position
+        // get the same detail, and the HeightFinalizer is a pure function of the raw metres, so the
+        // finalized height agrees across caps.
+        var snapshot = new GlobeReconstructor(frequency: 3).BuildGlobe();
+        var surfaces = new GlobePlateSurfaces(snapshot); // peaks ON
+
+        var elevations = new double[snapshot.CellCount];
+        for (int i = 0; i < elevations.Length; i++)
+            elevations[i] = (i % 11) * 100.0 - 500.0; // -500..+400, varies per cell
+
+        var caps = surfaces.BuildAdaptiveSurfaces(
+                elevations,
+                exaggeration: 0.00012,
+                new AdaptiveSubdivisionOptions(MaxDepth: 1, EdgeHeightDeltaThreshold: 0.0005))
+            .OrderBy(c => c.PlateId)
+            .ToArray();
+
+        AssertEveryCrossPlateBoundaryVertexMatchesExactly(caps);
+    }
+
+    [Fact]
+    public void BuildAdaptiveSurfaces_NoiseAmplitudeZeroIsByteIdenticalToPreChangeBehavior()
+    {
+        // With NoiseRelief amplitude 0, DetailSampler returns 0 everywhere, so the midpoint raw height
+        // reduces to the plain arithmetic mean — exactly the pre-change behaviour. The adaptive output
+        // must therefore be byte-identical to a reference build that passes POST-LENS heights with NO
+        // delegates (the old code path). We construct the reference by calling the cartography
+        // adaptive builder directly with post-lens heights and null delegates.
+        var snapshot = new GlobeReconstructor(frequency: 3).BuildGlobe();
+        var surfaces = new GlobePlateSurfaces(snapshot, noise: NoNoise);
+
+        var elevations = new double[snapshot.CellCount];
+        for (int i = 0; i < elevations.Length; i++)
+            elevations[i] = (i % 11) * 100.0 - 500.0;
+        const double exaggeration = 0.00012;
+
+        var adaptiveCaps = surfaces.BuildAdaptiveSurfaces(
+            elevations,
+            exaggeration,
+            new AdaptiveSubdivisionOptions(MaxDepth: 1, EdgeHeightDeltaThreshold: 0.0005))
+            .OrderBy(c => c.PlateId)
+            .ToArray();
+
+        // Reference: the OLD code path — post-lens heights, no delegates. Reproduce by calling the
+        // cartography AdaptiveGlobeSurfaceBuilder directly with the same post-lens per-vertex heights
+        // the fixed-path BuildSurfaces would compute, and null delegates.
+        var referenceBuilder = new AdaptiveGlobeSurfaceBuilder();
+        var plateVertexHeights = typeof(GlobePlateSurfaces)
+            .GetMethod("BuildPlateVertexHeights", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+            ?.Invoke(surfaces, new object[] { elevations, exaggeration, 1.0 }) as double[][];
+        Assert.NotNull(plateVertexHeights);
+
+        var referenceCaps = new PlateCap[surfaces.PlateIds.Count];
+        for (int p = 0; p < surfaces.PlateIds.Count; p++)
+        {
+            // Access the cached plate topology via reflection so we can call the builder with the
+            // exact inputs BuildAdaptiveSurfaces would have used pre-change.
+            var plateField = typeof(GlobePlateSurfaces)
+                .GetField("_plates", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var plates = (System.Collections.Generic.IReadOnlyList<object>)plateField!.GetValue(surfaces)!;
+            var plate = plates[p];
+            var plateType = plate.GetType();
+            var localVertices = (CartesianPoint3[])plateType.GetProperty("LocalVertices")!.GetValue(plate)!;
+            var localTriangles = (int[])plateType.GetProperty("LocalTriangles")!.GetValue(plate)!;
+            var cellIds = (int[])plateType.GetProperty("CellIds")!.GetValue(plate)!;
+            var plateId = (int)plateType.GetProperty("PlateId")!.GetValue(plate)!;
+
+            var adaptive = referenceBuilder.BuildAdaptive(
+                localVertices,
+                localTriangles,
+                plateVertexHeights![p],
+                new AdaptiveSubdivisionOptions(MaxDepth: 1, EdgeHeightDeltaThreshold: 0.0005));
+            var mappedCellIds = MapSourceTriangleIdsToCellIds(adaptive.SourceTriangleIds, cellIds);
+            referenceCaps[p] = new PlateCap(plateId, mappedCellIds, adaptive.Surface, adaptive.VertexProvenance);
+        }
+        referenceCaps = referenceCaps.OrderBy(c => c.PlateId).ToArray();
+
+        Assert.Equal(referenceCaps.Length, adaptiveCaps.Length);
+        for (int p = 0; p < referenceCaps.Length; p++)
+        {
+            Assert.Equal(referenceCaps[p].PlateId, adaptiveCaps[p].PlateId);
+            Assert.Equal(referenceCaps[p].Surface.VertexCount, adaptiveCaps[p].Surface.VertexCount);
+            Assert.Equal(referenceCaps[p].Surface.TriangleCount, adaptiveCaps[p].Surface.TriangleCount);
+            for (int v = 0; v < referenceCaps[p].Surface.VertexCount; v++)
+            {
+                Assert.Equal(referenceCaps[p].Surface.Positions[v].X, adaptiveCaps[p].Surface.Positions[v].X, 12);
+                Assert.Equal(referenceCaps[p].Surface.Positions[v].Y, adaptiveCaps[p].Surface.Positions[v].Y, 12);
+                Assert.Equal(referenceCaps[p].Surface.Positions[v].Z, adaptiveCaps[p].Surface.Positions[v].Z, 12);
+            }
+        }
+    }
+
+    private static int[] MapSourceTriangleIdsToCellIds(int[] sourceTriangleIds, int[] cellIds)
+    {
+        var mapped = new int[sourceTriangleIds.Length];
+        for (int i = 0; i < sourceTriangleIds.Length; i++)
+        {
+            int source = sourceTriangleIds[i];
+            mapped[i] = source >= 0 && source < cellIds.Length ? cellIds[source] : -1;
+        }
+        return mapped;
     }
 }

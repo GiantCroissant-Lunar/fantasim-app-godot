@@ -178,10 +178,19 @@ public sealed class GlobePlateSurfaces
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        var plateVertexHeights = BuildPlateVertexHeights(elevationsByCell, exaggeration, heightExponent);
+        // PRE-LENS per-vertex metres: global envelope mean + plate.VertexNoiseMetres. The lens is
+        // applied INSIDE the adaptive builder via HeightFinalizer so the non-linear profile acts on
+        // the resampled raw metres (originals AND midpoints), preserving the lens's tuned semantics.
+        var plateVertexMetres = BuildPlateVertexMetres(elevationsByCell);
         var plateVertexFeatureWeights = featureWeightsByCell is null
             ? null
             : BuildPlateVertexFeatureWeights(featureWeightsByCell);
+        bool linear = heightExponent == 1.0;
+        double Finalizer(double m) => linear
+            ? m * exaggeration
+            : Math.Sign(m) * Math.Pow(Math.Abs(m), heightExponent) * exaggeration;
+        double Sampler(CartesianPoint3 pos) => NoiseRelief.Sample(pos, _peaks);
+
         var caps = new PlateCap[_plates.Count];
         for (int p = 0; p < _plates.Count; p++)
         {
@@ -189,8 +198,13 @@ public sealed class GlobePlateSurfaces
             var adaptive = _adaptiveBuilder.BuildAdaptive(
                 plate.LocalVertices,
                 plate.LocalTriangles,
-                plateVertexHeights[p],
-                options with { VertexFeatureWeights = plateVertexFeatureWeights?[p] });
+                plateVertexMetres[p],
+                options with
+                {
+                    VertexFeatureWeights = plateVertexFeatureWeights?[p],
+                    HeightFinalizer = Finalizer,
+                    DetailSampler = Sampler,
+                });
             var cellIds = MapSourceTriangleIdsToCellIds(adaptive.SourceTriangleIds, plate.CellIds);
             caps[p] = new PlateCap(plate.PlateId, cellIds, adaptive.Surface, adaptive.VertexProvenance);
         }
@@ -262,6 +276,33 @@ public sealed class GlobePlateSurfaces
         if (heightExponent <= 0.0)
             throw new ArgumentOutOfRangeException(nameof(heightExponent), "Height exponent must be positive.");
 
+        var plateVertexMetres = BuildPlateVertexMetres(elevationsByCell);
+        bool linear = heightExponent == 1.0;
+        var result = new double[_plates.Count][];
+        for (int p = 0; p < _plates.Count; p++)
+        {
+            var plate = _plates[p];
+            var perVertexHeights = new double[plate.LocalVertices.Length];
+            for (int v = 0; v < perVertexHeights.Length; v++)
+            {
+                double metres = plateVertexMetres[p][v];
+                perVertexHeights[v] = linear
+                    ? metres * exaggeration
+                    : Math.Sign(metres) * Math.Pow(Math.Abs(metres), heightExponent) * exaggeration;
+            }
+            result[p] = perVertexHeights;
+        }
+
+        return result;
+    }
+
+    // Pre-lens per-vertex metres: global envelope mean (across ALL incident cells of ALL plates) +
+    // plate.VertexNoiseMetres. The lens (linear or non-linear) is applied by the caller, so this
+    // returns the RAW metres the adaptive builder needs for midpoint detail resampling.
+    private double[][] BuildPlateVertexMetres(IReadOnlyList<double> elevationsByCell)
+    {
+        ArgumentNullException.ThrowIfNull(elevationsByCell);
+
         // Global per-FACE elevations (METRES — the lens applies at the end) in global face order,
         // then gather to per-VERTEX means across ALL incident cells of ALL plates. A boundary corner
         // shared by plates A and B sees both plates' cells here, so its mean (and hence radius) is
@@ -276,20 +317,14 @@ public sealed class GlobePlateSurfaces
         var globalVertexMetres = GlobeSurfaceBuilder.GatherVertexHeights(
             _globalVertices.Length, _globalTriangles, globalFaceMetres);
 
-        bool linear = heightExponent == 1.0;
         var result = new double[_plates.Count][];
         for (int p = 0; p < _plates.Count; p++)
         {
             var plate = _plates[p];
-            var perVertexHeights = new double[plate.LocalVertices.Length];
-            for (int v = 0; v < perVertexHeights.Length; v++)
-            {
-                double metres = globalVertexMetres[plate.LocalToGlobal[v]] + plate.VertexNoiseMetres[v];
-                perVertexHeights[v] = linear
-                    ? metres * exaggeration
-                    : Math.Sign(metres) * Math.Pow(Math.Abs(metres), heightExponent) * exaggeration;
-            }
-            result[p] = perVertexHeights;
+            var perVertexMetres = new double[plate.LocalVertices.Length];
+            for (int v = 0; v < perVertexMetres.Length; v++)
+                perVertexMetres[v] = globalVertexMetres[plate.LocalToGlobal[v]] + plate.VertexNoiseMetres[v];
+            result[p] = perVertexMetres;
         }
 
         return result;
