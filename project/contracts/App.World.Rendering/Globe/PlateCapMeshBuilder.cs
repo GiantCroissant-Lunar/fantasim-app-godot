@@ -56,6 +56,9 @@ public static class PlateCapMeshBuilder
         var provenance = cap.VertexProvenance is { Length: int provLen } candidate && provLen == surface.VertexCount
             ? candidate
             : null;
+        var colorCache = provenance is null
+            ? null
+            : new Dictionary<int, (bool HasColor, RampColor Color)>();
 
         for (int t = 0; t < triCount; t++)
         {
@@ -73,7 +76,8 @@ public static class PlateCapMeshBuilder
                 RampColor color = ResolveTerrainColor(
                     surfaceVertex,
                     vertexColors,
-                    provenance);
+                    provenance,
+                    colorCache);
                 if (jitter is not null)
                     color = jitter.Apply(surface.Positions[surfaceVertex], color);
                 PackColor(colors, meshVertex, color);
@@ -149,44 +153,72 @@ public static class PlateCapMeshBuilder
 
     // Resolves the terrain colour for one generated surface vertex. For fixed caps (no provenance)
     // or out-of-range base arrays it falls back to MissingTerrainColor. For adaptive caps it copies
-    // the base vertex colour for an Original vertex and interpolates the two endpoint base colours
-    // for a Midpoint vertex, so refined midpoint vertices never read the fallback.
+    // Original base vertex colours and recursively averages Midpoint endpoint colours, so depth-N
+    // midpoint vertices never read base-parallel arrays by generated vertex id.
     private static RampColor ResolveTerrainColor(
         int surfaceVertex,
         RampColor[] baseVertexColors,
-        VertexProvenance[]? provenance)
+        VertexProvenance[]? provenance,
+        Dictionary<int, (bool HasColor, RampColor Color)>? cache)
     {
         if (provenance is null)
             return surfaceVertex >= 0 && surfaceVertex < baseVertexColors.Length
                 ? baseVertexColors[surfaceVertex]
                 : MissingTerrainColor;
 
-        if (surfaceVertex < 0 || surfaceVertex >= provenance.Length)
-            return MissingTerrainColor;
-
-        var p = provenance[surfaceVertex];
-        return p is VertexProvenance.Midpoint mp
-            ? InterpolateEndpointColors(mp.EndpointA, mp.EndpointB, baseVertexColors)
-            : p is VertexProvenance.Original orig && orig.SourceIndex >= 0 && orig.SourceIndex < baseVertexColors.Length
-                ? baseVertexColors[orig.SourceIndex]
-                : MissingTerrainColor;
+        var resolved = TryResolveTerrainColor(
+            surfaceVertex,
+            baseVertexColors,
+            provenance,
+            cache ?? new Dictionary<int, (bool HasColor, RampColor Color)>(),
+            new HashSet<int>());
+        return resolved.HasColor ? resolved.Color : MissingTerrainColor;
     }
 
-    private static RampColor InterpolateEndpointColors(int a, int b, RampColor[] baseVertexColors)
+    private static (bool HasColor, RampColor Color) TryResolveTerrainColor(
+        int surfaceVertex,
+        RampColor[] baseVertexColors,
+        VertexProvenance[] provenance,
+        Dictionary<int, (bool HasColor, RampColor Color)> cache,
+        HashSet<int> visiting)
     {
-        bool hasA = a >= 0 && a < baseVertexColors.Length;
-        bool hasB = b >= 0 && b < baseVertexColors.Length;
-        // Match VertexColorEnvelope / GatherVertexHeights: component-wise arithmetic mean. If only
-        // one endpoint has a base colour, use it; if neither does, the placeholder colour wins.
-        return (hasA, hasB) switch
+        if (surfaceVertex < 0 || surfaceVertex >= provenance.Length)
+            return (false, MissingTerrainColor);
+        if (cache.TryGetValue(surfaceVertex, out var cached))
+            return cached;
+        if (!visiting.Add(surfaceVertex))
+            return (false, MissingTerrainColor);
+
+        var result = provenance[surfaceVertex] switch
         {
-            (true, true) => new RampColor(
-                (baseVertexColors[a].R + baseVertexColors[b].R) * 0.5,
-                (baseVertexColors[a].G + baseVertexColors[b].G) * 0.5,
-                (baseVertexColors[a].B + baseVertexColors[b].B) * 0.5),
-            (true, false) => baseVertexColors[a],
-            (false, true) => baseVertexColors[b],
-            _ => MissingTerrainColor,
+            VertexProvenance.Original orig when orig.SourceIndex >= 0 && orig.SourceIndex < baseVertexColors.Length
+                => (true, baseVertexColors[orig.SourceIndex]),
+            VertexProvenance.Midpoint mp => AverageEndpointColors(
+                TryResolveTerrainColor(mp.EndpointA, baseVertexColors, provenance, cache, visiting),
+                TryResolveTerrainColor(mp.EndpointB, baseVertexColors, provenance, cache, visiting)),
+            _ => (false, MissingTerrainColor),
+        };
+
+        visiting.Remove(surfaceVertex);
+        cache[surfaceVertex] = result;
+        return result;
+    }
+
+    private static (bool HasColor, RampColor Color) AverageEndpointColors(
+        (bool HasColor, RampColor Color) a,
+        (bool HasColor, RampColor Color) b)
+    {
+        // Match VertexColorEnvelope / GatherVertexHeights: component-wise arithmetic mean. If only
+        // one endpoint has a resolvable base colour, use it; if neither does, the placeholder wins.
+        return (a.HasColor, b.HasColor) switch
+        {
+            (true, true) => (true, new RampColor(
+                (a.Color.R + b.Color.R) * 0.5,
+                (a.Color.G + b.Color.G) * 0.5,
+                (a.Color.B + b.Color.B) * 0.5)),
+            (true, false) => a,
+            (false, true) => b,
+            _ => (false, MissingTerrainColor),
         };
     }
 }

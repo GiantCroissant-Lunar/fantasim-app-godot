@@ -231,6 +231,47 @@ public sealed class PlateCapMeshBuilderTests
     }
 
     [Fact]
+    public void BuildTerrain_RecursiveAdaptiveMidpointVerticesResolveInterpolatedColors()
+    {
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot(), noise: new NoiseParams(Amplitude: 0.0));
+        var elevations = new double[] { 0.0, 1000.0, 0.0 };
+        var options = new AdaptiveSubdivisionOptions(MaxDepth: 2, EdgeHeightDeltaThreshold: 100.0);
+
+        var cap = surfaces.BuildAdaptiveSurfaces(elevations, exaggeration: 1.0, options)
+            .Single(c => c.PlateId == 0);
+        var provenance = cap.VertexProvenance
+            ?? throw new InvalidOperationException("adaptive cap should expose vertex provenance");
+        var baseVertexColors = new[]
+        {
+            new RampColor(0.10, 0.20, 0.30),
+            new RampColor(0.40, 0.50, 0.60),
+            new RampColor(0.70, 0.80, 0.90),
+            new RampColor(0.05, 0.15, 0.25),
+        };
+        Assert.Contains(provenance, p =>
+            p is VertexProvenance.Midpoint mp
+            && (mp.EndpointA >= baseVertexColors.Length || mp.EndpointB >= baseVertexColors.Length));
+
+        var perPlate = new Dictionary<int, RampColor[]> { [cap.PlateId] = baseVertexColors };
+        var perCellEmission = new[] { 0f, 0f, 0f };
+
+        var mesh = PlateCapMeshBuilder.BuildTerrain(cap, perPlate, perCellEmission, jitter: null);
+
+        for (int sv = 0; sv < cap.Surface.VertexCount; sv++)
+        {
+            if (provenance[sv] is not VertexProvenance.Midpoint)
+                continue;
+
+            var expected = ResolveExpectedColor(sv, provenance, baseVertexColors);
+            int meshVertex = FindMeshVertexReferencingSurfaceVertex(cap.Surface, sv);
+            int colorBase = meshVertex * 3;
+            Assert.Equal((float)expected.R, mesh.Colors[colorBase + 0], 5);
+            Assert.Equal((float)expected.G, mesh.Colors[colorBase + 1], 5);
+            Assert.Equal((float)expected.B, mesh.Colors[colorBase + 2], 5);
+        }
+    }
+
+    [Fact]
     public void BuildTerrain_FixedCapWithoutProvenanceStillFallsBackToMissingColorForOutOfRange()
     {
         var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot());
@@ -268,4 +309,49 @@ public sealed class PlateCapMeshBuilderTests
         }
         throw new InvalidOperationException($"no mesh vertex references surface vertex {surfaceVertex}");
     }
+
+    private static RampColor ResolveExpectedColor(
+        int surfaceVertex,
+        VertexProvenance[] provenance,
+        RampColor[] baseVertexColors)
+    {
+        var resolved = TryResolveExpectedColor(surfaceVertex, provenance, baseVertexColors, new HashSet<int>());
+        return resolved.HasColor ? resolved.Color : MissingTerrainColor;
+    }
+
+    private static (bool HasColor, RampColor Color) TryResolveExpectedColor(
+        int surfaceVertex,
+        VertexProvenance[] provenance,
+        RampColor[] baseVertexColors,
+        HashSet<int> visiting)
+    {
+        if (surfaceVertex < 0 || surfaceVertex >= provenance.Length || !visiting.Add(surfaceVertex))
+            return (false, MissingTerrainColor);
+
+        var result = provenance[surfaceVertex] switch
+        {
+            VertexProvenance.Original orig when orig.SourceIndex >= 0 && orig.SourceIndex < baseVertexColors.Length
+                => (true, baseVertexColors[orig.SourceIndex]),
+            VertexProvenance.Midpoint mp => Average(
+                TryResolveExpectedColor(mp.EndpointA, provenance, baseVertexColors, visiting),
+                TryResolveExpectedColor(mp.EndpointB, provenance, baseVertexColors, visiting)),
+            _ => (false, MissingTerrainColor),
+        };
+        visiting.Remove(surfaceVertex);
+        return result;
+    }
+
+    private static (bool HasColor, RampColor Color) Average(
+        (bool HasColor, RampColor Color) a,
+        (bool HasColor, RampColor Color) b)
+        => (a.HasColor, b.HasColor) switch
+        {
+            (true, true) => (true, new RampColor(
+                (a.Color.R + b.Color.R) * 0.5,
+                (a.Color.G + b.Color.G) * 0.5,
+                (a.Color.B + b.Color.B) * 0.5)),
+            (true, false) => a,
+            (false, true) => b,
+            _ => (false, MissingTerrainColor),
+        };
 }
