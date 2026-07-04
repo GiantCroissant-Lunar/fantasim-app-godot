@@ -133,6 +133,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App.Render.Seam", "plugins\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App.Render.Tests", "tests\App.Render.Tests\App.Render.Tests.csproj", "{A3DF0E0D-2FF2-463A-83BD-CF5A1CA23853}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "App.Presentation.Tests", "tests\App.Presentation.Tests\App.Presentation.Tests.csproj", "{25D0509F-2CBD-4006-A4CD-DE1925FD76E4}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -863,6 +865,18 @@ Global
 		{A3DF0E0D-2FF2-463A-83BD-CF5A1CA23853}.Release|x64.Build.0 = Release|Any CPU
 		{A3DF0E0D-2FF2-463A-83BD-CF5A1CA23853}.Release|x86.ActiveCfg = Release|Any CPU
 		{A3DF0E0D-2FF2-463A-83BD-CF5A1CA23853}.Release|x86.Build.0 = Release|Any CPU
+		{25D0509F-2CBD-4006-A4CD-DE1925FD76E4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{25D0509F-2CBD-4006-A4CD-DE1925FD76E4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{25D0509F-2CBD-4006-A4CD-DE1925FD76E4}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{25D0509F-2CBD-4006-A4CD-DE1925FD76E4}.Debug|x64.Build.0 = Debug|Any CPU
+		{25D0509F-2CBD-4006-A4CD-DE1925FD76E4}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{25D0509F-2CBD-4006-A4CD-DE1925FD76E4}.Debug|x86.Build.0 = Debug|Any CPU
+		{25D0509F-2CBD-4006-A4CD-DE1925FD76E4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{25D0509F-2CBD-4006-A4CD-DE1925FD76E4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{25D0509F-2CBD-4006-A4CD-DE1925FD76E4}.Release|x64.ActiveCfg = Release|Any CPU
+		{25D0509F-2CBD-4006-A4CD-DE1925FD76E4}.Release|x64.Build.0 = Release|Any CPU
+		{25D0509F-2CBD-4006-A4CD-DE1925FD76E4}.Release|x86.ActiveCfg = Release|Any CPU
+		{25D0509F-2CBD-4006-A4CD-DE1925FD76E4}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -928,5 +942,6 @@ Global
 		{335766DB-0C4D-441A-81BF-826DFF7D7DBA} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 		{6127B856-C284-46AA-915B-762499A49613} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 		{A3DF0E0D-2FF2-463A-83BD-CF5A1CA23853} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
+		{25D0509F-2CBD-4006-A4CD-DE1925FD76E4} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal
