@@ -19,7 +19,13 @@ public sealed record ResolvedLayerProjection(
     /// <summary>Unit-sphere radius displacement delta for adaptive subdivision; coupled to lens parameters.</summary>
     double AdaptiveSubdivisionEdgeHeightDelta,
     double AdaptiveSubdivisionFeatureWeightDelta,
-    bool PreservesCellProvenance);
+    bool PreservesCellProvenance,
+    /// <summary>
+    /// Silhouette budget (north-star spec §1): maximum absolute radial displacement in unit-radius
+    /// units, applied as a pure clamp on the finalized displacement. +inf preserves the legacy
+    /// unclamped behaviour for views that do not declare a budget.
+    /// </summary>
+    double MaxDisplacementUnitRadius = double.PositiveInfinity);
 
 /// <summary>Maps presentation view mode to the layer projection profile used by globe cap builders.</summary>
 public static class LayerProjectionProfileResolver
@@ -49,7 +55,8 @@ public static class LayerProjectionProfileResolver
             AdaptiveSubdivisionMaxDepth: crust.AdaptiveSubdivisionMaxDepth,
             AdaptiveSubdivisionEdgeHeightDelta: crust.AdaptiveSubdivisionEdgeHeightDelta,
             AdaptiveSubdivisionFeatureWeightDelta: crust.AdaptiveSubdivisionFeatureWeightDelta,
-            PreservesCellProvenance: crust.PreservesCellProvenance);
+            PreservesCellProvenance: crust.PreservesCellProvenance,
+            MaxDisplacementUnitRadius: crust.MaxDisplacementUnitRadius);
     }
 
     private static PlanetLayerProjectionProfile ResolveCrustProfile(PlanetPresentationDocument document)

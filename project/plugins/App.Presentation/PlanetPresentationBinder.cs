@@ -861,6 +861,10 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         var featureWeights = useAdaptiveSurface
             ? BuildAdaptiveFeatureWeights(snapshot.CellCount, document.CellFeatures)
             : null;
+        // Silhouette budget (north-star spec §1): planet views clamp the finalized radial
+        // displacement to the profile's declared cap so the limb stays a circle. Diagnostic views
+        // that do not declare a cap keep the +inf default (legacy unclamped behaviour).
+        var maxDisp = projection.MaxDisplacementUnitRadius;
         var caps = useAdaptiveSurface
             ? _plateSurfaces.BuildAdaptiveSurfaces(
                 elevations,
@@ -871,12 +875,14 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
                     FeatureWeightDeltaThreshold: projection.AdaptiveSubdivisionFeatureWeightDelta),
                 heightExponent: projection.HeightExponent,
                 featureWeightsByCell: featureWeights,
-                baseRadius: projection.BaseRadius)
+                baseRadius: projection.BaseRadius,
+                maxDisplacementUnitRadius: maxDisp)
             : _plateSurfaces.BuildSurfaces(
                 elevations,
                 exaggeration: projection.MetresToUnitRadius,
                 heightExponent: projection.HeightExponent,
-                baseRadius: projection.BaseRadius);
+                baseRadius: projection.BaseRadius,
+                maxDisplacementUnitRadius: maxDisp);
 
         var (perCellColor, perCellEmission) = isTerrain
             ? BuildCellAppearance(snapshot.CellCount, document, viewMode, isWorld ? snapshot.Cells : null)

@@ -40,7 +40,13 @@ public sealed record PlanetLayerProjectionProfile(
     double AdaptiveSubdivisionEdgeHeightDelta,
     double AdaptiveSubdivisionFeatureWeightDelta,
     bool PreservesCellProvenance,
-    double PlanetRadiusMetres = 6_371_000.0)
+    double PlanetRadiusMetres = 6_371_000.0,
+    /// <summary>
+    /// Silhouette budget (north-star spec §1): maximum absolute radial displacement in unit-radius
+    /// units, applied as a pure clamp on the FINALIZED displacement. Default +inf preserves the
+    /// legacy unclamped behaviour for callers that do not declare a budget.
+    /// </summary>
+    double MaxDisplacementUnitRadius = double.PositiveInfinity)
 {
     public const string CrustLayerId = "geosphere.crust";
     public const string UnifyCellGeodesicSourceGrid = "UnifyCell.GeodesicSphereTessellation";
@@ -61,7 +67,8 @@ public sealed record PlanetLayerProjectionProfile(
         double adaptiveSubdivisionEdgeHeightDelta,
         double adaptiveSubdivisionFeatureWeightDelta = 0.25,
         double baseRadius = 1.0,
-        double planetRadiusMetres = EarthLikePlanetRadiusMetres)
+        double planetRadiusMetres = EarthLikePlanetRadiusMetres,
+        double maxDisplacementUnitRadius = double.PositiveInfinity)
     {
         if (planetRadiusMetres <= 0.0 || double.IsNaN(planetRadiusMetres) || double.IsInfinity(planetRadiusMetres))
             throw new ArgumentOutOfRangeException(nameof(planetRadiusMetres), planetRadiusMetres, "Planet radius must be positive and finite.");
@@ -80,7 +87,8 @@ public sealed record PlanetLayerProjectionProfile(
             AdaptiveSubdivisionEdgeHeightDelta: adaptiveSubdivisionEdgeHeightDelta,
             AdaptiveSubdivisionFeatureWeightDelta: adaptiveSubdivisionFeatureWeightDelta,
             PreservesCellProvenance: true,
-            PlanetRadiusMetres: planetRadiusMetres);
+            PlanetRadiusMetres: planetRadiusMetres,
+            MaxDisplacementUnitRadius: maxDisplacementUnitRadius);
     }
 }
 

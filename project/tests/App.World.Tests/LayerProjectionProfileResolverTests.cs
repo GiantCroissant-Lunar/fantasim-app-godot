@@ -47,6 +47,65 @@ public sealed class LayerProjectionProfileResolverTests
     }
 
     [Fact]
+    public void ResolveForView_ThreadsMaxDisplacementUnitRadiusFromProfile()
+    {
+        // Silhouette budget (north-star spec §1): the profile's declared cap threads through to
+        // the resolved projection so the binder can pass it to the surface builders.
+        var profile = PlanetLayerProjectionProfile.Crust(
+            metresToUnitRadius: 0.00002,
+            surfaceSubdivision: SurfaceSubdivisionMode.Adaptive,
+            adaptiveSubdivisionMaxDepth: 1,
+            adaptiveSubdivisionEdgeHeightDelta: 0.012,
+            maxDisplacementUnitRadius: 0.005);
+        var document = new PlanetPresentationDocument(
+            PlanetId: "p",
+            SourceWorldId: "w",
+            ReferenceTick: 0,
+            Revision: 1,
+            Layers: Array.Empty<PlanetPresentationLayer>(),
+            RenderEntities: Array.Empty<RenderEntityDto>())
+        {
+            LayerProjectionProfiles = new[] { profile },
+        };
+
+        var resolved = LayerProjectionProfileResolver.ResolveForView(
+            document,
+            GlobeViewMode.HypsometricTerrain,
+            worldMetresToUnitRadius: 0.00012,
+            worldHeightExponent: 0.5);
+
+        Assert.Equal(0.005, resolved.MaxDisplacementUnitRadius);
+    }
+
+    [Fact]
+    public void ResolveForView_DefaultMaxDisplacementIsInfinityWhenProfileOmitsIt()
+    {
+        var profile = PlanetLayerProjectionProfile.Crust(
+            metresToUnitRadius: 0.00002,
+            surfaceSubdivision: SurfaceSubdivisionMode.Adaptive,
+            adaptiveSubdivisionMaxDepth: 1,
+            adaptiveSubdivisionEdgeHeightDelta: 0.012);
+        var document = new PlanetPresentationDocument(
+            PlanetId: "p",
+            SourceWorldId: "w",
+            ReferenceTick: 0,
+            Revision: 1,
+            Layers: Array.Empty<PlanetPresentationLayer>(),
+            RenderEntities: Array.Empty<RenderEntityDto>())
+        {
+            LayerProjectionProfiles = new[] { profile },
+        };
+
+        var resolved = LayerProjectionProfileResolver.ResolveForView(
+            document,
+            GlobeViewMode.HypsometricTerrain,
+            worldMetresToUnitRadius: 0.00012,
+            worldHeightExponent: 0.5);
+
+        Assert.Equal(double.PositiveInfinity, resolved.MaxDisplacementUnitRadius);
+    }
+
+    [Fact]
     public void ResolveForView_World_UsesWorldLensButCrustAdaptivePolicy()
     {
         var profile = PlanetLayerProjectionProfile.Crust(

@@ -164,9 +164,13 @@ public sealed class GlobePlateSurfaces
         IReadOnlyList<double> elevationsByCell,
         double exaggeration,
         double heightExponent = 1.0,
-        double baseRadius = GlobeSurfaceBuilder.DefaultRadius)
+        double baseRadius = GlobeSurfaceBuilder.DefaultRadius,
+        double maxDisplacementUnitRadius = double.PositiveInfinity)
     {
-        var plateVertexHeights = BuildPlateVertexHeights(elevationsByCell, exaggeration, heightExponent);
+        if (maxDisplacementUnitRadius < 0.0 || double.IsNaN(maxDisplacementUnitRadius))
+            throw new ArgumentOutOfRangeException(nameof(maxDisplacementUnitRadius), "Max displacement must be non-negative and not NaN.");
+
+        var plateVertexHeights = BuildPlateVertexHeights(elevationsByCell, exaggeration, heightExponent, maxDisplacementUnitRadius);
         var caps = new PlateCap[_plates.Count];
         for (int p = 0; p < _plates.Count; p++)
         {
@@ -186,11 +190,14 @@ public sealed class GlobePlateSurfaces
         AdaptiveSubdivisionOptions options,
         double heightExponent = 1.0,
         IReadOnlyList<double>? featureWeightsByCell = null,
-        double baseRadius = GlobeSurfaceBuilder.DefaultRadius)
+        double baseRadius = GlobeSurfaceBuilder.DefaultRadius,
+        double maxDisplacementUnitRadius = double.PositiveInfinity)
     {
         ArgumentNullException.ThrowIfNull(options);
         if (heightExponent <= 0.0)
             throw new ArgumentOutOfRangeException(nameof(heightExponent), "Height exponent must be positive.");
+        if (maxDisplacementUnitRadius < 0.0 || double.IsNaN(maxDisplacementUnitRadius))
+            throw new ArgumentOutOfRangeException(nameof(maxDisplacementUnitRadius), "Max displacement must be non-negative and not NaN.");
 
         // PRE-LENS per-vertex metres: global envelope mean + plate.VertexNoiseMetres. The lens is
         // applied INSIDE the adaptive builder via HeightFinalizer so the non-linear profile acts on
@@ -200,9 +207,13 @@ public sealed class GlobePlateSurfaces
             ? null
             : BuildPlateVertexFeatureWeights(featureWeightsByCell);
         bool linear = heightExponent == 1.0;
-        double Finalizer(double m) => linear
-            ? m * exaggeration
-            : Math.Sign(m) * Math.Pow(Math.Abs(m), heightExponent) * exaggeration;
+        double Finalizer(double m)
+        {
+            double lensed = linear
+                ? m * exaggeration
+                : Math.Sign(m) * Math.Pow(Math.Abs(m), heightExponent) * exaggeration;
+            return ClampDisplacement(lensed, maxDisplacementUnitRadius);
+        }
         double Sampler(CartesianPoint3 pos) => _detailSampler(pos);
 
         var caps = new PlateCap[_plates.Count];
@@ -285,7 +296,8 @@ public sealed class GlobePlateSurfaces
     private double[][] BuildPlateVertexHeights(
         IReadOnlyList<double> elevationsByCell,
         double exaggeration,
-        double heightExponent)
+        double heightExponent,
+        double maxDisplacementUnitRadius = double.PositiveInfinity)
     {
         ArgumentNullException.ThrowIfNull(elevationsByCell);
         if (heightExponent <= 0.0)
@@ -301,15 +313,25 @@ public sealed class GlobePlateSurfaces
             for (int v = 0; v < perVertexHeights.Length; v++)
             {
                 double metres = plateVertexMetres[p][v];
-                perVertexHeights[v] = linear
+                double lensed = linear
                     ? metres * exaggeration
                     : Math.Sign(metres) * Math.Pow(Math.Abs(metres), heightExponent) * exaggeration;
+                perVertexHeights[v] = ClampDisplacement(lensed, maxDisplacementUnitRadius);
             }
             result[p] = perVertexHeights;
         }
 
         return result;
     }
+
+    // Silhouette budget (north-star spec §1): pure clamp on the FINALIZED displacement. Sign is
+    // preserved so basins stay depressions; finite caps leave the limb a circle; +inf is a no-op.
+    // Pure function of the finalized height -> shared corners clamp identically -> seams stay
+    // watertight.
+    private static double ClampDisplacement(double displacement, double maxDisplacementUnitRadius)
+        => double.IsInfinity(maxDisplacementUnitRadius)
+            ? displacement
+            : Math.Sign(displacement) * Math.Min(Math.Abs(displacement), maxDisplacementUnitRadius);
 
     // Pre-lens per-vertex metres: global envelope mean (across ALL incident cells of ALL plates) +
     // plate.VertexNoiseMetres. The lens (linear or non-linear) is applied by the caller, so this

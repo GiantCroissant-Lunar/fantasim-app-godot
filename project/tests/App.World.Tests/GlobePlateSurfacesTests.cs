@@ -961,7 +961,7 @@ public sealed class GlobePlateSurfacesTests
         var referenceBuilder = new AdaptiveGlobeSurfaceBuilder();
         var plateVertexHeights = typeof(GlobePlateSurfaces)
             .GetMethod("BuildPlateVertexHeights", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
-            ?.Invoke(surfaces, new object[] { elevations, exaggeration, 1.0 }) as double[][];
+            ?.Invoke(surfaces, new object[] { elevations, exaggeration, 1.0, double.PositiveInfinity }) as double[][];
         Assert.NotNull(plateVertexHeights);
 
         var referenceCaps = new PlateCap[surfaces.PlateIds.Count];
@@ -1013,5 +1013,238 @@ public sealed class GlobePlateSurfacesTests
             mapped[i] = source >= 0 && source < cellIds.Length ? cellIds[source] : -1;
         }
         return mapped;
+    }
+
+    // === Silhouette budget (spec §1) ===============================================================
+    //
+    // The planet limb is a circle: total radial displacement (post-lens, post-amplification) is
+    // clamped to a cap in unit-radius units. The clamp is a PURE function of the finalized height:
+    //   displacement = sign(lens(m)) * min(|lens(m)|, cap)
+    // applied identically in the fixed path AND inside the adaptive path's HeightFinalizer. Because
+    // it is pure, shared corners see identical inputs -> identical clamped outputs -> seams stay
+    // watertight. cap = +inf reproduces today's behaviour byte-identically.
+
+    [Fact]
+    public void BuildSurfaces_ClampsFinalDisplacementToCapForPeaks()
+    {
+        // Plate 1 is a single face (cell 2). With a uniform elevation E and exaggeration X, every
+        // corner's finalized displacement is E*X. A cap smaller than E*X must clamp the radius to
+        // 1 + sign(E)*cap.
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot(), noise: NoNoise);
+        const double e = 1000.0;
+        const double x = 0.00012;
+        const double unclamped = e * x;            // 0.12 — far above the 0.005 planet cap
+        const double cap = 0.005;
+
+        var plate1 = surfaces.BuildSurfaces(
+                new double[] { 0, 0, e },
+                exaggeration: x,
+                maxDisplacementUnitRadius: cap)
+            .Single(c => c.PlateId == 1);
+
+        foreach (var p in plate1.Surface.Positions)
+        {
+            double r = Radius(p);
+            Assert.Equal(1.0 + cap, r, 9);        // clamped exactly to +cap
+        }
+
+        Assert.True(cap < unclamped, "fixture must actually exercise the clamp");
+    }
+
+    [Fact]
+    public void BuildSurfaces_ClampPreservesSignForBasins()
+    {
+        // Basins (negative elevations) displace INWARD; the clamp must preserve the sign so a deep
+        // basin still reads as a depression, just capped: radius = 1 - cap (not 1 + cap).
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot(), noise: NoNoise);
+        const double e = -1000.0;
+        const double x = 0.00012;
+        const double cap = 0.005;
+
+        var plate1 = surfaces.BuildSurfaces(
+                new double[] { 0, 0, e },
+                exaggeration: x,
+                maxDisplacementUnitRadius: cap)
+            .Single(c => c.PlateId == 1);
+
+        foreach (var p in plate1.Surface.Positions)
+        {
+            double r = Radius(p);
+            Assert.Equal(1.0 - cap, r, 9);        // sign preserved: inward clamp
+        }
+    }
+
+    [Fact]
+    public void BuildSurfaces_ClampPreservesSignForBasinsUnderNonLinearLens()
+    {
+        // Same sign-preservation check through the non-linear lens: sign(m)*|m|^p * x, clamped.
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot(), noise: NoNoise);
+        const double e = -2_500.0;
+        const double x = 0.0001;
+        const double p = 0.5;
+        const double cap = 0.004;
+        double unclamped = Math.Sign(e) * Math.Pow(Math.Abs(e), p) * x;  // -0.005, |.| > cap
+
+        var plate1 = surfaces.BuildSurfaces(
+                new double[] { 0, 0, e },
+                exaggeration: x,
+                heightExponent: p,
+                maxDisplacementUnitRadius: cap)
+            .Single(c => c.PlateId == 1);
+
+        Assert.True(unclamped < -cap, "fixture must exceed the cap on the negative side");
+        foreach (var pos in plate1.Surface.Positions)
+        {
+            double r = Radius(pos);
+            Assert.Equal(1.0 - cap, r, 9);        // inward clamp under the non-linear lens
+        }
+    }
+
+    [Fact]
+    public void BuildSurfaces_FiniteCapKeepsCrossPlateSeamsWatertight()
+    {
+        // The clamp is a pure function of the finalized height, so two caps that share a boundary
+        // corner (identical finalized height pre-clamp) clamp to identical radii — the seam stays
+        // watertight under a finite cap. Use the real frequency-3 snapshot so cross-plate boundary
+        // vertices actually exist.
+        var snapshot = new GlobeReconstructor(frequency: 3).BuildGlobe();
+        var surfaces = new GlobePlateSurfaces(snapshot, noise: NoNoise);
+
+        var elevations = new double[snapshot.CellCount];
+        for (int i = 0; i < elevations.Length; i++)
+            elevations[i] = (i % 11) * 100.0 - 500.0;
+
+        // A cap tight enough that some boundary vertices would exceed it.
+        const double cap = 0.004;
+        var caps = surfaces.BuildSurfaces(
+                elevations,
+                exaggeration: 0.00012,
+                maxDisplacementUnitRadius: cap)
+            .OrderBy(c => c.PlateId)
+            .ToArray();
+
+        AssertEveryCrossPlateBoundaryVertexMatchesExactly(caps);
+    }
+
+    [Fact]
+    public void BuildAdaptiveSurfaces_FiniteCapKeepsCrossPlateSeamsWatertight()
+    {
+        // Same watertight property through the adaptive path: the cap lives inside HeightFinalizer,
+        // which is pure, so midpoints shared across plates clamp identically.
+        var snapshot = new GlobeReconstructor(frequency: 3).BuildGlobe();
+        var surfaces = new GlobePlateSurfaces(snapshot, noise: NoNoise);
+
+        var elevations = new double[snapshot.CellCount];
+        for (int i = 0; i < elevations.Length; i++)
+            elevations[i] = (i % 11) * 100.0 - 500.0;
+
+        const double cap = 0.004;
+        var caps = surfaces.BuildAdaptiveSurfaces(
+                elevations,
+                exaggeration: 0.00012,
+                options: new AdaptiveSubdivisionOptions(MaxDepth: 1, EdgeHeightDeltaThreshold: 0.0005),
+                maxDisplacementUnitRadius: cap)
+            .OrderBy(c => c.PlateId)
+            .ToArray();
+
+        AssertEveryCrossPlateBoundaryVertexMatchesExactly(caps);
+    }
+
+    [Fact]
+    public void BuildSurfaces_InfiniteCapReproducesCurrentOutputsByteIdentically()
+    {
+        // cap = +inf must be a true no-op: every position matches the capless build byte-identically.
+        var snapshot = new GlobeReconstructor(frequency: 3).BuildGlobe();
+        var surfaces = new GlobePlateSurfaces(snapshot, noise: NoNoise);
+
+        var elevations = new double[snapshot.CellCount];
+        for (int i = 0; i < elevations.Length; i++)
+            elevations[i] = (i % 11) * 100.0 - 500.0;
+
+        var without = surfaces.BuildSurfaces(elevations, exaggeration: 0.00012)
+            .OrderBy(c => c.PlateId).ToArray();
+        var withInf = surfaces.BuildSurfaces(
+                elevations,
+                exaggeration: 0.00012,
+                maxDisplacementUnitRadius: double.PositiveInfinity)
+            .OrderBy(c => c.PlateId).ToArray();
+
+        Assert.Equal(without.Length, withInf.Length);
+        for (int p = 0; p < without.Length; p++)
+        {
+            Assert.Equal(without[p].Surface.VertexCount, withInf[p].Surface.VertexCount);
+            for (int v = 0; v < without[p].Surface.VertexCount; v++)
+            {
+                Assert.Equal(without[p].Surface.Positions[v].X, withInf[p].Surface.Positions[v].X, 12);
+                Assert.Equal(without[p].Surface.Positions[v].Y, withInf[p].Surface.Positions[v].Y, 12);
+                Assert.Equal(without[p].Surface.Positions[v].Z, withInf[p].Surface.Positions[v].Z, 12);
+            }
+        }
+    }
+
+    [Fact]
+    public void BuildAdaptiveSurfaces_InfiniteCapReproducesCurrentOutputsByteIdentically()
+    {
+        var snapshot = new GlobeReconstructor(frequency: 3).BuildGlobe();
+        var surfaces = new GlobePlateSurfaces(snapshot, noise: NoNoise);
+
+        var elevations = new double[snapshot.CellCount];
+        for (int i = 0; i < elevations.Length; i++)
+            elevations[i] = (i % 11) * 100.0 - 500.0;
+
+        var without = surfaces.BuildAdaptiveSurfaces(
+                elevations,
+                exaggeration: 0.00012,
+                options: new AdaptiveSubdivisionOptions(MaxDepth: 1, EdgeHeightDeltaThreshold: 0.0005))
+            .OrderBy(c => c.PlateId).ToArray();
+        var withInf = surfaces.BuildAdaptiveSurfaces(
+                elevations,
+                exaggeration: 0.00012,
+                options: new AdaptiveSubdivisionOptions(MaxDepth: 1, EdgeHeightDeltaThreshold: 0.0005),
+                maxDisplacementUnitRadius: double.PositiveInfinity)
+            .OrderBy(c => c.PlateId).ToArray();
+
+        Assert.Equal(without.Length, withInf.Length);
+        for (int p = 0; p < without.Length; p++)
+        {
+            Assert.Equal(without[p].Surface.VertexCount, withInf[p].Surface.VertexCount);
+            Assert.Equal(without[p].Surface.TriangleCount, withInf[p].Surface.TriangleCount);
+            for (int v = 0; v < without[p].Surface.VertexCount; v++)
+            {
+                Assert.Equal(without[p].Surface.Positions[v].X, withInf[p].Surface.Positions[v].X, 12);
+                Assert.Equal(without[p].Surface.Positions[v].Y, withInf[p].Surface.Positions[v].Y, 12);
+                Assert.Equal(without[p].Surface.Positions[v].Z, withInf[p].Surface.Positions[v].Z, 12);
+            }
+        }
+    }
+
+    [Fact]
+    public void BuildAdaptiveSurfaces_ClampsFinalDisplacementToCap()
+    {
+        // Adaptive path: the cap lives inside HeightFinalizer, so an adaptive midpoint whose
+        // unclamped finalized displacement exceeds the cap lands exactly at the cap.
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot(), noise: NoNoise);
+        var elevations = new double[] { 0.0, 1000.0, 0.0 };
+        const double exaggeration = 0.00012;
+        const double cap = 0.005;
+        double unclamped = 1000.0 * exaggeration;   // 0.12 — exceeds cap
+
+        var caps = surfaces.BuildAdaptiveSurfaces(
+            elevations,
+            exaggeration,
+            options: new AdaptiveSubdivisionOptions(MaxDepth: 1, EdgeHeightDeltaThreshold: 1e-5),
+            maxDisplacementUnitRadius: cap);
+
+        Assert.True(unclamped > cap);
+        foreach (var cap0 in caps)
+        {
+            foreach (var p in cap0.Surface.Positions)
+            {
+                double r = Radius(p);
+                double disp = r - 1.0;
+                Assert.True(disp <= cap + 1e-9, $"adaptive displacement {disp} exceeds cap {cap}");
+                Assert.True(disp >= -cap - 1e-9, $"adaptive displacement {disp} below -cap {-cap}");
+            }
+        }
     }
 }
