@@ -33,6 +33,10 @@ public sealed record PlanetLayerProjectionProfile(
     double HeightExponent,
     SurfaceSubdivisionMode SurfaceSubdivision,
     int AdaptiveSubdivisionMaxDepth,
+    /// <summary>
+    /// Unit-sphere radius displacement delta that decides whether an edge is split by adaptive
+    /// subdivision. Coupled to the lens parameters (height exponent, etc.) that map metres to unit radius.
+    /// </summary>
     double AdaptiveSubdivisionEdgeHeightDelta,
     double AdaptiveSubdivisionFeatureWeightDelta,
     bool PreservesCellProvenance)
@@ -198,7 +202,8 @@ public sealed record PlanetPresentationDocument(
 
     /// <summary>
     /// Height-delta threshold, in post-exaggeration unit-sphere displacement, that decides whether an
-    /// edge is split by adaptive subdivision.
+    /// edge is split by adaptive subdivision. Coupled to the lens parameters (height exponent, etc.)
+    /// that map metres to unit radius.
     /// </summary>
     public double AdaptiveSubdivisionEdgeHeightDelta { get; init; } = 0.02;
 

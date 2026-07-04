@@ -58,12 +58,16 @@ public sealed record WorldGenerationRenderOptions(int Seed, int TessellationFreq
     /// </summary>
     public SurfaceSubdivisionMode SurfaceSubdivision { get; init; } = SurfaceSubdivisionMode.Fixed;
 
-    /// <summary>Maximum adaptive subdivision depth for render-only globe caps.</summary>
+    /// <summary>
+    /// Maximum adaptive subdivision depth (recursion bound) for render-only globe caps.
+    /// A round with no splits stops early.
+    /// </summary>
     public int AdaptiveSubdivisionMaxDepth { get; init; } = 2;
 
     /// <summary>
     /// Height-delta threshold, in post-exaggeration unit-sphere displacement, that decides whether an
-    /// edge is split by adaptive subdivision.
+    /// edge is split by adaptive subdivision. Coupled to the lens parameters (height exponent, etc.)
+    /// that map metres to unit radius.
     /// </summary>
     public double AdaptiveSubdivisionEdgeHeightDelta { get; init; } = 0.02;
 

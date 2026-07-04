@@ -12,6 +12,7 @@ public sealed record ResolvedLayerProjection(
     double HeightExponent,
     bool UseAdaptiveSurface,
     int AdaptiveSubdivisionMaxDepth,
+    /// <summary>Unit-sphere radius displacement delta for adaptive subdivision; coupled to lens parameters.</summary>
     double AdaptiveSubdivisionEdgeHeightDelta,
     double AdaptiveSubdivisionFeatureWeightDelta,
     bool PreservesCellProvenance);
