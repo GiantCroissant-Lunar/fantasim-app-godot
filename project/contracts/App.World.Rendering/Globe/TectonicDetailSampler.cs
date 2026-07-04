@@ -14,20 +14,35 @@ namespace FantaSim.App.World.Globe;
 /// </summary>
 public sealed class TectonicDetailSampler
 {
+    public const double DefaultInteriorAmplitudeMultiplier = 0.28;
+
     private const double TieEpsilon = 1e-12;
 
     private readonly CellContext[] _contexts;
     private readonly NoiseParams _baseNoise;
+    private readonly double _interiorAmplitudeMultiplier;
+    private readonly bool _ridgeActiveFeatures;
 
     public TectonicDetailSampler(
         WorldGlobeSnapshot snapshot,
         IReadOnlyList<CellCrustFeature>? features,
-        NoiseParams baseNoise)
+        NoiseParams baseNoise,
+        double interiorAmplitudeMultiplier = DefaultInteriorAmplitudeMultiplier,
+        bool ridgeActiveFeatures = true)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(baseNoise);
+        if (interiorAmplitudeMultiplier < 0.0 || !double.IsFinite(interiorAmplitudeMultiplier))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(interiorAmplitudeMultiplier),
+                interiorAmplitudeMultiplier,
+                "Interior amplitude multiplier must be finite and non-negative.");
+        }
 
         _baseNoise = baseNoise;
+        _interiorAmplitudeMultiplier = interiorAmplitudeMultiplier;
+        _ridgeActiveFeatures = ridgeActiveFeatures;
         _contexts = new CellContext[snapshot.Cells.Count];
         for (int i = 0; i < snapshot.Cells.Count; i++)
         {
@@ -49,7 +64,12 @@ public sealed class TectonicDetailSampler
 
         var context = FindNearest(position);
         double weight = FeatureWeight(context.Feature);
-        var noise = BuildNoiseProfile(_baseNoise, context.Feature.Kind, weight);
+        var noise = BuildNoiseProfile(
+            _baseNoise,
+            context.Feature.Kind,
+            weight,
+            _interiorAmplitudeMultiplier,
+            _ridgeActiveFeatures);
         return new TectonicDetailProfile(context.Feature.Kind, weight, noise);
     }
 
@@ -74,9 +94,14 @@ public sealed class TectonicDetailSampler
         return best;
     }
 
-    private static NoiseParams BuildNoiseProfile(NoiseParams baseNoise, byte featureKind, double featureWeight)
+    private static NoiseParams BuildNoiseProfile(
+        NoiseParams baseNoise,
+        byte featureKind,
+        double featureWeight,
+        double interiorAmplitudeMultiplier,
+        bool ridgeActiveFeatures)
     {
-        double interiorAmplitude = baseNoise.Amplitude * 0.28;
+        double interiorAmplitude = baseNoise.Amplitude * interiorAmplitudeMultiplier;
         if (featureKind == 0 || featureWeight <= 0.0)
         {
             return baseNoise with
@@ -111,7 +136,7 @@ public sealed class TectonicDetailSampler
         {
             BaseFrequency = Math.Max(1.0, baseNoise.BaseFrequency * frequencyMultiplier),
             Amplitude = Lerp(interiorAmplitude, activeAmplitude, featureWeight),
-            Ridged = featureKind is 1 or 2 or 3 or 4,
+            Ridged = ridgeActiveFeatures && featureKind is 1 or 2 or 3 or 4,
         };
     }
 

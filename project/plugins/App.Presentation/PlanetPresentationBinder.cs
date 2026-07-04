@@ -844,7 +844,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         _plateSurfaces = new GlobePlateSurfaces(
             snapshot,
             noise: relief,
-            detailSampler: BuildTectonicDetailSampler(snapshot, document.CellFeatures, relief, isTerrain));
+            detailSampler: BuildTectonicDetailSampler(snapshot, document.CellFeatures, relief, viewMode, isTerrain));
 
         IReadOnlyList<double> elevations = isTerrain
             ? (document.CellElevations is { } cellElevations && cellElevations.Count == snapshot.CellCount
@@ -951,12 +951,18 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         WorldGlobeSnapshot snapshot,
         IReadOnlyList<CellCrustFeature>? features,
         NoiseParams relief,
+        GlobeViewMode viewMode,
         bool isTerrain)
     {
         if (!isTerrain || relief.Amplitude == 0.0 || features is null || features.Count == 0)
             return null;
 
-        var sampler = new TectonicDetailSampler(snapshot, features, relief);
+        var sampler = new TectonicDetailSampler(
+            snapshot,
+            features,
+            relief,
+            PlateSurfaceReliefFabric.InteriorAmplitudeMultiplierForView(viewMode),
+            PlateSurfaceReliefFabric.RidgeActiveFeaturesForView(viewMode));
         return sampler.Sample;
     }
 
