@@ -375,7 +375,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             _boundaryRenderer.Visible = showBoundaries;
 
         if (_boundarySectionRenderer is not null && GodotObject.IsInstanceValid(_boundarySectionRenderer))
-            _boundarySectionRenderer.Visible = showsPlateFeatures && viewMode == GlobeViewMode.World;
+            _boundarySectionRenderer.Visible = BoundarySectionVisibility.ShouldShow(showsPlateFeatures, viewMode);
 
         if (_mantle is not null && GodotObject.IsInstanceValid(_mantle))
         {
