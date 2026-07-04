@@ -30,8 +30,11 @@ public sealed class PlateSurfaceReliefFabricTests
     }
 
     [Fact]
-    public void ForView_gives_dry_crust_interiors_visible_roughness_at_declared_scale()
+    public void ForView_gives_dry_crust_interiors_calm_roughness_so_belts_read()
     {
+        // North-star spec §3: "Most of the surface is calm; that calm is what makes belts read."
+        // Interior fabric (no active feature) must stay calm at the declared scale so the thin
+        // ridged boundary belts stand out against it.
         var crust = PlateSurfaceReliefFabric.ForView(GlobeViewMode.HypsometricTerrain);
         var sampler = new TectonicDetailSampler(
             SingleCellSnapshot(),
@@ -43,8 +46,8 @@ public sealed class PlateSurfaceReliefFabricTests
         double standardDeviation = SampledRadialStandardDeviation(sampler);
 
         Assert.True(
-            standardDeviation >= 0.025,
-            $"Expected visible dry-crust interior roughness; sampled radial standard deviation was {standardDeviation:0.0000}.");
+            standardDeviation <= 0.025,
+            $"Expected calm dry-crust interiors so belts read; sampled radial standard deviation was {standardDeviation:0.0000}.");
     }
 
     [Fact]
@@ -69,30 +72,102 @@ public sealed class PlateSurfaceReliefFabricTests
     }
 
     [Fact]
-    public void ForView_keeps_active_diagnostic_features_below_blade_peak_range()
-    {
-        var crust = PlateSurfaceReliefFabric.ForView(GlobeViewMode.HypsometricTerrain);
-        var sampler = new TectonicDetailSampler(
-            SingleCellSnapshot(),
-            new[] { new CellCrustFeature(Kind: 1, Magnitude: 10_000.0) },
-            crust,
-            PlateSurfaceReliefFabric.InteriorAmplitudeMultiplierForView(GlobeViewMode.HypsometricTerrain),
-            PlateSurfaceReliefFabric.RidgeActiveFeaturesForView(GlobeViewMode.HypsometricTerrain),
-            PlateSurfaceReliefFabric.ActiveAmplitudeMultiplierForView(GlobeViewMode.HypsometricTerrain));
-
-        double peak = MaxSampledAbsoluteRadialDisplacement(sampler);
-
-        Assert.True(
-            peak <= 0.16,
-            $"Expected active diagnostic crust peaks below blade range; max sampled radial displacement was {peak:0.000}.");
-    }
-
-    [Fact]
     public void ForView_keeps_plate_identity_flat()
     {
         var identity = PlateSurfaceReliefFabric.ForView(GlobeViewMode.PlateIdentity);
 
         Assert.Equal(0.0, identity.Amplitude);
+    }
+
+    // === Concentrated drama (north-star spec §3) ===================================================
+    //
+    // Interior fabric amplitude <= 0.15x the effective belt (active) amplitude. Belts are the
+    // drama now that the silhouette is capped (§1). The resolved TectonicDetailProfile amplitudes
+    // must satisfy interior <= 0.15 * belt for representative active feature kinds in BOTH planet
+    // views (World + HypsometricTerrain). Crust diagnostic ridges active features and does NOT
+    // damp active amplitude (no 0.45 multiplier).
+
+    private static readonly CellCrustFeature[] RepresentativeActiveFeatures =
+    {
+        new(Kind: 1, Magnitude: 10_000.0), // Mountain
+        new(Kind: 2, Magnitude: 10_000.0), // Volcanic arc
+        new(Kind: 3, Magnitude: 10_000.0), // Trench
+        new(Kind: 4, Magnitude: 10_000.0), // Ridge
+    };
+
+    [Theory]
+    [InlineData(GlobeViewMode.World)]
+    [InlineData(GlobeViewMode.HypsometricTerrain)]
+    public void ForView_interior_amplitude_is_at_most_15_percent_of_belt_for_active_features(GlobeViewMode view)
+    {
+        var relief = PlateSurfaceReliefFabric.ForView(view);
+        var interiorMult = PlateSurfaceReliefFabric.InteriorAmplitudeMultiplierForView(view);
+        var activeMult = PlateSurfaceReliefFabric.ActiveAmplitudeMultiplierForView(view);
+
+        foreach (var feature in RepresentativeActiveFeatures)
+        {
+            var snapshot = SingleCellSnapshot();
+            var features = new[] { feature };
+            var sampler = new TectonicDetailSampler(
+                snapshot,
+                features,
+                relief,
+                interiorMult,
+                PlateSurfaceReliefFabric.RidgeActiveFeaturesForView(view),
+                activeMult);
+
+            // High-magnitude feature -> weight ~1 -> resolved amplitude is the belt amplitude.
+            var belt = sampler.ResolveProfile(CellCenterOf(snapshot)).Noise.Amplitude;
+
+            // Interior sampler (kind 0) -> the interior amplitude.
+            var interiorSampler = new TectonicDetailSampler(
+                snapshot,
+                new[] { default(CellCrustFeature) },
+                relief,
+                interiorMult,
+                PlateSurfaceReliefFabric.RidgeActiveFeaturesForView(view),
+                activeMult);
+            var interior = interiorSampler.ResolveProfile(CellCenterOf(snapshot)).Noise.Amplitude;
+
+            Assert.True(
+                interior <= 0.15 * belt + 1e-9,
+                $"view {view} kind {feature.Kind}: interior {interior:G5} > 0.15*belt {0.15*belt:G5}");
+        }
+    }
+
+    [Fact]
+    public void ForView_crust_diagnostic_ridges_active_features()
+    {
+        // Spec §3: ridging ON for active features (mountain/arc/trench/ridge) in the crust
+        // diagnostic. Belts are thin, ridged, boundary-aligned — mountain CHAINS, not crumple.
+        Assert.True(PlateSurfaceReliefFabric.RidgeActiveFeaturesForView(GlobeViewMode.HypsometricTerrain));
+    }
+
+    [Fact]
+    public void ForView_crust_diagnostic_does_not_damp_active_amplitude()
+    {
+        // Spec §3: remove the 0.45 active damping — belts are the drama now that the silhouette is
+        // capped. Active amplitude multiplier must be 1.0 (no damping) for the crust diagnostic.
+        Assert.Equal(1.0, PlateSurfaceReliefFabric.ActiveAmplitudeMultiplierForView(GlobeViewMode.HypsometricTerrain));
+    }
+
+    [Fact]
+    public void ForView_world_keeps_active_amplitude_undamped()
+    {
+        Assert.Equal(1.0, PlateSurfaceReliefFabric.ActiveAmplitudeMultiplierForView(GlobeViewMode.World));
+    }
+
+    private static CartesianPoint3 CellCenterOf(WorldGlobeSnapshot snapshot)
+    {
+        var cell = snapshot.Cells[0];
+        var p = new CartesianPoint3(
+            cell.C0.X + cell.C1.X + cell.C2.X,
+            cell.C0.Y + cell.C1.Y + cell.C2.Y,
+            cell.C0.Z + cell.C1.Z + cell.C2.Z);
+        double len = Math.Sqrt((p.X * p.X) + (p.Y * p.Y) + (p.Z * p.Z));
+        return len > 1e-12
+            ? new CartesianPoint3(p.X / len, p.Y / len, p.Z / len)
+            : new CartesianPoint3(cell.C0.X, cell.C0.Y, cell.C0.Z);
     }
 
     private static WorldGlobeSnapshot SingleCellSnapshot()

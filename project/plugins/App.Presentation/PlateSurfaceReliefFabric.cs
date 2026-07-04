@@ -6,8 +6,10 @@ namespace FantaSim.App.Presentation;
 
 internal static class PlateSurfaceReliefFabric
 {
-    private const double CrustDiagnosticInteriorAmplitudeMultiplier = 0.72;
-    private const double CrustDiagnosticActiveAmplitudeMultiplier = 0.45;
+    // Concentrated drama (north-star spec §3): interior fabric amplitude <= 0.15x the effective
+    // belt (active) amplitude. Belts are the drama now that the silhouette is capped (§1).
+    private const double CrustDiagnosticInteriorAmplitudeMultiplier = 0.15;
+    private const double WorldInteriorAmplitudeMultiplier = 0.15;
 
     // World-view seeded peaks (W1, §5c "sub-cell detail"): base fabric, not garnish. The height lens
     // is non-linear in world view, so a high nominal amplitude produces a rocky silhouette without
@@ -48,13 +50,16 @@ internal static class PlateSurfaceReliefFabric
     public static double InteriorAmplitudeMultiplierForView(GlobeViewMode viewMode)
         => viewMode == GlobeViewMode.HypsometricTerrain
             ? CrustDiagnosticInteriorAmplitudeMultiplier
-            : TectonicDetailSampler.DefaultInteriorAmplitudeMultiplier;
+            : viewMode == GlobeViewMode.World
+                ? WorldInteriorAmplitudeMultiplier
+                : TectonicDetailSampler.DefaultInteriorAmplitudeMultiplier;
 
+    // Spec §3: ridging ON for active features (mountain/arc/trench/ridge) in BOTH planet views —
+    // belts are thin, ridged, boundary-aligned (mountain CHAINS, not crumple).
     public static bool RidgeActiveFeaturesForView(GlobeViewMode viewMode)
-        => viewMode != GlobeViewMode.HypsometricTerrain;
+        => viewMode is GlobeViewMode.World or GlobeViewMode.HypsometricTerrain;
 
-    public static double ActiveAmplitudeMultiplierForView(GlobeViewMode viewMode)
-        => viewMode == GlobeViewMode.HypsometricTerrain
-            ? CrustDiagnosticActiveAmplitudeMultiplier
-            : 1.0;
+    // Spec §3: no active damping in planet views — belts are the drama now that the silhouette is
+    // capped. The 0.45 crust damping is removed; all views use the full active amplitude.
+    public static double ActiveAmplitudeMultiplierForView(GlobeViewMode viewMode) => 1.0;
 }
