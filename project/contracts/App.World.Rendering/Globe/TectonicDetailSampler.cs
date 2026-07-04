@@ -22,13 +22,15 @@ public sealed class TectonicDetailSampler
     private readonly NoiseParams _baseNoise;
     private readonly double _interiorAmplitudeMultiplier;
     private readonly bool _ridgeActiveFeatures;
+    private readonly double _activeAmplitudeMultiplier;
 
     public TectonicDetailSampler(
         WorldGlobeSnapshot snapshot,
         IReadOnlyList<CellCrustFeature>? features,
         NoiseParams baseNoise,
         double interiorAmplitudeMultiplier = DefaultInteriorAmplitudeMultiplier,
-        bool ridgeActiveFeatures = true)
+        bool ridgeActiveFeatures = true,
+        double activeAmplitudeMultiplier = 1.0)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(baseNoise);
@@ -39,10 +41,18 @@ public sealed class TectonicDetailSampler
                 interiorAmplitudeMultiplier,
                 "Interior amplitude multiplier must be finite and non-negative.");
         }
+        if (activeAmplitudeMultiplier < 0.0 || !double.IsFinite(activeAmplitudeMultiplier))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(activeAmplitudeMultiplier),
+                activeAmplitudeMultiplier,
+                "Active amplitude multiplier must be finite and non-negative.");
+        }
 
         _baseNoise = baseNoise;
         _interiorAmplitudeMultiplier = interiorAmplitudeMultiplier;
         _ridgeActiveFeatures = ridgeActiveFeatures;
+        _activeAmplitudeMultiplier = activeAmplitudeMultiplier;
         _contexts = new CellContext[snapshot.Cells.Count];
         for (int i = 0; i < snapshot.Cells.Count; i++)
         {
@@ -69,7 +79,8 @@ public sealed class TectonicDetailSampler
             context.Feature.Kind,
             weight,
             _interiorAmplitudeMultiplier,
-            _ridgeActiveFeatures);
+            _ridgeActiveFeatures,
+            _activeAmplitudeMultiplier);
         return new TectonicDetailProfile(context.Feature.Kind, weight, noise);
     }
 
@@ -99,7 +110,8 @@ public sealed class TectonicDetailSampler
         byte featureKind,
         double featureWeight,
         double interiorAmplitudeMultiplier,
-        bool ridgeActiveFeatures)
+        bool ridgeActiveFeatures,
+        double activeAmplitudeMultiplier)
     {
         double interiorAmplitude = baseNoise.Amplitude * interiorAmplitudeMultiplier;
         if (featureKind == 0 || featureWeight <= 0.0)
@@ -120,7 +132,7 @@ public sealed class TectonicDetailSampler
             4 => baseNoise.Amplitude * 1.35, // Ridge
             5 => baseNoise.Amplitude * 0.72, // Fault / transform scarp
             _ => baseNoise.Amplitude * 0.55,
-        };
+        } * activeAmplitudeMultiplier;
 
         double frequencyMultiplier = featureKind switch
         {

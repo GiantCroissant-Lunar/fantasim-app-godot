@@ -962,7 +962,8 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             features,
             relief,
             PlateSurfaceReliefFabric.InteriorAmplitudeMultiplierForView(viewMode),
-            PlateSurfaceReliefFabric.RidgeActiveFeaturesForView(viewMode));
+            PlateSurfaceReliefFabric.RidgeActiveFeaturesForView(viewMode),
+            PlateSurfaceReliefFabric.ActiveAmplitudeMultiplierForView(viewMode));
         return sampler.Sample;
     }
 

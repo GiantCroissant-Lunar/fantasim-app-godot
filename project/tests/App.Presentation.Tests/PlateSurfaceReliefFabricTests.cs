@@ -15,7 +15,7 @@ public sealed class PlateSurfaceReliefFabricTests
         var crust = PlateSurfaceReliefFabric.ForView(GlobeViewMode.HypsometricTerrain);
 
         Assert.True(crust.Amplitude > GlobePlateSurfaces.DefaultPeaks.Amplitude);
-        Assert.True(crust.BaseFrequency >= 16.0);
+        Assert.InRange(crust.BaseFrequency, 5.0, 10.0);
         Assert.True(crust.Octaves >= 4);
 
         var sampler = new TectonicDetailSampler(
@@ -45,6 +45,46 @@ public sealed class PlateSurfaceReliefFabricTests
         Assert.True(
             standardDeviation >= 0.025,
             $"Expected visible dry-crust interior roughness; sampled radial standard deviation was {standardDeviation:0.0000}.");
+    }
+
+    [Fact]
+    public void ForView_favors_broad_dry_crust_crumples_over_high_frequency_chatter()
+    {
+        var crust = PlateSurfaceReliefFabric.ForView(GlobeViewMode.HypsometricTerrain);
+        var sampler = new TectonicDetailSampler(
+            SingleCellSnapshot(),
+            new[] { default(CellCrustFeature) },
+            crust,
+            PlateSurfaceReliefFabric.InteriorAmplitudeMultiplierForView(GlobeViewMode.HypsometricTerrain),
+            PlateSurfaceReliefFabric.RidgeActiveFeaturesForView(GlobeViewMode.HypsometricTerrain));
+
+        var samples = PairedNearbyRadialDisplacements(sampler, radians: 0.012, count: 384).ToArray();
+        double roughness = SampleStandardDeviation(samples.Select(pair => pair.A).Concat(samples.Select(pair => pair.B)));
+        double nearbyDelta = samples.Average(pair => Math.Abs(pair.A - pair.B));
+        double chatterRatio = nearbyDelta / roughness;
+
+        Assert.True(
+            chatterRatio <= 0.30,
+            $"Expected broad crumpled dry crust, but nearby displacement chatter ratio was {chatterRatio:0.000}.");
+    }
+
+    [Fact]
+    public void ForView_keeps_active_diagnostic_features_below_blade_peak_range()
+    {
+        var crust = PlateSurfaceReliefFabric.ForView(GlobeViewMode.HypsometricTerrain);
+        var sampler = new TectonicDetailSampler(
+            SingleCellSnapshot(),
+            new[] { new CellCrustFeature(Kind: 1, Magnitude: 10_000.0) },
+            crust,
+            PlateSurfaceReliefFabric.InteriorAmplitudeMultiplierForView(GlobeViewMode.HypsometricTerrain),
+            PlateSurfaceReliefFabric.RidgeActiveFeaturesForView(GlobeViewMode.HypsometricTerrain),
+            PlateSurfaceReliefFabric.ActiveAmplitudeMultiplierForView(GlobeViewMode.HypsometricTerrain));
+
+        double peak = MaxSampledAbsoluteRadialDisplacement(sampler);
+
+        Assert.True(
+            peak <= 0.16,
+            $"Expected active diagnostic crust peaks below blade range; max sampled radial displacement was {peak:0.000}.");
     }
 
     [Fact]
@@ -78,6 +118,58 @@ public sealed class PlateSurfaceReliefFabricTests
 
         double mean = displacements.Average();
         return Math.Sqrt(displacements.Average(v => (v - mean) * (v - mean)));
+    }
+
+    private static double MaxSampledAbsoluteRadialDisplacement(TectonicDetailSampler sampler)
+    {
+        const double defaultCrustMetresToUnitRadius = 0.00003;
+        return FibonacciDirections(768)
+            .Max(point => Math.Abs(sampler.Sample(point) * defaultCrustMetresToUnitRadius));
+    }
+
+    private static double SampleStandardDeviation(IEnumerable<double> values)
+    {
+        var samples = values.ToArray();
+        double mean = samples.Average();
+        return Math.Sqrt(samples.Average(v => (v - mean) * (v - mean)));
+    }
+
+    private static IEnumerable<(double A, double B)> PairedNearbyRadialDisplacements(
+        TectonicDetailSampler sampler,
+        double radians,
+        int count)
+    {
+        const double defaultCrustMetresToUnitRadius = 0.00003;
+        foreach (var point in FibonacciDirections(count))
+        {
+            var nearby = RotateTowardEast(point, radians);
+            yield return (
+                sampler.Sample(point) * defaultCrustMetresToUnitRadius,
+                sampler.Sample(nearby) * defaultCrustMetresToUnitRadius);
+        }
+    }
+
+    private static CartesianPoint3 RotateTowardEast(CartesianPoint3 point, double radians)
+    {
+        double eastX = -point.Y;
+        double eastY = point.X;
+        double eastLength = Math.Sqrt((eastX * eastX) + (eastY * eastY));
+        if (eastLength <= 1e-12)
+        {
+            eastX = 1.0;
+            eastY = 0.0;
+            eastLength = 1.0;
+        }
+
+        eastX /= eastLength;
+        eastY /= eastLength;
+
+        double cos = Math.Cos(radians);
+        double sin = Math.Sin(radians);
+        return new CartesianPoint3(
+            (point.X * cos) + (eastX * sin),
+            (point.Y * cos) + (eastY * sin),
+            point.Z * cos);
     }
 
     private static IEnumerable<CartesianPoint3> FibonacciDirections(int count)
