@@ -93,14 +93,16 @@ public sealed class WorldGenerationRenderOptionsTests
             "world-generation",
             WorldGenerationGraphDefaults.BuildCrustGraph());
         await source.ApplyEditAsync(new GraphEdit.SetParam("options", "surfaceSubdivision", JsonValue.Create("adaptive")));
-        await source.ApplyEditAsync(new GraphEdit.SetParam("options", "adaptiveSubdivisionMaxDepth", JsonValue.Create(1)));
+        await source.ApplyEditAsync(new GraphEdit.SetParam("options", "adaptiveSubdivisionMaxDepth", JsonValue.Create(2)));
         await source.ApplyEditAsync(new GraphEdit.SetParam("options", "adaptiveSubdivisionEdgeHeightDelta", JsonValue.Create(0.02)));
+        await source.ApplyEditAsync(new GraphEdit.SetParam("options", "adaptiveSubdivisionFeatureWeightDelta", JsonValue.Create(0.25)));
 
         var options = WorldGenerationRenderOptions.Resolve(source.Graph);
 
         Assert.Equal(SurfaceSubdivisionMode.Adaptive, options.SurfaceSubdivision);
-        Assert.Equal(1, options.AdaptiveSubdivisionMaxDepth);
+        Assert.Equal(2, options.AdaptiveSubdivisionMaxDepth);
         Assert.Equal(0.02, options.AdaptiveSubdivisionEdgeHeightDelta);
+        Assert.Equal(0.25, options.AdaptiveSubdivisionFeatureWeightDelta);
     }
 
     [Fact]

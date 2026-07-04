@@ -58,14 +58,20 @@ public sealed record WorldGenerationRenderOptions(int Seed, int TessellationFreq
     /// </summary>
     public SurfaceSubdivisionMode SurfaceSubdivision { get; init; } = SurfaceSubdivisionMode.Fixed;
 
-    /// <summary>Maximum adaptive subdivision depth. The first implementation supports depth 1.</summary>
-    public int AdaptiveSubdivisionMaxDepth { get; init; } = 1;
+    /// <summary>Maximum adaptive subdivision depth for render-only globe caps.</summary>
+    public int AdaptiveSubdivisionMaxDepth { get; init; } = 2;
 
     /// <summary>
     /// Height-delta threshold, in post-exaggeration unit-sphere displacement, that decides whether an
     /// edge is split by adaptive subdivision.
     /// </summary>
     public double AdaptiveSubdivisionEdgeHeightDelta { get; init; } = 0.02;
+
+    /// <summary>
+    /// Feature-weight threshold, in normalized typed-crust-feature units, that decides whether an edge is
+    /// split even when the height envelope is flat.
+    /// </summary>
+    public double AdaptiveSubdivisionFeatureWeightDelta { get; init; } = 0.25;
 
     /// <summary>
     /// Default vertical exaggeration. Elevation units are metres on the <c>CellElevationSystem</c>
@@ -131,6 +137,18 @@ public sealed record WorldGenerationRenderOptions(int Seed, int TessellationFreq
                 "Adaptive subdivision edge-height delta must be non-negative and finite.");
         }
 
+        var adaptiveFeatureThreshold = ReadDouble(
+            optionsNode.Params,
+            "adaptiveSubdivisionFeatureWeightDelta",
+            options.AdaptiveSubdivisionFeatureWeightDelta);
+        if (adaptiveFeatureThreshold < 0 || double.IsNaN(adaptiveFeatureThreshold) || double.IsInfinity(adaptiveFeatureThreshold))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(AdaptiveSubdivisionFeatureWeightDelta),
+                adaptiveFeatureThreshold,
+                "Adaptive subdivision feature-weight delta must be non-negative and finite.");
+        }
+
         return new WorldGenerationRenderOptions(seed, frequency)
         {
             BoundaryProfiles = profiles,
@@ -139,6 +157,7 @@ public sealed record WorldGenerationRenderOptions(int Seed, int TessellationFreq
             SurfaceSubdivision = ReadSurfaceSubdivisionMode(optionsNode.Params, options.SurfaceSubdivision),
             AdaptiveSubdivisionMaxDepth = adaptiveDepth,
             AdaptiveSubdivisionEdgeHeightDelta = adaptiveThreshold,
+            AdaptiveSubdivisionFeatureWeightDelta = adaptiveFeatureThreshold,
         };
     }
 

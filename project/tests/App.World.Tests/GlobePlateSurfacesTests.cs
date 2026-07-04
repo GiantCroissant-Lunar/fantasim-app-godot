@@ -274,6 +274,30 @@ public sealed class GlobePlateSurfacesTests
     }
 
     [Fact]
+    public void BuildAdaptiveSurfaces_SplitsFlatTerrainWhenFeatureWeightChanges()
+    {
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot(), noise: NoNoise);
+        var elevations = new double[] { 0.0, 0.0, 0.0 };
+        var featureWeights = new double[] { 0.0, 1.0, 0.0 };
+
+        var fixedCaps = surfaces.BuildSurfaces(elevations, exaggeration: 1.0);
+        var adaptiveCaps = surfaces.BuildAdaptiveSurfaces(
+            elevations,
+            exaggeration: 1.0,
+            new AdaptiveSubdivisionOptions(
+                MaxDepth: 1,
+                EdgeHeightDeltaThreshold: 10.0,
+                FeatureWeightDeltaThreshold: 0.25),
+            featureWeightsByCell: featureWeights);
+
+        var fixedPlate0 = fixedCaps.Single(c => c.PlateId == 0);
+        var adaptivePlate0 = adaptiveCaps.Single(c => c.PlateId == 0);
+        Assert.True(adaptivePlate0.Surface.TriangleCount > fixedPlate0.Surface.TriangleCount);
+        Assert.Equal(adaptivePlate0.Surface.TriangleCount, adaptivePlate0.CellIds.Length);
+        Assert.All(adaptivePlate0.CellIds, id => Assert.Contains(id, new[] { 0, 1 }));
+    }
+
+    [Fact]
     public void BuildAdaptiveSurfaces_PreservesCrossPlateSharedMidpoints()
     {
         var snapshot = TwoPlatesSharingBoundaryEdgeWithEndpointRelief();

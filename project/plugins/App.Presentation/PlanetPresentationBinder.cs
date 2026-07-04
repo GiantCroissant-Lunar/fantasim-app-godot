@@ -842,14 +842,19 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             worldMetresToUnitRadius: WorldHeightScale,
             worldHeightExponent: WorldHeightExponent);
         bool useAdaptiveSurface = projection.UseAdaptiveSurface;
+        var featureWeights = useAdaptiveSurface
+            ? BuildAdaptiveFeatureWeights(snapshot.CellCount, document.CellFeatures)
+            : null;
         var caps = useAdaptiveSurface
             ? _plateSurfaces.BuildAdaptiveSurfaces(
                 elevations,
                 exaggeration: projection.MetresToUnitRadius,
                 options: new AdaptiveSubdivisionOptions(
                     MaxDepth: projection.AdaptiveSubdivisionMaxDepth,
-                    EdgeHeightDeltaThreshold: projection.AdaptiveSubdivisionEdgeHeightDelta),
-                heightExponent: projection.HeightExponent)
+                    EdgeHeightDeltaThreshold: projection.AdaptiveSubdivisionEdgeHeightDelta,
+                    FeatureWeightDeltaThreshold: projection.AdaptiveSubdivisionFeatureWeightDelta),
+                heightExponent: projection.HeightExponent,
+                featureWeightsByCell: featureWeights)
             : _plateSurfaces.BuildSurfaces(
                 elevations,
                 exaggeration: projection.MetresToUnitRadius,
@@ -886,6 +891,30 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             caps.Count,
             caps.Sum(cap => cap.Surface.TriangleCount),
             meshes.Sum(mesh => mesh.VertexCount));
+    }
+
+    private static IReadOnlyList<double>? BuildAdaptiveFeatureWeights(
+        int cellCount,
+        IReadOnlyList<CellCrustFeature>? features)
+    {
+        if (features is null || features.Count == 0)
+            return null;
+
+        var weights = new double[cellCount];
+        int count = Math.Min(cellCount, features.Count);
+        for (int i = 0; i < count; i++)
+        {
+            var feature = features[i];
+            if (feature.Kind == 0)
+                continue;
+
+            weights[i] = Math.Clamp(
+                0.35 + Math.Log10(1.0 + Math.Max(0.0, feature.Magnitude)) / 2.0,
+                0.0,
+                1.0);
+        }
+
+        return weights;
     }
 
     // Computes per-cell color (world or crust ramp with trench/ridge accent baked in) and

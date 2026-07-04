@@ -13,6 +13,7 @@ public sealed record ResolvedLayerProjection(
     bool UseAdaptiveSurface,
     int AdaptiveSubdivisionMaxDepth,
     double AdaptiveSubdivisionEdgeHeightDelta,
+    double AdaptiveSubdivisionFeatureWeightDelta,
     bool PreservesCellProvenance);
 
 /// <summary>Maps presentation view mode to the layer projection profile used by globe cap builders.</summary>
@@ -37,6 +38,7 @@ public static class LayerProjectionProfileResolver
             UseAdaptiveSurface: terrainView && crust.SurfaceSubdivision == SurfaceSubdivisionMode.Adaptive,
             AdaptiveSubdivisionMaxDepth: crust.AdaptiveSubdivisionMaxDepth,
             AdaptiveSubdivisionEdgeHeightDelta: crust.AdaptiveSubdivisionEdgeHeightDelta,
+            AdaptiveSubdivisionFeatureWeightDelta: crust.AdaptiveSubdivisionFeatureWeightDelta,
             PreservesCellProvenance: crust.PreservesCellProvenance);
     }
 
@@ -55,6 +57,7 @@ public static class LayerProjectionProfileResolver
             document.VerticalExaggeration,
             document.SurfaceSubdivision,
             document.AdaptiveSubdivisionMaxDepth,
-            document.AdaptiveSubdivisionEdgeHeightDelta);
-    }
+            document.AdaptiveSubdivisionEdgeHeightDelta,
+            document.AdaptiveSubdivisionFeatureWeightDelta);
+}
 }

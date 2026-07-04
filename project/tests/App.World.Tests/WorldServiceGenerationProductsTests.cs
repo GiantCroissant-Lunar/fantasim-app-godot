@@ -245,6 +245,7 @@ public sealed class WorldServiceGenerationProductsTests
         Assert.Equal(document.SurfaceSubdivision, crust.SurfaceSubdivision);
         Assert.Equal(document.AdaptiveSubdivisionMaxDepth, crust.AdaptiveSubdivisionMaxDepth);
         Assert.Equal(document.AdaptiveSubdivisionEdgeHeightDelta, crust.AdaptiveSubdivisionEdgeHeightDelta);
+        Assert.Equal(document.AdaptiveSubdivisionFeatureWeightDelta, crust.AdaptiveSubdivisionFeatureWeightDelta);
         Assert.True(crust.PreservesCellProvenance);
     }
 }

@@ -173,11 +173,15 @@ public sealed class GlobePlateSurfaces
         IReadOnlyList<double> elevationsByCell,
         double exaggeration,
         AdaptiveSubdivisionOptions options,
-        double heightExponent = 1.0)
+        double heightExponent = 1.0,
+        IReadOnlyList<double>? featureWeightsByCell = null)
     {
         ArgumentNullException.ThrowIfNull(options);
 
         var plateVertexHeights = BuildPlateVertexHeights(elevationsByCell, exaggeration, heightExponent);
+        var plateVertexFeatureWeights = featureWeightsByCell is null
+            ? null
+            : BuildPlateVertexFeatureWeights(featureWeightsByCell);
         var caps = new PlateCap[_plates.Count];
         for (int p = 0; p < _plates.Count; p++)
         {
@@ -186,7 +190,7 @@ public sealed class GlobePlateSurfaces
                 plate.LocalVertices,
                 plate.LocalTriangles,
                 plateVertexHeights[p],
-                options);
+                options with { VertexFeatureWeights = plateVertexFeatureWeights?[p] });
             var cellIds = MapSourceTriangleIdsToCellIds(adaptive.SourceTriangleIds, plate.CellIds);
             caps[p] = new PlateCap(plate.PlateId, cellIds, adaptive.Surface, adaptive.VertexProvenance);
         }
@@ -286,6 +290,37 @@ public sealed class GlobePlateSurfaces
                     : Math.Sign(metres) * Math.Pow(Math.Abs(metres), heightExponent) * exaggeration;
             }
             result[p] = perVertexHeights;
+        }
+
+        return result;
+    }
+
+    private double[][] BuildPlateVertexFeatureWeights(IReadOnlyList<double> featureWeightsByCell)
+    {
+        ArgumentNullException.ThrowIfNull(featureWeightsByCell);
+
+        var globalFaceWeights = new double[_globalCellIds.Length];
+        for (int f = 0; f < _globalCellIds.Length; f++)
+        {
+            int cellId = _globalCellIds[f];
+            globalFaceWeights[f] = (cellId >= 0 && cellId < featureWeightsByCell.Count)
+                ? featureWeightsByCell[cellId]
+                : 0.0;
+        }
+
+        var globalVertexWeights = GlobeSurfaceBuilder.GatherVertexHeights(
+            _globalVertices.Length,
+            _globalTriangles,
+            globalFaceWeights);
+
+        var result = new double[_plates.Count][];
+        for (int p = 0; p < _plates.Count; p++)
+        {
+            var plate = _plates[p];
+            var local = new double[plate.LocalVertices.Length];
+            for (int v = 0; v < local.Length; v++)
+                local[v] = globalVertexWeights[plate.LocalToGlobal[v]];
+            result[p] = local;
         }
 
         return result;

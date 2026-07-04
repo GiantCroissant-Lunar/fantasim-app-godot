@@ -38,8 +38,9 @@ public static class WorldGenerationNodeCatalog
                 new WorldGenerationGraphParameter("spinRateRadiansPerMegaAnnum", "Spin Rate", "0.02", "float"),
                 new WorldGenerationGraphParameter("hydrosphereMode", "Hydrosphere Mode", "absent", "string"),
                 new WorldGenerationGraphParameter("surfaceSubdivision", "Surface Subdivision", "adaptive", "string"),
-                new WorldGenerationGraphParameter("adaptiveSubdivisionMaxDepth", "Adaptive Subdivision Max Depth", "1", "int"),
+                new WorldGenerationGraphParameter("adaptiveSubdivisionMaxDepth", "Adaptive Subdivision Max Depth", "2", "int"),
                 new WorldGenerationGraphParameter("adaptiveSubdivisionEdgeHeightDelta", "Adaptive Edge Height Delta", "0.02", "double"),
+                new WorldGenerationGraphParameter("adaptiveSubdivisionFeatureWeightDelta", "Adaptive Feature Weight Delta", "0.25", "double"),
                 // Boundary-profile topography (P4). Every shape number is a world parameter; defaults are the
                 // Earth-like reference (see BoundaryProfileParameters). Angular extents are great-circle radians.
                 new WorldGenerationGraphParameter("convergentTrenchDepth", "Convergent Trench Depth", "-2000", "double"),

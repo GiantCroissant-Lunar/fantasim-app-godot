@@ -187,6 +187,7 @@ public sealed class Service : IService, IDisposable
             SurfaceSubdivision = runtime.SurfaceSubdivision,
             AdaptiveSubdivisionMaxDepth = runtime.AdaptiveSubdivisionMaxDepth,
             AdaptiveSubdivisionEdgeHeightDelta = runtime.AdaptiveSubdivisionEdgeHeightDelta,
+            AdaptiveSubdivisionFeatureWeightDelta = runtime.AdaptiveSubdivisionFeatureWeightDelta,
         };
     }
 
@@ -198,7 +199,8 @@ public sealed class Service : IService, IDisposable
                 runtime.VerticalExaggeration,
                 runtime.SurfaceSubdivision,
                 runtime.AdaptiveSubdivisionMaxDepth,
-                runtime.AdaptiveSubdivisionEdgeHeightDelta)
+                runtime.AdaptiveSubdivisionEdgeHeightDelta,
+                runtime.AdaptiveSubdivisionFeatureWeightDelta)
         };
 
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
@@ -435,7 +437,8 @@ public sealed class Service : IService, IDisposable
             renderOptions.VerticalExaggeration,
             renderOptions.SurfaceSubdivision,
             renderOptions.AdaptiveSubdivisionMaxDepth,
-            renderOptions.AdaptiveSubdivisionEdgeHeightDelta);
+            renderOptions.AdaptiveSubdivisionEdgeHeightDelta,
+            renderOptions.AdaptiveSubdivisionFeatureWeightDelta);
     }
 
     private static WorldGenerationRenderOptions ResolvePlanetRenderOptions(WorldGenerationGraphFamilyDocument family)
@@ -465,7 +468,8 @@ public sealed class Service : IService, IDisposable
         double VerticalExaggeration,
         SurfaceSubdivisionMode SurfaceSubdivision,
         int AdaptiveSubdivisionMaxDepth,
-        double AdaptiveSubdivisionEdgeHeightDelta);
+        double AdaptiveSubdivisionEdgeHeightDelta,
+        double AdaptiveSubdivisionFeatureWeightDelta);
 
 #if USE_PROJECT_REFERENCES
     private static string NewTruthWriterActorName()

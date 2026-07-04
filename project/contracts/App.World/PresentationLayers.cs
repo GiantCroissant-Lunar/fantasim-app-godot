@@ -34,6 +34,7 @@ public sealed record PlanetLayerProjectionProfile(
     SurfaceSubdivisionMode SurfaceSubdivision,
     int AdaptiveSubdivisionMaxDepth,
     double AdaptiveSubdivisionEdgeHeightDelta,
+    double AdaptiveSubdivisionFeatureWeightDelta,
     bool PreservesCellProvenance)
 {
     public const string CrustLayerId = "geosphere.crust";
@@ -45,7 +46,8 @@ public sealed record PlanetLayerProjectionProfile(
         double metresToUnitRadius,
         SurfaceSubdivisionMode surfaceSubdivision,
         int adaptiveSubdivisionMaxDepth,
-        double adaptiveSubdivisionEdgeHeightDelta)
+        double adaptiveSubdivisionEdgeHeightDelta,
+        double adaptiveSubdivisionFeatureWeightDelta = 0.25)
         => new(
             LayerId: CrustLayerId,
             ProjectionKind: PlanetLayerProjectionKind.GlobeSurface,
@@ -58,6 +60,7 @@ public sealed record PlanetLayerProjectionProfile(
             SurfaceSubdivision: surfaceSubdivision,
             AdaptiveSubdivisionMaxDepth: adaptiveSubdivisionMaxDepth,
             AdaptiveSubdivisionEdgeHeightDelta: adaptiveSubdivisionEdgeHeightDelta,
+            AdaptiveSubdivisionFeatureWeightDelta: adaptiveSubdivisionFeatureWeightDelta,
             PreservesCellProvenance: true);
 }
 
@@ -198,6 +201,12 @@ public sealed record PlanetPresentationDocument(
     /// edge is split by adaptive subdivision.
     /// </summary>
     public double AdaptiveSubdivisionEdgeHeightDelta { get; init; } = 0.02;
+
+    /// <summary>
+    /// Feature-weight threshold that refines adaptive render geometry around typed crust features even
+    /// when the current height envelope is flat.
+    /// </summary>
+    public double AdaptiveSubdivisionFeatureWeightDelta { get; init; } = 0.25;
 }
 
 /// <summary>

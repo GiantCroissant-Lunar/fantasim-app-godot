@@ -38,6 +38,7 @@ public sealed class LayerProjectionProfileResolverTests
         Assert.True(resolved.UseAdaptiveSurface);
         Assert.Equal(1, resolved.AdaptiveSubdivisionMaxDepth);
         Assert.Equal(0.012, resolved.AdaptiveSubdivisionEdgeHeightDelta);
+        Assert.Equal(0.25, resolved.AdaptiveSubdivisionFeatureWeightDelta);
         Assert.True(resolved.PreservesCellProvenance);
     }
 
@@ -71,5 +72,6 @@ public sealed class LayerProjectionProfileResolverTests
         Assert.True(resolved.UseAdaptiveSurface);
         Assert.Equal(1, resolved.AdaptiveSubdivisionMaxDepth);
         Assert.Equal(0.012, resolved.AdaptiveSubdivisionEdgeHeightDelta);
+        Assert.Equal(0.25, resolved.AdaptiveSubdivisionFeatureWeightDelta);
     }
 }
