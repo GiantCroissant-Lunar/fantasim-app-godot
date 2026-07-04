@@ -197,6 +197,71 @@ public sealed class PlateCapMeshBuilderTests
     }
 
     [Fact]
+    public void BuildTerrain_smooth_normal_mode_uses_per_vertex_smooth_normals()
+    {
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot());
+        var cap = surfaces.BuildSurfaces(new double[] { 0.0, 0.0, 0.0 }, exaggeration: 1.0)
+            .Single(c => c.PlateId == 0);
+        var surface = cap.Surface;
+        var vertexColors = Enumerable.Range(0, surface.VertexCount)
+            .Select(i => new RampColor(0.1 + i * 0.01, 0.2 + i * 0.01, 0.3 + i * 0.01))
+            .ToArray();
+
+        var mesh = PlateCapMeshBuilder.BuildTerrain(
+            cap,
+            new Dictionary<int, RampColor[]> { [cap.PlateId] = vertexColors },
+            perCellEmission: new[] { 0f, 0f, 0f },
+            jitter: null,
+            normalMode: PlateCapMeshNormalMode.Smooth);
+
+        Assert.Equal(PlateCapMeshNormalMode.Smooth, mesh.NormalMode);
+        for (int t = 0; t < surface.TriangleCount; t++)
+        {
+            for (int v = 0; v < 3; v++)
+            {
+                int meshVertex = (t * 3) + v;
+                int surfaceVertex = surface.Triangles[meshVertex];
+                int normalBase = meshVertex * 3;
+                Assert.Equal((float)surface.SmoothNormals[surfaceVertex].X, mesh.Normals[normalBase + 0]);
+                Assert.Equal((float)surface.SmoothNormals[surfaceVertex].Y, mesh.Normals[normalBase + 1]);
+                Assert.Equal((float)surface.SmoothNormals[surfaceVertex].Z, mesh.Normals[normalBase + 2]);
+            }
+        }
+    }
+
+    [Fact]
+    public void BuildTerrain_flat_normal_mode_uses_per_triangle_flat_normals()
+    {
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot());
+        var cap = surfaces.BuildSurfaces(new double[] { 0.0, 0.0, 0.0 }, exaggeration: 1.0)
+            .Single(c => c.PlateId == 0);
+        var surface = cap.Surface;
+        var vertexColors = Enumerable.Range(0, surface.VertexCount)
+            .Select(i => new RampColor(0.1 + i * 0.01, 0.2 + i * 0.01, 0.3 + i * 0.01))
+            .ToArray();
+
+        var mesh = PlateCapMeshBuilder.BuildTerrain(
+            cap,
+            new Dictionary<int, RampColor[]> { [cap.PlateId] = vertexColors },
+            perCellEmission: new[] { 0f, 0f, 0f },
+            jitter: null,
+            normalMode: PlateCapMeshNormalMode.Flat);
+
+        Assert.Equal(PlateCapMeshNormalMode.Flat, mesh.NormalMode);
+        for (int t = 0; t < surface.TriangleCount; t++)
+        {
+            var flatNormal = surface.FlatNormals[t];
+            for (int v = 0; v < 3; v++)
+            {
+                int normalBase = ((t * 3) + v) * 3;
+                Assert.Equal((float)flatNormal.X, mesh.Normals[normalBase + 0]);
+                Assert.Equal((float)flatNormal.Y, mesh.Normals[normalBase + 1]);
+                Assert.Equal((float)flatNormal.Z, mesh.Normals[normalBase + 2]);
+            }
+        }
+    }
+
+    [Fact]
     public void AppWorldRendering_contract_stays_godot_free()
     {
         var referenced = typeof(PlateCapMeshBuilder).Assembly.GetReferencedAssemblies();

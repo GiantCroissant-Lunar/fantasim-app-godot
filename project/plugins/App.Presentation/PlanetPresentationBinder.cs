@@ -889,6 +889,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             : (Array.Empty<RampColor>(), Array.Empty<float>());
 
         var colorMode = PlateSurfaceColorModePolicy.ForView(viewMode);
+        var normalMode = PlateSurfaceNormalModePolicy.ForView(viewMode);
         // Per-vertex color envelope (world terrain): smooth per-cell ramp colours across cell AND
         // plate boundaries so terrain reads as Gouraud-shaded gradients instead of chunky per-cell
         // triangles. The crust diagnostic intentionally bypasses this smoothing and uses source-cell
@@ -909,7 +910,8 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
                     perCellEmission,
                     jitter,
                     colorMode,
-                    perCellColor)
+                    perCellColor,
+                    normalMode)
                 : PlateCapMeshBuilder.BuildPlateIdentity(cap);
             meshes.Add(mesh);
         }

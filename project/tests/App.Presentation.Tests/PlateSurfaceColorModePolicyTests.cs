@@ -31,3 +31,30 @@ public sealed class PlateSurfaceColorModePolicyTests
             PlateSurfaceColorModePolicy.ForView(GlobeViewMode.PlateIdentity));
     }
 }
+
+public sealed class PlateSurfaceNormalModePolicyTests
+{
+    [Fact]
+    public void ForView_uses_smooth_normals_for_world()
+    {
+        Assert.Equal(
+            PlateCapMeshNormalMode.Smooth,
+            PlateSurfaceNormalModePolicy.ForView(GlobeViewMode.World));
+    }
+
+    [Fact]
+    public void ForView_uses_smooth_normals_for_crust_diagnostic()
+    {
+        Assert.Equal(
+            PlateCapMeshNormalMode.Smooth,
+            PlateSurfaceNormalModePolicy.ForView(GlobeViewMode.HypsometricTerrain));
+    }
+
+    [Fact]
+    public void ForView_uses_flat_normals_for_plate_identity()
+    {
+        Assert.Equal(
+            PlateCapMeshNormalMode.Flat,
+            PlateSurfaceNormalModePolicy.ForView(GlobeViewMode.PlateIdentity));
+    }
+}

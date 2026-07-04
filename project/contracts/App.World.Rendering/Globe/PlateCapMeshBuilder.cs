@@ -45,7 +45,8 @@ public static class PlateCapMeshBuilder
         IReadOnlyList<float> perCellEmission,
         VertexTintJitter? jitter,
         PlateCapMeshColorMode colorMode = PlateCapMeshColorMode.VertexEnvelope,
-        IReadOnlyList<RampColor>? perCellColors = null)
+        IReadOnlyList<RampColor>? perCellColors = null,
+        PlateCapMeshNormalMode normalMode = PlateCapMeshNormalMode.Flat)
     {
         ArgumentNullException.ThrowIfNull(cap);
         ArgumentNullException.ThrowIfNull(perPlateVertexColors);
@@ -86,7 +87,9 @@ public static class PlateCapMeshBuilder
                 int meshVertex = (t * 3) + v;
                 int surfaceVertex = surface.Triangles[meshVertex];
                 PackPoint(positions, meshVertex, surface.Positions[surfaceVertex]);
-                PackPoint(normals, meshVertex, flatNormal);
+                PackPoint(normals, meshVertex, normalMode == PlateCapMeshNormalMode.Smooth
+                    ? surface.SmoothNormals[surfaceVertex]
+                    : flatNormal);
 
                 RampColor color = facetColor ?? ResolveTerrainColor(
                         surfaceVertex,
@@ -105,7 +108,7 @@ public static class PlateCapMeshBuilder
 
         return new PlateCapMeshDto(
             cap.PlateId,
-            PlateCapMeshNormalMode.Flat,
+            normalMode,
             vertexCount,
             triCount,
             positions,
