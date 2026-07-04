@@ -26,30 +26,6 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     private static readonly NodePath PlanetLayerMountPath = new("Environment/PlanetMount/Planet/LayerMounts");
     private static readonly Vector3 PlanetBodyPreviewOffset = new(0.8f, 0.0f, 0.0f);
 
-    // World-view seeded peaks (W1, §5c "sub-cell detail"): tuned to bury the 5120-cell grid faceting.
-    // Lower amplitude than the diagnostic DefaultPeaks (1000 m) so the tectonic envelope still reads,
-    // higher base frequency so bumps are a few cells wide, 5 octaves for enough finer grain. The noise
-    // is cross-plate watertight-safe (sampled on shared base positions — see GlobePlateSurfaces).
-    private static readonly NoiseParams WorldPeaks = new(
-        Seed: 1337,
-        // Base fabric, not garnish (look-dev 2026-07-03, user's everywhere-relief reference): an old
-        // waterless world is rough at every point — impact history, pre-onset orogenies, erosion —
-        // none of which the crust pipeline simulates yet. This noise is the DECLARED stand-in for
-        // that unsimulated history: base freq 8 gives continental-scale lumps, 6 octaves add crag.
-        // NoiseRelief's fBm output is heavily normalized (measured std ≈ 0.15 × Amplitude, extremes
-        // ≈ ±0.45 ×), so the nominal figure is NOT metres of relief: 17,000 delivers a ~2,500 m-std
-        // fabric — ~2.5% of radius on the silhouette through the sqrt lens, extremes ~4.5%. The
-        // tectonic envelope keeps reserved contrast on top (ranges ~8%, trenches ~-5%). Known
-        // limitation: the fabric is sphere-fixed (sampled on shared base positions), so it does not
-        // drift with plates — the truth-side replacement (roughness from crust age / impact fields)
-        // is the A4-adjacent roadmap item that will.
-        BaseFrequency: 8.0,
-        Octaves: 6,
-        Lacunarity: 2.0,
-        Gain: 0.5,
-        Amplitude: 17_000.0,
-        Ridged: false);
-
     // World-view height lens (look-dev 2026-07-03, knobbly-limb references): sign(h)*|h|^0.5 * scale.
     // The elevation field is ~±500..1,400 m interiors under 21,000+ m orogenic extremes — a ratio no
     // LINEAR lens can render (interiors invisible or peaks become spears). The sqrt profile compresses
@@ -827,9 +803,9 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         bool isTerrain = viewMode is GlobeViewMode.World or GlobeViewMode.HypsometricTerrain;
         bool isWorld = viewMode == GlobeViewMode.World;
 
-        _plateSurfaces = isWorld
-            ? new GlobePlateSurfaces(snapshot, noise: WorldPeaks)
-            : new GlobePlateSurfaces(snapshot);
+        _plateSurfaces = new GlobePlateSurfaces(
+            snapshot,
+            noise: PlateSurfaceReliefFabric.ForView(viewMode));
 
         IReadOnlyList<double> elevations = isTerrain
             ? (document.CellElevations is { } cellElevations && cellElevations.Count == snapshot.CellCount

@@ -21,6 +21,14 @@ public sealed class GlobePlateSurfacesTests
     // Exact-height assertions need the seeded "peaks" relief OFF so positions are pure envelope.
     // Amplitude 0 makes NoiseRelief a no-op (base height unchanged).
     private static readonly NoiseParams NoNoise = new(Amplitude: 0.0);
+    private static readonly NoiseParams StrongCrustFabric = new(
+        Seed: 1337,
+        BaseFrequency: 9.0,
+        Octaves: 5,
+        Lacunarity: 2.0,
+        Gain: 0.5,
+        Amplitude: 14_000.0,
+        Ridged: false);
 
     // A tiny hand-built snapshot: two plates. Plate 0 is two triangles sharing an edge (a "diamond");
     // plate 1 is a single triangle. Corner positions are deliberately authored so the shared edge of
@@ -353,6 +361,23 @@ public sealed class GlobePlateSurfacesTests
 
         var caps = surfaces.BuildSurfaces(elevations, exaggeration: 0.00012)
             .OrderBy(c => c.PlateId).ToArray();
+
+        AssertEveryCrossPlateBoundaryVertexMatchesExactly(caps);
+    }
+
+    [Fact]
+    public void Strong_render_fabric_keeps_nonuniform_crust_caps_watertight()
+    {
+        var snapshot = new GlobeReconstructor(frequency: 3).BuildGlobe();
+        var surfaces = new GlobePlateSurfaces(snapshot, noise: StrongCrustFabric);
+
+        var elevations = new double[snapshot.CellCount];
+        for (int i = 0; i < elevations.Length; i++)
+            elevations[i] = (i % 17) * 180.0 - 900.0;
+
+        var caps = surfaces.BuildSurfaces(elevations, exaggeration: 0.00001)
+            .OrderBy(c => c.PlateId)
+            .ToArray();
 
         AssertEveryCrossPlateBoundaryVertexMatchesExactly(caps);
     }

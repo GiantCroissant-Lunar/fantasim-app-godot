@@ -171,4 +171,8 @@ When chunked LOD arrives, it should be:
 - `AdaptiveSubdivisionOptions.MaxDepth` is now honest: values > 1 throw
   `ArgumentOutOfRangeException` instead of silently running depth-1. Recursive subdivision is
   deferred to the chunked-LOD slice.
+- `PlateSurfaceReliefFabric` now makes relief fabric a view policy instead of a buried binder
+  constant: world view uses the declared world fabric plus its labelled non-linear lens, crust
+  diagnostic uses a stronger render-only dry-rock fabric while keeping the linear crust scale, and
+  plate identity uses zero fabric so it remains a flat ownership diagnostic.
 - No truth-stream state changed. No new cell hierarchy was invented. No S2/H3 dependency was added.
