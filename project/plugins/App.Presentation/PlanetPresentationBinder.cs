@@ -294,11 +294,12 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
 
             if (document.BoundarySections is { Count: > 0 } sections)
             {
+                var placement = BoundarySectionPlacement.Default;
                 _boundarySectionRenderer = new BoundarySectionRenderer(sections)
                 {
-                    Position = new Vector3(0.0f, -2.2f, 0.8f),
-                    RotationDegrees = new Vector3(-10.0f, 0.0f, 0.0f),
-                    Scale = Vector3.One * 0.42f,
+                    Position = placement.Position,
+                    RotationDegrees = placement.RotationDegrees,
+                    Scale = placement.Scale,
                 };
                 body.AddChild(_boundarySectionRenderer);
             }
