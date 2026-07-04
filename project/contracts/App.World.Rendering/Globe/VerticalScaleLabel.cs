@@ -7,14 +7,11 @@ namespace FantaSim.App.World.Globe;
 /// Godot-free helper for the on-screen vertical-scale indicator (scale rule S2). Mirrors the
 /// <see cref="CanonicalTimeLabel"/> pattern: a pure formatter the T4 seam consumes as a plain string.
 ///
-/// <para>The factor shown is the raw <c>verticalExaggeration</c> world parameter (the multiplier
-/// mapping crust elevation metres to unit-globe displacement), humanized for display. An honest
-/// "xN" ratio of rendered relief to true-scale relief would need the world's radius in metres
-/// (rendered/true = exaggeration x worldRadiusMetres), but the presentation assumes a unit globe
-/// with no declared real-world radius — the S3 spatial ladder anchor (world radius parameter) is
-/// roadmap, not yet built. So the indicator reports the raw factor in unit-globe terms
-/// ("relief x1e-5 units") rather than inventing a fake xN. When the spatial ladder lands, this
-/// helper gains the radius-parameter argument and switches to an honest xN.</para>
+/// <para>The basic overload shows the raw <c>verticalExaggeration</c> world parameter (the multiplier
+/// mapping crust elevation metres to unit-globe displacement), humanized for display. The true-scale
+/// overload also receives the physical metres-to-unit-radius anchor from the layer projection profile,
+/// so focused crust views can label both the visual displacement scale and its amplification relative
+/// to non-amplified physical scale.</para>
 /// </summary>
 public static class VerticalScaleLabel
 {
@@ -59,6 +56,27 @@ public static class VerticalScaleLabel
         => heightExponent == 1.0
             ? BuildIndicatorSuffix(exaggeration)
             : $"{IndicatorSeparator}vertical h^{heightExponent.ToString("0.###", CultureInfo.InvariantCulture)} x{HumanizeFactor(exaggeration)} units";
+
+    /// <summary>
+    /// Linear true-scale-aware indicator. The final parenthetical names the visual relief factor
+    /// relative to <paramref name="trueScaleMetresToUnitRadius"/> so a focused crust view can show both
+    /// its amplified render scale and the non-amplified physical scale anchor.
+    /// </summary>
+    public static string BuildIndicatorSuffix(
+        double exaggeration,
+        double heightExponent,
+        double trueScaleMetresToUnitRadius)
+    {
+        if (trueScaleMetresToUnitRadius <= 0.0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(trueScaleMetresToUnitRadius),
+                trueScaleMetresToUnitRadius,
+                "True scale metres-to-unit-radius must be positive.");
+        }
+
+        return $"{BuildIndicatorSuffix(exaggeration, heightExponent)} (x{HumanizeFactor(exaggeration / trueScaleMetresToUnitRadius)} true)";
+    }
 
     private static string HumanizeFactor(double factor)
     {

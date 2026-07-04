@@ -8,7 +8,11 @@ namespace FantaSim.App.World.Globe;
 /// </summary>
 public sealed record ResolvedLayerProjection(
     PlanetLayerProjectionProfile Profile,
+    double BaseRadius,
     double MetresToUnitRadius,
+    double PlanetRadiusMetres,
+    double TrueScaleMetresToUnitRadius,
+    double ReliefAmplification,
     double HeightExponent,
     bool UseAdaptiveSurface,
     int AdaptiveSubdivisionMaxDepth,
@@ -31,10 +35,15 @@ public static class LayerProjectionProfileResolver
         var crust = ResolveCrustProfile(document);
         bool terrainView = viewMode is GlobeViewMode.World or GlobeViewMode.HypsometricTerrain;
         bool worldLens = viewMode == GlobeViewMode.World;
+        double metresToUnitRadius = worldLens ? worldMetresToUnitRadius : crust.MetresToUnitRadius;
 
         return new ResolvedLayerProjection(
             Profile: crust,
-            MetresToUnitRadius: worldLens ? worldMetresToUnitRadius : crust.MetresToUnitRadius,
+            BaseRadius: crust.BaseRadius,
+            MetresToUnitRadius: metresToUnitRadius,
+            PlanetRadiusMetres: crust.PlanetRadiusMetres,
+            TrueScaleMetresToUnitRadius: crust.TrueScaleMetresToUnitRadius,
+            ReliefAmplification: metresToUnitRadius / crust.TrueScaleMetresToUnitRadius,
             HeightExponent: worldLens ? worldHeightExponent : crust.HeightExponent,
             UseAdaptiveSurface: terrainView && crust.SurfaceSubdivision == SurfaceSubdivisionMode.Adaptive,
             AdaptiveSubdivisionMaxDepth: crust.AdaptiveSubdivisionMaxDepth,

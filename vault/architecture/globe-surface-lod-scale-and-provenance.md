@@ -67,6 +67,11 @@ correct LOD system must keep them labelled separately:
   `height` added to `radius`, so the height is still in the same units as `radius` (unit-sphere
   radii). The `exaggeration` factor in `GlobePlateSurfaces.BuildSurfaces` maps metres -> unit-sphere
   displacement (about 0.00012 for the world view).
+- **Non-amplified physical scale.** `PlanetLayerProjectionProfile.PlanetRadiusMetres` declares the
+  true planet-radius anchor, and `TrueScaleMetresToUnitRadius = 1 / PlanetRadiusMetres` is the
+  non-amplified conversion. The crust-focused projection reports `ReliefAmplification` as
+  `MetresToUnitRadius / TrueScaleMetresToUnitRadius`, so the visual shell can be intentionally
+  amplified without hiding the physical scale it is amplifying from.
 - **Post-lens displacement.** The non-linear height profile
   (`sign(m) * |m|^heightExponent * exaggeration`) is applied after the unit-sphere conversion. It
   changes the relief ratio without changing the metres or the exaggeration. It is a render-only
@@ -167,7 +172,8 @@ When chunked LOD arrives, it should be:
   `MissingTerrainColor` fallback on refined vertices.
 - `PlanetPresentationDocument.LayerProjectionProfiles` now declares the crust globe projection
   profile explicitly: source grid, physical source units, unit-sphere displacement units, metre-to-
-  radius scale, height lens, adaptive subdivision policy, and cell-provenance preservation.
+  radius scale, non-amplified planet-radius scale, visual relief amplification, height lens,
+  adaptive subdivision policy, and cell-provenance preservation.
 - `AdaptiveSubdivisionOptions.MaxDepth` is now honest: values > 1 throw
   `ArgumentOutOfRangeException` instead of silently running depth-1. Recursive subdivision is
   deferred to the chunked-LOD slice.

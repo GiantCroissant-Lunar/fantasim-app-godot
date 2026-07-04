@@ -16,12 +16,12 @@ public sealed class PlateSurfaceReliefFabricTests
         Assert.True(crust.BaseFrequency >= 16.0);
         Assert.True(crust.Octaves >= 4);
 
-        const double defaultCrustMetresToUnitRadius = 0.00001;
+        const double defaultCrustMetresToUnitRadius = 0.00003;
         const double maxTectonicAmplitudeMultiplier = 1.45;
         double worstCaseFeatureDisplacement =
             crust.Amplitude * maxTectonicAmplitudeMultiplier * defaultCrustMetresToUnitRadius;
 
-        Assert.InRange(worstCaseFeatureDisplacement, 0.015, 0.04);
+        Assert.InRange(worstCaseFeatureDisplacement, 0.08, 0.14);
     }
 
     [Fact]

@@ -61,7 +61,7 @@ public static class WorldGenerationNodeCatalog
                 // on the CellElevationSystem scale) to unit-globe displacement in the crust view. A
                 // declared world parameter, never a buried constant; a different world may legitimately
                 // exaggerate more or less. See WorldGenerationRenderOptions.VerticalExaggeration.
-                new WorldGenerationGraphParameter("verticalExaggeration", "Vertical Exaggeration", "0.00001", "double"),
+                new WorldGenerationGraphParameter("verticalExaggeration", "Vertical Exaggeration", "0.00003", "double"),
             },
             ProviderMetadata: CSharpMetadata,
             ExecutionTraits: NativeExecutionTraits),

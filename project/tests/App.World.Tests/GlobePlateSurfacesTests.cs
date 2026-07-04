@@ -179,6 +179,40 @@ public sealed class GlobePlateSurfacesTests
     }
 
     [Fact]
+    public void BuildSurfaces_UsesDeclaredBaseRadius()
+    {
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot(), noise: NoNoise);
+
+        var cap = surfaces.BuildSurfaces(
+                new double[] { 0.0, 0.0, 0.0 },
+                exaggeration: 1.0,
+                baseRadius: 1.04)
+            .Single(c => c.PlateId == 0);
+
+        foreach (var position in cap.Surface.Positions)
+            Assert.Equal(1.04, RadiusOf(position), 6);
+    }
+
+    [Fact]
+    public void BuildAdaptiveSurfaces_UsesDeclaredBaseRadius()
+    {
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot(), noise: NoNoise);
+
+        var cap = surfaces.BuildAdaptiveSurfaces(
+                new double[] { 0.0, 0.0, 0.0 },
+                exaggeration: 1.0,
+                options: new AdaptiveSubdivisionOptions(MaxDepth: 1, EdgeHeightDeltaThreshold: 100.0),
+                baseRadius: 1.04)
+            .Single(c => c.PlateId == 0);
+
+        foreach (var position in cap.Surface.Positions)
+            Assert.Equal(1.04, RadiusOf(position), 6);
+    }
+
+    private static double RadiusOf(CartesianPoint3 point)
+        => Math.Sqrt((point.X * point.X) + (point.Y * point.Y) + (point.Z * point.Z));
+
+    [Fact]
     public void Displacement_uses_the_exaggeration_factor()
     {
         var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot(), noise: NoNoise);

@@ -241,6 +241,13 @@ public sealed class WorldServiceGenerationProductsTests
         Assert.Equal("unit-sphere-displacement", crust.DisplacementUnit);
         Assert.Equal(1.0, crust.BaseRadius);
         Assert.Equal(document.VerticalExaggeration, crust.MetresToUnitRadius);
+        Assert.Equal(6_371_000.0, crust.PlanetRadiusMetres);
+        Assert.Equal(1.0 / crust.PlanetRadiusMetres, crust.TrueScaleMetresToUnitRadius, 12);
+        Assert.Equal(
+            crust.MetresToUnitRadius / crust.TrueScaleMetresToUnitRadius,
+            crust.ReliefAmplification,
+            9);
+        Assert.True(crust.ReliefAmplification > 1.0);
         Assert.Equal(1.0, crust.HeightExponent);
         Assert.Equal(document.SurfaceSubdivision, crust.SurfaceSubdivision);
         Assert.Equal(document.AdaptiveSubdivisionMaxDepth, crust.AdaptiveSubdivisionMaxDepth);

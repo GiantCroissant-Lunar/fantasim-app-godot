@@ -163,7 +163,8 @@ public sealed class GlobePlateSurfaces
     public IReadOnlyList<PlateCap> BuildSurfaces(
         IReadOnlyList<double> elevationsByCell,
         double exaggeration,
-        double heightExponent = 1.0)
+        double heightExponent = 1.0,
+        double baseRadius = GlobeSurfaceBuilder.DefaultRadius)
     {
         var plateVertexHeights = BuildPlateVertexHeights(elevationsByCell, exaggeration, heightExponent);
         var caps = new PlateCap[_plates.Count];
@@ -172,7 +173,7 @@ public sealed class GlobePlateSurfaces
             var plate = _plates[p];
 
             var surface = _builder.Build(
-                plate.LocalVertices, plate.LocalTriangles, plateVertexHeights[p], GlobeSurfaceBuilder.DefaultRadius);
+                plate.LocalVertices, plate.LocalTriangles, plateVertexHeights[p], baseRadius);
 
             caps[p] = new PlateCap(plate.PlateId, plate.CellIds, surface, VertexProvenance: null);
         }
@@ -184,7 +185,8 @@ public sealed class GlobePlateSurfaces
         double exaggeration,
         AdaptiveSubdivisionOptions options,
         double heightExponent = 1.0,
-        IReadOnlyList<double>? featureWeightsByCell = null)
+        IReadOnlyList<double>? featureWeightsByCell = null,
+        double baseRadius = GlobeSurfaceBuilder.DefaultRadius)
     {
         ArgumentNullException.ThrowIfNull(options);
         if (heightExponent <= 0.0)
@@ -213,6 +215,7 @@ public sealed class GlobePlateSurfaces
                 plateVertexMetres[p],
                 options with
                 {
+                    Radius = baseRadius,
                     VertexFeatureWeights = plateVertexFeatureWeights?[p],
                     HeightFinalizer = Finalizer,
                     DetailSampler = Sampler,

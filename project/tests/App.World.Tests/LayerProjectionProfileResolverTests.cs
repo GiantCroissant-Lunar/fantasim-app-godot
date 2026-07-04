@@ -33,7 +33,11 @@ public sealed class LayerProjectionProfileResolverTests
             worldHeightExponent: 0.5);
 
         Assert.Equal("geosphere.crust", resolved.Profile.LayerId);
+        Assert.Equal(1.0, resolved.BaseRadius);
         Assert.Equal(0.00002, resolved.MetresToUnitRadius);
+        Assert.Equal(6_371_000.0, resolved.PlanetRadiusMetres);
+        Assert.Equal(1.0 / 6_371_000.0, resolved.TrueScaleMetresToUnitRadius, 12);
+        Assert.Equal(0.00002 / (1.0 / 6_371_000.0), resolved.ReliefAmplification, 9);
         Assert.Equal(1.0, resolved.HeightExponent);
         Assert.True(resolved.UseAdaptiveSurface);
         Assert.Equal(1, resolved.AdaptiveSubdivisionMaxDepth);
@@ -68,6 +72,8 @@ public sealed class LayerProjectionProfileResolverTests
             worldHeightExponent: 0.5);
 
         Assert.Equal(0.00012, resolved.MetresToUnitRadius);
+        Assert.Equal(6_371_000.0, resolved.PlanetRadiusMetres);
+        Assert.Equal(0.00012 / (1.0 / 6_371_000.0), resolved.ReliefAmplification, 9);
         Assert.Equal(0.5, resolved.HeightExponent);
         Assert.True(resolved.UseAdaptiveSurface);
         Assert.Equal(1, resolved.AdaptiveSubdivisionMaxDepth);

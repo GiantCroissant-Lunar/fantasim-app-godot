@@ -37,11 +37,11 @@ public sealed record WorldGenerationRenderOptions(int Seed, int TessellationFreq
     /// ~-1500) to unit-globe radius displacement in the crust view. The crust view multiplies each
     /// vertex height by this factor, so <c>renderedRadiusFraction = elevationMetres * VerticalExaggeration</c>.
     ///
-    /// <para>Default 1e-5 is calibrated so a +3500 m orogenic peak displaces ~3.5% of the unit-globe
-    /// radius (mountains visibly grow across crust snapshots) and a -1500 m abyssal ocean stays above
-    /// the mantle sphere at 0.96 of the cap radius. Absolute (not normalised per snapshot) so relief
-    /// accumulates with crust age. The factor is a declared world parameter (not a buried constant): a
-    /// fantasy world with a different radius or relief scale legitimately exaggerates more or less.</para>
+    /// <para>Default 3e-5 is a focused dry-crust diagnostic scale: a +3500 m orogenic peak displaces
+    /// ~10.5% of the unit-globe radius, while the projection profile also reports the non-amplified
+    /// true scale from the planet radius. Absolute (not normalised per snapshot) so relief accumulates
+    /// with crust age. The factor is a declared world parameter (not a buried constant): a fantasy world
+    /// with a different radius or relief scale legitimately exaggerates more or less.</para>
     /// </summary>
     public double VerticalExaggeration { get; init; } = DefaultVerticalExaggeration;
 
@@ -79,10 +79,10 @@ public sealed record WorldGenerationRenderOptions(int Seed, int TessellationFreq
 
     /// <summary>
     /// Default vertical exaggeration. Elevation units are metres on the <c>CellElevationSystem</c>
-    /// scale; the globe is a unit sphere (radius 1.0), so 1e-5 maps 1 m to 1e-5 of the radius
-    /// (3500 m -> 3.5% of radius). See <see cref="VerticalExaggeration"/>.
+    /// scale; the globe is a unit sphere (radius 1.0), so 3e-5 maps 1 m to 3e-5 of the radius
+    /// (3500 m -> 10.5% of radius). See <see cref="VerticalExaggeration"/>.
     /// </summary>
-    public const double DefaultVerticalExaggeration = 0.00001;
+    public const double DefaultVerticalExaggeration = 0.00003;
 
     public static WorldGenerationRenderOptions Resolve(
         WorldGenerationGraphView graph,

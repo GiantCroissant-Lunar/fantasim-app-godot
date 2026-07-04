@@ -39,33 +39,49 @@ public sealed record PlanetLayerProjectionProfile(
     /// </summary>
     double AdaptiveSubdivisionEdgeHeightDelta,
     double AdaptiveSubdivisionFeatureWeightDelta,
-    bool PreservesCellProvenance)
+    bool PreservesCellProvenance,
+    double PlanetRadiusMetres = 6_371_000.0)
 {
     public const string CrustLayerId = "geosphere.crust";
     public const string UnifyCellGeodesicSourceGrid = "UnifyCell.GeodesicSphereTessellation";
     public const string PhysicalMetresUnit = "physical-metres";
     public const string UnitSphereDisplacementUnit = "unit-sphere-displacement";
+    public const double EarthLikePlanetRadiusMetres = 6_371_000.0;
+
+    /// <summary>Non-amplified physical metre scale for the declared planet radius.</summary>
+    public double TrueScaleMetresToUnitRadius => 1.0 / PlanetRadiusMetres;
+
+    /// <summary>Linear relief amplification relative to true scale for this projection.</summary>
+    public double ReliefAmplification => MetresToUnitRadius / TrueScaleMetresToUnitRadius;
 
     public static PlanetLayerProjectionProfile Crust(
         double metresToUnitRadius,
         SurfaceSubdivisionMode surfaceSubdivision,
         int adaptiveSubdivisionMaxDepth,
         double adaptiveSubdivisionEdgeHeightDelta,
-        double adaptiveSubdivisionFeatureWeightDelta = 0.25)
-        => new(
+        double adaptiveSubdivisionFeatureWeightDelta = 0.25,
+        double baseRadius = 1.0,
+        double planetRadiusMetres = EarthLikePlanetRadiusMetres)
+    {
+        if (planetRadiusMetres <= 0.0 || double.IsNaN(planetRadiusMetres) || double.IsInfinity(planetRadiusMetres))
+            throw new ArgumentOutOfRangeException(nameof(planetRadiusMetres), planetRadiusMetres, "Planet radius must be positive and finite.");
+
+        return new(
             LayerId: CrustLayerId,
             ProjectionKind: PlanetLayerProjectionKind.GlobeSurface,
             SourceGrid: UnifyCellGeodesicSourceGrid,
             SourceUnit: PhysicalMetresUnit,
             DisplacementUnit: UnitSphereDisplacementUnit,
-            BaseRadius: 1.0,
+            BaseRadius: baseRadius,
             MetresToUnitRadius: metresToUnitRadius,
             HeightExponent: 1.0,
             SurfaceSubdivision: surfaceSubdivision,
             AdaptiveSubdivisionMaxDepth: adaptiveSubdivisionMaxDepth,
             AdaptiveSubdivisionEdgeHeightDelta: adaptiveSubdivisionEdgeHeightDelta,
             AdaptiveSubdivisionFeatureWeightDelta: adaptiveSubdivisionFeatureWeightDelta,
-            PreservesCellProvenance: true);
+            PreservesCellProvenance: true,
+            PlanetRadiusMetres: planetRadiusMetres);
+    }
 }
 
 /// <summary>
@@ -185,10 +201,10 @@ public sealed record PlanetPresentationDocument(
     /// Vertical exaggeration (scale rule S1): the factor mapping crust elevation (metres on the
     /// <c>CellElevationSystem</c> scale) to unit-globe radius displacement in the crust view. The host
     /// applies this when displacing plate caps instead of a buried constant, and surfaces it as the
-    /// on-screen scale indicator (rule S2) when the hypsometric terrain view is active. Default 1e-5
+    /// on-screen scale indicator (rule S2) when the hypsometric terrain view is active. Default 3e-5
     /// (matches <c>WorldGenerationRenderOptions.DefaultVerticalExaggeration</c>).
     /// </summary>
-    public double VerticalExaggeration { get; init; } = 0.00001;
+    public double VerticalExaggeration { get; init; } = 0.00003;
 
     /// <summary>
     /// Render-facing surface subdivision mode. This is derived presentation geometry, not simulation

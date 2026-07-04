@@ -383,9 +383,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             if (VerticalScaleLabel.ShouldShowIndicator(viewMode) && _currentDocument is not null)
             {
                 // World view renders through the sqrt height lens; the indicator must name it (S2).
-                label += viewMode == GlobeViewMode.World
-                    ? VerticalScaleLabel.BuildIndicatorSuffix(WorldHeightScale, WorldHeightExponent)
-                    : VerticalScaleLabel.BuildIndicatorSuffix(_currentDocument.VerticalExaggeration);
+                label += BuildVerticalScaleIndicator(_currentDocument, viewMode);
             }
             // W3a: cutaway stratum exaggeration is a separate declared parameter (S1) — name it
             // alongside the surface lens so the two exaggerations are visually distinct (S2).
@@ -395,6 +393,22 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             }
             _statusLabel.Text = label;
         }
+    }
+
+    private static string BuildVerticalScaleIndicator(PlanetPresentationDocument document, GlobeViewMode viewMode)
+    {
+        if (viewMode == GlobeViewMode.World)
+            return VerticalScaleLabel.BuildIndicatorSuffix(WorldHeightScale, WorldHeightExponent);
+
+        var projection = LayerProjectionProfileResolver.ResolveForView(
+            document,
+            viewMode,
+            worldMetresToUnitRadius: WorldHeightScale,
+            worldHeightExponent: WorldHeightExponent);
+        return VerticalScaleLabel.BuildIndicatorSuffix(
+            projection.MetresToUnitRadius,
+            projection.HeightExponent,
+            projection.TrueScaleMetresToUnitRadius);
     }
 
     // W3a: entry from render.cutaway. Width 0 = inactive: clears the wedge, disables the shader
@@ -465,11 +479,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
 
         var document = _currentDocument;
         var exaggeration = document?.CutawayExaggeration ?? 1.0;
-        // INTERIM spatial anchor: the S3 world-radius parameter is roadmap (see the terminology
-        // doctrine note) — until it lands, Earth's mean radius is the declared default converting
-        // stratum metres to unit-globe fractions. Upgrade path: replace with the document's
-        // world-radius parameter alongside VerticalScaleLabel's honest xN switch.
-        const double planetRadiusMetres = 6_371_000.0;
+        var planetRadiusMetres = ResolvePlanetRadiusMetres(document);
 
         var crustThickness = document?.CellCrustThickness;
         double meanCrust = CutawayStratumProfile.DefaultCrustThicknessMetres;
@@ -505,6 +515,16 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         root.AddChild(BuildCutawayFaceSector("CutFaceEnd", endDeg, axis, reference, referenceCross, bands));
 
         return root;
+    }
+
+    private static double ResolvePlanetRadiusMetres(PlanetPresentationDocument? document)
+    {
+        var profile = document?.LayerProjectionProfiles.FirstOrDefault(p =>
+            string.Equals(p.LayerId, PlanetLayerProjectionProfile.CrustLayerId, StringComparison.Ordinal)
+            && p.ProjectionKind == PlanetLayerProjectionKind.GlobeSurface);
+        return profile is { PlanetRadiusMetres: > 0.0 }
+            ? profile.PlanetRadiusMetres
+            : PlanetLayerProjectionProfile.EarthLikePlanetRadiusMetres;
     }
 
     // Half-disc in plane(boundaryDir, axis): point = r*(cos(theta)*boundaryDir + sin(theta)*axis),
@@ -850,11 +870,13 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
                     EdgeHeightDeltaThreshold: projection.AdaptiveSubdivisionEdgeHeightDelta,
                     FeatureWeightDeltaThreshold: projection.AdaptiveSubdivisionFeatureWeightDelta),
                 heightExponent: projection.HeightExponent,
-                featureWeightsByCell: featureWeights)
+                featureWeightsByCell: featureWeights,
+                baseRadius: projection.BaseRadius)
             : _plateSurfaces.BuildSurfaces(
                 elevations,
                 exaggeration: projection.MetresToUnitRadius,
-                heightExponent: projection.HeightExponent);
+                heightExponent: projection.HeightExponent,
+                baseRadius: projection.BaseRadius);
 
         var (perCellColor, perCellEmission) = isTerrain
             ? BuildCellAppearance(snapshot.CellCount, document, viewMode, isWorld ? snapshot.Cells : null)
@@ -890,12 +912,15 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         PlateSurfaceMaterialTuning.ForView(viewMode).ApplyTo(material);
         renderer.SetMeshes(meshes, material);
         _log.LogInformation(
-            "Planet plate surface bound: view={ViewMode}, subdivision={Subdivision}, plates={PlateCount}, triangles={TriangleCount}, meshVertices={VertexCount}.",
+            "Planet plate surface bound: view={ViewMode}, subdivision={Subdivision}, plates={PlateCount}, triangles={TriangleCount}, meshVertices={VertexCount}, scale={Scale}, trueScale={TrueScale}, amplification={Amplification}x.",
             viewMode,
             useAdaptiveSurface ? "adaptive" : "fixed",
             caps.Count,
             caps.Sum(cap => cap.Surface.TriangleCount),
-            meshes.Sum(mesh => mesh.VertexCount));
+            meshes.Sum(mesh => mesh.VertexCount),
+            projection.MetresToUnitRadius,
+            projection.TrueScaleMetresToUnitRadius,
+            projection.ReliefAmplification);
     }
 
     private static IReadOnlyList<double>? BuildAdaptiveFeatureWeights(

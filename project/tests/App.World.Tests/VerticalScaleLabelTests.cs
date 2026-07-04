@@ -59,4 +59,15 @@ public sealed class VerticalScaleLabelTests
         var suffix = VerticalScaleLabel.BuildIndicatorSuffix(0.0005, heightExponent: 0.5);
         Assert.Equal("  |  vertical h^0.5 x5e-4 units", suffix);
     }
+
+    [Fact]
+    public void BuildIndicatorSuffix_WithTrueScale_NamesReliefAmplification()
+    {
+        var suffix = VerticalScaleLabel.BuildIndicatorSuffix(
+            exaggeration: 0.00003,
+            heightExponent: 1.0,
+            trueScaleMetresToUnitRadius: 1.0 / 6_371_000.0);
+
+        Assert.Equal("  |  vertical x3e-5 units (x191.13 true)", suffix);
+    }
 }
