@@ -177,6 +177,8 @@ public sealed class GlobePlateSurfaces
         IReadOnlyList<double>? featureWeightsByCell = null)
     {
         ArgumentNullException.ThrowIfNull(options);
+        if (heightExponent <= 0.0)
+            throw new ArgumentOutOfRangeException(nameof(heightExponent), "Height exponent must be positive.");
 
         // PRE-LENS per-vertex metres: global envelope mean + plate.VertexNoiseMetres. The lens is
         // applied INSIDE the adaptive builder via HeightFinalizer so the non-linear profile acts on
