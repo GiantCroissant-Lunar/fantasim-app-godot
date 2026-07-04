@@ -234,7 +234,8 @@ public partial class BoundarySectionRenderer : Node3D
         };
 
     private static StandardMaterial3D BuildStratumMaterial()
-        => new()
+    {
+        var material = new StandardMaterial3D
         {
             VertexColorUseAsAlbedo = true,
             ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
@@ -243,9 +244,13 @@ public partial class BoundarySectionRenderer : Node3D
             CullMode = BaseMaterial3D.CullModeEnum.Disabled,
             RenderPriority = 9,
         };
+        BoundarySectionMaterialPolicy.Overlay.ApplyTo(material);
+        return material;
+    }
 
     private static StandardMaterial3D BuildAccentMaterial(Color color, float emission)
-        => new()
+    {
+        var material = new StandardMaterial3D
         {
             AlbedoColor = color,
             EmissionEnabled = true,
@@ -257,6 +262,9 @@ public partial class BoundarySectionRenderer : Node3D
             CullMode = BaseMaterial3D.CullModeEnum.Disabled,
             RenderPriority = 10,
         };
+        BoundarySectionMaterialPolicy.Overlay.ApplyTo(material);
+        return material;
+    }
 
     private static Color Brighten(Color color)
         => color.Lerp(Colors.White, 0.38f);
