@@ -43,9 +43,9 @@ public static class HypsometricTint
         (0.00, new RampColor(0.22, 0.22, 0.21)),   // dark basalt grey, still readable
         (0.18, new RampColor(0.34, 0.34, 0.32)),   // basalt grey
         (0.40, new RampColor(0.46, 0.45, 0.42)),   // weathered rock grey
-        (0.62, new RampColor(0.60, 0.58, 0.54)),   // light fractured rock
-        (0.82, new RampColor(0.74, 0.72, 0.68)),   // pale highland rock
-        (1.00, new RampColor(0.88, 0.87, 0.84)),   // grey/white rock
+        (0.62, new RampColor(0.56, 0.55, 0.52)),   // light fractured rock
+        (0.82, new RampColor(0.64, 0.63, 0.60)),   // pale highland rock
+        (1.00, new RampColor(0.70, 0.69, 0.66)),   // light grey summit rock
     };
 
     private const double DegenerateNormalized = 0.5; // mid-ramp when all elevations are equal

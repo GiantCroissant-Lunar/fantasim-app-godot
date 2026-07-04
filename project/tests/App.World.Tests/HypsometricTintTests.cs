@@ -17,7 +17,7 @@ public sealed class HypsometricTintTests
     // RGB is a look-and-feel constant, but the BAND ORDERING and band-head colors are contracts the
     // normalization + ramp must honour so the globe reads as bare crust, not ocean.
     private static readonly RampColor DarkBasaltGrey = new(0.22, 0.22, 0.21);
-    private static readonly RampColor LightRock = new(0.88, 0.87, 0.84);
+    private static readonly RampColor LightRock = new(0.70, 0.69, 0.66);
 
     [Fact]
     public void ComputeColors_returns_one_color_per_cell()
@@ -47,6 +47,18 @@ public sealed class HypsometricTintTests
         // Min is at the readable dark-grey end of the ramp; max at the light-rock end.
         AssertLuma(ordered[0], DarkBasaltGrey, 0.08);
         AssertLuma(ordered[2], LightRock, 0.08);
+    }
+
+    [Fact]
+    public void Highest_elevation_is_light_grey_rock_not_clipped_white()
+    {
+        var colors = HypsometricTint.ComputeColors(new double[] { -2000, 0, 2000 });
+        var highest = colors[2];
+
+        Assert.True(Luma(highest) <= 0.72,
+            $"highest crust tint is too close to white for the diagnostic view: luma={Luma(highest):F3}");
+        Assert.True(highest.R <= 0.73 && highest.G <= 0.72 && highest.B <= 0.69,
+            $"highest crust tint channels wash out: ({highest.R:F3}, {highest.G:F3}, {highest.B:F3})");
     }
 
     [Fact]

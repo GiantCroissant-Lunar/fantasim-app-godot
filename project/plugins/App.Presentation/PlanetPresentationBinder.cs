@@ -345,6 +345,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         }
 
         var viewMode = GlobeViewModeResolver.Resolve(regimeId, _timeline.SelectedLayer);
+        ApplyViewMode(viewMode);
         bool showBoundaries = viewMode == GlobeViewMode.PlateIdentity;
         ApplyLightingForView(viewMode);
 
@@ -599,15 +600,21 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         // build new ones) without re-fetching — no node leaks, no full rebind.
         var regimeId = _timeline.GeosphereSchedule.RegimeAt(_timeline.Tick)?.RegimeId;
         var newViewMode = GlobeViewModeResolver.Resolve(regimeId, selection);
-        if (newViewMode != _currentViewMode
-            && newViewMode != GlobeViewMode.Inactive
-            && _currentViewMode != GlobeViewMode.Inactive)
-        {
-            _currentViewMode = newViewMode;
-            RebuildPlateSurface();
-        }
+        ApplyViewMode(newViewMode);
 
         ApplyTimelineTick(_timeline.Tick);
+    }
+
+    private void ApplyViewMode(GlobeViewMode viewMode)
+    {
+        if (!PlateSurfaceViewModeTransition.ShouldRebuild(_currentViewMode, viewMode))
+        {
+            _currentViewMode = viewMode;
+            return;
+        }
+
+        _currentViewMode = viewMode;
+        RebuildPlateSurface();
     }
 
     private void RebuildPlateSurface()
@@ -1201,6 +1208,7 @@ render_mode cull_disabled;
 uniform vec4 u_volcanic_glow : source_color = vec4(1.0, 0.42, 0.10, 1.0);
 uniform float u_volcanic_energy : hint_range(0.0, 8.0) = 1.4;
 uniform float u_albedo_gain : hint_range(0.5, 2.0) = 1.0;
+uniform float u_albedo_ceiling : hint_range(0.1, 1.0) = 1.0;
 uniform float u_light_floor : hint_range(0.0, 1.0) = 0.08;
 uniform float u_wrap_strength : hint_range(0.0, 1.0) = 1.0;
 uniform float u_light_contrast : hint_range(0.5, 2.0) = 1.0;
@@ -1254,7 +1262,7 @@ void fragment() {
             discard;
         }
     }
-    ALBEDO = clamp(COLOR.rgb * u_color_balance * u_albedo_gain, vec3(0.0), vec3(1.0));
+    ALBEDO = clamp(COLOR.rgb * u_color_balance * u_albedo_gain, vec3(0.0), vec3(u_albedo_ceiling));
     float vent = UV2.x;
     if (vent > 0.001) {
         EMISSION = u_volcanic_glow.rgb * vent * u_volcanic_energy;

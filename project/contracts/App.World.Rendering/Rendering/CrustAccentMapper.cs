@@ -39,9 +39,9 @@ public static class CrustAccentMapper
 
     // Face-on band contrast: these modulate the hypsometric base so a trench reads as a dark groove
     // and ridges/mountains read as bright caps even with zero perceived relief (no silhouette).
-    private const double TrenchAlbedoScale = 0.30;
-    private const double RidgeBrighten = 0.22;
-    private const double MountainBrighten = 0.18;
+    private const double TrenchAlbedoScale = 0.62;
+    private const double RidgeBrighten = 0.07;
+    private const double MountainBrighten = 0.05;
 
     public static CrustAccent Map(byte featureKind, double magnitude) => featureKind switch
     {

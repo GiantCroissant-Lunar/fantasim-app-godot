@@ -26,6 +26,7 @@ public sealed class PlanetLightingTuningTests
         Assert.True(Math.Abs(tuning.SunColor.G - tuning.SunColor.B) <= 0.04f);
         Assert.True(Math.Abs(tuning.AmbientColor.R - tuning.AmbientColor.G) <= 0.02f);
         Assert.True(Math.Abs(tuning.AmbientColor.G - tuning.AmbientColor.B) <= 0.03f);
-        Assert.True(tuning.AmbientLightEnergy >= 0.45f);
+        Assert.InRange(tuning.SunLightEnergy, 0.95f, 1.25f);
+        Assert.InRange(tuning.AmbientLightEnergy, 0.35f, 0.45f);
     }
 }

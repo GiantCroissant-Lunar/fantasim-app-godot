@@ -38,7 +38,7 @@ public sealed class CrustAccentMapperTests
         // without an accent they vanish without a relief silhouette).
         var a = CrustAccentMapper.Map(Mountain, magnitude: 50.0);
         Assert.True(a.AlbedoBrighten > 0.0, $"mountain must brighten, got {a.AlbedoBrighten}");
-        Assert.True(a.AlbedoBrighten <= 0.25, $"mountain brighten must stay subtle, got {a.AlbedoBrighten}");
+        Assert.True(a.AlbedoBrighten <= 0.08, $"mountain brighten must stay subtle, got {a.AlbedoBrighten}");
         Assert.Equal(1.0, a.AlbedoScale);
         Assert.Equal(0.0, a.VolcanicEmission);
     }
@@ -87,8 +87,7 @@ public sealed class CrustAccentMapperTests
     public void Trench_darkens_albedo_into_a_groove()
     {
         var a = CrustAccentMapper.Map(Trench, magnitude: 1.0);
-        Assert.True(a.AlbedoScale < 0.35,
-            $"trench must darken strongly (scale < 0.35 for face-on groove), got {a.AlbedoScale}");
+        Assert.InRange(a.AlbedoScale, 0.58, 0.68);
         Assert.Equal(0.0, a.VolcanicEmission);
         Assert.Equal(0.0, a.AlbedoBrighten);
     }
@@ -97,10 +96,10 @@ public sealed class CrustAccentMapperTests
     public void Ridge_brightens_clearly()
     {
         var a = CrustAccentMapper.Map(Ridge, magnitude: 1.0);
-        Assert.True(a.AlbedoBrighten > 0.15,
+        Assert.True(a.AlbedoBrighten > 0.04,
             $"ridge must brighten clearly (face-on band contrast), got {a.AlbedoBrighten}");
-        Assert.True(a.AlbedoBrighten <= 0.25,
-            $"ridge brighten must stay subtle (<= 0.25), got {a.AlbedoBrighten}");
+        Assert.True(a.AlbedoBrighten <= 0.09,
+            $"ridge brighten must stay subtle (<= 0.16), got {a.AlbedoBrighten}");
         Assert.Equal(1.0, a.AlbedoScale);
         Assert.Equal(0.0, a.VolcanicEmission);
     }
@@ -145,7 +144,7 @@ public sealed class CrustAccentMapperTests
         // across the band. The accent must produce a minimum luminance delta against the SAME base
         // tint (zero relief difference) so the band reads face-on. Trench darkens; ridge/mountain
         // brighten — each by at least this delta.
-        const double MinFaceOnDelta = 0.10;
+        const double MinFaceOnDelta = 0.035;
         var base_ = new RampColor(0.30, 0.28, 0.24); // a warm mid-ramp bare-crust tone
         var baseLuma = Luma(base_);
 
@@ -160,6 +159,20 @@ public sealed class CrustAccentMapperTests
         var mountain = CrustAccentMapper.Apply(base_, CrustAccentMapper.Map(Mountain, 1.0));
         Assert.True(Luma(mountain) - baseLuma >= MinFaceOnDelta,
             $"mountain face-on contrast too small: delta {Luma(mountain) - baseLuma:F3} < {MinFaceOnDelta}");
+    }
+
+    [Fact]
+    public void Bright_accents_do_not_wash_pale_rock_to_white()
+    {
+        var paleRock = new RampColor(0.70, 0.69, 0.66);
+
+        var ridge = CrustAccentMapper.Apply(paleRock, CrustAccentMapper.Map(Ridge, 1.0));
+        var mountain = CrustAccentMapper.Apply(paleRock, CrustAccentMapper.Map(Mountain, 1.0));
+
+        Assert.True(Luma(ridge) <= 0.73,
+            $"ridge accent washed pale rock too close to white: luma={Luma(ridge):F3}");
+        Assert.True(Luma(mountain) <= 0.73,
+            $"mountain accent washed pale rock too close to white: luma={Luma(mountain):F3}");
     }
 
     private static double Luma(RampColor c) => 0.2126 * c.R + 0.7152 * c.G + 0.0722 * c.B;

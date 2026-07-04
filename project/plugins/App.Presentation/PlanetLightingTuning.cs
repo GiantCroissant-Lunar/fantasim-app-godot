@@ -14,9 +14,9 @@ internal readonly record struct PlanetLightingTuning(
         {
             GlobeViewMode.HypsometricTerrain => new PlanetLightingTuning(
                 new Color(1.00f, 1.00f, 0.98f),
-                1.75f,
+                1.10f,
                 new Color(0.36f, 0.36f, 0.35f),
-                0.48f),
+                0.38f),
             _ => new PlanetLightingTuning(
                 new Color(1.02f, 0.96f, 0.88f),
                 1.8f,
