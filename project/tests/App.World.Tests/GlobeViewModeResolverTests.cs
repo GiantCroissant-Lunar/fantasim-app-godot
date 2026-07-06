@@ -40,11 +40,19 @@ public sealed class GlobeViewModeResolverTests
     }
 
     [Fact]
-    public void Mobile_plate_geosphere_plate_layer_is_plate_identity()
+    public void Mobile_plate_geosphere_plate_layer_is_continents_by_default()
+    {
+        var sel = new TimelineLayerSelection("geosphere", "geosphere.plate");
+        Assert.Equal(GlobeViewMode.Continents,
+            GlobeViewModeResolver.Resolve("mobile-plate", sel));
+    }
+
+    [Fact]
+    public void Mobile_plate_geosphere_plate_layer_identity_override_selects_plate_identity()
     {
         var sel = new TimelineLayerSelection("geosphere", "geosphere.plate");
         Assert.Equal(GlobeViewMode.PlateIdentity,
-            GlobeViewModeResolver.Resolve("mobile-plate", sel));
+            GlobeViewModeResolver.Resolve("mobile-plate", sel, "identity"));
     }
 
     [Fact]

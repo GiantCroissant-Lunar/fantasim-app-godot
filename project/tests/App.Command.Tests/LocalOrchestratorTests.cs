@@ -488,10 +488,13 @@ internal sealed class FakeWorldService : WorldService
     public PlanetPresentationDocument GetPlanetPresentationAsync(long referenceTick)
         => GetPlanetPresentationAsync();
 
+    public WorldGlobeSnapshot GetGlobeSnapshotAt(long tick)
+        => throw new NotSupportedException();
+
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
     {
         GenerateCalls++;
-        return new WorldGenerationResult(true, "fake-generation", request.WorldId);
+        return new WorldGenerationResult(true, "", "fake-world");
     }
 
     public IDisposable SubscribeGenerationChanged(Action<WorldGenerationChangedEvent> callback)

@@ -23,6 +23,14 @@ public interface IService
     /// </summary>
     PlanetPresentationDocument GetPlanetPresentationAsync(long referenceTick);
 
+    /// <summary>
+    /// Light per-tick globe snapshot (M0, spec §3.2): returns the reassigned cell-&gt;plate globe at
+    /// <paramref name="tick"/>, equivalent to <c>reconstructor.BuildGlobeAt(tick)</c>, without
+    /// materializing crust. The OnsetRoster and GlobeReconstructor are cached per
+    /// (seed, tessellationFrequency) so per-scrub calls stay within budget. Thread-safe.
+    /// </summary>
+    WorldGlobeSnapshot GetGlobeSnapshotAt(long tick);
+
     WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request);
     IDisposable SubscribeGenerationChanged(Action<WorldGenerationChangedEvent> callback);
 }

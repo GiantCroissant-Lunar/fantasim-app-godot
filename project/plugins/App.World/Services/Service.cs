@@ -137,10 +137,11 @@ public sealed class Service : IService, IDisposable
     public PlanetPresentationDocument GetPlanetPresentationAsync(long referenceTick)
     {
         PresentationRequested?.Invoke();
+        var family = WorldGenerationGraphDefaults.BuildFamily();
+        var renderOptions = ResolvePlanetRenderOptions(family);
         var overview = _runtime.GetOverview();
         var renderSnapshot = _runtime.GetRenderSnapshot();
-        var family = WorldGenerationGraphDefaults.BuildFamily();
-        var runtime = BuildPlanetPresentationRuntime(family, referenceTick);
+        var runtime = BuildPlanetPresentationRuntime(family, renderOptions, referenceTick);
         WorldGenerationProductsView products;
         IReadOnlyList<long> crustSnapshotTicks;
         lock (_generationProductsGate)
@@ -188,6 +189,8 @@ public sealed class Service : IService, IDisposable
             AdaptiveSubdivisionMaxDepth = runtime.AdaptiveSubdivisionMaxDepth,
             AdaptiveSubdivisionEdgeHeightDelta = runtime.AdaptiveSubdivisionEdgeHeightDelta,
             AdaptiveSubdivisionFeatureWeightDelta = runtime.AdaptiveSubdivisionFeatureWeightDelta,
+            ContinentalPlateIds = WorldCrustRunSpec.ContinentalPlateIdsForPresentation(
+                renderOptions, SphereRegimeScheduleDefaults.PlateOnsetTick),
         };
     }
 
@@ -202,6 +205,16 @@ public sealed class Service : IService, IDisposable
                 runtime.AdaptiveSubdivisionEdgeHeightDelta,
                 runtime.AdaptiveSubdivisionFeatureWeightDelta)
         };
+
+    public WorldGlobeSnapshot GetGlobeSnapshotAt(long tick)
+    {
+        if (tick < 0) throw new ArgumentOutOfRangeException(nameof(tick));
+        var family = WorldGenerationGraphDefaults.BuildFamily();
+        var renderOptions = ResolvePlanetRenderOptions(family);
+        var onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        var reconstructor = GetCachedGlobeReconstructor(renderOptions, onsetTick);
+        return reconstructor.BuildGlobeAt(tick);
+    }
 
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
     {
@@ -400,18 +413,13 @@ public sealed class Service : IService, IDisposable
 
     private PlanetPresentationRuntime BuildPlanetPresentationRuntime(
         WorldGenerationGraphFamilyDocument family,
+        WorldGenerationRenderOptions renderOptions,
         long arcTick)
     {
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
-        var renderOptions = ResolvePlanetRenderOptions(family);
-        var roster = OnsetRoster.Build(renderOptions.Seed, onsetTick, renderOptions.TessellationFrequency);
+        var reconstructor = GetCachedGlobeReconstructor(renderOptions, onsetTick);
         var geosphere = SphereRegimeScheduleDefaults.GeosphereDefault;
         var atmosphere = SphereRegimeScheduleDefaults.AtmosphereFor(onsetTick);
-        var reconstructor = GlobeReconstructor.FromOnsetRoster(
-            roster,
-            onsetTick,
-            geosphere,
-            renderOptions.TessellationFrequency);
 
         var spec = WorldCrustRunSpec.ForPresentation(renderOptions, onsetTick, arcTick);
         var materialization = WorldCrustMaterializer.MaterializeAsync(spec).GetAwaiter().GetResult();
@@ -470,6 +478,34 @@ public sealed class Service : IService, IDisposable
         int AdaptiveSubdivisionMaxDepth,
         double AdaptiveSubdivisionEdgeHeightDelta,
         double AdaptiveSubdivisionFeatureWeightDelta);
+
+    private readonly object _globeReconstructorGate = new();
+    private (int Seed, int Frequency) _globeReconstructorKey;
+    private OnsetRoster? _cachedGlobeRoster;
+    private GlobeReconstructor? _cachedGlobeReconstructor;
+
+    private GlobeReconstructor GetCachedGlobeReconstructor(
+        WorldGenerationRenderOptions renderOptions,
+        long onsetTick)
+    {
+        var key = (renderOptions.Seed, renderOptions.TessellationFrequency);
+        lock (_globeReconstructorGate)
+        {
+            if (_cachedGlobeReconstructor is null || _globeReconstructorKey != key)
+            {
+                _cachedGlobeRoster = OnsetRoster.Build(
+                    renderOptions.Seed, onsetTick, renderOptions.TessellationFrequency);
+                _cachedGlobeReconstructor = GlobeReconstructor.FromOnsetRoster(
+                    _cachedGlobeRoster,
+                    onsetTick,
+                    SphereRegimeScheduleDefaults.GeosphereDefault,
+                    renderOptions.TessellationFrequency);
+                _globeReconstructorKey = key;
+            }
+
+            return _cachedGlobeReconstructor;
+        }
+    }
 
 #if USE_PROJECT_REFERENCES
     private static string NewTruthWriterActorName()

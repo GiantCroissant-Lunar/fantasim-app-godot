@@ -216,6 +216,15 @@ public sealed record PlanetPresentationDocument(
     public IReadOnlyList<CellCrustFeature>? CellFeatures { get; init; }
 
     /// <summary>
+    /// The resolved continental-plate id set the crust pipeline used to designate land vs ocean
+    /// (M0, spec D2). Single source of truth: populated from
+    /// <see cref="FantaSim.App.World.Crust.WorldCrustRunSpec.ContinentalPlateIdsForPresentation"/>
+    /// so the Continents view and the crust materialization pipeline never disagree. Default empty
+    /// when no crust run spec flowed for this snapshot.
+    /// </summary>
+    public IReadOnlySet<int> ContinentalPlateIds { get; init; } = new HashSet<int>();
+
+    /// <summary>
     /// Crust snapshot ticks that are currently available (generated) for the mobile-plate regime.
     /// Empty when no crust products have been generated. Sub-project B consumes this set to render
     /// the snapshot cache strip and to know which ticks still need generation.

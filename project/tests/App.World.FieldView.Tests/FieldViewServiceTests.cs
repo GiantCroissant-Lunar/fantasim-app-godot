@@ -48,6 +48,9 @@ internal sealed class FakeWorldService : IService
     public PlanetPresentationDocument GetPlanetPresentationAsync(long referenceTick)
         => GetPlanetPresentationAsync();
 
+    public WorldGlobeSnapshot GetGlobeSnapshotAt(long tick)
+        => throw new NotSupportedException();
+
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
     {
         var evt = new WorldGenerationChangedEvent(request.WorldId, "generation", request.GenerationSpec);

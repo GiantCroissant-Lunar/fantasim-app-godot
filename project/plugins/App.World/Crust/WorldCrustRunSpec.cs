@@ -32,6 +32,8 @@ internal sealed record WorldCrustRunSpec(
     double VerticalExaggeration,
     CellElevationHydrosphereMode HydrosphereMode)
 {
+    private static readonly CrustInitRecipe DefaultContinentalRecipe = CrustInitRecipe.Continental(0, 1);
+
     private const double DefaultDurationMegaAnnum = 8.0;
     private const double DefaultSpinRateRadiansPerMegaAnnum = 0.02;
     private const double DefaultOrogenicPerMegaAnnum = 1.0;
@@ -78,6 +80,20 @@ internal sealed record WorldCrustRunSpec(
             HydrosphereMode: ReadHydrosphereMode(effectivePayload, WorldGenerationRenderOptions.Default.HydrosphereMode));
     }
 
+    /// <summary>
+    /// The resolved continental-plate id set the presentation document surfaces (M0, spec D2).
+    /// Mirrors the <see cref="CrustInitRecipe"/> used by <see cref="ForPresentation"/> so the Continents
+    /// view and the crust pipeline share one truth. Default <c>CrustInitRecipe.Continental(0, 1)</c>.
+    /// </summary>
+    public static IReadOnlySet<int> ContinentalPlateIdsForPresentation(
+        WorldGenerationRenderOptions renderOptions,
+        long onsetTick)
+    {
+        ArgumentNullException.ThrowIfNull(renderOptions);
+        if (onsetTick < 0) throw new ArgumentOutOfRangeException(nameof(onsetTick));
+        return DefaultContinentalRecipe.ContinentalPlateIds;
+    }
+
     public static WorldCrustRunSpec ForPresentation(
         WorldGenerationRenderOptions renderOptions,
         long onsetTick,
@@ -100,7 +116,7 @@ internal sealed record WorldCrustRunSpec(
             RotationReferenceTick: onsetTick,
             SnapshotTicks: new[] { referenceTick },
             Plates: plates,
-            Recipe: CrustInitRecipe.Continental(0, 1),
+            Recipe: DefaultContinentalRecipe,
             Rates: CreateDefaultRates(),
             BoundaryProfiles: renderOptions.BoundaryProfiles,
             VerticalExaggeration: renderOptions.VerticalExaggeration,
@@ -129,7 +145,7 @@ internal sealed record WorldCrustRunSpec(
             RotationReferenceTick: rotationReferenceTick,
             SnapshotTicks: snapshotTicks,
             Plates: plates,
-            Recipe: CrustInitRecipe.Continental(0, 1),
+            Recipe: DefaultContinentalRecipe,
             Rates: CreateDefaultRates(),
             BoundaryProfiles: BoundaryProfileParameters.Default,
             VerticalExaggeration: WorldGenerationRenderOptions.DefaultVerticalExaggeration,
@@ -211,7 +227,7 @@ internal sealed record WorldCrustRunSpec(
             return new CrustInitRecipe(ids);
         }
 
-        return CrustInitRecipe.Continental(0, 1);
+        return DefaultContinentalRecipe;
     }
 
     private static long ReadTargetTick(JsonObject payload)
