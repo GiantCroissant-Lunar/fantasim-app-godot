@@ -104,38 +104,55 @@ public sealed class PlateFrameSampler
         // Distance cap: a source only "reaches" a target within ~1.5 mean cell spacings.
         // Where plates DIVERGE the gap between forward images exceeds the cap — those target
         // cells are NEWLY FORMED oceanic crust (sea-floor spreading: fraction 0, age = the time
-        // since onset), not smeared continental material. Where plates converge the images
-        // crowd, which is fine (nearest wins).
+        // since onset). Where plates CONVERGE two plates' images overlap and interleave at cell
+        // scale — a raw nearest-source pick flips plate per cell and shatters the land into
+        // salt-and-pepper (observed in the windowed gate 2026-07-06). Physically one side
+        // SUBDUCTS, and buoyant continental crust always overrides oceanic (the engine's
+        // CrustSideClassifier rule) — so the pick is: best candidate source PER PLATE within
+        // the cap, continental candidates beat oceanic ones, nearest wins within a class.
         double meanSpacingRad = Math.Sqrt(4.0 * Math.PI / n);
         double minSourceDot = Math.Cos(1.5 * meanSpacingRad);
 
+        var bestByPlate = new Dictionary<int, (int Cell, double Dot)>(_plates.Count);
         for (int cell = 0; cell < n; cell++)
         {
-            var (sourceCell, dot) = NearestForwardSource(_centers[cell], forward);
-            if (dot >= minSourceDot && tickState.TryGetValue(sourceCell, out var s))
-                result[cell] = s;
-            else
-                result[cell] = new CellCrustState(
-                    cell,
-                    ContinentalFraction: 0.0,
-                    OrogenicPressure: 0.0,
-                    VolcanicActivity: 0.0,
-                    CrustAgeTicks: delta); // ridge-born ocean floor, at most window-old
+            bestByPlate.Clear();
+            for (int i = 0; i < n; i++)
+            {
+                double d = UnifyMaths.Vector3D.Dot(_centers[cell], forward[i]);
+                if (d < minSourceDot) continue;
+                int plateId = _onsetAssignment.TryGetValue(i, out var pid) ? pid : -1;
+                if (!bestByPlate.TryGetValue(plateId, out var cur) || d > cur.Dot)
+                    bestByPlate[plateId] = (i, d);
+            }
+
+            CellCrustState? chosen = null;
+            double chosenDot = double.NegativeInfinity;
+            bool chosenContinental = false;
+            foreach (var (_, candidate) in bestByPlate)
+            {
+                if (!tickState.TryGetValue(candidate.Cell, out var s)) continue;
+                bool continental = s.ContinentalFraction >= 0.5;
+                bool wins = chosen is null
+                    || (continental && !chosenContinental)
+                    || (continental == chosenContinental && candidate.Dot > chosenDot);
+                if (wins)
+                {
+                    chosen = s;
+                    chosenDot = candidate.Dot;
+                    chosenContinental = continental;
+                }
+            }
+
+            result[cell] = chosen ?? new CellCrustState(
+                cell,
+                ContinentalFraction: 0.0,
+                OrogenicPressure: 0.0,
+                VolcanicActivity: 0.0,
+                CrustAgeTicks: delta); // ridge-born ocean floor, at most window-old
         }
 
         return result;
-    }
-
-    private static (int Cell, double Dot) NearestForwardSource(UnifyMaths.Vector3D target, UnifyMaths.Vector3D[] forward)
-    {
-        int best = 0;
-        double bestDot = double.NegativeInfinity;
-        for (int i = 0; i < forward.Length; i++)
-        {
-            double d = UnifyMaths.Vector3D.Dot(target, forward[i]);
-            if (d > bestDot) { bestDot = d; best = i; }
-        }
-        return (best, bestDot);
     }
 
     /// <summary>
