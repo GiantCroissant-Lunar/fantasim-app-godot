@@ -269,15 +269,25 @@ public sealed class Service : IService, IDisposable
         var currentGlobe = reconstructor.BuildGlobeAt(tick);
         var plateIdByCell = currentGlobe.Cells.ToDictionary(c => c.CellId, c => c.PlateId);
 
-        // Key the snapshot's onset material at the query tick so the sampler's state lookup succeeds
-        // and its transport delta (tick - onset) moves material to the right position.
-        var stateAtTick = new Dictionary<long, IReadOnlyDictionary<int, CellCrustState>>
-        {
-            [tick] = snapshotState,
-        };
-
-        var sampledState = sampler.SampleAt(tick, stateAtTick, plateIdByCell);
+        var sampledState = sampler.SampleAt(tick, StateKeyedAt(products, tick), plateIdByCell);
         return ContinentalFractionsFromState(sampledState);
+    }
+
+    /// <summary>
+    /// The sampler resolves state by exact tick key, but playheads are rarely on a snapshot
+    /// boundary. Re-key the governing snapshot's onset material at the query tick so the
+    /// sampler's Lagrangian transport (delta = tick − onset) carries material to any tick.
+    /// Falls back to the raw series when the snapshot state is absent (e.g. pre-onset).
+    /// </summary>
+    private static IReadOnlyDictionary<long, IReadOnlyDictionary<int, CellCrustState>> StateKeyedAt(
+        CrustTickProducts products, long tick)
+    {
+        if (products.Materialization.Result.StateByTick.TryGetValue(products.SnapshotTick, out var snapshotState)
+            && snapshotState.Count > 0)
+        {
+            return new Dictionary<long, IReadOnlyDictionary<int, CellCrustState>> { [tick] = snapshotState };
+        }
+        return products.Materialization.Result.StateByTick;
     }
 
     private IPlateRotationProvider BuildRotationProvider(IReadOnlyList<TopoPlate> plates, long onsetTick)
@@ -560,12 +570,16 @@ public sealed class Service : IService, IDisposable
             rotationProvider);
 
         var plateIdByCell = currentGlobe.Cells.ToDictionary(c => c.CellId, c => c.PlateId);
-        var sampledState = sampler.SampleAt(arcTick, products.Materialization.Result.StateByTick, plateIdByCell);
+        // The sampler looks state up by exact tick, but the playhead is rarely on a 5 M-tick
+        // snapshot boundary; key the governing snapshot's onset material at the playhead tick so
+        // seeks between snapshots bind land instead of an empty (all-ocean) state.
+        var stateForSampling = StateKeyedAt(products, arcTick);
+        var sampledState = sampler.SampleAt(arcTick, stateForSampling, plateIdByCell);
         var sampledFractions = ContinentalFractionsFromState(sampledState);
 
         var cellElevations = sampler.SampleElevationsAt(
             arcTick,
-            products.Materialization.Result.StateByTick,
+            stateForSampling,
             currentArcs,
             renderOptions.BoundaryProfiles,
             renderOptions.HydrosphereMode,
