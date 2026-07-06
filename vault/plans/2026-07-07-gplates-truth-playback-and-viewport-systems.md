@@ -87,6 +87,22 @@ perf (#5), ALC-collection (#6); the graph panel participates in the viewport-ove
 opens/executes without exceptions in headless tests; panel layout no longer overlaps the
 globe viewport region (honor the roadmap's layout-contract direction); `task test` green.
 
+### P4b — regime layer-generation nodes (app; user scope clarification 2026-07-07)
+
+P4's gate/layout fix is necessary but not the whole ask: the node graph must also contain
+**nodes that generate the layer for each regime**. Current state: only the mobile-plate
+regime is graph-driven (`WorldGenerationGraphDefaults` defines
+`geosphere.mobile-plate.layers` with `plate_layer`/`crust_layer` subgraph bindings;
+`WorldFunctionProvider` handles `world.layer-scope/-source/-normalize`, `crust.generate`);
+the magma-ocean and stagnant-lid layers are hard-composed in `App.World.Composition`
+(`GeosphereMagmaOceanLayer`, `GeosphereStagnantLidLayer`, schedule in
+`SphereRegimeScheduleDefaults`) with no generating nodes. Deliver: per-regime generation
+subgraphs/nodes (`geosphere.magma-ocean.layer`, `geosphere.stagnant-lid.layer`, following
+the existing graph-id/product-kind conventions) whose node functions **delegate to the same
+composition layer builders** (no duplicated generation logic), subgraph bindings selected
+by the regime schedule, and product-parity tests (graph-generated layer ≡ composition-
+generated layer for fixed seed/tick). Runs in the same worktree on top of P4's changes.
+
 ### P5 — timeline / AnimationPlayer (app)
 
 Reconcile `vault/plans/2026-06-23-tscn-timeline.md` (native .tscn AnimationPlayer CT
