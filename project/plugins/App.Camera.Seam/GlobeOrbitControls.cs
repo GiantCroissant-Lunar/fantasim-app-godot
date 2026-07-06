@@ -1,5 +1,6 @@
 using System;
 using Godot;
+using Microsoft.Extensions.Logging;
 using PhantomCamera;
 
 namespace FantaSim.App.Camera.Seam;
@@ -11,6 +12,17 @@ namespace FantaSim.App.Camera.Seam;
 /// Zoom is clamped to [<see cref="MinSpringLength"/>, <see cref="MaxSpringLength"/>]; pitch is
 /// clamped to keep the camera off the gimbal poles. Mouse wheel + trackpad pinch are both wired.
 /// </summary>
+/// <remarks>
+/// The host may not exist at mount time: <see cref="CameraRig.RegisterAsync"/> marshals node creation
+/// onto the Godot main thread via a deferred callable, so a mount-time
+/// <c>rig.GetHost("main")</c> races the rig's deferred build (the rig is built AFTER the mount
+/// returns). Callers that have the host in hand use <see cref="Bind"/>; callers that do not (the
+/// normal export-boot path) use <see cref="BindWhenAvailable"/> and this Node polls the rig each
+/// <see cref="_Process"/> frame until the host appears, then binds exactly once. A one-shot ordering
+/// hack is deliberately rejected: bundle hot-reloads re-run the mount handler and boot timing varies,
+/// so a permanent lazy bind is the robust fix. The poll/bind-once shape is delegated to the
+/// Godot-free <see cref="LazyBindOnce{T}"/> (unit-tested in App.Camera.Tests).
+/// </remarks>
 public sealed partial class GlobeOrbitControls : Node
 {
     private PhantomCameraHost? _host;
@@ -25,6 +37,17 @@ public sealed partial class GlobeOrbitControls : Node
     private float _wheelZoomFactor = 0.9f;
     private bool _dragging;
     private Vector2 _lastMousePos;
+
+    private readonly LazyBindOnce<PhantomCameraHost> _lazyBind;
+    private Func<PhantomCameraHost?>? _hostProvider;
+
+    public GlobeOrbitControls()
+    {
+        _lazyBind = new LazyBindOnce<PhantomCameraHost>(BindHost);
+    }
+
+    /// <summary>Optional logger for lazy-bind diagnostics (bound confirmation).</summary>
+    public ILogger? Logger { private get; set; }
 
     /// <summary>Initial orbit yaw in degrees (rotation around the globe Y axis).</summary>
     public float InitialYawDeg { get; set; } = 35f;
@@ -55,12 +78,36 @@ public sealed partial class GlobeOrbitControls : Node
 
     /// <summary>Bind the controls to the phantom host the rig built for the globe viewport.</summary>
     public void Bind(PhantomCameraHost host)
+        => BindHost(host ?? throw new ArgumentNullException(nameof(host)));
+
+    /// <summary>
+    /// Bind lazily: poll <paramref name="hostProvider"/> each <see cref="_Process"/> frame until the
+    /// rig has built the <see cref="PhantomCameraHost"/> for the globe viewport, then bind exactly
+    /// once. Use this when the host is not yet available at call time (the export-boot path: the rig
+    /// registers its host via a deferred callable that races the mount).
+    /// </summary>
+    public void BindWhenAvailable(Func<PhantomCameraHost?> hostProvider)
     {
-        _host = host ?? throw new ArgumentNullException(nameof(host));
+        _hostProvider = hostProvider ?? throw new ArgumentNullException(nameof(hostProvider));
+    }
+
+    private void BindHost(PhantomCameraHost host)
+    {
+        _host = host;
         _yawDeg = InitialYawDeg;
         _pitchDeg = Math.Clamp(InitialPitchDeg, _minPitchDeg, _maxPitchDeg);
         _springLength = Math.Clamp(InitialSpringLength, _minSpring, _maxSpring);
         ApplyToActivePcam();
+        _hostProvider = null;
+        Logger?.LogDebug("GlobeOrbitControls bound to PhantomCameraHost.");
+    }
+
+    public override void _Process(double delta)
+    {
+        if (_lazyBind.IsBound || _hostProvider is null)
+            return;
+
+        _lazyBind.TryResolve(_hostProvider);
     }
 
     public override void _UnhandledInput(InputEvent @event)

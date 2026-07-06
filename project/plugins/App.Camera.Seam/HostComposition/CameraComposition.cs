@@ -97,11 +97,6 @@ public static class CameraComposition
             TaskContinuationOptions.OnlyOnFaulted);
 
         var host = real.Rig.GetHost("main");
-        if (host is null)
-        {
-            log.LogWarning("Default globe camera: no PhantomCameraHost on viewport 'main'; orbit controls inert.");
-            return;
-        }
 
         var controls = new GlobeOrbitControls
         {
@@ -110,10 +105,25 @@ public static class CameraComposition
             InitialSpringLength = 4.0f,
             MinSpringLength = 1.5f,
             MaxSpringLength = 8.0f,
+            Logger = log,
         };
         hostNode.AddChild(controls);
-        controls.Bind(host);
-        log.LogInformation("default globe camera mounted + orbit controls bound.");
+
+        if (host is not null)
+        {
+            controls.Bind(host);
+            log.LogInformation("default globe camera mounted + orbit controls bound.");
+            return;
+        }
+
+        // The rig registers its PhantomCameraHost via a deferred callable (RegisterAsync marshals
+        // node creation onto the Godot main thread); at mount time (itself deferred from the
+        // world-bundle-loaded handler) the host may not exist yet. The controls poll the rig each
+        // _Process frame and bind on first availability instead of demanding the host now. A
+        // one-shot ordering hack would break on bundle reload (the handler re-runs) and boot timing
+        // skew, so the bind is permanently lazy.
+        controls.BindWhenAvailable(() => real.Rig.GetHost("main"));
+        log.LogDebug("Default globe camera mount: PhantomCameraHost not yet available on 'main'; orbit controls will bind lazily.");
     }
 }
 

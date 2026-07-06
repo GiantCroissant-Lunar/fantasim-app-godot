@@ -11,5 +11,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\plugins\App.Presentation\App.Presentation.csproj" />
+    <!-- Direct reference to the world service contract assembly so the shared-closure gate can
+         assert System.Type identity on typeof(IService) without reflection path lookups. -->
+    <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
   </ItemGroup>
 </Project>
