@@ -23,6 +23,10 @@
     <!-- The T3 camera service this seam implements the rig (Providers/ICameraRig) for. T3 never
          references T4 (this project); the dependency points only T4 -> T3. -->
     <ProjectReference Include="..\App.Camera\App.Camera.csproj" />
+    <!-- T1 App.Common: HostCompositionContext + IRegistry so the seam can expose a
+         CameraComposition.ComposeCamera module the host calls at startup (mirrors
+         App.Render.Seam / App.Timeline.Seam). Pure C# (Microsoft.NET.Sdk); no Godot. -->
+    <ProjectReference Include="..\App.Common\App.Common.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -247,6 +247,51 @@ public sealed class CameraRig : ICameraRig
         }
     }
 
+    /// <summary>
+    /// Configure a registered camera as a globe orbit camera: the addon's ThirdPerson follow mode
+    /// with <paramref name="followTarget"/> at the globe origin, spring length clamped to
+    /// [<paramref name="minSpring"/>, <paramref name="maxSpring"/>]. Must be called on the main
+    /// thread (the composition root calls it from a deferred Callable, mirroring Register/Activate).
+    /// </summary>
+    public void ConfigureGlobeOrbit(
+        string cameraId,
+        Node3D followTarget,
+        float initialSpringLength,
+        float minSpring,
+        float maxSpring)
+    {
+        if (followTarget is null) throw new ArgumentNullException(nameof(followTarget));
+
+        if (!_cameras.TryGetValue(cameraId, out var entry))
+        {
+            _log.LogWarning("ConfigureGlobeOrbit ignored: unknown camera id '{CameraId}'.", cameraId);
+            return;
+        }
+
+        // follow_mode is an @export int on the GDScript pcam; set it via Node.Set so the addon's
+        // setter (which builds the SpringArm3D + sets top_level/_is_third_person_follow) runs.
+        const int followModeThirdPerson = (int)FollowMode3D.ThirdPerson;
+        entry.Node.Set("follow_mode", followModeThirdPerson);
+        entry.Node.Set("follow_target", followTarget);
+        entry.Wrapper.SpringLength = Math.Clamp(initialSpringLength, minSpring, maxSpring);
+
+        // Keep the follow target node alive under the rig root (the addon reads its global transform
+        // each frame; a detached target would free it on the next GC sweep).
+        _rigs[entry.Spec.ViewportId].Root.AddChild(followTarget);
+
+        _log.LogInformation(
+            "Camera '{CameraId}' configured for globe orbit (follow target = {TargetName}, spring = {Spring}).",
+            cameraId, followTarget.Name, initialSpringLength);
+    }
+
+    /// <summary>
+    /// Return the <see cref="PhantomCameraHost"/> the rig built for <paramref name="viewportId"/>,
+    /// or null if that viewport has no rig yet. The orbit controls bind to this host to read the
+    /// active pcam each interaction.
+    /// </summary>
+    public PhantomCameraHost? GetHost(string viewportId = "main")
+        => _rigs.TryGetValue(viewportId, out var rig) ? rig.HostWrapper : null;
+
     private void EnsureViewportRig(string viewportId)
     {
         if (_rigs.ContainsKey(viewportId))

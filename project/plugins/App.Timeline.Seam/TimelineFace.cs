@@ -41,7 +41,7 @@ public partial class TimelineFace : Control, ITimelineFace
     private bool _nodesInitialized;
     private bool _playbackRegistered;
     private bool _proxyBound;
-    private readonly double _ticksPerSecond = 5_000_000.0;
+    private double _ticksPerSecond = 5_000_000.0;
     private const long MinViewSpanTicks = 1L;
     private const int RungSpanUnits = 10;
     private const float RegimeBandHeight = 28f;
@@ -69,6 +69,14 @@ public partial class TimelineFace : Control, ITimelineFace
     /// this face. Required because Godot scene instantiation uses the parameterless constructor.
     /// </summary>
     public static ILoggerFactory? ResidentLoggerFactory { get; set; }
+
+    /// <summary>
+    /// Configurable ticks-per-second for the playhead animation. Set by TimelineComposition
+    /// before the face instantiates; read by BindResidentContext into the instance field. Default
+    /// 5M ticks/sec (the crust snapshot spacing). Mirrors the ResidentController/ResidentProxy
+    /// resident-statics pattern so the value can cross the ALC boundary without a scene edit.
+    /// </summary>
+    public static double ResidentTicksPerSecond { get; set; } = 5_000_000.0;
 
     public TimelineFace()
     {
@@ -116,6 +124,8 @@ public partial class TimelineFace : Control, ITimelineFace
 
         _ctl = controller;
         SetProcess(true);
+
+        _ticksPerSecond = ResidentTicksPerSecond > 0.0 ? ResidentTicksPerSecond : 5_000_000.0;
 
         if (!_nodesInitialized)
         {

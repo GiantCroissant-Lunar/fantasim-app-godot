@@ -9,6 +9,11 @@ namespace FantaSim.App.Timeline.Seam;
 
 public static class TimelineComposition
 {
+    // Held statically so re-compose (hot-reload) can unsubscribe the prior handler before
+    // subscribing a new one, preventing duplicate TickChanged subscriptions that would
+    // double-advance the service tick on every playhead frame.
+    private static Action<long>? _tickChangedHandler;
+
     public static void ComposeTimeline(HostCompositionContext ctx)
     {
         var log = ctx.LoggerFactory.CreateLogger("HostComposition.Timeline");
@@ -27,6 +32,9 @@ public static class TimelineComposition
         FantaSim.App.Timeline.Seam.TimelineFace.ResidentLoggerFactory = ctx.LoggerFactory;
         FantaSim.App.Timeline.Seam.TimelineFace.ResidentCommandClient =
             registry.TryGet<FantaSim.App.Command.IClient>();
+        // Default 5M ticks/sec (crust snapshot spacing); overridable by setting the static
+        // before calling ComposeTimeline. The face reads this in BindResidentContext.
+        FantaSim.App.Timeline.Seam.TimelineFace.ResidentTicksPerSecond = 5_000_000.0;
 
         // Recomposition happens after timeline bundle reload. Registry registrations are additive,
         // so replace the previous resident service before registering the proxy for the freshly
@@ -38,6 +46,11 @@ public static class TimelineComposition
         }
         registry.UnregisterAll<FantaSim.App.Timeline.IService>();
 
+        // Unsubscribe the prior TickChanged handler before re-subscribing so a hot-reload
+        // re-compose does not stack two handlers (which would double-advance the service tick).
+        if (_tickChangedHandler is not null)
+            controller.TickChanged -= _tickChangedHandler;
+
         // Build the T3 service with the controller's schedules. The T3 Service drives the face
         // via ITimelineFace; the face also calls back into the controller (PushTick) during
         // animation playback.
@@ -45,6 +58,14 @@ public static class TimelineComposition
             deferredFace,
             controller,
             ctx.LoggerFactory);
+
+        // Wire the controller's TickChanged into the service so playhead advances during Play
+        // flow through the SAME PushTick path the scrubber uses, and the service's tick/state
+        // stay in sync with the canonical controller tick. AcceptTickFromFace guards on
+        // State == Playing so scrub-only PushTick calls do not double-advance the service.
+        _tickChangedHandler = tick => timelineService.AcceptTickFromFace(tick);
+        controller.TickChanged += _tickChangedHandler;
+
         registry.Register<FantaSim.App.Timeline.IService>(
             timelineService,
             new ServiceRegistration

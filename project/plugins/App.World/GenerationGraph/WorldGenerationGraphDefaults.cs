@@ -235,6 +235,10 @@ public static class WorldGenerationGraphDefaults
             return BuildCrustLayerGraph(graphId, label, regimeId, layerId, role);
         if (string.Equals(layerId, "geosphere.plate", StringComparison.Ordinal))
             return BuildPlateLayerGraph(graphId, label, regimeId, layerId, role);
+        if (string.Equals(layerId, "geosphere.magma-ocean", StringComparison.Ordinal))
+            return BuildMagmaOceanLayerGraph(graphId, label, regimeId, layerId, role);
+        if (string.Equals(layerId, "geosphere.stagnant-lid", StringComparison.Ordinal))
+            return BuildStagnantLidLayerGraph(graphId, label, regimeId, layerId, role);
 
         return BuildExecutableLayerScopeGraph(graphId, label, regimeId, layerId, role);
     }
@@ -448,6 +452,117 @@ public static class WorldGenerationGraphDefaults
                     Color: "#8bd17c"),
             },
             OutputNodeIds: new[] { "normalize_crust" });
+    }
+
+    private static WorldGenerationGraphView BuildMagmaOceanLayerGraph(
+        string graphId,
+        string label,
+        string regimeId,
+        string layerId,
+        string role)
+        => BuildRegimeLayerGraph(
+            graphId,
+            label,
+            regimeId,
+            layerId,
+            role,
+            "Magma Ocean PCG Source",
+            "Normalize Magma Ocean Layer",
+            "group_magma_ocean_generation",
+            "Magma-ocean regime layer: the PCG source normalizes into the shared layer renderer contract and the generate node delegates to the composition GeosphereMagmaOceanLayer producer over a pre-plate lid globe.",
+            WorldFunctionProvider.MagmaOceanGenerate,
+            "magma_ocean",
+            "group_magma_ocean_scope");
+
+    private static WorldGenerationGraphView BuildStagnantLidLayerGraph(
+        string graphId,
+        string label,
+        string regimeId,
+        string layerId,
+        string role)
+        => BuildRegimeLayerGraph(
+            graphId,
+            label,
+            regimeId,
+            layerId,
+            role,
+            "Stagnant Lid PCG Source",
+            "Normalize Stagnant Lid Layer",
+            "group_stagnant_lid_generation",
+            "Stagnant-lid regime layer: the PCG source normalizes into the shared layer renderer contract and the generate node delegates to the composition GeosphereStagnantLidLayer producer over a pre-plate lid globe.",
+            WorldFunctionProvider.StagnantLidGenerate,
+            "stagnant_lid",
+            "group_stagnant_lid_scope");
+
+    private static WorldGenerationGraphView BuildRegimeLayerGraph(
+        string graphId,
+        string label,
+        string regimeId,
+        string layerId,
+        string role,
+        string sourceLabel,
+        string normalizeLabel,
+        string generationGroupId,
+        string generationText,
+        string generateTypeId,
+        string idSuffix,
+        string scopeGroupId)
+    {
+        var scope = LayerScopeNode("layer_scope", label, regimeId, layerId, role);
+        var source = LayerSourceNode(
+            "source_pcg",
+            sourceLabel,
+            regimeId,
+            layerId,
+            $"{layerId}.pcg",
+            WorldLayerSourceKinds.Procedural,
+            WorldLayerSourceAvailability.Available,
+            GenericLayerProductKind,
+            DefaultLayerRendererContract);
+        var normalize = NormalizeLayerNode(
+            "normalize_layer",
+            normalizeLabel,
+            regimeId,
+            layerId,
+            $"{layerId}.pcg",
+            WorldLayerSourceKinds.Procedural,
+            GenericLayerProductKind,
+            DefaultLayerRendererContract);
+        var options = NodeFromSchema("options", WorldFunctionProvider.WorldOptions);
+        var generate = NodeFromSchema("generate", generateTypeId);
+
+        return new WorldGenerationGraphView(
+            GraphId: graphId,
+            Label: label,
+            Description: generationText,
+            Nodes: new[] { scope, source, normalize, options, generate },
+            Wires: new[]
+            {
+                new WorldGenerationGraphWire("layer_scope", "layer", "source_pcg", "layer", "world/layer_scope"),
+                new WorldGenerationGraphWire("layer_scope", "layer", "normalize_layer", "layer", "world/layer_scope"),
+                new WorldGenerationGraphWire("source_pcg", "source", "normalize_layer", "primarySource", "world/layer_source"),
+                new WorldGenerationGraphWire("options", "options", "generate", "options", "world/options"),
+            },
+            Annotations: new[]
+            {
+                new WorldGenerationGraphAnnotation(
+                    AnnotationId: scopeGroupId,
+                    Kind: WorldGenerationGraphAnnotationKinds.CommentBoundary,
+                    Label: $"{label} scope",
+                    Bounds: new WorldGenerationGraphBounds(-80, -80, 360, 220),
+                    NodeIds: new[] { "layer_scope" },
+                    Text: $"This node declares the active {regimeId} layer selected from the timeline track.",
+                    Color: "#f6c85f"),
+                new WorldGenerationGraphAnnotation(
+                    AnnotationId: generationGroupId,
+                    Kind: WorldGenerationGraphAnnotationKinds.GroupBoundary,
+                    Label: $"{regimeId} layer generation",
+                    Bounds: new WorldGenerationGraphBounds(320, -80, 780, 300),
+                    NodeIds: new[] { "source_pcg", "normalize_layer", "options", "generate" },
+                    Text: generationText,
+                    Color: "#6ea8fe"),
+            },
+            OutputNodeIds: new[] { "normalize_layer", "generate" });
     }
 
     private static IReadOnlyList<WorldLayerSourceBinding> BuildLayerSourceBindings()

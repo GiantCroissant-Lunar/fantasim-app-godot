@@ -110,6 +110,7 @@
     <PackageReference Include="GiantCroissant.FantaSim.Atmosphere.Genesis.Core" />
     <PackageReference Include="GiantCroissant.FantaSim.Atmosphere.Contracts" />
     <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Plate.Topology.Materializer" />
+    <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Plate.Rotation.Stream" />
     <PackageReference Include="GiantCroissant.FantaSim.World.Shared.Contracts" />
   </ItemGroup>
   <!-- engine: post-Plan-1-3 + atmosphere (codev) -->
@@ -119,6 +120,7 @@
     <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\Geosphere.Plate.Topology.Generation\Geosphere.Plate.Topology.Generation.csproj" />
     <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\Geosphere.Plate.Topology\Geosphere.Plate.Topology.csproj" />
     <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\Geosphere.Plate.Topology.Materializer\Geosphere.Plate.Topology.Materializer.csproj" />
+    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\Geosphere.Plate.Rotation.Stream\Geosphere.Plate.Rotation.Stream.csproj" />
     <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\Geosphere.Asthenosphere.Convection\Geosphere.Asthenosphere.Convection.csproj" />
     <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\Geosphere.Asthenosphere\Geosphere.Asthenosphere.csproj" />
     <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\Atmosphere.Genesis.Core\Atmosphere.Genesis.Core.csproj" />

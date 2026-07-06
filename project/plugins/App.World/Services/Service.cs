@@ -17,6 +17,7 @@ using BoundarySectionDocument = FantaSim.App.World.Composition.BoundarySectionDo
 using OnsetRoster = FantaSim.App.World.Composition.OnsetRoster;
 using SphereRegimeSchedule = FantaSim.App.World.Composition.SphereRegimeSchedule;
 using SphereRegimeScheduleDefaults = FantaSim.App.World.Composition.SphereRegimeScheduleDefaults;
+using TopoPlate = FantaSim.Geosphere.Plate.Topology.Plate;
 
 namespace FantaSim.App.World.Services;
 
@@ -50,6 +51,7 @@ public sealed class Service : IService, IDisposable
     private IReadOnlyList<long> _cachedCrustSnapshotTicks = Array.Empty<long>();
     private readonly object _crustProductCacheGate = new();
     private readonly Dictionary<long, CrustTickProducts> _crustProductCache = new();
+    private RotationSourceRecipe _rotationSourceRecipe = RotationSourceRecipe.Default;
 
     private Exception? _lastSubscriberError;
     private bool _disposed;
@@ -234,6 +236,58 @@ public sealed class Service : IService, IDisposable
         return reconstructor.ClassifyCellsAt(tick);
     }
 
+    /// <summary>
+    /// Per-tick continental fraction (P3 light path): re-samples the cached crust snapshot's onset
+    /// material through the <see cref="PlateFrameSampler"/> at the seek tick. The snapshot's state is
+    /// keyed at <paramref name="tick"/> so the sampler's Lagrangian transport carries onset material
+    /// to the query tick, producing smoothly drifting fractions between 5 M-tick snapshots.
+    /// </summary>
+    public IReadOnlyDictionary<int, double> GetContinentalFractionByCellAt(long tick)
+    {
+        if (tick < 0) throw new ArgumentOutOfRangeException(nameof(tick));
+
+        var family = WorldGenerationGraphDefaults.BuildFamily();
+        var renderOptions = ResolvePlanetRenderOptions(family);
+        var onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+
+        var products = GetOrBuildCrustTickProducts(renderOptions, onsetTick, tick);
+        if (!products.Materialization.Result.StateByTick.TryGetValue(products.SnapshotTick, out var snapshotState)
+            || snapshotState.Count == 0)
+        {
+            return new Dictionary<int, double>();
+        }
+
+        var rotationProvider = BuildRotationProvider(products.Materialization.Result.Plates, onsetTick);
+        var sampler = new PlateFrameSampler(
+            products.Materialization.Tessellation,
+            products.Materialization.Result.Plates,
+            products.Materialization.Topology,
+            onsetTick,
+            rotationProvider);
+
+        var reconstructor = GetCachedGlobeReconstructor(renderOptions, onsetTick);
+        var currentGlobe = reconstructor.BuildGlobeAt(tick);
+        var plateIdByCell = currentGlobe.Cells.ToDictionary(c => c.CellId, c => c.PlateId);
+
+        // Key the snapshot's onset material at the query tick so the sampler's state lookup succeeds
+        // and its transport delta (tick - onset) moves material to the right position.
+        var stateAtTick = new Dictionary<long, IReadOnlyDictionary<int, CellCrustState>>
+        {
+            [tick] = snapshotState,
+        };
+
+        var sampledState = sampler.SampleAt(tick, stateAtTick, plateIdByCell);
+        return ContinentalFractionsFromState(sampledState);
+    }
+
+    private IPlateRotationProvider BuildRotationProvider(IReadOnlyList<TopoPlate> plates, long onsetTick)
+    {
+        var recipe = _rotationSourceRecipe;
+        if (recipe is { Kind: RotationSourceKind.Imported, RotText: { } rotText })
+            return new ImportedRotationProvider(recipe.SourceName, rotText, onsetTick);
+        return new GeneratedEulerPoleRotationProvider(plates, onsetTick);
+    }
+
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -281,7 +335,35 @@ public sealed class Service : IService, IDisposable
         {
             _generationProducts = ToProductsView(request, _generationProducts);
             _cachedCrustSnapshotTicks = ReadSnapshotTicks(request.Parameters);
+            _rotationSourceRecipe = ReadRotationSourceFromParameters(request.Parameters);
         }
+    }
+
+    private static RotationSourceRecipe ReadRotationSourceFromParameters(
+        IReadOnlyDictionary<string, object>? parameters)
+    {
+        if (parameters is null)
+            return RotationSourceRecipe.Default;
+
+        if (!parameters.TryGetValue("rotationSourceKind", out var kindObj) || kindObj is not string kind)
+            return RotationSourceRecipe.Default;
+
+        string normalized = kind.Trim().ToLowerInvariant();
+        if (normalized is not ("imported" or "rot" or "gplates"))
+            return RotationSourceRecipe.Default;
+
+        if (!parameters.TryGetValue("rotationSourcePayload", out var payloadObj) || payloadObj is not string payload
+            || string.IsNullOrWhiteSpace(payload))
+        {
+            return RotationSourceRecipe.Default;
+        }
+
+        string name = parameters.TryGetValue("rotationSourceName", out var nameObj) && nameObj is string n
+            && !string.IsNullOrWhiteSpace(n)
+                ? n
+                : "imported";
+
+        return new RotationSourceRecipe(RotationSourceKind.Imported, payload, name);
     }
 
     private static IReadOnlyList<long> ReadSnapshotTicks(IReadOnlyDictionary<string, object>? parameters)
@@ -469,11 +551,13 @@ public sealed class Service : IService, IDisposable
         }
 
         var products = GetOrBuildCrustTickProducts(renderOptions, onsetTick, arcTick);
+        var rotationProvider = BuildRotationProvider(products.Materialization.Result.Plates, onsetTick);
         var sampler = new PlateFrameSampler(
             products.Materialization.Tessellation,
             products.Materialization.Result.Plates,
             products.Materialization.Topology,
-            onsetTick);
+            onsetTick,
+            rotationProvider);
 
         var plateIdByCell = currentGlobe.Cells.ToDictionary(c => c.CellId, c => c.PlateId);
         var sampledState = sampler.SampleAt(arcTick, products.Materialization.Result.StateByTick, plateIdByCell);

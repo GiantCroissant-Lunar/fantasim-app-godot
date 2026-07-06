@@ -119,43 +119,20 @@ public sealed class ViewHost : IViewHost
 
     private static void ConfigureMountLayout(Control mount, string viewId)
     {
-        const float edge = 12f;
-        const float top = 44f;
-        const float sidePanelWidth = 460f;
-        const float graphPanelWidth = 760f;
-        const float timelineReservedHeight = 292f;
-        const float timelineGap = 8f;
+        // Layout arithmetic is owned by ViewMountLayout (the deterministic, unit-tested contract per
+        // the 2026-07-04 roadmap). This method only translates the contract rect into Godot's
+        // anchor/offset properties.
+        var rect = FantaSim.App.Ui.Providers.ViewMountLayout.PlanMountRect(viewId);
 
         mount.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        mount.AnchorTop = 0f;
-        mount.AnchorBottom = 1f;
-        mount.OffsetTop = top;
-        mount.OffsetBottom = -edge;
-
-        if (string.Equals(viewId, "activity", StringComparison.Ordinal))
-        {
-            mount.AnchorLeft = 1f;
-            mount.AnchorRight = 1f;
-            mount.OffsetLeft = -sidePanelWidth;
-            mount.OffsetRight = -edge;
-            mount.OffsetBottom = -(edge + timelineReservedHeight + timelineGap);
-            return;
-        }
-
-        if (string.Equals(viewId, "world-generation-node-graph", StringComparison.Ordinal))
-        {
-            mount.AnchorLeft = 0f;
-            mount.AnchorRight = 0f;
-            mount.OffsetLeft = edge;
-            mount.OffsetRight = edge + graphPanelWidth;
-            mount.OffsetBottom = -(edge + timelineReservedHeight + timelineGap);
-            return;
-        }
-
-        mount.AnchorLeft = 0f;
-        mount.AnchorRight = 1f;
-        mount.OffsetLeft = edge;
-        mount.OffsetRight = -edge;
+        mount.AnchorLeft = rect.AnchorLeft;
+        mount.AnchorRight = rect.AnchorRight;
+        mount.AnchorTop = rect.AnchorTop;
+        mount.AnchorBottom = rect.AnchorBottom;
+        mount.OffsetLeft = rect.OffsetLeft;
+        mount.OffsetRight = rect.OffsetRight;
+        mount.OffsetTop = rect.OffsetTop;
+        mount.OffsetBottom = rect.OffsetBottom;
     }
 
     private bool UnmountImpl(string viewId)

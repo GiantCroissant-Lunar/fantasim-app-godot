@@ -145,7 +145,7 @@ internal sealed record WorldCrustMaterialization(
             if (globeAtOnset.PlateCount == 0)
                 return null;
 
-            var geometry = BuildGlobeGeometryFromSnapshot(globeAtOnset);
+            var geometry = WorldCrustMaterializer.BuildGlobeGeometryFromSnapshot(globeAtOnset);
 
             var plateLayer = new GeospherePlateLayer();
             var crustLayer = new SyntheticCrustLayer();
@@ -178,10 +178,37 @@ internal sealed record WorldCrustMaterialization(
         }
     }
 
-    // Builds a WorldGlobeGeometry (geodetic) from a WorldGlobeSnapshot (cartesian) for field composition.
-    // Each cell's three cartesian corners convert to lat/lon, and boundary segments are left empty
-    // (the plate layer falls back to per-plate mean radius).
-    private static WorldGlobeGeometry BuildGlobeGeometryFromSnapshot(WorldGlobeSnapshot snapshot)
+    // Snapshot (cartesian) -> geometry (geodetic) for field composition. Boundary segments are
+    // left empty; the plate layer falls back to per-plate mean radius. internal so the regime
+    // layer-generation node handlers share the same converter the cutaway/crust path uses
+    // (P4b parity contract: one canonical snapshot->geometry path, never duplicated).
+}
+
+internal static class WorldCrustMaterializer
+{
+    public static async Task<WorldCrustMaterialization> MaterializeAsync(
+        WorldCrustRunSpec spec,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(spec);
+
+        var tessellation = spec.CreateTessellation();
+        var topology = PlateTopologyBuilder.Build(tessellation, spec.Plates);
+        var result = await CrustPipeline.RunAsync(
+            tessellation,
+            spec.Plates,
+            spec.Recipe,
+            startTick: spec.StartTick,
+            endTick: spec.EndTick,
+            snapshotTicks: spec.SnapshotTicks,
+            rates: spec.Rates,
+            rotationReferenceTick: spec.RotationReferenceTick,
+            ct: cancellationToken).ConfigureAwait(false);
+
+        return new WorldCrustMaterialization(spec, tessellation, topology, result);
+    }
+
+    internal static WorldGlobeGeometry BuildGlobeGeometryFromSnapshot(WorldGlobeSnapshot snapshot)
     {
         var plateIds = snapshot.Plates.Count > 0
             ? snapshot.Plates.Select(p => p.PlateId.ToString(CultureInfo.InvariantCulture)).ToArray()
@@ -213,30 +240,5 @@ internal sealed record WorldCrustMaterialization(
         var lat = Math.Asin(Math.Clamp(v.Z / len, -1.0, 1.0)) * 180.0 / Math.PI;
         var lon = Math.Atan2(v.Y, v.X) * 180.0 / Math.PI;
         return new GeoPoint(lat, lon);
-    }
-}
-
-internal static class WorldCrustMaterializer
-{
-    public static async Task<WorldCrustMaterialization> MaterializeAsync(
-        WorldCrustRunSpec spec,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(spec);
-
-        var tessellation = spec.CreateTessellation();
-        var topology = PlateTopologyBuilder.Build(tessellation, spec.Plates);
-        var result = await CrustPipeline.RunAsync(
-            tessellation,
-            spec.Plates,
-            spec.Recipe,
-            startTick: spec.StartTick,
-            endTick: spec.EndTick,
-            snapshotTicks: spec.SnapshotTicks,
-            rates: spec.Rates,
-            rotationReferenceTick: spec.RotationReferenceTick,
-            ct: cancellationToken).ConfigureAwait(false);
-
-        return new WorldCrustMaterialization(spec, tessellation, topology, result);
     }
 }

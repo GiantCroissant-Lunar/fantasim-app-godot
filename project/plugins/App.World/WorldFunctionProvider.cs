@@ -6,8 +6,10 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using FantaSim.App.NodeGraph;
+using FantaSim.App.World.Composition;
 using FantaSim.App.World.Crust;
 using FantaSim.App.World.GenerationGraph;
+using FantaSim.App.World.Globe;
 using FantaSim.Geosphere.Crust;
 using FantaSim.Geosphere.Plate.Topology;
 using FantaSim.World.Contracts.Units;
@@ -48,6 +50,18 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
     /// <summary>Function id for the crust-evolution pipeline run.</summary>
     public const string CrustGenerate = "crust.generate";
 
+    /// <summary>Function id for the magma-ocean regime layer field-generation node.
+    /// Delegates to <see cref="GeosphereMagmaOceanLayer"/> via <see cref="FieldValueResolver"/>,
+    /// over the same <see cref="WorldGlobeGeometry"/> the composition runtime builds — so the
+    /// graph-generated layer product is equal to the composition-generated one (P4b parity).</summary>
+    public const string MagmaOceanGenerate = "geosphere.magma-ocean.generate";
+
+    /// <summary>Function id for the stagnant-lid regime layer field-generation node.
+    /// Delegates to <see cref="GeosphereStagnantLidLayer"/> via <see cref="FieldValueResolver"/>,
+    /// over the same <see cref="WorldGlobeGeometry"/> the composition runtime builds — so the
+    /// graph-generated layer product is equal to the composition-generated one (P4b parity).</summary>
+    public const string StagnantLidGenerate = "geosphere.stagnant-lid.generate";
+
     private const double DefaultFormationTotalMassKg = 5.972e24;
     private const double DefaultFormationSpecificHeatJPerKg = 1.0e7;
     private const double DefaultFormationVolatileMassFraction = 0.02;
@@ -80,6 +94,10 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
             LayerSource => PackageLayerSource(payload),
             LayerNormalize => PackageLayerNormalization(payload),
             CrustGenerate => await GenerateCrustAsync(payload, cancellationToken).ConfigureAwait(false),
+            MagmaOceanGenerate => await GenerateRegimeLayerAsync(
+                RegimeLayerKind.MagmaOcean, payload, cancellationToken).ConfigureAwait(false),
+            StagnantLidGenerate => await GenerateRegimeLayerAsync(
+                RegimeLayerKind.StagnantLid, payload, cancellationToken).ConfigureAwait(false),
             _ => throw new InvalidOperationException(
                 $"WorldFunctionProvider has no handler for function '{functionId}'."),
         };
@@ -411,6 +429,113 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
             ["peakOrogenicPressure"] = peakOrogenic,
         };
     }
+
+    // ---------------------------------------------------------------- regime layer generation (P4b)
+
+    private enum RegimeLayerKind { MagmaOcean, StagnantLid }
+
+    private static async Task<JsonObject> GenerateRegimeLayerAsync(
+        RegimeLayerKind kind, JsonObject payload, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var seed = ReadInt(payload, "seed", WorldGenerationRenderOptions.Default.Seed);
+        var frequency = ReadInt(payload, "frequency", WorldGenerationRenderOptions.Default.TessellationFrequency);
+        var tick = ReadLong(payload, "canonicalTick", ReadLong(payload, "tick", 0L));
+        var onsetTick = ReadLong(
+            payload, "plateOnsetTick", SphereRegimeScheduleDefaults.PlateOnsetTick);
+        var retainedHeatJ = ReadDouble(payload, "retainedHeatJ", DefaultReferenceHeatJ);
+
+        var handoff = new SphereHandoff(
+            Tick: tick,
+            SourceBodyId: "protoplanet",
+            TotalMassKg: DefaultFormationTotalMassKg,
+            BulkCompositionFractions: DefaultCompositionFractions,
+            RetainedHeatJ: retainedHeatJ,
+            RetainedVolatileMassKg: DefaultFormationTotalMassKg * DefaultFormationVolatileMassFraction,
+            AngularMomentum: new UnifyMaths.Vector3D(0, 0, 0),
+            LatentSubstrateSeed: $"geosphere/seed-{seed}");
+
+        IFieldProducer layer = kind == RegimeLayerKind.MagmaOcean
+            ? new GeosphereMagmaOceanLayer()
+            : new GeosphereStagnantLidLayer(plateOnsetTick: onsetTick);
+
+        var geometry = BuildRegimeLayerGeometry(seed, frequency, tick, onsetTick);
+        var values = ResolveRegimeLayerFields(layer, geometry, tick, handoff);
+
+        var regimeId = kind == RegimeLayerKind.MagmaOcean ? "magma-ocean" : "stagnant-lid";
+        var layerId = kind == RegimeLayerKind.MagmaOcean
+            ? "geosphere.magma-ocean"
+            : "geosphere.stagnant-lid";
+        var productAddress = new WorldGenerationProductAddress(
+            Variant: "base",
+            Branch: "main",
+            Domain: WorldGenerationGraphDefaults.GeosphereSphereId,
+            Product: $"{regimeId}.{layerId}",
+            Tick: tick).ToPath();
+        var functionId = kind == RegimeLayerKind.MagmaOcean ? MagmaOceanGenerate : StagnantLidGenerate;
+
+        var fields = new JsonObject();
+        foreach (var scalar in values.Scalars)
+        {
+            var arr = new JsonArray();
+            foreach (var v in scalar.Values)
+                arr.Add(v);
+            fields[scalar.Field.Value] = arr;
+        }
+
+        return new JsonObject
+        {
+            ["function"] = functionId,
+            ["regimeId"] = regimeId,
+            ["layerId"] = layerId,
+            ["sphereId"] = WorldGenerationGraphDefaults.GeosphereSphereId,
+            ["canonicalTick"] = tick,
+            ["seed"] = seed,
+            ["frequency"] = frequency,
+            ["plateOnsetTick"] = onsetTick,
+            ["productAddress"] = productAddress,
+            ["cellCount"] = values.Scalars.Count > 0 ? values.Scalars[0].Values.Count : 0,
+            ["fields"] = fields,
+        };
+    }
+
+    internal static WorldFieldValues ResolveRegimeLayerFields(
+        IFieldProducer layer, WorldGlobeGeometry geometry, long tick, SphereHandoff? handoff)
+    {
+        var composer = new FieldComposer();
+        GeosphereFieldCatalog.DeclareInto(composer);
+        composer.AddLayer(layer.Fields);
+        var composition = composer.Compose();
+        if (!composition.IsValid)
+        {
+            var problems = string.Join("; ", composition.Errors.Select(e => e.Message));
+            throw new InvalidOperationException(
+                $"Regime layer '{layer.Id}' field composition is invalid: {problems}");
+        }
+
+        return new FieldValueResolver().Resolve(
+            composition, new ILayer[] { layer }, geometry, tick, handoff);
+    }
+
+    internal static WorldGlobeGeometry BuildRegimeLayerGeometry(
+        int seed, int frequency, long tick, long onsetTick)
+    {
+        var roster = OnsetRoster.Build(seed, onsetTick, frequency);
+        var reconstructor = GlobeReconstructor.FromOnsetRoster(
+            roster, onsetTick, SphereRegimeScheduleDefaults.GeosphereDefault, frequency);
+        var snapshot = reconstructor.BuildGlobeAt(tick);
+        return WorldCrustMaterializer.BuildGlobeGeometryFromSnapshot(snapshot);
+    }
+
+    private static readonly IReadOnlyList<FantaSim.App.World.Composition.MaterialCompositionFraction> DefaultCompositionFractions =
+        new[]
+        {
+            new FantaSim.App.World.Composition.MaterialCompositionFraction("silicate", 0.68),
+            new FantaSim.App.World.Composition.MaterialCompositionFraction("iron", 0.30),
+            new FantaSim.App.World.Composition.MaterialCompositionFraction("volatile", 0.02),
+        };
+
+    private const double DefaultReferenceHeatJ = 5.972e31;
 
     // ---------------------------------------------------------------- payload decoding
 

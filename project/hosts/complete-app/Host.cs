@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FantaSim.App.Activity;
+using FantaSim.App.Camera.Seam;
 using FantaSim.App.Command;
 using FantaSim.App.Common;
 using FantaSim.App.Ecs;
@@ -34,6 +35,7 @@ public partial class Host : Node
     private IPlanetPresentation? _planetPresentation;
     private FantaSim.App.Resource.IService? _resource;
     private IRenderCompositionHandle? _renderComposition;
+    private ICameraCompositionHandle? _cameraComposition;
     private SceneTierPckWatcher? _sceneTierPckWatcher;
     private bool _ecsWorldReady;
     private bool _timelineReloadPending;
@@ -71,6 +73,7 @@ public partial class Host : Node
         ActivityComposition.ComposeActivity(ctx);
         UiComposition.ComposeUi(ctx, tree);
         RemoteIngressComposition.ComposeRemoteIngress(ctx, this);
+        _cameraComposition = CameraComposition.ComposeCamera(ctx, this);
         _renderComposition = RenderComposition.ComposeRender(ctx, this);
         _sceneTierPckWatcher = SceneTierPckWatcher.TryCreate(ctx.Registry, _composition.Bootstrap.LoggerFactory);
 
@@ -690,9 +693,22 @@ public partial class Host : Node
             _composition!.Bootstrap.LoggerFactory,
             // M0 (spec D1): globe:plateView=identity (env globe__plateView) keeps the PlateIdentity
             // diagnostic on the geosphere.plate track; default is the Continents membership view.
-            _config?.Get("globe:plateView"));
+            _config?.Get("globe:plateView"),
+            // P4: the world-generation node graph panel is env-gated behind world:showGraph (default
+            // false; env override world__showGraph=true), matching the iii graph's graph:show gate.
+            _config?.GetValue("world:showGraph", false) ?? false);
         _planetPresentation.Rebind();
         _renderComposition?.SetCutawayTarget(_planetPresentation.UpdateCutaway);
+
+        // Mount the default globe camera now that the world bundle has mounted the globe at the
+        // origin. Deferred so the pcam is built on the main thread after the scene tree settles.
+        if (_cameraComposition is not null)
+        {
+            Callable.From(() => CameraComposition.MountDefaultGlobeCamera(
+                new HostCompositionContext(_composition!),
+                this,
+                _cameraComposition)).CallDeferred();
+        }
     }
 
     private void RecordSceneActivity(string sceneId, string? parentSceneId, bool bundleLoaded, int activeScenes)
@@ -736,6 +752,13 @@ public partial class Host : Node
                 _renderComposition.Unregister(_composition.Bootstrap.Registry);
                 _renderComposition.Dispose();
                 _renderComposition = null;
+            }
+
+            if (_cameraComposition is not null && _composition is not null)
+            {
+                _cameraComposition.Unregister(_composition.Bootstrap.Registry);
+                _cameraComposition.Dispose();
+                _cameraComposition = null;
             }
 
             _sceneTierPckWatcher?.Dispose();

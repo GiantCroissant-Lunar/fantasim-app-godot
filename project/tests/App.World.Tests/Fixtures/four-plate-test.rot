@@ -1,0 +1,18 @@
+# 4-plate fixture for P3 rotation-source seam tests (fantasim-app-godot)
+# PLATES4 format: MovingPlateId TimeMa PoleLatDeg PoleLonDeg AngleDeg FixedPlateId
+# Plates 1-4 are each fixed to plate 0 (the anchor). Keyframes at 0, 4, 8 Ma so SLERP
+# interpolation between them yields smoothly varying per-tick rotations. At 0 Ma every
+# plate is identity (angle 0), so onset (= present) maps to no rotation and the sampler's
+# incremental rotation equals the interpolated total rotation.
+1 0.0 90.0 0.0 0.0 0
+1 4.0 90.0 0.0 6.0 0
+1 8.0 90.0 0.0 12.0 0
+2 0.0 0.0 90.0 0.0 0
+2 4.0 0.0 90.0 10.0 0
+2 8.0 0.0 90.0 20.0 0
+3 0.0 -45.0 180.0 0.0 0
+3 4.0 -45.0 180.0 -8.0 0
+3 8.0 -45.0 180.0 -16.0 0
+4 0.0 45.0 90.0 0.0 0
+4 4.0 45.0 90.0 14.0 0
+4 8.0 45.0 90.0 28.0 0

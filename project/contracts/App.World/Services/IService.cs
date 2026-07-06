@@ -40,6 +40,15 @@ public interface IService
     /// </summary>
     byte[] GetGlobeBoundaryCellsAt(long tick);
 
+    /// <summary>
+    /// Per-cell continental fraction sampled in the moving plate frame at <paramref name="tick"/>
+    /// (P3 per-tick light path). Re-samples the cached crust snapshot's onset material through the
+    /// <c>PlateFrameSampler</c> Lagrangian transport at the seek tick WITHOUT re-materializing crust,
+    /// so the Continents view drifts smoothly between 5 M-tick snapshots instead of stepping.
+    /// Tick-addressed and cached like <see cref="GetGlobeSnapshotAt"/>.
+    /// </summary>
+    IReadOnlyDictionary<int, double> GetContinentalFractionByCellAt(long tick);
+
     WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request);
     IDisposable SubscribeGenerationChanged(Action<WorldGenerationChangedEvent> callback);
 }

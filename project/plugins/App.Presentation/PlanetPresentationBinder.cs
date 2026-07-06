@@ -61,6 +61,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     private PlanetGenerationGraphSource.PlanetGenerationTimelineGraphBinding? _graphBinding;
     private IDisposable? _graphViewRegistration;
     private bool _graphViewMounted;
+    private readonly bool _showWorldGraph;
     private int? _subscribedWorldHash;
     private readonly PlanetPresentationReloadGate _worldRuntimeReload = new();
     private string? _boundRegimeId;
@@ -85,7 +86,8 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         ResourceService resource,
         IBundleSceneRegistry sceneRegistry,
         ILoggerFactory loggerFactory,
-        string? plateViewOverride = null)
+        string? plateViewOverride = null,
+        bool showWorldGraph = false)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _resource = resource ?? throw new ArgumentNullException(nameof(resource));
@@ -95,6 +97,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         // M0 (spec D1): host config knob globe:plateView — "identity" keeps the PlateIdentity
         // diagnostic on the geosphere.plate track; anything else selects the Continents view.
         _plateViewOverride = plateViewOverride;
+        _showWorldGraph = showWorldGraph;
 
         _log = loggerFactory.CreateLogger("World.PlanetPresentation");
         _timeline = new PlanetTimelineController(ApplyTimelineTick);
@@ -158,6 +161,9 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
 
     private void EnsureNodeGraphView(PlanetPresentationDocument document)
     {
+        if (!_showWorldGraph)
+            return;
+
         if (_graphView is null)
         {
             _graphSource = BuildInitialGraphSource(document);
@@ -682,7 +688,9 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     // M0 light refresh (spec §3.2): swap ONLY the globe snapshot to the playhead's reassigned
     // membership and rebuild the plate caps in place. No document re-fetch, no crust
     // materialization — GetGlobeSnapshotAt rides the service's cached reconstructor (~ms at
-    // freq 4, see MotionGateTests), so continents glide during scrub and Play.
+    // freq 4, see MotionGateTests), so continents glide during scrub and Play. P3: also re-sample
+    // the per-cell continental fraction at the seek tick from cached sampler state so the
+    // Continents coloring drifts smoothly between 5 M-tick snapshots instead of stepping.
     private void RefreshContinentsMembership(long tick)
     {
         if (_currentDocument is null || _boundContinentsTick == tick)
@@ -693,9 +701,11 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             return;
 
         WorldGlobeSnapshot snapshot;
+        IReadOnlyDictionary<int, double> fractions;
         try
         {
             snapshot = world.GetGlobeSnapshotAt(tick);
+            fractions = world.GetContinentalFractionByCellAt(tick);
         }
         catch (Exception ex)
         {
@@ -703,7 +713,12 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             return;
         }
 
-        _currentDocument = _currentDocument with { GlobeSnapshot = snapshot, GlobeReferenceTick = tick };
+        _currentDocument = _currentDocument with
+        {
+            GlobeSnapshot = snapshot,
+            GlobeReferenceTick = tick,
+            ContinentalFractionByCell = fractions,
+        };
         _boundContinentsTick = tick;
         RebuildPlateSurface();
     }

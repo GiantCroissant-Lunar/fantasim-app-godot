@@ -21,6 +21,9 @@
     <PackageReference Include="GiantCroissant.ServiceArchi.Core" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\plugins\App.World\App.World.csproj" />
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
     <!-- Rendering contracts (shared): the moved rendering/globe types (GlobePlateSurfaces,

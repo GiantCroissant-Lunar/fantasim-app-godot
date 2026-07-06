@@ -494,6 +494,9 @@ internal sealed class FakeWorldService : WorldService
     public byte[] GetGlobeBoundaryCellsAt(long tick)
         => throw new NotSupportedException();
 
+    public IReadOnlyDictionary<int, double> GetContinentalFractionByCellAt(long tick)
+        => throw new NotSupportedException();
+
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
     {
         GenerateCalls++;

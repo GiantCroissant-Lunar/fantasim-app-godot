@@ -176,6 +176,42 @@ public static class WorldGenerationNodeCatalog
             Summary: "Runs the current crust-generation pipeline and returns a JSON world summary.",
             ProviderMetadata: CSharpMetadata,
             ExecutionTraits: NativeExecutionTraits),
+
+        new WorldGenerationNodeSchema(
+            TypeId: WorldFunctionProvider.MagmaOceanGenerate,
+            Label: "Magma Ocean Layer Generation",
+            Category: "geosphere",
+            IsSideEffect: false,
+            IsExpensive: true,
+            Inputs: new[] { new WorldGenerationGraphPort("options", "Options", "world/options", Required: true) },
+            Outputs: new[] { new WorldGenerationGraphPort("result", "Result", "world/regime_layer", Required: false) },
+            Summary: "Generates the magma-ocean regime layer by delegating to the composition GeosphereMagmaOceanLayer producer with a pre-plate lid globe.",
+            Parameters: new[]
+            {
+                new WorldGenerationGraphParameter("seed", "Seed", "7", "int"),
+                new WorldGenerationGraphParameter("frequency", "Frequency", "4", "int"),
+                new WorldGenerationGraphParameter("retainedHeatJ", "Retained Heat (J)", "5.972e31", "double"),
+            },
+            ProviderMetadata: CSharpMetadata,
+            ExecutionTraits: NativeExecutionTraits),
+
+        new WorldGenerationNodeSchema(
+            TypeId: WorldFunctionProvider.StagnantLidGenerate,
+            Label: "Stagnant Lid Layer Generation",
+            Category: "geosphere",
+            IsSideEffect: false,
+            IsExpensive: true,
+            Inputs: new[] { new WorldGenerationGraphPort("options", "Options", "world/options", Required: true) },
+            Outputs: new[] { new WorldGenerationGraphPort("result", "Result", "world/regime_layer", Required: false) },
+            Summary: "Generates the stagnant-lid regime layer by delegating to the composition GeosphereStagnantLidLayer producer with a pre-plate lid globe.",
+            Parameters: new[]
+            {
+                new WorldGenerationGraphParameter("seed", "Seed", "7", "int"),
+                new WorldGenerationGraphParameter("frequency", "Frequency", "4", "int"),
+                new WorldGenerationGraphParameter("retainedHeatJ", "Retained Heat (J)", "5.972e31", "double"),
+            },
+            ProviderMetadata: CSharpMetadata,
+            ExecutionTraits: NativeExecutionTraits),
     }
     .Concat(ExternalToolNodeSchemaProjector.Project(VplanetExternalToolManifest.Build()))
     .Concat(ExternalToolNodeSchemaProjector.Project(ComfyExternalToolManifest.Build()))

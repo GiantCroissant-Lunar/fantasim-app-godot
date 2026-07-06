@@ -18,6 +18,7 @@ public sealed class PlateFrameSampler
     private readonly IReadOnlyDictionary<int, int> _onsetAssignment;
     private readonly IReadOnlyList<TopoPlate> _plates;
     private readonly long _onsetTick;
+    private readonly IPlateRotationProvider _rotationProvider;
     private readonly UnifyMaths.Vector3D[] _centers; // unit cell centers, index = cell id
 
     public PlateFrameSampler(
@@ -25,16 +26,36 @@ public sealed class PlateFrameSampler
         IReadOnlyList<TopoPlate> plates,
         PlateTopology onsetTopology,
         long onsetTick)
+        : this(tessellation, plates, onsetTopology, onsetTick,
+               new GeneratedEulerPoleRotationProvider(plates, onsetTick))
+    {
+    }
+
+    /// <summary>
+    /// Constructs the sampler with an explicit rotation provider (P3 rotation-source seam). The
+    /// default (generated) path wraps the onset plates' Euler poles via the parameterless overload;
+    /// the imported path receives an <see cref="ImportedRotationProvider"/> built from a parsed
+    /// <c>.rot</c> model. The plate list still supplies ids + onset topology; only the per-plate
+    /// rotation at tick is delegated.
+    /// </summary>
+    internal PlateFrameSampler(
+        GeodesicSphereTessellation tessellation,
+        IReadOnlyList<TopoPlate> plates,
+        PlateTopology onsetTopology,
+        long onsetTick,
+        IPlateRotationProvider rotationProvider)
     {
         ArgumentNullException.ThrowIfNull(tessellation);
         ArgumentNullException.ThrowIfNull(plates);
         ArgumentNullException.ThrowIfNull(onsetTopology);
+        ArgumentNullException.ThrowIfNull(rotationProvider);
         if (onsetTick < 0) throw new ArgumentOutOfRangeException(nameof(onsetTick));
 
         _tessellation = tessellation;
         _onsetAssignment = onsetTopology.Assignment;
         _plates = plates;
         _onsetTick = onsetTick;
+        _rotationProvider = rotationProvider;
 
         int n = tessellation.CellCount;
         _centers = new UnifyMaths.Vector3D[n];
@@ -83,14 +104,11 @@ public sealed class PlateFrameSampler
             return result;
         }
 
-        // Forward rotation per plate (the same form GlobeReconstructor.ReassignCellsAt uses
-        // for seeds), applied to every onset cell center.
+        // Forward rotation per plate, sourced from the active rotation provider (generated Euler
+        // poles by default, or imported .rot finite rotations when the P3 seam selects imported).
         var forwardByPlate = new Dictionary<int, UnifyMaths.Quaternion>(_plates.Count);
         foreach (var plate in _plates)
-        {
-            double angleRad = plate.Pole.AngularRate * delta;
-            forwardByPlate[plate.PlateId] = UnifyMaths.Quaternion.FromAxisAngle(plate.Pole.Axis.Normalize(), angleRad);
-        }
+            forwardByPlate[plate.PlateId] = _rotationProvider.RotationFromOnsetTo(plate.PlateId, tick);
 
         var forward = new UnifyMaths.Vector3D[n];
         for (int i = 0; i < n; i++)

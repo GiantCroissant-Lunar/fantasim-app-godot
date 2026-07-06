@@ -31,7 +31,8 @@ internal sealed record WorldCrustRunSpec(
     BoundaryProfileParameters BoundaryProfiles,
     double VerticalExaggeration,
     CellElevationHydrosphereMode HydrosphereMode,
-    CrustPatchRecipe? PatchRecipe = null)
+    CrustPatchRecipe? PatchRecipe = null,
+    RotationSourceRecipe? RotationSource = null)
 {
     private static readonly CrustInitRecipe DefaultContinentalRecipe = CrustInitRecipe.Continental(0, 1);
     private static readonly CrustPatchRecipe DefaultPatchRecipe = new(Seed: 0, PatchCount: 5);
@@ -67,6 +68,7 @@ internal sealed record WorldCrustRunSpec(
             ReadDouble(effectivePayload, "spinRate", DefaultSpinRateRadiansPerMegaAnnum));
         var plates = ReadPlates(effectivePayload, frequency, seed, rate);
         var patchRecipe = ReadPatchRecipe(effectivePayload, seed);
+        var rotationSource = ReadRotationSourceRecipe(effectivePayload);
 
         return new WorldCrustRunSpec(
             Seed: seed,
@@ -81,7 +83,8 @@ internal sealed record WorldCrustRunSpec(
             BoundaryProfiles: BoundaryProfileParameters.Default,
             VerticalExaggeration: WorldGenerationRenderOptions.DefaultVerticalExaggeration,
             HydrosphereMode: ReadHydrosphereMode(effectivePayload, WorldGenerationRenderOptions.Default.HydrosphereMode),
-            PatchRecipe: patchRecipe);
+            PatchRecipe: patchRecipe,
+            RotationSource: rotationSource);
     }
 
     /// <summary>
@@ -266,6 +269,45 @@ internal sealed record WorldCrustRunSpec(
         return DefaultPatchRecipe with { Seed = renderOptions.Seed };
     }
 
+    /// <summary>
+    /// Reads the rotation-source selection from the <c>rotationSource</c> option, mirroring
+    /// <see cref="ReadPatchRecipe(JsonObject, int)"/>. Absent or <c>"generated"</c> &rarr; default
+    /// (unchanged generated Euler poles). <c>"imported"</c> requires an inline <c>payload</c>
+    /// carrying a PLATES4 <c>.rot</c> model; a missing/empty payload throws a clear
+    /// <see cref="ArgumentException"/> rather than crashing downstream.
+    /// </summary>
+    public static RotationSourceRecipe ReadRotationSourceRecipe(JsonObject payload)
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+
+        if (!payload.TryGetPropertyValue("rotationSource", out var node) || node is not JsonObject rs)
+            return RotationSourceRecipe.Default;
+
+        string kind = ReadString(rs, "kind", "generated").Trim().ToLowerInvariant();
+        if (kind is "generated" or "gen" or "default")
+            return RotationSourceRecipe.Default;
+
+        if (kind is not ("imported" or "rot" or "gplates"))
+        {
+            throw new ArgumentException(
+                $"rotationSource.kind '{kind}' is not recognized. Expected 'generated' or 'imported'.",
+                nameof(payload));
+        }
+
+        string? rotText = ReadOptionalString(rs, "payload");
+        string nameField = ReadString(rs, "name", "imported");
+        string sourceName = string.IsNullOrWhiteSpace(nameField) ? "imported" : nameField;
+
+        if (string.IsNullOrWhiteSpace(rotText))
+        {
+            throw new ArgumentException(
+                "rotationSource.kind 'imported' requires a non-empty 'payload' carrying a PLATES4 .rot model.",
+                nameof(payload));
+        }
+
+        return new RotationSourceRecipe(RotationSourceKind.Imported, rotText, sourceName);
+    }
+
     private static long ReadTargetTick(JsonObject payload)
     {
         if (TryReadLong(payload, "canonicalTick", out var canonicalTick))
@@ -373,6 +415,16 @@ internal sealed record WorldCrustRunSpec(
 
     private static int ReadInt(JsonObject o, string key, int fallback)
         => o.TryGetPropertyValue(key, out var n) && n is JsonValue v && v.TryGetValue<int>(out var i) ? i : fallback;
+
+    private static string ReadString(JsonObject o, string key, string fallback)
+        => o.TryGetPropertyValue(key, out var n) && n is JsonValue v && v.TryGetValue<string>(out var s)
+            ? s
+            : fallback;
+
+    private static string? ReadOptionalString(JsonObject o, string key)
+        => o.TryGetPropertyValue(key, out var n) && n is JsonValue v && v.TryGetValue<string>(out var s)
+            ? s
+            : null;
 
     private static bool TryReadLong(JsonObject o, string key, out long value)
     {

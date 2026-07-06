@@ -103,11 +103,16 @@ public sealed class Service : IService, IDisposable
     }
 
     /// <summary>
-    /// Called by the face (via the resident controller callback) when the AnimationPlayer
-    /// advances a frame. The face pushes the tick into the resident ITimelineController,
-    /// which updates the globe; the service then updates its own tick + state + view.
+    /// Called by the composition (subscribed to the resident ITimelineController.TickChanged)
+    /// when the AnimationPlayer advances a frame. The face pushes the tick into the resident
+    /// ITimelineController.PushTick, which updates the globe; the controller fires TickChanged,
+    /// and the composition forwards it here so the service updates its own tick + state + view.
+    /// Public so the composition (in App.Timeline.Seam) can subscribe across the assembly
+    /// boundary. The Playing-state guard means scrub-only PushTick calls (which fire TickChanged
+    /// while State is Scrubbing/Idle) do NOT advance the service tick -- the service already
+    /// knows the tick from its own SeekAsync path.
     /// </summary>
-    internal void AcceptTickFromFace(long tick)
+    public void AcceptTickFromFace(long tick)
     {
         if (_state != TimelinePlaybackState.Playing) return;
         _tick = Math.Clamp(tick, 0L, MaxTick);
