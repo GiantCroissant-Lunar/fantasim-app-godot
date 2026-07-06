@@ -101,47 +101,48 @@ public sealed class PlateFrameSampler
                 : _centers[i];
         }
 
-        // Distance cap: a source only "reaches" a target within ~1.5 mean cell spacings.
-        // Where plates DIVERGE the gap between forward images exceeds the cap — those target
-        // cells are NEWLY FORMED oceanic crust (sea-floor spreading: fraction 0, age = the time
-        // since onset). Where plates CONVERGE two plates' images overlap and interleave at cell
-        // scale — a raw nearest-source pick flips plate per cell and shatters the land into
-        // salt-and-pepper (observed in the windowed gate 2026-07-06). Physically one side
-        // SUBDUCTS, and buoyant continental crust always overrides oceanic (the engine's
-        // CrustSideClassifier rule) — so the pick is: best candidate source PER PLATE within
-        // the cap, continental candidates beat oceanic ones, nearest wins within a class.
+        // Distance caps. GAP-FILL cap (1.5 mean spacings): where plates DIVERGE the space
+        // between forward images exceeds it — those cells are NEWLY FORMED oceanic crust
+        // (sea-floor spreading: fraction 0, age = time since onset). SUBDUCTION-OVERRIDE cap
+        // (0.75 spacings, sub-cell): where plates CONVERGE their images interleave at cell
+        // scale — raw nearest picking shatters land into salt-and-pepper, while letting a
+        // continental candidate win anywhere inside the WIDE cap dilates every land source to
+        // its whole cap disc and inflates land 5-7x mid-window (both observed in the windowed
+        // gate, 2026-07-06). So: nearest image within the wide cap wins by default; a
+        // continental image overrides an oceanic nearest ONLY when genuinely co-located
+        // (within the tight cap) — buoyant continental crust does not subduct (the engine's
+        // CrustSideClassifier rule), but it also does not grow.
         double meanSpacingRad = Math.Sqrt(4.0 * Math.PI / n);
-        double minSourceDot = Math.Cos(1.5 * meanSpacingRad);
+        double gapFillDot = Math.Cos(1.5 * meanSpacingRad);
+        double overrideDot = Math.Cos(0.75 * meanSpacingRad);
 
-        var bestByPlate = new Dictionary<int, (int Cell, double Dot)>(_plates.Count);
         for (int cell = 0; cell < n; cell++)
         {
-            bestByPlate.Clear();
+            int nearestCell = -1;
+            double nearestDot = double.NegativeInfinity;
+            int continentalCell = -1;
+            double continentalDot = double.NegativeInfinity;
+
             for (int i = 0; i < n; i++)
             {
                 double d = UnifyMaths.Vector3D.Dot(_centers[cell], forward[i]);
-                if (d < minSourceDot) continue;
-                int plateId = _onsetAssignment.TryGetValue(i, out var pid) ? pid : -1;
-                if (!bestByPlate.TryGetValue(plateId, out var cur) || d > cur.Dot)
-                    bestByPlate[plateId] = (i, d);
+                if (d < gapFillDot) continue;
+                if (d > nearestDot) { nearestDot = d; nearestCell = i; }
+                if (d >= overrideDot && d > continentalDot
+                    && tickState.TryGetValue(i, out var cand) && cand.ContinentalFraction >= 0.5)
+                {
+                    continentalDot = d;
+                    continentalCell = i;
+                }
             }
 
             CellCrustState? chosen = null;
-            double chosenDot = double.NegativeInfinity;
-            bool chosenContinental = false;
-            foreach (var (_, candidate) in bestByPlate)
+            if (nearestCell >= 0 && tickState.TryGetValue(nearestCell, out var nearest))
             {
-                if (!tickState.TryGetValue(candidate.Cell, out var s)) continue;
-                bool continental = s.ContinentalFraction >= 0.5;
-                bool wins = chosen is null
-                    || (continental && !chosenContinental)
-                    || (continental == chosenContinental && candidate.Dot > chosenDot);
-                if (wins)
-                {
-                    chosen = s;
-                    chosenDot = candidate.Dot;
-                    chosenContinental = continental;
-                }
+                chosen = nearest;
+                if (nearest.ContinentalFraction < 0.5 && continentalCell >= 0
+                    && tickState.TryGetValue(continentalCell, out var continental))
+                    chosen = continental; // co-located overlap: the continental side overrides
             }
 
             result[cell] = chosen ?? new CellCrustState(

@@ -157,6 +157,20 @@ public sealed class MotionGateTests
             $"Land area must be roughly conserved across the window: |landA|={landA.Count}, " +
             $"|landB|={landB.Count} (ratio {areaRatio:F2}).");
 
+        // Area must ALSO hold at an intermediate tick — the 2026-07-06 windowed gate caught a
+        // 5-7x mid-window inflation (subduction override dilating land to the whole cap disc)
+        // that endpoint-only checks missed entirely.
+        using (var midService = new Service(new ServiceRegistry()))
+        {
+            var mid = midService.GetPlanetPresentationAsync(ctx.OnsetTick + 10_000_000L);
+            Assert.NotNull(mid.ContinentalFractionByCell);
+            int landMid = mid.ContinentalFractionByCell!.Count(kv => kv.Value >= 0.5);
+            double midRatio = (double)landMid / Math.Max(1, landA.Count);
+            Assert.True(midRatio > 0.6 && midRatio < 1.5,
+                $"Land area must be roughly conserved MID-window too: |landA|={landA.Count}, " +
+                $"|landMid|={landMid} (ratio {midRatio:F2}).");
+        }
+
         double jaccard = Jaccard(expected, landB);
         Assert.True(jaccard >= 0.6,
             $"Continents must keep their shape while drifting: rotated-expected vs actual land " +
