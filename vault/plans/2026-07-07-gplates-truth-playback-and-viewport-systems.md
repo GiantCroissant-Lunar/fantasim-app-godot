@@ -156,6 +156,38 @@ architecture tests must stay green).
 - Logs under `fantasim-app-godot/.agent/logs/opencode/`; prompts staged under
   `fantasim-app-godot/.agent/run/dispatch/` (gitignored, session-local).
 
+## Wave 2 (dispatched 2026-07-07, all zai glm-5.2; references in
+`vault/specs/2026-07-07-mantle-xray-exploded-crust-references.md`)
+
+### P8 — windowed-defect fixes (app)
+
+The 2026-07-07 windowed gate left two precise defects: (a) **per-tick light path inert in the
+export** — `PlanetPresentationBinder.RefreshContinentsMembership` early-returns silently
+(headless green; 0.0% pixel change across a 0.2 Ma seek in the exported app); suspects: the
+`_registry.TryGet<FantaSim.App.World.IService>()` cross-ALC resolution, `_currentDocument`
+null in the resident binder, or the `_boundContinentsTick` guard. Every early-return must gain
+a permanent debug-level log line as part of the fix. (b) **camera orbit inert** —
+`CameraComposition.MountDefaultGlobeCamera` logs "no PhantomCameraHost on viewport 'main'":
+the rig registers the pcam via a deferred callable, so the mount's `GetHost` races it; bind
+lazily (controls fetch the host on first frames until available) rather than ordering hacks.
+
+### M-A — x-ray mantle view (app)
+
+Per reference 2: sample the engine's `PlateHistoryForcingSource` (package
+`Geosphere.Asthenosphere.Convection` 0.1.9, pinned; adapter builds `BoundarySegmentHistory`
+from the presentation document's typed `BoundaryArcs` at the tick) on a spherical-shell grid →
+CPU marching-cubes isosurfaces at ± anomaly thresholds (cold=blue slabs, warm plumes) →
+meshes in the render seam; ghost the crust shell (~20% opacity) with boundary wireframe.
+Toggle via a new ingress command mirroring `render.cutaway` (e.g. `render.mantle`).
+
+### M-B — exploded solid crust (app)
+
+Per reference 3: extrude each per-plate cap into a closed solid — top = existing relief
+surface, bottom = radial offset by `CellCrustThickness`, side walls along boundary arcs;
+exploded mode = per-plate radial translation about the plate centroid, factor via a new
+ingress command mirroring `render.cutaway` (e.g. `render.exploded {"factor":0.3}`).
+Thickness must be data-true (continental keels vs thin ocean floor).
+
 ## Integration order
 
 P1/P2 (engine) → pack 0.1.9 → re-pin app. P3 merges after its option seam is reviewed against
