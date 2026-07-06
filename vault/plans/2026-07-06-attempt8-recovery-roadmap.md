@@ -63,5 +63,11 @@ it needs P2's stable shapes and P3's legible tones to judge.
 - **2026-07-06 P0 DONE:** remotes wired; engine+carto pushed to `attempt-8/main` (previous
   attempt preserved on `main`; histories unrelated — local repos are attempt #8); app main
   pushed through `8c3c6da`. Evidence: `git ls-remote` shows attempt-8/main on both.
-- **2026-07-06 P1 planned + dispatched:** see plan doc; packet to opencode/kimi.
+- **2026-07-06 P1 DONE (@2c53650):** App.Architecture.Tests with C1–C5 all green; ONE live
+  violation found+fixed (C3: parameterless `GetPlanetPresentationAsync()` in `Rebind()` — the
+  frozen-onset-frame entry point — now tick-addressed). Dispatched to opencode/kimi,
+  lead-verified: `task test` green (449/449 App.World isolated; frame-budget test flakes under
+  full parallel load — KNOWN FLAKE, fix in P3). Conformance gate is now LIVE for all later work.
+- **2026-07-06 session-goal-contract rule added** (workspace `.agent/rules/`, indexed in
+  AGENTS.md) — the institutional fix for why hundreds of goal-pointed sessions didn't compound.
 - *(next entries appended here as packets land, with gate evidence per entry)*
