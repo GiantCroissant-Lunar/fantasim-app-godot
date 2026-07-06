@@ -216,6 +216,16 @@ public sealed class Service : IService, IDisposable
         return reconstructor.BuildGlobeAt(tick);
     }
 
+    public byte[] GetGlobeBoundaryCellsAt(long tick)
+    {
+        if (tick < 0) throw new ArgumentOutOfRangeException(nameof(tick));
+        var family = WorldGenerationGraphDefaults.BuildFamily();
+        var renderOptions = ResolvePlanetRenderOptions(family);
+        var onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        var reconstructor = GetCachedGlobeReconstructor(renderOptions, onsetTick);
+        return reconstructor.ClassifyCellsAt(tick);
+    }
+
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);

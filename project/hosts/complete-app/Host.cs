@@ -687,7 +687,10 @@ public partial class Host : Node
             registry,
             resource,
             sceneRegistry,
-            _composition!.Bootstrap.LoggerFactory);
+            _composition!.Bootstrap.LoggerFactory,
+            // M0 (spec D1): globe:plateView=identity (env globe__plateView) keeps the PlateIdentity
+            // diagnostic on the geosphere.plate track; default is the Continents membership view.
+            _config?.Get("globe:plateView"));
         _planetPresentation.Rebind();
         _renderComposition?.SetCutawayTarget(_planetPresentation.UpdateCutaway);
     }

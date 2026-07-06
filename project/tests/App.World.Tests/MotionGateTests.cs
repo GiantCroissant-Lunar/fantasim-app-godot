@@ -53,6 +53,20 @@ public sealed class MotionGateTests
     }
 
     [Fact]
+    public void GetGlobeBoundaryCellsAt_returns_a_frontier_that_moves_with_membership()
+    {
+        long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        using var service = new Service(new ServiceRegistry());
+
+        var a = service.GetGlobeBoundaryCellsAt(onsetTick);
+        var b = service.GetGlobeBoundaryCellsAt(onsetTick + 20_000_000L);
+
+        Assert.Contains(a, code => code != 0);
+        Assert.Contains(b, code => code != 0);
+        Assert.NotEqual(a, b); // the frontier follows the reassigned membership, not the onset map
+    }
+
+    [Fact]
     public void GetPlanetPresentationAsync_default_populates_continental_plate_ids()
     {
         using var service = new Service(new ServiceRegistry());

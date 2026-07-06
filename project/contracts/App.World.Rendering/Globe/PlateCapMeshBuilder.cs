@@ -153,6 +153,56 @@ public static class PlateCapMeshBuilder
             uv2);
     }
 
+    /// <summary>
+    /// M0 <c>Continents</c> view (2026-07-06 spec §3.1): flat two-tone cap — land when the cap's
+    /// plate is continental, ocean otherwise — with frontier cells (per-cell boundary code != 0,
+    /// from the SAME reassigned membership that shaped the cap) darkened so the seam reads as a
+    /// moving coastline without typed arc polylines (spec D4). Smooth normals like
+    /// <see cref="BuildPlateIdentity"/>; the caller supplies zero elevations so the cap stays flat.
+    /// </summary>
+    public static PlateCapMeshDto BuildContinents(
+        PlateCap cap,
+        bool isLand,
+        IReadOnlyList<byte> boundaryCells)
+    {
+        ArgumentNullException.ThrowIfNull(cap);
+        ArgumentNullException.ThrowIfNull(boundaryCells);
+
+        var surface = cap.Surface;
+        int triCount = surface.TriangleCount;
+        int vertexCount = triCount * 3;
+        var positions = new float[vertexCount * 3];
+        var normals = new float[vertexCount * 3];
+        var colors = new float[vertexCount * 3];
+        var uv2 = new float[vertexCount * 2];
+
+        for (int t = 0; t < triCount; t++)
+        {
+            int cellId = t >= 0 && t < cap.CellIds.Length ? cap.CellIds[t] : -1;
+            bool isFrontier = cellId >= 0 && cellId < boundaryCells.Count && boundaryCells[cellId] != 0;
+            var tone = ContinentsPalette.ToneFor(isLand, isFrontier);
+
+            for (int v = 0; v < 3; v++)
+            {
+                int meshVertex = (t * 3) + v;
+                int surfaceVertex = surface.Triangles[meshVertex];
+                PackPoint(positions, meshVertex, surface.Positions[surfaceVertex]);
+                PackPoint(normals, meshVertex, surface.SmoothNormals[surfaceVertex]);
+                PackColor(colors, meshVertex, tone);
+            }
+        }
+
+        return new PlateCapMeshDto(
+            cap.PlateId,
+            PlateCapMeshNormalMode.Smooth,
+            vertexCount,
+            triCount,
+            positions,
+            normals,
+            colors,
+            uv2);
+    }
+
     private static void PackPoint(float[] target, int vertexIndex, CartesianPoint3 point)
     {
         int b = vertexIndex * 3;

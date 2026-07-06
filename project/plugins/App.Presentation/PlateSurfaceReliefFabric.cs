@@ -44,6 +44,7 @@ internal static class PlateSurfaceReliefFabric
             GlobeViewMode.World => WorldPeaks,
             GlobeViewMode.HypsometricTerrain => CrustDiagnosticPeaks,
             GlobeViewMode.PlateIdentity => FlatIdentity,
+            GlobeViewMode.Continents => FlatIdentity, // M0: membership map — flat, no relief fabric
             _ => GlobePlateSurfaces.DefaultPeaks,
         };
 

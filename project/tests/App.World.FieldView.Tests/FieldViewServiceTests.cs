@@ -51,6 +51,9 @@ internal sealed class FakeWorldService : IService
     public WorldGlobeSnapshot GetGlobeSnapshotAt(long tick)
         => throw new NotSupportedException();
 
+    public byte[] GetGlobeBoundaryCellsAt(long tick)
+        => throw new NotSupportedException();
+
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
     {
         var evt = new WorldGenerationChangedEvent(request.WorldId, "generation", request.GenerationSpec);

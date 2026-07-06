@@ -35,6 +35,49 @@ public sealed class PlateCapMeshBuilderTests
     private static readonly RampColor MissingTerrainColor = new(0.3, 0.35, 0.28);
 
     [Fact]
+    public void Continents_mesh_uses_two_tones_and_darkens_frontier_cells()
+    {
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot());
+        var caps = surfaces.BuildSurfaces(new double[] { 0.0, 0.0, 0.0 }, exaggeration: 1.0);
+        var landCap = caps.Single(c => c.PlateId == 0);   // cells 0 (interior) + 1 (frontier)
+        var oceanCap = caps.Single(c => c.PlateId == 1);  // cell 2 (interior)
+        var boundaryCells = new byte[] { 0, 1, 0 };
+
+        var land = PlateCapMeshBuilder.BuildContinents(landCap, isLand: true, boundaryCells);
+        var ocean = PlateCapMeshBuilder.BuildContinents(oceanCap, isLand: false, boundaryCells);
+
+        Assert.Equal(PlateCapMeshNormalMode.Smooth, land.NormalMode);
+        Assert.Equal(landCap.Surface.TriangleCount * 3, land.VertexCount);
+
+        // Interior land triangle carries the land tone exactly; the frontier triangle is strictly
+        // darker in every channel (coastline/boundary seam reads without typed arcs — spec D4).
+        for (int t = 0; t < landCap.Surface.TriangleCount; t++)
+        {
+            int cellId = landCap.CellIds[t];
+            int colorBase = t * 3 * 3; // first vertex of the triangle
+            var expected = ContinentsPalette.Land;
+            if (boundaryCells[cellId] != 0)
+            {
+                Assert.True(land.Colors[colorBase + 0] < (float)expected.R);
+                Assert.True(land.Colors[colorBase + 1] < (float)expected.G);
+                Assert.True(land.Colors[colorBase + 2] < (float)expected.B);
+            }
+            else
+            {
+                Assert.Equal((float)expected.R, land.Colors[colorBase + 0]);
+                Assert.Equal((float)expected.G, land.Colors[colorBase + 1]);
+                Assert.Equal((float)expected.B, land.Colors[colorBase + 2]);
+            }
+        }
+
+        // Interior ocean triangle carries the ocean tone exactly.
+        int oceanBase = 0;
+        Assert.Equal((float)ContinentsPalette.Ocean.R, ocean.Colors[oceanBase + 0]);
+        Assert.Equal((float)ContinentsPalette.Ocean.G, ocean.Colors[oceanBase + 1]);
+        Assert.Equal((float)ContinentsPalette.Ocean.B, ocean.Colors[oceanBase + 2]);
+    }
+
+    [Fact]
     public void Terrain_mesh_is_flat_shaded_nonindexed_plate_cap_data()
     {
         var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot());

@@ -31,6 +31,7 @@ public static class PresentationComposition
         IRegistry registry,
         ResourceService resource,
         IBundleSceneRegistry sceneRegistry,
-        ILoggerFactory loggerFactory)
-        => new PlanetPresentationBinder(registry, resource, sceneRegistry, loggerFactory);
+        ILoggerFactory loggerFactory,
+        string? plateViewOverride = null)
+        => new PlanetPresentationBinder(registry, resource, sceneRegistry, loggerFactory, plateViewOverride);
 }

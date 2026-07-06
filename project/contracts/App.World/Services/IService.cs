@@ -31,6 +31,15 @@ public interface IService
     /// </summary>
     WorldGlobeSnapshot GetGlobeSnapshotAt(long tick);
 
+    /// <summary>
+    /// Per-cell boundary classification at <paramref name="tick"/> from the SAME reassigned
+    /// membership <see cref="GetGlobeSnapshotAt"/> returns (0 = interior; 1..3 = typed frontier),
+    /// equivalent to <c>reconstructor.ClassifyCellsAt(tick)</c>. Drives the M0 Continents view's
+    /// frontier tint (spec D4: consistent-by-construction, no typed arc polylines). Cached and
+    /// thread-safe like <see cref="GetGlobeSnapshotAt"/>.
+    /// </summary>
+    byte[] GetGlobeBoundaryCellsAt(long tick);
+
     WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request);
     IDisposable SubscribeGenerationChanged(Action<WorldGenerationChangedEvent> callback);
 }

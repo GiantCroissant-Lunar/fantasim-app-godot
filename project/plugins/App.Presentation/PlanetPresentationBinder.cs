@@ -77,17 +77,24 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     private Node3D? _cutawayFaceRoot;
     private ShaderMaterial? _hypsoPlateMaterialOverride;
     private bool _disposed;
+    private readonly string? _plateViewOverride;
+    private long? _boundContinentsTick; // last tick whose membership the Continents caps show
 
     public PlanetPresentationBinder(
         IRegistry registry,
         ResourceService resource,
         IBundleSceneRegistry sceneRegistry,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        string? plateViewOverride = null)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _resource = resource ?? throw new ArgumentNullException(nameof(resource));
         _sceneRegistry = sceneRegistry ?? throw new ArgumentNullException(nameof(sceneRegistry));
         if (loggerFactory is null) throw new ArgumentNullException(nameof(loggerFactory));
+
+        // M0 (spec D1): host config knob globe:plateView — "identity" keeps the PlateIdentity
+        // diagnostic on the geosphere.plate track; anything else selects the Continents view.
+        _plateViewOverride = plateViewOverride;
 
         _log = loggerFactory.CreateLogger("World.PlanetPresentation");
         _timeline = new PlanetTimelineController(ApplyTimelineTick);
@@ -113,6 +120,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         _regimeRefreshPending = false;
         _boundCrustSnapshotTick = null;
         _boundCrustSnapshotTicks = Array.Empty<long>();
+        _boundContinentsTick = null;
     }
 
     public void Rebind()
@@ -344,8 +352,12 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             }
         }
 
-        var viewMode = GlobeViewModeResolver.Resolve(regimeId, _timeline.SelectedLayer);
+        var viewMode = GlobeViewModeResolver.Resolve(regimeId, _timeline.SelectedLayer, _plateViewOverride);
         ApplyViewMode(viewMode);
+        // M0 (spec §3.2): in the Continents view the membership map IS the content — refresh the
+        // globe snapshot at every playhead move through the light path (no crust materialization).
+        if (viewMode == GlobeViewMode.Continents)
+            RefreshContinentsMembership(tick);
         bool showBoundaries = viewMode == GlobeViewMode.PlateIdentity;
         ApplyLightingForView(viewMode);
 
@@ -619,7 +631,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         // P1: layer focus swaps the cap appearance. Rebuild just the plate surface (free old caps,
         // build new ones) without re-fetching — no node leaks, no full rebind.
         var regimeId = _timeline.GeosphereSchedule.RegimeAt(_timeline.Tick)?.RegimeId;
-        var newViewMode = GlobeViewModeResolver.Resolve(regimeId, selection);
+        var newViewMode = GlobeViewModeResolver.Resolve(regimeId, selection, _plateViewOverride);
         ApplyViewMode(newViewMode);
 
         ApplyTimelineTick(_timeline.Tick);
@@ -665,6 +677,35 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
 
         _plateSurfaceRoot = BuildPlateSurface(_currentDocument, _currentViewMode);
         body.AddChild(_plateSurfaceRoot);
+    }
+
+    // M0 light refresh (spec §3.2): swap ONLY the globe snapshot to the playhead's reassigned
+    // membership and rebuild the plate caps in place. No document re-fetch, no crust
+    // materialization — GetGlobeSnapshotAt rides the service's cached reconstructor (~ms at
+    // freq 4, see MotionGateTests), so continents glide during scrub and Play.
+    private void RefreshContinentsMembership(long tick)
+    {
+        if (_currentDocument is null || _boundContinentsTick == tick)
+            return;
+
+        var world = _registry.TryGet<WorldService>();
+        if (world is null)
+            return;
+
+        WorldGlobeSnapshot snapshot;
+        try
+        {
+            snapshot = world.GetGlobeSnapshotAt(tick);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Continents membership refresh failed at t={Tick}.", tick);
+            return;
+        }
+
+        _currentDocument = _currentDocument with { GlobeSnapshot = snapshot, GlobeReferenceTick = tick };
+        _boundContinentsTick = tick;
+        RebuildPlateSurface();
     }
 
     private void ScheduleRegimeRefresh()
@@ -901,6 +942,26 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         var jitter = PlateSurfaceTintFabric.ForView(viewMode);
         var meshes = new List<PlateCapMeshDto>(caps.Count);
 
+        // M0 Continents (spec §3.1/D4): frontier tint comes from the SAME reassigned membership
+        // that shaped the caps — ClassifyCellsAt at the document's globe reference tick — so the
+        // seam can never disagree with the coloring (unlike the typed arcs, deferred to F1).
+        byte[]? continentsFrontier = null;
+        if (viewMode == GlobeViewMode.Continents)
+        {
+            try
+            {
+                continentsFrontier = _registry.TryGet<WorldService>()
+                    ?.GetGlobeBoundaryCellsAt(document.GlobeReferenceTick);
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(ex,
+                    "Continents frontier fetch failed at t={Tick}; rendering without frontier tint.",
+                    document.GlobeReferenceTick);
+            }
+            continentsFrontier ??= new byte[snapshot.CellCount];
+        }
+
         foreach (var cap in caps.OrderBy(c => c.PlateId))
         {
             var mesh = isTerrain
@@ -912,7 +973,12 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
                     colorMode,
                     perCellColor,
                     normalMode)
-                : PlateCapMeshBuilder.BuildPlateIdentity(cap);
+                : viewMode == GlobeViewMode.Continents
+                    ? PlateCapMeshBuilder.BuildContinents(
+                        cap,
+                        isLand: document.ContinentalPlateIds.Contains(cap.PlateId),
+                        continentsFrontier!)
+                    : PlateCapMeshBuilder.BuildPlateIdentity(cap);
             meshes.Add(mesh);
         }
 
