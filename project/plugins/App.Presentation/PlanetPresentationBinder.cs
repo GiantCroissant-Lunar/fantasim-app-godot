@@ -698,13 +698,13 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         // run distinguish "never called" (the viewMode gate / seek wiring) from "called but guard
         // fired" (document null / already bound / world service unresolved). Debug level so Play does
         // not spam at info.
-        _log.LogDebug(
+        _log.LogInformation(
             "RefreshContinentsMembership(tick={Tick}) entered: hasDocument={HasDocument}, boundContinentsTick={BoundTick}.",
             tick, _currentDocument is not null, _boundContinentsTick);
 
         if (_currentDocument is null || _boundContinentsTick == tick)
         {
-            _log.LogDebug(
+            _log.LogInformation(
                 "RefreshContinentsMembership(tick={Tick}) early-return: document null or tick already bound (hasDocument={HasDocument}, boundContinentsTick={BoundTick}).",
                 tick, _currentDocument is not null, _boundContinentsTick);
             return;
@@ -713,7 +713,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         var world = _registry.TryGet<WorldService>();
         if (world is null)
         {
-            _log.LogDebug(
+            _log.LogInformation(
                 "RefreshContinentsMembership(tick={Tick}) early-return: WorldService not registered (cross-ALC type-identity split or bundle not yet loaded).",
                 tick);
             return;
@@ -740,7 +740,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         };
         _boundContinentsTick = tick;
         RebuildPlateSurface();
-        _log.LogDebug(
+        _log.LogInformation(
             "RefreshContinentsMembership(tick={Tick}) refreshed: snapshotCells={SnapshotCells}, fractionCells={FractionCells}.",
             tick, snapshot.CellCount, fractions.Count);
     }
