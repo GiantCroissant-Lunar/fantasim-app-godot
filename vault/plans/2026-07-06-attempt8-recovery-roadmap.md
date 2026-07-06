@@ -70,4 +70,12 @@ it needs P2's stable shapes and P3's legible tones to judge.
   full parallel load — KNOWN FLAKE, fix in P3). Conformance gate is now LIVE for all later work.
 - **2026-07-06 session-goal-contract rule added** (workspace `.agent/rules/`, indexed in
   AGENTS.md) — the institutional fix for why hundreds of goal-pointed sessions didn't compound.
+- **2026-07-06 P2-E DONE (engine @4a17fb9):** CrustPatchRecipe + organic per-cell seeding
+  (UnifyMaths, SplitMix64 fixed draws); defaults ADJUSTED from plan after prototype disproof
+  (0.25 rad/0.2/0.05 — plan's 0.5 rad merged patches); 5 new tests, engine suite green (23
+  projects). Packed 0.1.7 to the local feed (pack include lists were stale — fixed to cover all
+  18 app-pinned packages; Asthenosphere id renamed to .Contracts); app pins bumped @a81be9c,
+  app suite green (449/449 isolated). Dispatched opencode/kimi, lead-verified.
+- **2026-07-06 P2-A dispatched** (opencode/kimi): moving-frame PlateFrameSampler + patches via
+  world.options + fraction-driven Continents view + membership-coloring retirement.
 - *(next entries appended here as packets land, with gate evidence per entry)*
