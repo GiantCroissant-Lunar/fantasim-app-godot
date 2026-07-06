@@ -10,6 +10,20 @@
    S1→S5 with no proxies (the app's features — bundles, 4-tier, ECS, node graph, truth stream —
    are exercised by the planet, not bypassed).
 
+## Product outcomes — what the user SEES (stated 2026-07-06; the real half-year wants)
+
+| # | Want (user's words) | Delivered by | Status today |
+|---|---|---|---|
+| O1 | "A planet, not another ball with strips" | P2 (several organic landmasses, stable shapes, drifting) + P3 (legible calibrated tones/relief) | ball with strips |
+| O2 | "Plates moving by convection" | P2 partially (poles ARE convection-derived, constant from onset) → **P5 fully** (evolving convection drives pole changes + plate birth/split/merge through the truth stream — the locked emergent-tectonics doctrine) | motion exists, invisible until P2; topology static |
+| O3 | "Amplification of the focused layer (crust)" | mechanism EXISTS (layer focus → HypsometricTerrain, adaptive subdivision, TectonicDetailSampler) → **P3 makes it READ** on moving data (measured calibration) | works mechanically, reads muddy/faceted |
+| O4 | "Debris cloud / fluid sim forming the early planet" | **P6** — pre-onset era visuals: accretion as an R-product particle visualization driven by coarse truth events (NO hand-rolled SPH; GPU particles or an existing library), then magma-ocean → stagnant-lid era looks | parked 2026-07-06, now re-scoped as P6 |
+| O5 | "Agent can operate timeline + node graph to construct/reconstruct at a specific tick" | plumbing EXISTS and was proven this session (remote :19292: seek, select layer, screenshot, run_generation_graph) → **P7 completes + gates it** (full vocabulary: play/speed, node-graph construct/edit/run at tick; documented agent API; unattended end-to-end demo) | partial — the recurring "partially most of the time" |
+
+P1–P4 deliver O1 fully, O2/O3 substantially, O5's foundation. **P5–P7 are required for the full
+list** — they are IN this roadmap so attempt #8's definition of done is the user's actual list,
+not a subset.
+
 **Orchestration model (user-directed):** lead session (Claude) owns design docs, dispatch,
 verification, and THIS progress log. Implementation packets go to external CLIs per
 `.agent/skills/04-tooling/external-agent-delegation` once each phase's plan is complete.
@@ -23,7 +37,10 @@ Every packet is lead-verified against BOTH gates before its phase advances.
 | **P1** | Conformance gates — mechanical architecture tests | `2026-07-06-p1-conformance-gates.md` | opencode/kimi |
 | **P2** | Continents through the stations: organic patch seeding (S1/S2), moving-frame evaluation (S3/S4), fraction-driven Continents view + proxy retirement (S5) | `2026-07-06-p2-continents-through-stations.md` | split: engine packet + app packet |
 | **P3** | Calibration by measurement: elevation histogram tool, ramp band fitting, tessellation/jaggies decision, north-star look pass on MOVING data | planned after P2 lands (needs P2's data) | TBD |
-| **P4** | Motion character (rates/axis coherence to Scotese pace) + Play sweep demo + attempt-#8 verdict against the success criteria | planned after P3 | TBD |
+| **P4** | Motion character (rates/axis coherence to Scotese pace) + Play sweep demo + mid-arc verdict | planned after P3 | TBD |
+| **P5** | Plates moving BY convection, fully: time-varying convection field → evolving Euler poles + plate birth/split/merge as truth events (emergent-tectonics doctrine, 2026-06-22 event-sourced-plate-topology plan is the seed) | planned after P4 | TBD |
+| **P6** | Early-planet era (O4): accretion debris/particle visualization as an R-product over coarse truth events (mass growth, moon-forming impact; no hand-rolled SPH), era-correct magma-ocean/stagnant-lid looks, scrub t=0→onset | planned after P4 (parallel-capable with P5) | TBD |
+| **P7** | Agent operability surface (O5): complete ingress vocabulary (play/speed, node-graph construct/edit/run at tick, tick-addressed reconstruct), documented agent API; **gate = the attempt-8 closing demo: an unattended agent builds a world via node graph, scrubs accretion→drift, focuses crust amplification, captures a gallery** | planned after P5/P6 | TBD |
 
 Ordering rationale: gates first (P1) so every later packet is policed; the domain fix (P2) next
 because P3's calibration is meaningless on frozen/blob data; character tuning (P4) last because
