@@ -62,6 +62,7 @@ public static class WorldGenerationNodeCatalog
                 // declared world parameter, never a buried constant; a different world may legitimately
                 // exaggerate more or less. See WorldGenerationRenderOptions.VerticalExaggeration.
                 new WorldGenerationGraphParameter("verticalExaggeration", "Vertical Exaggeration", "0.00003", "double"),
+                new WorldGenerationGraphParameter("continentalPatches", "Continental Patches", "{ \"seed\": 0, \"count\": 5, \"meanRadiusDeg\": 14.3, \"radiusJitter\": 0.2, \"edgeNoise\": 0.05 }", "object"),
             },
             ProviderMetadata: CSharpMetadata,
             ExecutionTraits: NativeExecutionTraits),

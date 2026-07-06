@@ -30,9 +30,11 @@ internal sealed record WorldCrustRunSpec(
     CrustEvolutionRates Rates,
     BoundaryProfileParameters BoundaryProfiles,
     double VerticalExaggeration,
-    CellElevationHydrosphereMode HydrosphereMode)
+    CellElevationHydrosphereMode HydrosphereMode,
+    CrustPatchRecipe? PatchRecipe = null)
 {
     private static readonly CrustInitRecipe DefaultContinentalRecipe = CrustInitRecipe.Continental(0, 1);
+    private static readonly CrustPatchRecipe DefaultPatchRecipe = new(Seed: 0, PatchCount: 5);
 
     private const double DefaultDurationMegaAnnum = 8.0;
     private const double DefaultSpinRateRadiansPerMegaAnnum = 0.02;
@@ -64,6 +66,7 @@ internal sealed record WorldCrustRunSpec(
             "spinRateRadiansPerMegaAnnum",
             ReadDouble(effectivePayload, "spinRate", DefaultSpinRateRadiansPerMegaAnnum));
         var plates = ReadPlates(effectivePayload, frequency, seed, rate);
+        var patchRecipe = ReadPatchRecipe(effectivePayload, seed);
 
         return new WorldCrustRunSpec(
             Seed: seed,
@@ -77,7 +80,8 @@ internal sealed record WorldCrustRunSpec(
             Rates: ReadRates(effectivePayload),
             BoundaryProfiles: BoundaryProfileParameters.Default,
             VerticalExaggeration: WorldGenerationRenderOptions.DefaultVerticalExaggeration,
-            HydrosphereMode: ReadHydrosphereMode(effectivePayload, WorldGenerationRenderOptions.Default.HydrosphereMode));
+            HydrosphereMode: ReadHydrosphereMode(effectivePayload, WorldGenerationRenderOptions.Default.HydrosphereMode),
+            PatchRecipe: patchRecipe);
     }
 
     /// <summary>
@@ -85,6 +89,7 @@ internal sealed record WorldCrustRunSpec(
     /// Mirrors the <see cref="CrustInitRecipe"/> used by <see cref="ForPresentation"/> so the Continents
     /// view and the crust pipeline share one truth. Default <c>CrustInitRecipe.Continental(0, 1)</c>.
     /// </summary>
+    [Obsolete("Patch-based seeding makes land/ocean a per-cell fraction; keep only for compat until A3 removes the ContinentalPlateIds field.")]
     public static IReadOnlySet<int> ContinentalPlateIdsForPresentation(
         WorldGenerationRenderOptions renderOptions,
         long onsetTick)
@@ -120,7 +125,8 @@ internal sealed record WorldCrustRunSpec(
             Rates: CreateDefaultRates(),
             BoundaryProfiles: renderOptions.BoundaryProfiles,
             VerticalExaggeration: renderOptions.VerticalExaggeration,
-            HydrosphereMode: renderOptions.HydrosphereMode);
+            HydrosphereMode: renderOptions.HydrosphereMode,
+            PatchRecipe: ReadPatchRecipe(renderOptions));
     }
 
     public static WorldCrustRunSpec ForReconstructor(
@@ -149,7 +155,8 @@ internal sealed record WorldCrustRunSpec(
             Rates: CreateDefaultRates(),
             BoundaryProfiles: BoundaryProfileParameters.Default,
             VerticalExaggeration: WorldGenerationRenderOptions.DefaultVerticalExaggeration,
-            HydrosphereMode: WorldGenerationRenderOptions.Default.HydrosphereMode);
+            HydrosphereMode: WorldGenerationRenderOptions.Default.HydrosphereMode,
+            PatchRecipe: DefaultPatchRecipe with { Seed = 0 });
     }
 
     private static JsonObject MergeNestedOptions(JsonObject payload)
@@ -219,7 +226,7 @@ internal sealed record WorldCrustRunSpec(
 
     private static CrustInitRecipe ReadRecipe(JsonObject payload)
     {
-        if (payload.TryGetPropertyValue("continentalPlates", out var node) && node is JsonArray arr)
+        if (payload.TryGetPropertyValue("continentalPlates", out var platesNode) && platesNode is JsonArray arr)
         {
             var ids = new HashSet<int>();
             foreach (var item in arr)
@@ -228,6 +235,35 @@ internal sealed record WorldCrustRunSpec(
         }
 
         return DefaultContinentalRecipe;
+    }
+
+    public static CrustPatchRecipe ReadPatchRecipe(JsonObject payload, int worldSeed)
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+
+        if (payload.TryGetPropertyValue("continentalPatches", out var patchesNode) && patchesNode is JsonObject patchObj)
+        {
+            int seed = ReadInt(patchObj, "seed", worldSeed);
+            int count = ReadInt(patchObj, "count", DefaultPatchRecipe.PatchCount);
+            double meanRadiusDeg = ReadDouble(patchObj, "meanRadiusDeg", DefaultPatchRecipe.MeanAngularRadiusRad * 180.0 / Math.PI);
+            double radiusJitter = ReadDouble(patchObj, "radiusJitter", DefaultPatchRecipe.RadiusJitter);
+            double edgeNoise = ReadDouble(patchObj, "edgeNoise", DefaultPatchRecipe.EdgeNoiseAmplitude);
+
+            return new CrustPatchRecipe(
+                seed,
+                count,
+                meanRadiusDeg * Math.PI / 180.0,
+                radiusJitter,
+                edgeNoise);
+        }
+
+        return DefaultPatchRecipe with { Seed = worldSeed };
+    }
+
+    public static CrustPatchRecipe ReadPatchRecipe(WorldGenerationRenderOptions renderOptions)
+    {
+        ArgumentNullException.ThrowIfNull(renderOptions);
+        return DefaultPatchRecipe with { Seed = renderOptions.Seed };
     }
 
     private static long ReadTargetTick(JsonObject payload)

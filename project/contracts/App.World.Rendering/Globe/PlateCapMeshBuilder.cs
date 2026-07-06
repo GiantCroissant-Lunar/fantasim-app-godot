@@ -154,18 +154,19 @@ public static class PlateCapMeshBuilder
     }
 
     /// <summary>
-    /// M0 <c>Continents</c> view (2026-07-06 spec §3.1): flat two-tone cap — land when the cap's
-    /// plate is continental, ocean otherwise — with frontier cells (per-cell boundary code != 0,
-    /// from the SAME reassigned membership that shaped the cap) darkened so the seam reads as a
-    /// moving coastline without typed arc polylines (spec D4). Smooth normals like
-    /// <see cref="BuildPlateIdentity"/>; the caller supplies zero elevations so the cap stays flat.
+    /// P2A <c>Continents</c> view (2026-07-06 spec §3.1): flat two-tone cap — land when the cell's
+    /// continental fraction in the moving plate frame is ≥ 0.5, ocean otherwise — with frontier cells
+    /// (per-cell boundary code != 0, from the SAME reassigned membership that shaped the cap) darkened
+    /// so the seam reads as a moving coastline without typed arc polylines (spec D4). Smooth normals
+    /// like <see cref="BuildPlateIdentity"/>; the caller supplies zero elevations so the cap stays flat.
     /// </summary>
     public static PlateCapMeshDto BuildContinents(
         PlateCap cap,
-        bool isLand,
+        IReadOnlyList<RampColor> cellColors,
         IReadOnlyList<byte> boundaryCells)
     {
         ArgumentNullException.ThrowIfNull(cap);
+        ArgumentNullException.ThrowIfNull(cellColors);
         ArgumentNullException.ThrowIfNull(boundaryCells);
 
         var surface = cap.Surface;
@@ -179,8 +180,11 @@ public static class PlateCapMeshBuilder
         for (int t = 0; t < triCount; t++)
         {
             int cellId = t >= 0 && t < cap.CellIds.Length ? cap.CellIds[t] : -1;
+            var baseTone = ResolveCellColor(cellId, cellColors);
             bool isFrontier = cellId >= 0 && cellId < boundaryCells.Count && boundaryCells[cellId] != 0;
-            var tone = ContinentsPalette.ToneFor(isLand, isFrontier);
+            var tone = isFrontier
+                ? new RampColor(baseTone.R * ContinentsPalette.FrontierFactor, baseTone.G * ContinentsPalette.FrontierFactor, baseTone.B * ContinentsPalette.FrontierFactor)
+                : baseTone;
 
             for (int v = 0; v < 3; v++)
             {

@@ -222,7 +222,15 @@ public sealed record PlanetPresentationDocument(
     /// so the Continents view and the crust materialization pipeline never disagree. Default empty
     /// when no crust run spec flowed for this snapshot.
     /// </summary>
+    [Obsolete("Patch-based seeding makes land/ocean a per-cell fraction; prefer ContinentalFractionByCell. Kept for A3 compat.")]
     public IReadOnlySet<int> ContinentalPlateIds { get; init; } = new HashSet<int>();
+
+    /// <summary>
+    /// Per-cell continental fraction in [0,1] at <see cref="ReferenceTick"/>, sampled in the moving
+    /// plate frame (P2A). Values are indexed by cell id (length = CellCount); ≥ 0.5 renders as land
+    /// and &lt; 0.5 as ocean in the Continents view. Null when crust products have not flowed.
+    /// </summary>
+    public IReadOnlyDictionary<int, double>? ContinentalFractionByCell { get; init; }
 
     /// <summary>
     /// Crust snapshot ticks that are currently available (generated) for the mobile-plate regime.

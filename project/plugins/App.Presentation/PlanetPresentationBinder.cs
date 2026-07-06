@@ -942,25 +942,16 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         var jitter = PlateSurfaceTintFabric.ForView(viewMode);
         var meshes = new List<PlateCapMeshDto>(caps.Count);
 
-        // M0 Continents (spec §3.1/D4): frontier tint comes from the SAME reassigned membership
-        // that shaped the caps — ClassifyCellsAt at the document's globe reference tick — so the
-        // seam can never disagree with the coloring (unlike the typed arcs, deferred to F1).
-        byte[]? continentsFrontier = null;
-        if (viewMode == GlobeViewMode.Continents)
-        {
-            try
-            {
-                continentsFrontier = _registry.TryGet<WorldService>()
-                    ?.GetGlobeBoundaryCellsAt(document.GlobeReferenceTick);
-            }
-            catch (Exception ex)
-            {
-                _log.LogWarning(ex,
-                    "Continents frontier fetch failed at t={Tick}; rendering without frontier tint.",
-                    document.GlobeReferenceTick);
-            }
-            continentsFrontier ??= new byte[snapshot.CellCount];
-        }
+        // P2A Continents (spec §3.1/D4): color by per-cell continental fraction sampled in the
+        // moving plate frame; coastline frontier tint is derived from the fraction contour itself,
+        // not from plate membership, so the seam tracks land/ocean transitions as plates drift.
+        var continentsCellColors = viewMode == GlobeViewMode.Continents
+            ? BuildContinentsCellColors(snapshot.CellCount, document.ContinentalFractionByCell)
+            : Array.Empty<RampColor>();
+
+        byte[]? continentsFrontier = viewMode == GlobeViewMode.Continents
+            ? BuildFractionContourFrontier(snapshot, document.ContinentalFractionByCell)
+            : null;
 
         foreach (var cap in caps.OrderBy(c => c.PlateId))
         {
@@ -976,7 +967,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
                 : viewMode == GlobeViewMode.Continents
                     ? PlateCapMeshBuilder.BuildContinents(
                         cap,
-                        isLand: document.ContinentalPlateIds.Contains(cap.PlateId),
+                        continentsCellColors,
                         continentsFrontier!)
                     : PlateCapMeshBuilder.BuildPlateIdentity(cap);
             meshes.Add(mesh);
@@ -1134,6 +1125,109 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     }
 
     private static Vector3 ToV3(CartesianPoint3 p) => new((float)p.X, (float)p.Y, (float)p.Z);
+
+    private static RampColor[] BuildContinentsCellColors(
+        int cellCount,
+        IReadOnlyDictionary<int, double>? continentalFractionByCell)
+    {
+        var colors = new RampColor[cellCount];
+        for (int i = 0; i < cellCount; i++)
+        {
+            double fraction = continentalFractionByCell?.TryGetValue(i, out var f) == true ? f : 0.0;
+            colors[i] = ContinentsPalette.ToneFor(fraction >= 0.5, isFrontier: false);
+        }
+
+        return colors;
+    }
+
+    private static byte[] BuildFractionContourFrontier(
+        WorldGlobeSnapshot snapshot,
+        IReadOnlyDictionary<int, double>? continentalFractionByCell)
+    {
+        int cellCount = snapshot.CellCount;
+        var frontier = new byte[cellCount];
+        if (continentalFractionByCell is null || continentalFractionByCell.Count == 0 || snapshot.Cells.Count == 0)
+            return frontier;
+
+        IReadOnlyDictionary<int, int[]> neighbors = BuildCellNeighborsFromSharedVertices(snapshot);
+        for (int cellId = 0; cellId < cellCount; cellId++)
+        {
+            if (!continentalFractionByCell.TryGetValue(cellId, out var f))
+                continue;
+            bool selfLand = f >= 0.5;
+            if (!neighbors.TryGetValue(cellId, out var nbrs))
+                continue;
+            foreach (int n in nbrs)
+            {
+                double nf = continentalFractionByCell.TryGetValue(n, out var v) ? v : 0.0;
+                if ((nf >= 0.5) != selfLand)
+                {
+                    frontier[cellId] = 1;
+                    break;
+                }
+            }
+        }
+
+        return frontier;
+    }
+
+    // Two geodesic cells are neighbours when they share an edge (two vertices). The snapshot already
+    // carries the three corners per cell, so we rebuild adjacency locally without pulling in UnifyCell.
+    private static IReadOnlyDictionary<int, int[]> BuildCellNeighborsFromSharedVertices(WorldGlobeSnapshot snapshot)
+    {
+        var edgeToCells = new Dictionary<(int, int), List<int>>();
+        foreach (var cell in snapshot.Cells)
+        {
+            AddEdge(edgeToCells, cell.CellId, cell.C0, cell.C1);
+            AddEdge(edgeToCells, cell.CellId, cell.C1, cell.C2);
+            AddEdge(edgeToCells, cell.CellId, cell.C2, cell.C0);
+        }
+
+        var result = new Dictionary<int, int[]>(snapshot.CellCount);
+        var cellSet = new HashSet<int>();
+        foreach (var cell in snapshot.Cells)
+        {
+            cellSet.Clear();
+            AddNeighbors(cellSet, edgeToCells, cell.C0, cell.C1, cell.CellId);
+            AddNeighbors(cellSet, edgeToCells, cell.C1, cell.C2, cell.CellId);
+            AddNeighbors(cellSet, edgeToCells, cell.C2, cell.C0, cell.CellId);
+            result[cell.CellId] = cellSet.ToArray();
+        }
+
+        return result;
+
+        static void AddEdge(Dictionary<(int, int), List<int>> map, int cellId, GlobeVec3 a, GlobeVec3 b)
+        {
+            var key = VertexKey(a, b);
+            if (!map.TryGetValue(key, out var list))
+            {
+                list = new List<int>(2);
+                map[key] = list;
+            }
+            list.Add(cellId);
+        }
+
+        static void AddNeighbors(HashSet<int> set, Dictionary<(int, int), List<int>> map, GlobeVec3 a, GlobeVec3 b, int self)
+        {
+            var key = VertexKey(a, b);
+            if (map.TryGetValue(key, out var list))
+            {
+                foreach (var id in list)
+                    if (id != self)
+                        set.Add(id);
+            }
+        }
+
+        static (int, int) VertexKey(GlobeVec3 a, GlobeVec3 b)
+        {
+            int ka = HashVertex(a);
+            int kb = HashVertex(b);
+            return ka < kb ? (ka, kb) : (kb, ka);
+        }
+
+        static int HashVertex(GlobeVec3 v)
+            => HashCode.Combine(v.X.GetHashCode(), v.Y.GetHashCode(), v.Z.GetHashCode());
+    }
 
     private static Node3D BuildProductLayerRoot(PlanetPresentationDocument document)
     {

@@ -3,10 +3,12 @@ using Akka.Actor;
 #endif
 using System.Globalization;
 using System.Text.Json;
+using FantaSim.App.Ecs.Cells;
 using FantaSim.App.World.Dto;
 using FantaSim.App.World.Crust;
 using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Globe;
+using FantaSim.Geosphere.Crust;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using ServiceArchi.Contracts;
@@ -46,6 +48,9 @@ public sealed class Service : IService, IDisposable
     private WorldGenerationProductsView _generationProducts =
         new(0, Array.Empty<string>(), 0L);
     private IReadOnlyList<long> _cachedCrustSnapshotTicks = Array.Empty<long>();
+    private readonly object _crustProductCacheGate = new();
+    private readonly Dictionary<long, CrustTickProducts> _crustProductCache = new();
+
     private Exception? _lastSubscriberError;
     private bool _disposed;
 
@@ -189,8 +194,11 @@ public sealed class Service : IService, IDisposable
             AdaptiveSubdivisionMaxDepth = runtime.AdaptiveSubdivisionMaxDepth,
             AdaptiveSubdivisionEdgeHeightDelta = runtime.AdaptiveSubdivisionEdgeHeightDelta,
             AdaptiveSubdivisionFeatureWeightDelta = runtime.AdaptiveSubdivisionFeatureWeightDelta,
+            ContinentalFractionByCell = runtime.ContinentalFractionByCell,
+#pragma warning disable CS0618
             ContinentalPlateIds = WorldCrustRunSpec.ContinentalPlateIdsForPresentation(
                 renderOptions, SphereRegimeScheduleDefaults.PlateOnsetTick),
+#pragma warning restore CS0618
         };
     }
 
@@ -430,28 +438,54 @@ public sealed class Service : IService, IDisposable
         var reconstructor = GetCachedGlobeReconstructor(renderOptions, onsetTick);
         var geosphere = SphereRegimeScheduleDefaults.GeosphereDefault;
         var atmosphere = SphereRegimeScheduleDefaults.AtmosphereFor(onsetTick);
+        var currentGlobe = reconstructor.BuildGlobeAt(arcTick);
+        var currentArcs = reconstructor.BuildBoundaryArcsAt(arcTick);
 
-        var spec = WorldCrustRunSpec.ForPresentation(renderOptions, onsetTick, arcTick);
-        var materialization = WorldCrustMaterializer.MaterializeAsync(spec).GetAwaiter().GetResult();
-        var globeAtOnset = reconstructor.BuildGlobeAt(onsetTick);
-        var arcsAtOnset = reconstructor.BuildBoundaryArcsAt(onsetTick);
+        var products = GetOrBuildCrustTickProducts(renderOptions, onsetTick, arcTick);
+        var sampler = new PlateFrameSampler(
+            products.Materialization.Tessellation,
+            products.Materialization.Result.Plates,
+            products.Materialization.Topology,
+            onsetTick);
 
-        var (cellElevations, cellFeatures) = materialization.BuildSurfaceData(
-            globeAtOnset, arcsAtOnset, arcTick, _logger);
-        var cellCrustThickness = materialization.BuildCrustThickness(globeAtOnset, arcTick, _logger);
-        var boundarySections = materialization.BuildBoundarySections(globeAtOnset, arcsAtOnset, arcTick, _logger);
+        var plateIdByCell = currentGlobe.Cells.ToDictionary(c => c.CellId, c => c.PlateId);
+        var sampledState = sampler.SampleAt(arcTick, products.Materialization.Result.StateByTick, plateIdByCell);
+        var sampledFractions = ContinentalFractionsFromState(sampledState);
+
+        var cellElevations = sampler.SampleElevationsAt(
+            arcTick,
+            products.Materialization.Result.StateByTick,
+            currentArcs,
+            renderOptions.BoundaryProfiles,
+            renderOptions.HydrosphereMode,
+            plateIdByCell);
+
+        var cellFeatures = BuildCellFeaturesFromSampledState(
+            products.Materialization.Tessellation.CellCount,
+            sampledState,
+            products.Materialization.Result.FeaturesByTick.GetValueOrDefault(arcTick));
+
+        var cellCrustThickness = products.Materialization.BuildCrustThickness(
+            products.GlobeAtSnapshot, arcTick, _logger);
+
+        var boundarySections = products.Materialization.BuildBoundarySections(
+            products.GlobeAtSnapshot,
+            products.ArcsAtSnapshot,
+            arcTick,
+            _logger);
 
         return new PlanetPresentationRuntime(
-            reconstructor.BuildGlobeAt(arcTick),
+            currentGlobe,
             arcTick,
             geosphere,
             atmosphere,
             onsetTick + 20_000_000L,
-            reconstructor.BuildBoundaryArcsAt(arcTick),
+            currentArcs,
             boundarySections,
             cellElevations,
             cellCrustThickness,
             cellFeatures,
+            sampledFractions,
             renderOptions.VerticalExaggeration,
             renderOptions.SurfaceSubdivision,
             renderOptions.AdaptiveSubdivisionMaxDepth,
@@ -472,6 +506,76 @@ public sealed class Service : IService, IDisposable
         return WorldGenerationRenderOptions.Resolve(source.Graph);
     }
 
+    private CrustTickProducts GetOrBuildCrustTickProducts(
+        WorldGenerationRenderOptions renderOptions,
+        long onsetTick,
+        long arcTick)
+    {
+        var mobilePlateRegime = GeosphereScheduleFor(onsetTick).Regimes
+            .FirstOrDefault(r => string.Equals(r.RegimeId, "mobile-plate", StringComparison.Ordinal));
+        if (mobilePlateRegime is null)
+            throw new InvalidOperationException("No mobile-plate regime found for crust snapshot selection.");
+
+        var series = CrustSnapshotTickSeries.ForRegime(
+            mobilePlateRegime,
+            CrustSnapshotTickSeries.DefaultSpacingTicks,
+            onsetTick + 20_000_000L);
+        var snapshotTick = series.SelectSnapshotForPlayhead(arcTick) ?? arcTick;
+
+        lock (_crustProductCacheGate)
+        {
+            if (_crustProductCache.TryGetValue(snapshotTick, out var cached))
+                return cached;
+        }
+
+        var spec = WorldCrustRunSpec.ForPresentation(renderOptions, onsetTick, snapshotTick);
+        var result = WorldCrustMaterializer.MaterializeAsync(spec).GetAwaiter().GetResult();
+        var reconstructor = GetCachedGlobeReconstructor(renderOptions, onsetTick);
+        var globeAtSnapshot = reconstructor.BuildGlobeAt(snapshotTick);
+        var arcsAtSnapshot = reconstructor.BuildBoundaryArcsAt(snapshotTick);
+        var products = new CrustTickProducts(snapshotTick, result, globeAtSnapshot, arcsAtSnapshot);
+
+        lock (_crustProductCacheGate)
+        {
+            _crustProductCache[snapshotTick] = products;
+        }
+
+        return products;
+    }
+
+    private static SphereRegimeSchedule GeosphereScheduleFor(long onsetTick)
+        => SphereRegimeScheduleDefaults.GeosphereFor(onsetTick);
+
+    private static IReadOnlyDictionary<int, double> ContinentalFractionsFromState(
+        IReadOnlyDictionary<int, CellCrustState> state)
+    {
+        var result = new Dictionary<int, double>(state.Count);
+        foreach (var (cellId, s) in state)
+            result[cellId] = s.ContinentalFraction;
+        return result;
+    }
+
+    private static IReadOnlyList<CellCrustFeature> BuildCellFeaturesFromSampledState(
+        int cellCount,
+        IReadOnlyDictionary<int, CellCrustState> state,
+        IReadOnlyDictionary<int, CrustFeature>? featureMap)
+    {
+        if (cellCount <= 0)
+            return Array.Empty<CellCrustFeature>();
+
+        var result = new CellCrustFeature[cellCount];
+        if (featureMap is not null)
+        {
+            foreach (var (cellId, feature) in featureMap)
+            {
+                if (cellId >= 0 && cellId < result.Length)
+                    result[cellId] = new CellCrustFeature((byte)feature.Kind, feature.Magnitude);
+            }
+        }
+
+        return result;
+    }
+
     private sealed record PlanetPresentationRuntime(
         WorldGlobeSnapshot GlobeSnapshot,
         long GlobeReferenceTick,
@@ -483,11 +587,18 @@ public sealed class Service : IService, IDisposable
         IReadOnlyList<double>? CellElevations,
         IReadOnlyList<double>? CellCrustThickness,
         IReadOnlyList<CellCrustFeature>? CellFeatures,
+        IReadOnlyDictionary<int, double>? ContinentalFractionByCell,
         double VerticalExaggeration,
         SurfaceSubdivisionMode SurfaceSubdivision,
         int AdaptiveSubdivisionMaxDepth,
         double AdaptiveSubdivisionEdgeHeightDelta,
         double AdaptiveSubdivisionFeatureWeightDelta);
+
+    private sealed record CrustTickProducts(
+        long SnapshotTick,
+        WorldCrustMaterialization Materialization,
+        WorldGlobeSnapshot GlobeAtSnapshot,
+        IReadOnlyList<PlateBoundaryArc> ArcsAtSnapshot);
 
     private readonly object _globeReconstructorGate = new();
     private (int Seed, int Frequency) _globeReconstructorKey;

@@ -26,6 +26,9 @@ public sealed class WorldCrustRunSpecTests
         Assert.Equal(1.0 / UnitConverter.TicksPerMegaAnnum, spec.Rates.OrogenicPerTick, 12);
         Assert.Equal(0.6 / UnitConverter.TicksPerMegaAnnum, spec.Rates.ArcVolcanismPerTick, 12);
         Assert.Equal(CellElevationHydrosphereMode.Absent, spec.HydrosphereMode);
+        Assert.NotNull(spec.PatchRecipe);
+        Assert.Equal(WorldGenerationRenderOptions.Default.Seed, spec.PatchRecipe!.Seed);
+        Assert.Equal(5, spec.PatchRecipe.PatchCount);
     }
 
     [Fact]
@@ -67,6 +70,47 @@ public sealed class WorldCrustRunSpecTests
         Assert.Equal(new[] { 100L, 200L }, spec.SnapshotTicks);
         Assert.Equal(99L, spec.RotationReferenceTick);
         AssertSetEqual(new[] { 2, 4 }, spec.Recipe.ContinentalPlateIds);
+    }
+
+    [Fact]
+    public void FromExecutionPayload_reads_continental_patches_options()
+    {
+        var payload = new JsonObject
+        {
+            ["seed"] = 42,
+            ["options"] = new JsonObject
+            {
+                ["continentalPatches"] = new JsonObject
+                {
+                    ["seed"] = 12345,
+                    ["count"] = 7,
+                    ["meanRadiusDeg"] = 20.0,
+                    ["radiusJitter"] = 0.35,
+                    ["edgeNoise"] = 0.08,
+                },
+            },
+        };
+
+        var spec = WorldCrustRunSpec.FromExecutionPayload(payload);
+
+        Assert.NotNull(spec.PatchRecipe);
+        Assert.Equal(12345, spec.PatchRecipe!.Seed);
+        Assert.Equal(7, spec.PatchRecipe.PatchCount);
+        Assert.Equal(20.0 * Math.PI / 180.0, spec.PatchRecipe.MeanAngularRadiusRad, 10);
+        Assert.Equal(0.35, spec.PatchRecipe.RadiusJitter);
+        Assert.Equal(0.08, spec.PatchRecipe.EdgeNoiseAmplitude);
+    }
+
+    [Fact]
+    public void FromExecutionPayload_defaults_patch_recipe_to_world_seed_and_count_5()
+    {
+        var payload = new JsonObject { ["seed"] = 99 };
+
+        var spec = WorldCrustRunSpec.FromExecutionPayload(payload);
+
+        Assert.NotNull(spec.PatchRecipe);
+        Assert.Equal(99, spec.PatchRecipe!.Seed);
+        Assert.Equal(5, spec.PatchRecipe.PatchCount);
     }
 
     [Fact]

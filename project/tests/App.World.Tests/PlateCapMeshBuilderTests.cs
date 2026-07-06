@@ -43,8 +43,10 @@ public sealed class PlateCapMeshBuilderTests
         var oceanCap = caps.Single(c => c.PlateId == 1);  // cell 2 (interior)
         var boundaryCells = new byte[] { 0, 1, 0 };
 
-        var land = PlateCapMeshBuilder.BuildContinents(landCap, isLand: true, boundaryCells);
-        var ocean = PlateCapMeshBuilder.BuildContinents(oceanCap, isLand: false, boundaryCells);
+        var landColors = new[] { ContinentsPalette.Land, ContinentsPalette.Land, ContinentsPalette.Ocean };
+        var oceanColors = new[] { ContinentsPalette.Ocean, ContinentsPalette.Ocean, ContinentsPalette.Ocean };
+        var land = PlateCapMeshBuilder.BuildContinents(landCap, landColors, boundaryCells);
+        var ocean = PlateCapMeshBuilder.BuildContinents(oceanCap, oceanColors, boundaryCells);
 
         Assert.Equal(PlateCapMeshNormalMode.Smooth, land.NormalMode);
         Assert.Equal(landCap.Surface.TriangleCount * 3, land.VertexCount);
