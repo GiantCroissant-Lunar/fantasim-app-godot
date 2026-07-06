@@ -140,7 +140,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         PlanetPresentationDocument document;
         try
         {
-            document = world.GetPlanetPresentationAsync();
+            document = world.GetPlanetPresentationAsync(_timeline.Tick);
         }
         catch (Exception ex)
         {
