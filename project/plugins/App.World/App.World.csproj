@@ -106,7 +106,7 @@
     <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Plate.Topology.Generation" />
     <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Plate.Topology.Contracts" />
     <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Asthenosphere.Convection" />
-    <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Asthenosphere" />
+    <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Asthenosphere.Contracts" />
     <PackageReference Include="GiantCroissant.FantaSim.Atmosphere.Genesis.Core" />
     <PackageReference Include="GiantCroissant.FantaSim.Atmosphere.Contracts" />
     <PackageReference Include="GiantCroissant.FantaSim.Geosphere.Plate.Topology.Materializer" />
