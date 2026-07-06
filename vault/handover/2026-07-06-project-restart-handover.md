@@ -32,8 +32,26 @@ screenshot/recording names, unaided — (a) land vs ocean by tone, (b) mountain 
 | Hot-reload bundle/ALC infrastructure | app (stage/assist/timeline/world/activity/iii PCKs) | Works; ALC pin fixed 2026-07-03 — but see §4 on its iteration tax |
 | External delegation roster | `.agent/skills/04-tooling/external-agent-delegation` | opencode (ollama glm-5.2 / kimi-k2.7-code) reliable; used successfully for trace/review/implementation this session |
 
-**⚠ Before any restart action: `fantasim-world` and `fantasim-cartography` have NO REMOTE.
-Push them somewhere or archive the disks first. Deleting the workspace loses the engine.**
+**⚠ Before any restart action:** the local `fantasim-world` and `fantasim-cartography` clones have
+no remote CONFIGURED, but GitHub remotes exist with a PREVIOUS attempt's version
+(`git@github.com:GiantCroissant-Lunar/fantasim-world.git`, `…/fantasim-cartography.git`).
+Wire the remotes and push the current local state (as a new branch if the old version must be
+preserved) before any restart action — the current engine state exists only on this disk.
+
+**⚠ Context correction (user, 2026-07-06): this is the 8TH ATTEMPT in the past half year** — the
+GitHub remotes hold an earlier one. Seven restarts did not fix the outcome ("a ball with some
+strips instead of a planet" every time). That is decisive evidence about §5: restarting alone
+does not change the result; §6 (and the architecture-conformance addendum below) is what must
+change.
+
+**⚠ Recommendation revision (user correction, 2026-07-06):** §5's option B said "no bundles until
+the planet reads." The user rejects that framing: **the bundle-oriented approach, 4-tier service
+architecture, ECS, Akka.NET, and node graph are FEATURES of the app — the product — not
+infrastructure to defer.** The persistent failure mode is precisely that agents either (a) do
+architecture work and never touch the look, or (b) chase the look by wiring proxies AROUND the
+architectural stations (Host-direct, binder-direct — e.g. ProvinceTint, M0 membership coloring).
+Any next step must make the planet read THROUGH the architecture, with conformance mechanically
+enforced — see the station-map idea in the session notes. Option B as written is retracted.
 
 ## 3. Why it never looked right — the verified diagnosis (2026-07-06)
 
