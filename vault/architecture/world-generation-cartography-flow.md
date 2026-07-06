@@ -1,5 +1,8 @@
 # World-generation -> Cartography flow (design)
 
+> **AUDIT (2026-07-06, code-verified):** SUPERSEDED — the `carto.*` node-provider leg was never built; cartography is consumed as parts (`GlobePlateSurfaces`). Authority: `world-generation-consolidation-refactor.md` + `planet-domain-station-map.md`. _(See the authority index in `vault/README.md`.)_
+
+
 **Status:** PROPOSED (2026-06-20). Design for the real world-generation pipeline and its
 cartographic output, assembled through the node-graph paradigm. Supersedes the toy
 `geosphere.plate-seeds` placeholder. Extends `node-graph-paradigm.md` and

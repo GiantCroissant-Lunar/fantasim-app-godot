@@ -1,5 +1,8 @@
 # Multi-scene DI scoping review -- VContainer parent-child container comparison
 
+> **AUDIT (2026-07-06, code-verified):** Issue 4's `SceneActivatorBase` has since been BUILT (`contracts/App.SceneFlow`); Issue 1 (manual forwarding, no parent.CreateScope) remains open as described. _(See the authority index in `vault/README.md`.)_
+
+
 **Status:** PROPOSED (2026-06-19). Reviews the ref-projects and yokan-projects scene-flow architecture against VContainer's parent-child container model and identifies enhancements.
 
 ## Context

@@ -1,5 +1,8 @@
 # Plan — reload ALC-collection: testability-first redesign (2026-06-25)
 
+> **AUDIT (2026-07-06, code-verified):** COMPLETED — ReloadPolicy, R3.Godot FrameProvider, sync UnmountNow; the open 'NEXT' was resolved 2026-07-03 (MessagePack cache eviction, gate green). 'IN PROGRESS' header stale. _(See the authority index in `vault/README.md`.)_
+
+
 **Status:** IN PROGRESS (living doc — update the Status table as slices land).
 **Branch:** `feat/world-to-stage-phase1`. **Prior context:**
 `vault/handover/2026-06-25-reload-gate-timing-and-mainthread.md`,

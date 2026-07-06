@@ -1,5 +1,8 @@
 # Akka.NET + UnifyECS multi-world integration
 
+> **AUDIT (2026-07-06, code-verified):** IMPLEMENTED as designed (`App.Ecs/Actors/{EcsSupervisorActor,EcsWorldActor}`, Akka 1.5.69, `EcsComposition.ComposeEcs`) — the 'PROPOSED' status header is stale. _(See the authority index in `vault/README.md`.)_
+
+
 **Status:** PROPOSED (2026-06-19). Based on analysis of UnifyECS source (`plate-projects/unify-ecs`), the ref-projects `App.Ecs` service, and the Akka.NET actor model discussion.
 
 ## The problem

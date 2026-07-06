@@ -1,5 +1,8 @@
 # World generation consolidation and refactor plan
 
+> **AUDIT (2026-07-06, code-verified):** CURRENT with drift — the parameterless `GetPlanetPresentationAsync()` this doc lists in the active path is now BANNED (station contract 3 / C3 conformance gate; `Rebind()` is tick-addressed); `Continents` mode postdates this doc; Phase 5 (Seam fate) remains open. _(See the authority index in `vault/README.md`.)_
+
+
 **Status:** DRAFT (2026-07-03). Cross-repo architecture note for reducing duplicated
 world-generation concepts across `fantasim-app-godot`, `fantasim-world`, and
 `fantasim-cartography`.

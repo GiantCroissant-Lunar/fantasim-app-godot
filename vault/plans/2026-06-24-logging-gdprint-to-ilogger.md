@@ -1,5 +1,8 @@
 # Refactor: `GD.Print` → crosscut `ILogger` — implementation plan
 
+> **AUDIT (2026-07-06, code-verified):** COMPLETED — inventoried GD.Print sites converted. _(See the authority index in `vault/README.md`.)_
+
+
 > status: ready-to-execute 2026-06-24 · repo: fantasim-app-godot · DESIGN/PLAN ONLY (no code yet)
 > goal: route every ad-hoc Godot console print through the house structured logger (`ILogger` over the crosscut `LoggingService`), so logging is uniform and reaches the console across the ALC boundary
 > sibling: [config-adopt-crosscut](2026-06-24-config-adopt-crosscut.md) (same Bootstrap-composition + seam-injection mechanics) · context: [command-transport-ingress-design](../specs/2026-06-24-command-transport-ingress-design.md) §7

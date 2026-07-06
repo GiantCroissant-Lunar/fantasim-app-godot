@@ -1,5 +1,8 @@
 # Host Composition Push-Down — Implementation Plan
 
+> **AUDIT (2026-07-06, code-verified):** COMPLETED (@e62b407; 15 per-plugin HostComposition modules; Host.cs-only) — 'Active' header stale. _(See the authority index in `vault/README.md`.)_
+
+
 **Status:** Active. **Supersedes** [`2026-06-23-host-only-keep-host-type.md`](./2026-06-23-host-only-keep-host-type.md) — that plan's decision to keep all `Compose*` methods inside `Host` is **reversed** here per the user's 2026-06-23 direction.
 
 **Goal:** Push each of the 13 `Compose*` method bodies out of `hosts/complete-app/Host.cs` + `Host.Gpu.cs` and down into the plugin project that owns that domain. Host keeps only the orchestration sequence (ordering + invoking the modules), lifecycle (`_Ready`/`_Process`/`_Notification`), and the env-guarded demo/smoke entry points (which are Host-owned runtime entry points, not composition).

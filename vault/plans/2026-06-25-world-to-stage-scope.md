@@ -1,5 +1,8 @@
 # Plan: World → stage scope (dedicated `world` bundle)
 
+> **AUDIT (2026-07-06, code-verified):** COMPLETED — world collectible bundle live (50+ DLLs, gate green 2026-07-03). 'PLANNED' header stale. _(See the authority index in `vault/README.md`.)_
+
+
 **Status:** PLANNED (2026-06-25). Reconciled from two independent cross-model investigations
 ([glm](../../.agent/run/dispatch/world-to-stage-plan.glm.md), [kimi](../../.agent/run/dispatch/world-to-stage-plan.kimi.md)),
 the lead-session cross-check, and the live-code resolution of the `RegisterOwned` question.

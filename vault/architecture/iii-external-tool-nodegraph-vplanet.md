@@ -1,5 +1,8 @@
 # iii external-tool node graph pattern: VPLanet as first scientific simulator
 
+> **AUDIT (2026-07-06, code-verified):** CURRENT with drift — `ExternalToolResultViewSource` lives under App.NodeGraph contracts (the claimed `App.Ui.ExternalTools` plugin does not exist); the `FANTASIM_SHOW_WORLD_GRAPH` gate is gone. _(See the authority index in `vault/README.md`.)_
+
+
 **Status:** Architecture note and implementation direction (2026-06-24)
 
 **Scope:** `fantasim-app-godot`, `fantasim-world`, `iii`, and external tool workers such as VPLanet, Blender, and ComfyUI.

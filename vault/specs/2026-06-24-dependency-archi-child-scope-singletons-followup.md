@@ -1,5 +1,8 @@
 # Follow-up — dependency-archi: finish child-scope singleton sharing, then drop manual kernel forwarding
 
+> **AUDIT (2026-07-06, code-verified):** interim-workaround pointers are stale (Stage/Assist activators are now thin shells); library-side landing unverified. _(See the authority index in `vault/README.md`.)_
+
+
 **Status:** FOLLOW-UP / deferred (2026-06-24). Tracks a `plate-projects/dependency-archi`
 change so the app-side multi-scene DI adoption is **not blocked** on it. The app keeps using
 the interim manual-forwarding workaround until this lands.

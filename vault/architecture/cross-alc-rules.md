@@ -1,5 +1,8 @@
 # Cross-ALC rules
 
+> **AUDIT (2026-07-06, code-verified):** CURRENT with drift — predates the 2026-07-03 shared-closure fix: Bootstrap exactMatches now also share MessagePack, UnifyMaths, FantaSim.App.World.Rendering, Cartography.* (`App.Common/Bootstrap.cs:110-162`); newer shared prefixes MessagePipe/UnifyEcs./TimeDete.; `App.Agent` does not exist; `App.Remote` carries no actors; `IIiiInvoker` lives in `plugins/App.Iii`. _(See the authority index in `vault/README.md`.)_
+
+
 **Status:** PROPOSED. Adapted from the ref-projects cross-ALC rules (confirmed 2026-06-10) with additions for Akka.NET actor system residency.
 
 ---

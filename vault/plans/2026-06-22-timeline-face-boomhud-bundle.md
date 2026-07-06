@@ -1,5 +1,8 @@
 # Timeline Face — boom-hud track/section HUD in a hot-reloadable bundle (Plan 5a) Implementation Plan
 
+> **AUDIT (2026-07-06, code-verified):** COMPLETED (@0371e3f) then SUPERSEDED by `2026-06-23-tscn-timeline.md` (TimelineViewSource retired @3bd58e9; no BoomHud timeline remains). _(See the authority index in `vault/README.md`.)_
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the vestigial trackless `AnimationTree` with a REAL track/section timeline face — per-sphere regime section bands + layer track rows + a playhead/transport — authored as a **boom-hud** `RuntimeSurfaceDocument` in **C# code**, shipped in a **hot-reloadable `timeline` bundle**.

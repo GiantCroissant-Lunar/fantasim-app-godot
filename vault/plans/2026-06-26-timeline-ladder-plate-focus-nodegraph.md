@@ -1,5 +1,8 @@
 # Timeline Ladder, Plate Focus, and Node Graph Polish Implementation Plan
 
+> **AUDIT (2026-07-06, code-verified):** COMPLETED with drift — ladder zoom + PlateBoundaryFocusRenderer live but relocated to App.Presentation. _(See the authority index in `vault/README.md`.)_
+
+
 > **For agentic workers:** Implement this plan task-by-task. Prefer bounded external-agent tasks; the lead session reviews and verifies the integrated result. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the visible world slice match the current product direction: timeline track zoom uses the canonical odometer ladder, plate remains the source of truth over unify-cell substrate, the focused plate layer shows boundary process visuals, and the node graph reads as an authored graph instead of raw boxes.

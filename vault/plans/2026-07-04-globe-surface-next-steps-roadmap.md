@@ -1,5 +1,8 @@
 # Globe surface — next-steps roadmap (post adaptive-subdivision review)
 
+> **AUDIT (2026-07-06, code-verified):** SUPERSEDED by `2026-07-06-attempt8-recovery-roadmap.md`; the DefaultPeaks item was dissolved by `specs/2026-07-04-tectonic-look-amplification-research.md`. **LIVE REMAINDER:** Slice 1's viewport/panel overlap defect is still open — re-homed to the attempt-8 roadmap (P3 candidate). _(See the authority index in `vault/README.md`.)_
+
+
 **Date:** 2026-07-04
 **Status:** approved sequencing; each slice gets its own implementation plan when started
 **Context:** the recursive feature-aware adaptive subdivision arc landed and was reviewed

@@ -1,5 +1,8 @@
 # Runtime geodata import boundary
 
+> **AUDIT (2026-07-06, code-verified):** slices 1–2 landed in fantasim-world under `Geosphere.Plate.Rotation.Stream` (the fallback placement); slices 3–5 (app import seam, shapefile) unbuilt; the bytes-not-paths boundary doctrine remains the live rule. _(See the authority index in `vault/README.md`.)_
+
+
 **Status:** Architecture note and implementation direction (2026-06-24)
 
 **Scope:** runtime user imports in the exported Godot app, especially GPlates `.rot` files and shapefile bundles.

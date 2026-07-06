@@ -1,5 +1,8 @@
 # Render surface & motion — closing the mesh gap (design)
 
+> **AUDIT (2026-07-06, code-verified):** COMPLETED then SUPERSEDED — the watertight/envelope design shipped, but this doc narrates the dead GlobeView pipeline (§3 fork and §6 change-list are stale). Authority: `globe-surface-lod-scale-and-provenance.md` + `planet-domain-station-map.md`. _(See the authority index in `vault/README.md`.)_
+
+
 > **Status:** DRAFT 2026-06-21 (design discussion). Extends and corrects
 > [rendering-and-lod.md](rendering-and-lod.md). Written after the globe rendered as a **shattered
 > shell** (cracks, gaps, the inner sphere showing through) instead of a coherent planet.

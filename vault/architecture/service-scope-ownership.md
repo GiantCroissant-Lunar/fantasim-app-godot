@@ -1,5 +1,8 @@
 # Service scope ownership — which scope (resident vs collectible) owns each service
 
+> **AUDIT (2026-07-06, code-verified):** CURRENT with drift — the `world` collectible bundle now exists (a domain service IS bundle-owned); `ITimelineController` is composed by App.Presentation (`WorldViewComposition` is dead code); Host.cs line refs predate host-slim. _(See the authority index in `vault/README.md`.)_
+
+
 **Status:** PROPOSED (2026-06-25). Companion to [service-tier-architecture.md](service-tier-architecture.md)
 (the vertical T1–T4 axis) and [multi-scene-di-scoping-review.md](multi-scene-di-scoping-review.md)
 (the scope *mechanism*). This doc owns the **horizontal axis**: for each service, *which scope owns

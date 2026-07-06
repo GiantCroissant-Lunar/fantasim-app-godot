@@ -1,5 +1,8 @@
 # .tscn-native timeline for time advancement — design
 
+> **AUDIT (2026-07-06, code-verified):** SHIPPED — Timeline.tscn/TimelineFace live; §2/§9 anchors (GlobeView.BuildScrubber, RegimeTimelineTransport) are dead-code references. _(See the authority index in `vault/README.md`.)_
+
+
 > status: concept-lock 2026-06-22 · DESIGN ONLY (no code change yet)
 > repo: fantasim-app-godot · supersedes: the Plan 5a boom-hud timeline face (`TimelineViewSource`/`TimelineModel`)
 > anchors (both in the **fantasim-world** repo): `vault/architecture/planet-stack-model.md` (§2 stream-id · §5 regimes · §7 Option A gate graph · §8 timeline vocabulary); `vault/architecture/canonical-foundation.md` (CT + odometer ladder)

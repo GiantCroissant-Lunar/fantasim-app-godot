@@ -1,5 +1,8 @@
 # Planet evolution arc — design
 
+> **AUDIT (2026-07-06, code-verified):** core doctrine (cutaway, h^0.5 lens, relief fabric) CURRENT; §2's amendment (plate focus → PlateIdentity caps) is superseded by M0 — `geosphere.plate` defaults to `GlobeViewMode.Continents`, PlateIdentity via `globe:plateView=identity`; sub-projects B/C partly folded into the attempt-8 roadmap. _(See the authority index in `vault/README.md`.)_
+
+
 > status: concept-lock 2026-07-02 · approved in-session (brainstorming dialogue)
 > repo: fantasim-app-godot · builds on: `2026-06-22-tscn-timeline-time-advancement-design.md`
 > (sub-project B executes that spec; this doc does not restate it)

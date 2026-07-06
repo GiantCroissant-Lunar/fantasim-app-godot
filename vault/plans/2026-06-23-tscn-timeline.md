@@ -1,5 +1,8 @@
 # tscn Timeline Implementation Plan
 
+> **AUDIT (2026-07-06, code-verified):** COMPLETED — Timeline.tscn live, HSlider gone, ladder labels live. _(See the authority index in `vault/README.md`.)_
+
+
 > For agentic workers: REQUIRED SUB-SKILL: superpowers:subagent-driven-development or superpowers:executing-plans. Steps use [ ] checkboxes.
 
 Goal: Replace the hand-written playback loop and resident `HSlider` with an editor-authored, Godot-native `Timeline.tscn` scene in the hot-reloadable `timeline` bundle, driven by `AnimationPlayer` / `AnimationTree` and formatted using the odometer ladder.

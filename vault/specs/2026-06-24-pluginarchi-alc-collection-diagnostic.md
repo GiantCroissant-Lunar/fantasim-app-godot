@@ -1,5 +1,8 @@
 # Spec — PluginArchi: ALC-collection diagnostic for bundle hot-reload
 
+> **AUDIT (2026-07-06, code-verified):** IMPLEMENTED (Option A live: BundleHost `IPluginHostDiagnostics`, weak-only probe) — the 'PROPOSED — awaiting approval' header is stale. _(See the authority index in `vault/README.md`.)_
+
+
 **Status:** PROPOSED — awaiting approval (this is a `plate-projects/plugin-archi` API change,
 not a yokan-only detail). Filed from fantasim-app-godot. On approval this should become a
 `plate-projects/plugin-archi/docs/rfcs/` RFC.

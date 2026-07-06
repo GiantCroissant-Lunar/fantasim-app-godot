@@ -1,5 +1,8 @@
 # Dry Crust Adaptive Subdivision Implementation Plan
 
+> **AUDIT (2026-07-06, code-verified):** COMPLETED — tasks 1–4 in code (defaults since evolved: recursive depth 2); Task 5 chunked-LOD plan never created; look refs superseded by the north star. _(See the authority index in `vault/README.md`.)_
+
+
 > **For agentic workers:** Implement this plan task-by-task. Prefer orchestrating bounded
 > per-task agents (see the workspace `orchestrate-before-implementing` rule and
 > `external-agent-delegation` skill); otherwise execute inline with a review checkpoint per

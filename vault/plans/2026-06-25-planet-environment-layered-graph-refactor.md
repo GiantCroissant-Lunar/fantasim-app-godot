@@ -1,5 +1,8 @@
 # Plan: Planet in Environment + layered graph runtime
 
+> **AUDIT (2026-07-06, code-verified):** COMPLETED (core: environment.tscn Planet/LayerMounts, PlanetPresentationBinder is the live presenter) — 'DRAFT' header stale; worker-manifest/cache sections unverified. _(See the authority index in `vault/README.md`.)_
+
+
 **Status:** DRAFT (2026-06-25). This supersedes the stopped GPU smoke attempt. It keeps the
 direction aligned with [service-scope-ownership.md](../architecture/service-scope-ownership.md),
 [hot-reloadable-ui-runtime-and-scoped-bindings.md](../architecture/hot-reloadable-ui-runtime-and-scoped-bindings.md),

@@ -1,5 +1,8 @@
 # Bundle delivery & loading — two concerns + an Addressables-style catalog
 
+> **AUDIT (2026-07-06, code-verified):** CURRENT with drift — `ResourcePckWatcher`/`IService.WatchResource` were NOT deleted (a `SceneTierPckWatcher` was added); hot-reload landed via `App.Resource/ReloadPolicy.cs` (2026-06-25 frame-deferred redesign), not this doc's mechanism; catalog phases B/C unbuilt (only `IiiWorkerBundleCatalog`). _(See the authority index in `vault/README.md`.)_
+
+
 **Status:** PROPOSED (2026-06-24). Supersedes the file-watcher (`ResourcePckWatcher` /
 `IService.WatchResource`) hot-reload trigger. Companions: `cross-alc-rules.md`,
 `multi-scene-di-scoping-review.md`.

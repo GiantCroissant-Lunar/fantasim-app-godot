@@ -1,5 +1,8 @@
 # Service tier architecture with Akka.NET (T1-T4)
 
+> **AUDIT (2026-07-06, code-verified):** CURRENT with drift — `App.Agent` does not exist; `App.Remote` is not actor-backed; composition moved to per-plugin `HostComposition` classes (host-slim 2026-07-03); `App.World` is the live collectible world bundle, not dormant; `App.Presentation` — the only live planet render pipeline — postdates this doc (see `planet-domain-station-map.md`). _(See the authority index in `vault/README.md`.)_
+
+
 **Status:** PROPOSED. Distilled from the ref-projects `lunar-horse-002/ref-projects/fantasim-app-godot` architecture (confirmed 2026-06-10) combined with the Akka.NET integration discussion (2026-06-19), and extended for the iii-graph runtime as a peer orchestration axis (2026-06-19). Supersedes the plain-class-only T3 model where actor benefits are warranted.
 
 > **Orthogonal axis:** tier (T1–T4) is the *vertical* axis (Godot-coupling). The *horizontal* axis — which scope (resident `App.Common` vs collectible Stage/Assist/Timeline) owns each service's lifetime, and the resident↔collectible reference rules — lives in [service-scope-ownership.md](service-scope-ownership.md). Every service has one answer on each axis.

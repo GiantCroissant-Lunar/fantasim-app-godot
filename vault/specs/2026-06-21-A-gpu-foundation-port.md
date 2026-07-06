@@ -1,5 +1,8 @@
 # Sub-project A — GPU Foundation (port + adjust)
 
+> **AUDIT (2026-07-06, code-verified):** SHIPPED — App.GpuCompute/App.GpuShader + seams exist and are host-composed; context sections narrate the dead GlobeView pipeline. _(See the authority index in `vault/README.md`.)_
+
+
 > **Date:** 2026-06-21 · **Status:** spec (pre-implementation) · **Part of:** Phase-3 relief decomposition (A→F).
 > **Goal in one line:** bring compute-shader + GPU node-graph capability into the working app by **porting and adjusting** `ref-projects`' `App.GpuCompute` + `App.GpuShader` (+ seams), so sub-projects **C** (relief render) and **E** (VisualShader bridge) have their enabler.
 

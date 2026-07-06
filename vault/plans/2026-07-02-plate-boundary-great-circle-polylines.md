@@ -1,5 +1,8 @@
 # Plate Boundaries as Typed Great-Circle Polylines
 
+> **AUDIT (2026-07-06, code-verified):** COMPLETED — arcs live; the 'per-tick evolution not live' gap note was closed by the tick-addressed Rebind (2026-07-06). _(See the authority index in `vault/README.md`.)_
+
+
 **Date:** 2026-07-02 · **Branch:** `agent/boundary-polylines` · **Status:** implemented (reference-tick arcs); per-tick evolution is the next slice.
 
 ## What shipped

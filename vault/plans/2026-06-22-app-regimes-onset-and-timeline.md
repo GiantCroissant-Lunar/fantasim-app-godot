@@ -1,5 +1,8 @@
 # App Regimes + Onset Wiring + Timeline-Face (Plan 4) Implementation Plan
 
+> **AUDIT (2026-07-06, code-verified):** COMPLETED (merged @03bd394); its GlobeView/AnimationPlayer transport was since replaced by the tscn timeline. _(See the authority index in `vault/README.md`.)_
+
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** In the rebuilt Godot app, port the 3 geosphere regimes + atmosphere coupling so plate-onset is DERIVED from a hydration curve, wire the onset tick to the engine's `LidFractureAtOnset` (plates born at onset, not Genesis), and add an AnimationPlayer-backed timeline transport that scrubs magma-ocean → stagnant-lid → mobile-plate.

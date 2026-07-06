@@ -1,5 +1,8 @@
 # Rendering & Level-of-Detail (app side)
 
+> **AUDIT (2026-07-06, code-verified):** SUPERSEDED — historical. The render path described here (GlobeView/App.World.Seam) is dead code and StubWorldRuntime retirement never happened. Authority: `globe-surface-lod-scale-and-provenance.md` + `planet-domain-station-map.md`; the store-little-derive-much doctrine survives there. _(See the authority index in `vault/README.md`.)_
+
+
 > **Status:** Locked 2026-06-21 (design discussion).
 > Consumes the engine design in `fantasim-world/vault/architecture/world-gen-design-direction.md`
 > and `geology-model.md`.

@@ -1,5 +1,8 @@
 # Boundary Section Visibility Hardening Implementation Plan
 
+> **AUDIT (2026-07-06, code-verified):** COMPLETED — BoundarySectionVisibility + tests exist exactly as specified (checkboxes were never ticked). _(See the authority index in `vault/README.md`.)_
+
+
 > **For agentic workers:** Implement this plan task-by-task. Prefer orchestrating bounded
 > per-task agents (see the `orchestrate-before-implementing` rule + the `external-agent-delegation`
 > skill); otherwise execute inline with a review checkpoint per task. Steps use checkbox

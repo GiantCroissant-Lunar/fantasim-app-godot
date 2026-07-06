@@ -1,5 +1,8 @@
 # Refactor: adopt crosscut `Config` (JSON + Env), retire ad-hoc env reads — plan
 
+> **AUDIT (2026-07-06, code-verified):** COMPLETED — CrosscutFoundation.Config wired; only bootstrap env reads remain. _(See the authority index in `vault/README.md`.)_
+
+
 > status: ready-to-execute 2026-06-24 · repo: fantasim-app-godot · DESIGN/PLAN ONLY (no code yet)
 > goal: read app settings/toggles from the house `CrosscutFoundation.Config` service (layered **JSON base + Env override**) instead of raw `Environment.GetEnvironmentVariable`
 > sibling: [logging-gdprint-to-ilogger](2026-06-24-logging-gdprint-to-ilogger.md) (same Bootstrap-composition + seam-injection mechanics) · context: [command-transport-ingress-design](../specs/2026-06-24-command-transport-ingress-design.md) §3.8

@@ -36,7 +36,7 @@ Every packet is lead-verified against BOTH gates before its phase advances.
 | **P0** | Housekeeping: wire remotes, push current state | (none — done inline) | lead |
 | **P1** | Conformance gates — mechanical architecture tests | `2026-07-06-p1-conformance-gates.md` | opencode/kimi |
 | **P2** | Continents through the stations: organic patch seeding (S1/S2), moving-frame evaluation (S3/S4), fraction-driven Continents view + proxy retirement (S5) | `2026-07-06-p2-continents-through-stations.md` | split: engine packet + app packet |
-| **P3** | Calibration by measurement: elevation histogram tool, ramp band fitting, tessellation/jaggies decision, north-star look pass on MOVING data | planned after P2 lands (needs P2's data) | TBD |
+| **P3** | Calibration by measurement: elevation histogram tool, ramp band fitting, tessellation/jaggies decision, north-star look pass on MOVING data; + re-homed open defect: **viewport/panel overlap** (from the superseded 07-04 roadmap's Slice 1); + fix the frame-budget test flake under parallel load | planned after P2 lands (needs P2's data) | TBD |
 | **P4** | Motion character (rates/axis coherence to Scotese pace) + Play sweep demo + mid-arc verdict | planned after P3 | TBD |
 | **P5** | Plates moving BY convection, fully: time-varying convection field → evolving Euler poles + plate birth/split/merge as truth events (emergent-tectonics doctrine, 2026-06-22 event-sourced-plate-topology plan is the seed) | planned after P4 | TBD |
 | **P6** | Early-planet era (O4): accretion debris/particle visualization as an R-product over coarse truth events (mass growth, moon-forming impact; no hand-rolled SPH), era-correct magma-ocean/stagnant-lid looks, scrub t=0→onset | planned after P4 (parallel-capable with P5) | TBD |

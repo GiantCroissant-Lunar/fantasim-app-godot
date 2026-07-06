@@ -1,5 +1,8 @@
 # iii-graph runtime
 
+> **AUDIT (2026-07-06, code-verified):** CURRENT with drift — `App.Ui.IiiGraph` was absorbed by `App.Ui.NodeGraph`; `App.World.Projection` was renamed (FieldView); App.World is now the active center, not "dormant". _(See the authority index in `vault/README.md`.)_
+
+
 **Status:** ACTIVE. The iii axis is the complementary orchestration axis to Akka.NET. This doc covers iii as an orchestration fabric + function provider.
 
 > **Graph data placement superseded.** `GraphDocument`/`GraphNode`/`GraphWire`/`GraphExecutor` have been promoted out of iii into a general **`App.NodeGraph`** service (see [node-graph-paradigm.md](node-graph-paradigm.md)). iii is now a **node-function provider** (`comfy.*`, `blender.*`, `asset.*`) over that general graph paradigm, not a graph engine. Read this doc for the iii axis (bridge fabric, bidirectional model, worker roles); read `node-graph-paradigm.md` for the graph paradigm itself.
