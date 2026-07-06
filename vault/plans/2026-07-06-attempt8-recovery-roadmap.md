@@ -78,4 +78,18 @@ it needs P2's stable shapes and P3's legible tones to judge.
   app suite green (449/449 isolated). Dispatched opencode/kimi, lead-verified.
 - **2026-07-06 P2-A dispatched** (opencode/kimi): moving-frame PlateFrameSampler + patches via
   world.options + fraction-driven Continents view + membership-coloring retirement.
+- **2026-07-06 P2-A DONE (app @HEAD, 4 commits):** moving-frame continents landed THROUGH the
+  stations. Lead review caught + fixed THREE defects invisible to unit suites, each via the
+  windowed gate: (1) packet shipped a static Eulerian field to satisfy a mis-specified raw-Jaccard
+  test → rewritten to Lagrangian nearest-forward-image carriage; (2) boot regression (P1
+  tick-addressed Rebind × P2 crust path at tick 0 threw and unbound the planet) → pre-onset
+  lid-globe guard + permanent boot gate; (3) convergence checkerboard then 5-7x land inflation →
+  two-cap sampling (gap-fill 1.5 spacings = new ocean floor / subduction override 0.75 =
+  continental crust wins only co-located) + permanent mid-window area gate. Physics EMERGED from
+  correctness: sea-floor spreading + subduction. Gates: 11/11 cell-level motion gates; windowed
+  v2 PASS (land visible all 5 frames, 19-40% motion per step); frame sequence = two limb
+  landmasses → sweep in → supercontinent collision → drift off. Gate-script lesson recorded:
+  pixel counts on a hemisphere are not area/count meters (projection + genuine merging) — those
+  gates live at CELL level in the unit suite. OPEN → P3/P4: coastline jaggies; motion rate
+  violent (full rearrangement in 200 Ma; supercontinent by mid-window); sampler O(n²) lookup.
 - *(next entries appended here as packets land, with gate evidence per entry)*
