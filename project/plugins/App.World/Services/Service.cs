@@ -242,6 +242,13 @@ public sealed class Service : IService, IDisposable
     /// keyed at <paramref name="tick"/> so the sampler's Lagrangian transport carries onset material
     /// to the query tick, producing smoothly drifting fractions between 5 M-tick snapshots.
     /// </summary>
+    /// <summary>
+    /// Mobile-plate presentation window after onset. Widened from the original 20 Ma proving
+    /// window to 1 Gy (1M ticks/Ma) so long-arc plate motion is scrubbable; snapshot products
+    /// materialize lazily per governing snapshot, so the wider window costs nothing until seeked.
+    /// </summary>
+    internal const long MobilePlateWindowTicks = 1_000_000_000L;
+
     public IReadOnlyDictionary<int, double> GetContinentalFractionByCellAt(long tick)
     {
         if (tick < 0) throw new ArgumentOutOfRangeException(nameof(tick));
@@ -546,7 +553,7 @@ public sealed class Service : IService, IDisposable
                 arcTick,
                 geosphere,
                 atmosphere,
-                onsetTick + 20_000_000L,
+                onsetTick + MobilePlateWindowTicks,
                 currentArcs,
                 Array.Empty<BoundarySectionDocument>(),
                 new double[lidCellCount],
@@ -604,7 +611,7 @@ public sealed class Service : IService, IDisposable
             arcTick,
             geosphere,
             atmosphere,
-            onsetTick + 20_000_000L,
+            onsetTick + MobilePlateWindowTicks,
             currentArcs,
             boundarySections,
             cellElevations,
@@ -644,7 +651,7 @@ public sealed class Service : IService, IDisposable
         var series = CrustSnapshotTickSeries.ForRegime(
             mobilePlateRegime,
             CrustSnapshotTickSeries.DefaultSpacingTicks,
-            onsetTick + 20_000_000L);
+            onsetTick + MobilePlateWindowTicks);
         var snapshotTick = series.SelectSnapshotForPlayhead(arcTick) ?? arcTick;
 
         lock (_crustProductCacheGate)
