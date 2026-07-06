@@ -441,6 +441,33 @@ public sealed class Service : IService, IDisposable
         var currentGlobe = reconstructor.BuildGlobeAt(arcTick);
         var currentArcs = reconstructor.BuildBoundaryArcsAt(arcTick);
 
+        // PRE-ONSET (magma-ocean / stagnant-lid): there is NO crust — running the crust
+        // pipeline with endTick < onset walks evolution ticks negative and throws inside
+        // CanonicalTick (boot regression 2026-07-06: Rebind() fetches at the controller's
+        // initial tick 0 and the failed fetch unbound the whole planet). Return the lid
+        // globe with empty crust products instead.
+        if (arcTick < onsetTick)
+        {
+            int lidCellCount = currentGlobe.CellCount;
+            return new PlanetPresentationRuntime(
+                currentGlobe,
+                arcTick,
+                geosphere,
+                atmosphere,
+                onsetTick + 20_000_000L,
+                currentArcs,
+                Array.Empty<BoundarySectionDocument>(),
+                new double[lidCellCount],
+                new double[lidCellCount],
+                Array.Empty<CellCrustFeature>(),
+                new Dictionary<int, double>(),
+                renderOptions.VerticalExaggeration,
+                renderOptions.SurfaceSubdivision,
+                renderOptions.AdaptiveSubdivisionMaxDepth,
+                renderOptions.AdaptiveSubdivisionEdgeHeightDelta,
+                renderOptions.AdaptiveSubdivisionFeatureWeightDelta);
+        }
+
         var products = GetOrBuildCrustTickProducts(renderOptions, onsetTick, arcTick);
         var sampler = new PlateFrameSampler(
             products.Materialization.Tessellation,

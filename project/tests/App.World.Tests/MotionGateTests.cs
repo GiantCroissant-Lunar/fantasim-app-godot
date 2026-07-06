@@ -70,6 +70,19 @@ public sealed class MotionGateTests
     }
 
     [Fact]
+    public void GetPlanetPresentationAsync_at_boot_tick_zero_does_not_throw()
+    {
+        // Regression gate: the binder's Rebind() fetches at the controller's initial tick (0,
+        // pre-onset / magma era). 2026-07-06: the P2-A crust-product path threw
+        // ArgumentOutOfRangeException here, which unbound the ENTIRE planet at boot — caught
+        // only by the windowed gate. Pre-onset fetches must yield a document (no crust).
+        using var service = new Service(new ServiceRegistry());
+        var doc = service.GetPlanetPresentationAsync(0L);
+        Assert.NotNull(doc);
+        Assert.NotNull(doc.GlobeSnapshot);
+    }
+
+    [Fact]
     public void GetPlanetPresentationAsync_default_populates_continental_plate_ids()
     {
         using var service = new Service(new ServiceRegistry());
