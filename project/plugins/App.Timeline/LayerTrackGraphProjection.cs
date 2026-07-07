@@ -175,7 +175,7 @@ public static class LayerTrackGraphProjection
             .Select((id, index) => (id, index))
             .ToDictionary(pair => pair.id, pair => pair.index, StringComparer.Ordinal);
         var incoming = orderedIds.ToDictionary(id => id, _ => 0, StringComparer.Ordinal);
-        var outgoing = orderedIds.ToDictionary(id => new List<string>(), StringComparer.Ordinal);
+        var outgoing = orderedIds.ToDictionary(id => id, _ => new List<string>(), StringComparer.Ordinal);
 
         foreach (var wire in wires)
         {
