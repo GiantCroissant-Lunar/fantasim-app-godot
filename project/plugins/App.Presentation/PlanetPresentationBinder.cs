@@ -70,6 +70,18 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     private IReadOnlyList<long> _boundCrustSnapshotTicks = Array.Empty<long>();
     private PlanetPresentationDocument? _currentDocument;
     private GlobeViewMode _currentViewMode;
+    // D5 stacked-layer composition state. _currentComposition carries the full resolved decision
+    // (derived mode + mantle mount + surface coloring). _currentViewMode is the DERIVED composition
+    // mode (drives lighting, boundary, cutaway, status gates). _currentSurfaceViewMode is the surface
+    // APPEARANCE mode (the coloring owner mapped back to a GlobeViewMode) that the plate-surface
+    // build/bind and the separated-slab-top cache follow. The two view-mode fields decouple a combo's
+    // lighting/gate plumbing (MantleInterior) from its slab-top coloring (e.g. terrain under mantle).
+    private LayerCompositionDecision _currentComposition = new(
+        DerivedViewMode: GlobeViewMode.Inactive,
+        MountMantleInterior: false,
+        SurfaceColoring: SurfaceColoringKind.World,
+        TerrainRelief: false);
+    private GlobeViewMode _currentSurfaceViewMode;
 
     // W3a cutaway wedge state (inactive by default; width 0 = zero render change).
     private CutawayWedge _cutawayWedge = new(new UnifyMaths.Vector3D(0, 0, 1), 0, 0);
@@ -299,7 +311,10 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         _activeRoot = root;
 
         _boundRegimeId = _timeline.GeosphereSchedule.RegimeAt(_timeline.Tick)?.RegimeId;
-        _currentViewMode = GlobeViewModeResolver.Resolve(_boundRegimeId, _timeline.SelectedLayer);
+        _currentComposition = GlobeViewModeResolver.ResolveComposition(
+            _boundRegimeId, _timeline.ActiveLayers, _plateViewOverride);
+        _currentViewMode = _currentComposition.DerivedViewMode;
+        _currentSurfaceViewMode = _currentComposition.SurfaceColoring.ToSurfaceViewMode();
         AddLightingAndCamera(root, _currentViewMode);
 
         var body = new Node3D
@@ -320,7 +335,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
 
         if (document.GlobeSnapshot is not null)
         {
-            _plateSurfaceRoot = BuildPlateSurface(document, _currentViewMode);
+            _plateSurfaceRoot = BuildPlateSurface(document, _currentSurfaceViewMode);
             body.AddChild(_plateSurfaceRoot);
 
             _boundaryRenderer = new PlateBoundaryFocusRenderer(
@@ -403,8 +418,12 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             }
         }
 
-        var viewMode = GlobeViewModeResolver.Resolve(regimeId, _timeline.SelectedLayer, _plateViewOverride);
-        ApplyViewMode(viewMode);
+        var previousDecision = _currentComposition;
+        var decision = GlobeViewModeResolver.ResolveComposition(regimeId, _timeline.ActiveLayers, _plateViewOverride);
+        _currentComposition = decision;
+        var viewMode = decision.DerivedViewMode;
+        _currentViewMode = viewMode;
+        ApplySurfaceAppearance(decision.SurfaceColoring.ToSurfaceViewMode());
         // M0 (spec §3.2): in the Continents view the membership map IS the content — refresh the
         // globe snapshot at every playhead move through the light path (no crust materialization).
         if (viewMode == GlobeViewMode.Continents)
@@ -412,11 +431,14 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         bool showBoundaries = viewMode == GlobeViewMode.PlateIdentity;
         ApplyLightingForView(viewMode);
 
-        // D1: reconcile the mantle-interior LAYER view. The composed root is built/freed on
-        // transition into/out of MantleInterior (the field sampling is too heavy for every tick).
-        // Mirrors the x-ray toggle lifecycle but driven by the resolved view mode.
-        bool mantleLayerActive = viewMode == GlobeViewMode.MantleInterior;
-        if (mantleLayerActive != _mantleLayerActive)
+        // D1/D5: reconcile the mantle-interior LAYER view. The composed root is built/freed on
+        // transition into/out of the active mantle membership (the field sampling is too heavy for
+        // every tick). Driven by the resolved composition decision, not a single selected layer.
+        // The slab tops follow the surface-coloring owner, so a coloring change while mantle stays
+        // active (e.g. Mantle+Crust -> Mantle+Crust+Plate) must also rebuild the slabs.
+        bool mantleLayerActive = decision.MountMantleInterior;
+        bool surfaceColoringChanged = decision.SurfaceColoring != previousDecision.SurfaceColoring;
+        if (mantleLayerActive != _mantleLayerActive || (mantleLayerActive && surfaceColoringChanged))
         {
             _mantleLayerActive = mantleLayerActive;
             RebuildMantleLayer();
@@ -1278,24 +1300,21 @@ void fragment() {
         if (_disposed)
             return;
 
-        // P1: layer focus swaps the cap appearance. Rebuild just the plate surface (free old caps,
-        // build new ones) without re-fetching — no node leaks, no full rebind.
-        var regimeId = _timeline.GeosphereSchedule.RegimeAt(_timeline.Tick)?.RegimeId;
-        var newViewMode = GlobeViewModeResolver.Resolve(regimeId, selection, _plateViewOverride);
-        ApplyViewMode(newViewMode);
-
+        // D5: the active set changed. ApplyTimelineTick recomputes the composition decision from
+        // _timeline.ActiveLayers (regime may have changed too), rebuilds the plate surface for the
+        // new surface-coloring owner, and reconciles the mantle-interior mount — the full path.
         ApplyTimelineTick(_timeline.Tick);
     }
 
-    private void ApplyViewMode(GlobeViewMode viewMode)
+    private void ApplySurfaceAppearance(GlobeViewMode surfaceViewMode)
     {
-        if (!PlateSurfaceViewModeTransition.ShouldRebuild(_currentViewMode, viewMode))
+        if (!PlateSurfaceViewModeTransition.ShouldRebuild(_currentSurfaceViewMode, surfaceViewMode))
         {
-            _currentViewMode = viewMode;
+            _currentSurfaceViewMode = surfaceViewMode;
             return;
         }
 
-        _currentViewMode = viewMode;
+        _currentSurfaceViewMode = surfaceViewMode;
         RebuildPlateSurface();
     }
 
@@ -1312,7 +1331,7 @@ void fragment() {
 
         if (_plateSurfaceRoot is PlateSurfaceRenderer renderer && GodotObject.IsInstanceValid(renderer))
         {
-            BindPlateSurface(renderer, _currentDocument, _currentViewMode);
+            BindPlateSurface(renderer, _currentDocument, _currentSurfaceViewMode);
             if (_explodedActive)
                 RebuildExplodedCrust();
             return;
@@ -1327,7 +1346,7 @@ void fragment() {
         _plateSurfaceRoot = null;
         _plateSurfaces = null;
 
-        _plateSurfaceRoot = BuildPlateSurface(_currentDocument, _currentViewMode);
+        _plateSurfaceRoot = BuildPlateSurface(_currentDocument, _currentSurfaceViewMode);
         body.AddChild(_plateSurfaceRoot);
         if (_explodedActive)
             RebuildExplodedCrust();
@@ -2361,6 +2380,7 @@ void fragment() {
         _statusLabel = null;
         _currentDocument = null;
         _currentViewMode = GlobeViewMode.Inactive;
+        _currentSurfaceViewMode = GlobeViewMode.Inactive;
 
         if (_cutawayFaceRoot is not null && GodotObject.IsInstanceValid(_cutawayFaceRoot))
         {
@@ -2436,7 +2456,8 @@ internal sealed class PlanetTimelineController : ITimelineController
     private readonly Action<long> _applyTick;
     private long _tick;
     private long _maxTick = 1;
-    private TimelineLayerSelection? _selectedLayer;
+    // D5: stacked active set (pure helper); SelectedLayer is the primary (first or null).
+    private readonly LayerActiveSet _activeLayers = new();
     private Action? _onPlay;
     private Action? _onPause;
     private Action<long>? _onSeek;
@@ -2459,7 +2480,9 @@ internal sealed class PlanetTimelineController : ITimelineController
 
     public SphereRegimeSchedule AtmosphereSchedule { get; private set; }
 
-    public TimelineLayerSelection? SelectedLayer => _selectedLayer;
+    public TimelineLayerSelection? SelectedLayer => _activeLayers.Primary;
+
+    public IReadOnlyList<TimelineLayerSelection> ActiveLayers => _activeLayers.Layers;
 
     public event Action<long>? TickChanged;
     public event Action<TimelineLayerSelection?>? LayerSelectionChanged;
@@ -2478,17 +2501,25 @@ internal sealed class PlanetTimelineController : ITimelineController
 
     public void SeekTo(long tick) => _onSeek?.Invoke(Math.Clamp(tick, 0L, _maxTick));
 
+    // D5 back-compat: SelectLayer makes the active set EXACTLY {layer}.
     public void SelectLayer(string sphereId, string layerId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sphereId);
         ArgumentException.ThrowIfNullOrWhiteSpace(layerId);
 
-        var next = new TimelineLayerSelection(sphereId, layerId);
-        if (Equals(_selectedLayer, next))
-            return;
+        if (_activeLayers.SetExclusive(new TimelineLayerSelection(sphereId, layerId)))
+            LayerSelectionChanged?.Invoke(_activeLayers.Primary);
+    }
 
-        _selectedLayer = next;
-        LayerSelectionChanged?.Invoke(_selectedLayer);
+    // D5: toggle membership; LayerSelectionChanged always fires (stacked-set consumers react to
+    // every toggle even when the primary is unchanged).
+    public void ToggleLayer(string sphereId, string layerId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sphereId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(layerId);
+
+        _activeLayers.Toggle(new TimelineLayerSelection(sphereId, layerId));
+        LayerSelectionChanged?.Invoke(_activeLayers.Primary);
     }
 
     public void PushTick(long tick)

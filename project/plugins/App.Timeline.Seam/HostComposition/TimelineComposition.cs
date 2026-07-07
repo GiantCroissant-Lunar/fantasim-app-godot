@@ -123,6 +123,39 @@ public static class TimelineComposition
                 }));
             });
 
+        // D5: toggle a layer's membership in the stacked active set (several layers can be active at
+        // once). Mirrors timeline.select_layer: toggling ON requires the layer to be schedule-active
+        // at the current tick; toggling OFF is always permitted so a stale set can be cleared. The
+        // response carries the full active set so track-button multi-highlight stays in sync.
+        commandService?.Register(
+            new FantaSim.App.Command.CommandDescriptor(
+                Id: "timeline.toggle_layer",
+                Title: "Toggle timeline layer",
+                Description: "Toggles a layer's membership in the stacked active set (D5). Payload: {\"sphereId\":\"geosphere\",\"layerId\":\"geosphere.crust\"}. Several layers may be active at once.",
+                Category: "timeline"),
+            (payloadJson, _) =>
+            {
+                var (sphereId, layerId) = ParseLayerSelection(payloadJson);
+                bool alreadyActive = controller.ActiveLayers.Any(l =>
+                    string.Equals(l.SphereId, sphereId, StringComparison.Ordinal)
+                    && string.Equals(l.LayerId, layerId, StringComparison.Ordinal));
+
+                if (!alreadyActive && !IsLayerActive(controller, sphereId, layerId))
+                    throw new InvalidOperationException(
+                        $"Layer '{layerId}' in sphere '{sphereId}' is not active at tick {controller.Tick}.");
+
+                controller.ToggleLayer(sphereId, layerId);
+                return Task.FromResult<string?>(JsonSerializer.Serialize(new
+                {
+                    ok = true,
+                    sphereId,
+                    layerId,
+                    active = !alreadyActive,
+                    tick = controller.Tick,
+                    activeLayers = controller.ActiveLayers.Select(l => new { sphereId = l.SphereId, layerId = l.LayerId }),
+                }));
+            });
+
         log.LogInformation("registered: Timeline (IService + resident TimelineFace)");
     }
 

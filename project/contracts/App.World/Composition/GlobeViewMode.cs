@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace FantaSim.App.World.Composition;
 
 /// <summary>
@@ -115,5 +117,111 @@ public static class GlobeViewModeResolver
             "geosphere.mantle" => GlobeViewMode.MantleInterior,
             _ => GlobeViewMode.World,
         };
+    }
+
+    /// <summary>
+    /// D5 stacked-layer composition resolver. Maps the per-sphere ACTIVE SET of timeline layers to a
+    /// deterministic <see cref="LayerCompositionDecision"/>: which existing GlobeViewMode the binder
+    /// plumbs for transition/lighting/gates, whether the mantle-interior geometry mounts, and which
+    /// coloring owns the surface (plate caps + separated-slab tops).
+    ///
+    /// <para><b>Composition rules (deterministic, the D5 spec):</b></para>
+    /// <list type="bullet">
+    /// <item>Non-<c>mobile-plate</c> regime: <see cref="GlobeViewMode.Inactive"/> (layer focus does
+    /// not change the mantle-owned look of pre-mobile-plate regimes).</item>
+    /// <item>Empty active set: <see cref="GlobeViewMode.World"/>, no mantle, World coloring, terrain
+    /// relief (the composed product view, section 5c).</item>
+    /// <item>MANTLE active: mounts the interior + separated slabs (the wave-5 MantleInterior path).
+    /// The mantle owns GEOMETRY; it does not own the surface coloring.</item>
+    /// <item>Surface-coloring owner precedence: PLATE active wins (identity/continents); else CRUST
+    /// active (hypsometric); else the WORLD default.</item>
+    /// <item>DerivedViewMode precedence (nearest existing mode): mantle wins (MantleInterior); else
+    /// plate (Continents, or PlateIdentity under the <c>identity</c> override); else crust
+    /// (HypsometricTerrain); else World.</item>
+    /// </list>
+    ///
+    /// <para><b>Combos (the cases the binder + this resolver test must honor):</b></para>
+    /// <list type="bullet">
+    /// <item>Mantle+Crust: interior + slabs whose TOPS use terrain coloring (Hypsometric).</item>
+    /// <item>Mantle+Plate: interior + slabs with identity/continents tops.</item>
+    /// <item>Plate+Crust: identity/continents coloring wins the surface; terrain relief geometry
+    /// stays (encoded as <see cref="LayerCompositionDecision.TerrainRelief"/>=true; the first-slice
+    /// binder realizes the identity coloring and leaves the combined relief for a follow-up).</item>
+    /// <item>Empty set: World view.</item>
+    /// </list>
+    ///
+    /// <para>Layers outside the geosphere (e.g. atmosphere) do not affect the globe surface decision;
+    /// only <c>geosphere.{plate,crust,mantle}</c> are inspected. Unknown geosphere layer ids fall
+    /// back to the World coloring. Mirrors the single-select <see cref="Resolve"/>: ordinal,
+    /// case-sensitive, pure, Godot-free, unit-testable from the contract tier.</para>
+    /// </summary>
+    /// <param name="regimeId">The current geosphere regime id (only <c>mobile-plate</c> engages).</param>
+    /// <param name="activeLayers">The per-sphere active layer set (insertion-ordered by the controller).</param>
+    /// <param name="plateViewOverride">The host config knob <c>globe:plateView</c> (<c>identity</c> selects
+    /// PlateIdentity; any other value keeps Continents).</param>
+    public static LayerCompositionDecision ResolveComposition(
+        string? regimeId,
+        IReadOnlyList<TimelineLayerSelection> activeLayers,
+        string? plateViewOverride = null)
+    {
+        if (!string.Equals(regimeId, "mobile-plate", StringComparison.Ordinal))
+        {
+            return new LayerCompositionDecision(
+                DerivedViewMode: GlobeViewMode.Inactive,
+                MountMantleInterior: false,
+                SurfaceColoring: SurfaceColoringKind.World,
+                TerrainRelief: false);
+        }
+
+        bool mantle = false, plate = false, crust = false;
+        for (int i = 0; i < activeLayers.Count; i++)
+        {
+            var layer = activeLayers[i];
+            if (!string.Equals(layer.SphereId, "geosphere", StringComparison.Ordinal))
+                continue;
+            switch (layer.LayerId)
+            {
+                case "geosphere.mantle": mantle = true; break;
+                case "geosphere.plate": plate = true; break;
+                case "geosphere.crust": crust = true; break;
+            }
+        }
+
+        bool mountMantle = mantle;
+
+        SurfaceColoringKind surfaceColoring;
+        if (plate)
+            surfaceColoring = string.Equals(plateViewOverride, "identity", StringComparison.Ordinal)
+                ? SurfaceColoringKind.PlateIdentity
+                : SurfaceColoringKind.Continents;
+        else if (crust)
+            surfaceColoring = SurfaceColoringKind.HypsometricTerrain;
+        else
+            surfaceColoring = SurfaceColoringKind.World;
+
+        // Terrain relief follows the surface coloring, plus the declared Plate+Crust exception
+        // (identity/continents coloring WITH terrain relief geometry on the plate surface, per D5).
+        // The exception is a NON-MANTLE plate-surface phenomenon: when mantle is active the surface
+        // is the separated slabs, whose tops follow the coloring owner strictly (Continents = flat).
+        bool terrainRelief = surfaceColoring is SurfaceColoringKind.World or SurfaceColoringKind.HypsometricTerrain
+            || (plate && crust && !mantle);
+
+        GlobeViewMode derivedViewMode;
+        if (mantle)
+            derivedViewMode = GlobeViewMode.MantleInterior;
+        else if (plate)
+            derivedViewMode = string.Equals(plateViewOverride, "identity", StringComparison.Ordinal)
+                ? GlobeViewMode.PlateIdentity
+                : GlobeViewMode.Continents;
+        else if (crust)
+            derivedViewMode = GlobeViewMode.HypsometricTerrain;
+        else
+            derivedViewMode = GlobeViewMode.World;
+
+        return new LayerCompositionDecision(
+            DerivedViewMode: derivedViewMode,
+            MountMantleInterior: mountMantle,
+            SurfaceColoring: surfaceColoring,
+            TerrainRelief: terrainRelief);
     }
 }
