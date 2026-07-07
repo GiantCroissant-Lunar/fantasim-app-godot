@@ -67,9 +67,12 @@ public sealed record PlateSolidCentroid(int PlateId, CartesianPoint3 CentroidDir
 /// </para>
 /// <para>
 /// <b>Bottom depth is LINEAR in thickness.</b> For each top vertex <c>p</c> with gathered thickness
-/// <c>thk_m</c> and exaggeration <c>exg</c>, the bottom position is
+/// <c>thk_m</c> and the THICKNESS exaggeration <c>exg</c>, the bottom position is
 /// <c>q = p - normalize(p) * (thk_m * exg)</c>. No height exponent is applied — thickness is a
-/// DEPTH, not an elevation amplitude, so 2x thickness gives 2x radial depth (data-trueness).
+/// DEPTH, not an elevation amplitude, so 2x thickness gives 2x radial depth (data-trueness). The
+/// thickness exaggeration is an EXPLICIT parameter distinct from the surface relief exaggeration:
+/// D3's <c>RadialSectionProfile.CrustThicknessExaggeration</c> (default 8.0) is what makes 30 km of
+/// crust read as ~0.038R slab walls, independent of the ~3e-5 surface relief lens.
 /// </para>
 /// <para>
 /// <b>Rim extraction + loop chaining.</b> The plate's RIM is the set of undirected edges that appear
@@ -124,8 +127,9 @@ public static class PlateSolidBuilder
     /// </param>
     /// <param name="exaggeration">
     /// Metres-to-unit-radius scale applied to the thickness depth (LINEAR: <c>depth = thk_m * exg</c>).
-    /// This is the SAME exaggeration convention the relief path uses; pass the document's
-    /// <see cref="PlanetPresentationDocument.VerticalExaggeration"/>.
+    /// This is the THICKNESS exaggeration — DISTINCT from the surface relief exaggeration that shaped
+    /// <paramref name="caps"/>. Pass D3's <c>RadialSectionProfile.CrustThicknessExaggeration</c>
+    /// (default 8.0), NOT the document's <c>VerticalExaggeration</c> (surface relief, ~3e-5).
     /// </param>
     /// <param name="baseRadius">The unit-sphere base radius (default 1.0, matching <see cref="GlobeSurfaceBuilder.DefaultRadius"/>).</param>
     /// <returns>One <see cref="PlateSolid"/> per input cap, in the SAME order as <paramref name="caps"/>.</returns>

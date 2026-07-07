@@ -93,6 +93,15 @@ public sealed record RadialSectionProfile(
     public double DisplayedCrustFraction(double thicknessMetres)
         => thicknessMetres * CrustThicknessExaggeration / PlanetRadiusMetres;
 
+    /// <summary>
+    /// The metres-to-unit-radius scale that <c>PlateSolidBuilder.Build</c> expects for its thickness
+    /// depth parameter — i.e. <c>CrustThicknessExaggeration / PlanetRadiusMetres</c>. This is the
+    /// THICKNESS depth scale (units 1/metres), distinct from both the dimensionless
+    /// <see cref="CrustThicknessExaggeration"/> knob and the surface relief metres-to-unit-radius
+    /// scale. The builder applies it as <c>depth = thk_metres * scale</c>.
+    /// </summary>
+    public double ThicknessDepthScale() => CrustThicknessExaggeration / PlanetRadiusMetres;
+
     /// <summary>Displayed crust fraction at the profile's own <see cref="DefaultCrustThicknessMetres"/>.</summary>
     public double DisplayedCrustFraction() => DisplayedCrustFraction(DefaultCrustThicknessMetres);
 

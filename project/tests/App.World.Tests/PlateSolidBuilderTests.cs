@@ -278,6 +278,42 @@ public sealed class PlateSolidBuilderTests
         }
     }
 
+    // D3: the default RadialSectionProfile's crust-thickness exaggeration (8.0) must make a
+    // default-thickness (30 km) solid read as visible slab walls — the bottom depth ≥ 0.03R against
+    // the old ~0.0009R invisibility of the surface-relief-coupled exaggeration. This is the
+    // presentation contract the mantle-interior LAYER view (D1) depends on for "separated slabs".
+    [Fact]
+    public void Default_profile_thickness_exaggeration_yields_visible_slab_walls()
+    {
+        var profile = RadialSectionProfile.Default;
+        const double baseRadius = 1.0;
+
+        // Zero elevation so top radius == baseRadius exactly (radial depth is exactly thk * scale).
+        var thickness = new double[] { 0, 0, profile.DefaultCrustThicknessMetres };
+        var surfaces = new GlobePlateSurfaces(TwoPlateSnapshot(), noise: NoNoise)
+            .BuildSurfaces(new double[] { 0, 0, 0 }, exaggeration: 0.0001, baseRadius: baseRadius);
+        // The profile exposes the metres-to-unit-radius scale the builder expects (8.0 / 6,371,000).
+        var solids = PlateSolidBuilder.Build(surfaces, thickness, profile.ThicknessDepthScale(), baseRadius);
+
+        // Plate 1 is the single-cell plate (cell 2). Its solid has 3 top + 3 bottom vertices.
+        var plate1 = solids.Single(s => s.PlateId == 1);
+        int n = plate1.VertexCount / 2;
+
+        double expectedDepth = profile.DisplayedCrustFraction();
+        for (int v = 0; v < n; v++)
+        {
+            double topR = Radius(plate1.Positions[v]);
+            double botR = Radius(plate1.Positions[n + v]);
+            double depth = topR - botR;
+
+            Assert.Equal(baseRadius, topR, 9);
+            // The depth equals the profile's displayed crust fraction to float precision.
+            Assert.Equal(expectedDepth, depth, 6);
+            // The visibility contract: ≥ 0.03R (the D1 separated-slabs gate).
+            Assert.True(depth >= 0.03, $"default-profile slab wall depth must read as visible (>=0.03R): {depth}");
+        }
+    }
+
     // Count occurrences of each UNDIRECTED edge (min(a,b), max(a,b)) across all triangles. A
     // watertight closed solid has every edge shared by EXACTLY 2 triangles.
     private static Dictionary<(int, int), int> CountUndirectedEdges(PlateSolid solid)

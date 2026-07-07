@@ -92,9 +92,16 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     private double _explodedFactor;
     private Node3D? _explodedCrustRoot;
 
+    // D3 radial section profile: the single declared source of truth for crust thickness and mantle
+    // depth scaling. Defaults cover the canonical Earth-like planet; a future look-dev knob or a
+    // document-carried profile can override. Thickness exaggeration here feeds PlateSolidBuilder;
+    // the core-sphere radius (CMB × mantle scale) feeds the mantle interior backdrop.
+    private RadialSectionProfile _radialProfile = RadialSectionProfile.Default;
+
     // M-B cached build inputs captured at plate-surface bind time so UpdateExploded can rebuild
     // byte-identical TOP DTOs (same Continents/terrain colors) without recomputing the heavy surface
-    // path, and the solid thickness exaggeration matches the surface relief exaggeration exactly.
+    // path. The solid THICKNESS exaggeration is decoupled from the surface relief exaggeration (D3):
+    // it comes from _radialProfile.CrustThicknessExaggeration, not _lastExaggeration.
     private IReadOnlyList<PlateCap>? _lastCaps;
     private double _lastExaggeration;
     private IReadOnlyList<PlateSolidCentroid>? _lastCentroids;
@@ -611,7 +618,11 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             return root;
 
         var thickness = ResolveCrustThicknessMetres(document);
-        var solids = PlateSolidBuilder.Build(caps, thickness, _lastExaggeration);
+        // D3: the slab thickness exaggeration is EXPLICIT and distinct from the surface relief
+        // exaggeration (_lastExaggeration). The profile exposes the metres-to-unit-radius scale
+        // PlateSolidBuilder expects (CrustThicknessExaggeration / PlanetRadiusMetres), so 30 km of
+        // crust reads as ~0.038R slab walls — independent of the ~3e-5 surface relief lens.
+        var solids = PlateSolidBuilder.Build(caps, thickness, _radialProfile.ThicknessDepthScale());
         var exploded = PlateSolidBuilder.ApplyExplodedFactor(solids, centroids, _explodedFactor);
 
         var byPlate = new Dictionary<int, PlateSolidCentroid>(centroids.Count);
@@ -848,18 +859,23 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         },
     };
 
-    // Dark core sphere at the CMB radius (0.55R) — the backdrop the anomaly volumes read against.
-    private static MeshInstance3D BuildCoreSphere() => new()
+    // Dark core sphere at the CMB radius — the backdrop the anomaly volumes read against. D3: the
+    // geometric radius comes from _radialProfile (CMB × mantle depth scale), not a 0.55 literal.
+    private MeshInstance3D BuildCoreSphere()
     {
-        Name = "MantleCore",
-        Mesh = new SphereMesh { Radius = 0.55f, Height = 1.1f, RadialSegments = 48, Rings = 24 },
-        MaterialOverride = new StandardMaterial3D
+        double r = _radialProfile.DisplayedCoreSphereRadius();
+        return new MeshInstance3D
         {
-            AlbedoColor = new Color(0.05f, 0.055f, 0.07f),
-            Roughness = 1.0f,
-            Metallic = 0.0f,
-        },
-    };
+            Name = "MantleCore",
+            Mesh = new SphereMesh { Radius = (float)r, Height = (float)(2.0 * r), RadialSegments = 48, Rings = 24 },
+            MaterialOverride = new StandardMaterial3D
+            {
+                AlbedoColor = new Color(0.05f, 0.055f, 0.07f),
+                Roughness = 1.0f,
+                Metallic = 0.0f,
+            },
+        };
+    }
 
     private static MeshInstance3D BuildIsosurfaceNode(
         string name,
