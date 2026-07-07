@@ -142,3 +142,62 @@ length, etc. Canonical units were forgotten after months of work.
    for believable slab thickness → do D3 profile + knob first or together).
 5. **D2.2 timeline handle/ruler UX**, then **D2.3** verification-doctrine adoption.
 6. **D4.2/D4.3** as their own packets.
+
+---
+
+## ADDENDUM 2026-07-08 (user, after wave-5 verification): D5–D7
+
+## D5 — Layers are STACKED, not exclusive
+
+**User intent (verbatim spirit):** the layer is not exclusive; layers are stacked — several of
+them can be active at the same time.
+
+**Code grounding:** the current system is single-select: `ITimelineController.SelectedLayer` is
+ONE `TimelineLayerSelection`; `GlobeViewModeResolver.Resolve` maps one selection to one exclusive
+`GlobeViewMode`; the binder swaps whole presentations on transition (wave-5's MantleInterior
+included). Track buttons behave as radio buttons.
+
+**Design translation (proposed):** selection becomes an ACTIVE SET (per-sphere list of layer
+ids); track buttons toggle membership; the presentation composes every active layer's
+contribution (e.g. Mantle active alone = interior + separated slabs; Mantle+Crust = interior +
+slabs carrying full terrain tops; Plate+Crust = identity coloring over terrain relief). The
+GlobeViewMode enum dissolves into per-layer presentation contributions with declared composition
+rules (which layer owns the surface coloring, which adds geometry, which hides what). This is a
+real architecture change to the resolver/binder — spec + plan before code.
+
+## D6 — Timeline: the indicator must slide everywhere; zoom scales time
+
+**User intent:** could not slide the timeline indication; timeline zoom in/out should scale
+time in/out.
+
+**Code grounding:** wave-5 made the ruler band click/drag-scrubbable (real-mouse verified), but
+the playhead INDICATOR (the line crossing the lanes) is not grabbable along its length — the
+regime/track Buttons cover most lane area and eat presses, so grabbing the line where users
+naturally reach for it (in the lanes) fails. Zoom exists only as +/-/Fit buttons
+(`OnZoomIn/OutPressed` change the view span — that IS time scaling) — no mouse-wheel zoom, not
+cursor-centered.
+
+**Directives:** (a) the playhead line (plus handle) is grabbable anywhere along its height —
+a grab zone around the line takes precedence over the band/track buttons; (b) mouse wheel over
+the timeline zooms the TIME scale, centered on the cursor's tick; pinch likewise; buttons stay.
+
+## D7 — Layer composition should be node-graph-driven (and the graph must be visible)
+
+**User intent:** "I don't see node graph — is layer being composed by node graph? If not, we
+should work on that."
+
+**Code grounding:** two separate facts. (1) The world-generation node-graph PANEL is gated off
+by default (`world:showGraph`, default false, env `world__showGraph=true` — Host.cs:697-699),
+which is why nothing is visible. (2) GENERATION flows through graph nodes (P4b regime
+layer-generation nodes delegate to composition), but layer PRESENTATION composition — which
+layers render, how they compose, the wave-5 MantleInterior assembly — is binder/composer C#
+code, not graph nodes.
+
+**Directives:** (a) make the graph discoverable (config default or a UI toggle instead of
+env-only); (b) extend the graph vocabulary so LAYER COMPOSITION is expressed as nodes
+(per-layer presentation nodes feeding a compose node; D5's stacking rules become graph wiring,
+inspectable and editable in the panel). This pairs naturally with D5 — the stacked-layer
+composition rules should live in the graph, not in binder branches.
+
+**Sequencing note:** D5+D7b are one architecture arc (stacked layers expressed as graph
+composition); D6 and D7a are bounded UX/config packets that can ship independently.
