@@ -3,16 +3,95 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using Godot;
+using FantaSim.App.World;
 using FantaSim.App.World.Composition;
 using FantaSim.App.Timeline.Providers;
 using FantaSim.App.Timeline;
 using FantaSim.App.Command;
+using FantaSim.App.Ui.Seam;
 using Microsoft.Extensions.Logging;
 
 namespace FantaSim.App.Timeline.Seam;
 
 public partial class TimelineFace : Control, ITimelineFace
 {
+    private sealed class TrackRowBinding
+    {
+        public required Control RowRoot { get; init; }
+        public required Button ToggleButton { get; init; }
+        public required Button ChevronButton { get; init; }
+        public required Control ContentRoot { get; init; }
+        public required string LayerId { get; init; }
+        public required string Sphere { get; init; }
+        public required StyleBoxFlat NormalStyle { get; init; }
+        public required StyleBoxFlat InactiveStyle { get; init; }
+        public required StyleBoxFlat SelectedStyle { get; init; }
+        public required Callable ToggleCallable { get; init; }
+        public required Callable ChevronCallable { get; init; }
+        public IDisposable? GraphBinding { get; set; }
+    }
+
+    private sealed record TrackGraphPortItem(string PortId, string Label, string KindHint, bool Required);
+
+    private sealed record TrackGraphNodeItem(
+        string NodeId,
+        string TypeId,
+        int InputCount,
+        int OutputCount,
+        string Category,
+        string TypeKey,
+        string Summary,
+        string Detail,
+        bool IsSideEffect,
+        bool IsExpensive,
+        IReadOnlyList<TrackGraphPortItem> Inputs,
+        IReadOnlyList<TrackGraphPortItem> Outputs,
+        IReadOnlyList<string> ParameterLines);
+
+    private sealed record TrackGraphWireItem(
+        string FromNodeId,
+        int FromSlot,
+        string ToNodeId,
+        int ToSlot,
+        string FromPortId,
+        string ToPortId,
+        string KindHint);
+
+    private sealed class TrackGraphEditViewModel
+    {
+        public TrackGraphEditViewModel(LayerTrackGraphView graph)
+        {
+            Nodes = graph.Nodes.Select(node => new TrackGraphNodeItem(
+                    node.NodeId,
+                    node.TypeId,
+                    node.InputCount,
+                    node.OutputCount,
+                    node.Category,
+                    node.TypeId,
+                    node.Summary,
+                    string.Join('\n', node.ParameterLines),
+                    IsSideEffect: false,
+                    IsExpensive: false,
+                    node.Inputs.Select(port => new TrackGraphPortItem(port.PortId, port.Label, port.KindHint, port.Required)).ToArray(),
+                    node.Outputs.Select(port => new TrackGraphPortItem(port.PortId, port.Label, port.KindHint, port.Required)).ToArray(),
+                    node.ParameterLines))
+                .ToArray();
+            Wires = graph.Wires.Select(wire => new TrackGraphWireItem(
+                    wire.FromNodeId,
+                    wire.FromSlot,
+                    wire.ToNodeId,
+                    wire.ToSlot,
+                    wire.FromPortId,
+                    wire.ToPortId,
+                    wire.KindHint))
+                .ToArray();
+        }
+
+        public bool CompactCards => true;
+        public IReadOnlyList<TrackGraphNodeItem> Nodes { get; }
+        public IReadOnlyList<TrackGraphWireItem> Wires { get; }
+    }
+
     private ITimelineController? _ctl;
     private AnimationPlayer? _animationPlayer;
     private AnimationTree? _animationTree;
@@ -31,7 +110,10 @@ public partial class TimelineFace : Control, ITimelineFace
 
     private readonly List<(Button Button, double Start, double Width)> _geosphereBands = new();
     private readonly List<(Button Button, double Start, double Width)> _atmosphereBands = new();
-    private readonly List<(Button Button, string LayerId, string Sphere, StyleBoxFlat NormalStyle, StyleBoxFlat InactiveStyle, StyleBoxFlat SelectedStyle)> _tracks = new();
+    private readonly List<TrackRowBinding> _tracks = new();
+    private readonly HashSet<string> _expandedTracks = new(StringComparer.Ordinal);
+    private WorldGenerationGraphFamilyDocument? _cachedGraphFamily;
+    private long? _cachedGraphFamilyTick;
 
     private double _internalTick;
     private long _lastPushedTick = -1;
@@ -47,6 +129,10 @@ public partial class TimelineFace : Control, ITimelineFace
     private const int RungSpanUnits = 10;
     private const float RegimeBandHeight = 28f;
     private const float TrackHeight = 26f;
+    private const float ExpandedTrackHeight = TimelineTrackLayout.ExpandedTrackHeight;
+    private const float TrackHeaderWidth = 190f;
+    private const float TrackChevronWidth = 24f;
+    private const float TrackContentGap = 5f;
     private const float PlayheadLineGrabMargin = 8f;
     private const float PlayheadHandleWidth = 22f;
     private const float PlayheadHandleHeight = 20f;
@@ -67,6 +153,8 @@ public partial class TimelineFace : Control, ITimelineFace
     public static DeferredTimelineFace? ResidentProxy;
 
     public static IClient? ResidentCommandClient { get; set; }
+
+    public static Func<long, WorldGenerationGraphFamilyDocument?>? ResidentGenerationGraphFamilyProvider { get; set; }
 
     /// <summary>
     /// Shared factory set by TimelineComposition before the collectible bundle scene instantiates
@@ -191,6 +279,8 @@ public partial class TimelineFace : Control, ITimelineFace
         _proxyBound = false;
         _ctl = null;
         ResidentController = null;
+        ResidentGenerationGraphFamilyProvider = null;
+        DisposeTrackBindings();
         DisconnectIfConnected(_playPauseButton, BaseButton.SignalName.Pressed, Callable.From(OnPlayPausePressed));
         DisconnectIfConnected(_zoomOutButton, BaseButton.SignalName.Pressed, Callable.From(OnZoomOutPressed));
         DisconnectIfConnected(_fitButton, BaseButton.SignalName.Pressed, Callable.From(OnFitPressed));
@@ -573,6 +663,7 @@ public partial class TimelineFace : Control, ITimelineFace
         var atmosphereRegimesRoot = GetNode<Control>("VBoxContainer/LanesContainer/LanesList/AtmosphereLane/AtmosphereRegimes");
         var atmosphereTracksRoot = GetNode<Control>("VBoxContainer/LanesContainer/LanesList/AtmosphereLane/AtmosphereTracks");
 
+        DisposeTrackBindings();
         ClearChildren(geosphereRegimesRoot);
         ClearChildren(geosphereTracksRoot);
         ClearChildren(atmosphereRegimesRoot);
@@ -580,12 +671,12 @@ public partial class TimelineFace : Control, ITimelineFace
 
         _geosphereBands.Clear();
         _atmosphereBands.Clear();
-        _tracks.Clear();
 
         if (_ctl.MaxTick <= 0L) return;
 
         PopulateLane(_ctl.GeosphereSchedule, geosphereRegimesRoot, geosphereTracksRoot, _geosphereBands, "geosphere");
         PopulateLane(_ctl.AtmosphereSchedule, atmosphereRegimesRoot, atmosphereTracksRoot, _atmosphereBands, "atmosphere");
+        UpdateLanesMinimumHeight();
     }
 
     private void PopulateLane(
@@ -622,21 +713,60 @@ public partial class TimelineFace : Control, ITimelineFace
         }
 
         var tracks = TimelineModel.Tracks(schedule, _ctl.Tick);
+        var trackLayouts = TimelineTrackLayout.ToRowMap(TimelineTrackLayout.Plan(
+            tracks.Select(track => new TimelineTrackLayoutInput(
+                TrackKey(sphere, track.LayerId),
+                IsExpanded: _expandedTracks.Contains(TrackKey(sphere, track.LayerId)))),
+            TrackHeight,
+            ExpandedTrackHeight));
+        var generationFamily = string.Equals(sphere, "geosphere", StringComparison.Ordinal)
+            ? ResolveGenerationGraphFamily()
+            : null;
+
         foreach (var t in tracks)
         {
             var trackSphere = sphere;
             var trackLayerId = t.LayerId;
+            var trackKey = TrackKey(trackSphere, trackLayerId);
+            var rowLayout = trackLayouts[trackKey];
+            var expanded = _expandedTracks.Contains(trackKey);
+            var regimeId = ResolveTrackRegime(schedule, trackLayerId, _ctl.Tick);
+            var graph = string.Equals(trackSphere, "geosphere", StringComparison.Ordinal)
+                ? LayerTrackGraphProjection.Resolve(generationFamily, trackSphere, trackLayerId, regimeId)
+                : LayerTrackGraphView.Empty(trackSphere, trackLayerId, regimeId, "deferred");
+
+            var row = new Control
+            {
+                Name = $"TrackRow_{SafeNodeName(trackLayerId)}",
+                CustomMinimumSize = new Vector2(0, rowLayout.Height),
+                SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+                MouseFilter = MouseFilterEnum.Ignore,
+            };
+
+            var chevron = new Button
+            {
+                Text = expanded ? "v" : ">",
+                TooltipText = expanded ? "Collapse layer graph" : "Expand layer graph",
+                FocusMode = FocusModeEnum.None,
+                ClipText = true,
+                MouseDefaultCursorShape = Control.CursorShape.PointingHand,
+            };
+            chevron.AddThemeFontSizeOverride("font_size", 12);
+            ConfigureTrackRowChild(chevron, 0f, TrackChevronWidth, TrackHeight);
+            row.AddChild(chevron);
+
             var btn = new Button
             {
-                CustomMinimumSize = new Vector2(0, TrackHeight),
-                Text = $"  {FriendlyLayerLabel(t.LayerId)}",
+                Text = $" {FriendlyLayerLabel(t.LayerId)}",
                 TooltipText = $"{sphere}:{t.LayerId}",
                 Alignment = HorizontalAlignment.Left,
                 FocusMode = FocusModeEnum.None,
+                ClipText = true,
             };
             btn.AddThemeFontSizeOverride("font_size", 12);
             btn.AddThemeColorOverride("font_color", new Color(0.94f, 0.96f, 0.98f, 0.98f));
             btn.AddThemeColorOverride("font_hover_color", new Color(1.0f, 1.0f, 1.0f, 1.0f));
+            ConfigureTrackRowChild(btn, TrackChevronWidth, TrackHeaderWidth - TrackChevronWidth, TrackHeight);
 
             var normalStyle = new StyleBoxFlat { BgColor = new Color(0.14f, 0.20f, 0.24f, 0.78f) };
             normalStyle.SetBorderWidthAll(1);
@@ -657,11 +787,214 @@ public partial class TimelineFace : Control, ITimelineFace
             btn.AddThemeStyleboxOverride("hover", selectedStyle);
             btn.AddThemeStyleboxOverride("pressed", selectedStyle);
 
-            btn.Pressed += () => OnTrackPressed(trackSphere, trackLayerId);
+            row.AddChild(btn);
 
-            tracksRoot.AddChild(btn);
-            _tracks.Add((btn, t.LayerId, sphere, normalStyle, inactiveStyle, selectedStyle));
+            var content = new Control
+            {
+                Name = "GraphContent",
+                MouseFilter = expanded ? MouseFilterEnum.Stop : MouseFilterEnum.Ignore,
+                ClipContents = true,
+            };
+            content.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+            content.OffsetLeft = TrackHeaderWidth + TrackContentGap;
+            content.OffsetTop = 0f;
+            content.OffsetRight = 0f;
+            content.OffsetBottom = 0f;
+            row.AddChild(content);
+
+            IDisposable? graphBinding = null;
+            if (expanded)
+                graphBinding = BuildExpandedGraph(content, graph);
+            else
+                BuildCompactGraphStrip(content, graph);
+
+            var toggleCallable = Callable.From(() => OnTrackPressed(trackSphere, trackLayerId));
+            var chevronCallable = Callable.From(() => OnTrackExpandPressed(trackSphere, trackLayerId));
+            btn.Connect(BaseButton.SignalName.Pressed, toggleCallable);
+            chevron.Connect(BaseButton.SignalName.Pressed, chevronCallable);
+
+            tracksRoot.AddChild(row);
+            _tracks.Add(new TrackRowBinding
+            {
+                RowRoot = row,
+                ToggleButton = btn,
+                ChevronButton = chevron,
+                ContentRoot = content,
+                LayerId = t.LayerId,
+                Sphere = sphere,
+                NormalStyle = normalStyle,
+                InactiveStyle = inactiveStyle,
+                SelectedStyle = selectedStyle,
+                ToggleCallable = toggleCallable,
+                ChevronCallable = chevronCallable,
+                GraphBinding = graphBinding,
+            });
         }
+    }
+
+    private void UpdateLanesMinimumHeight()
+    {
+        if (_lanesContainer is null)
+            return;
+
+        var lanesList = GetNodeOrNull<Control>("VBoxContainer/LanesContainer/LanesList");
+        if (lanesList is null)
+            return;
+
+        var minHeight = Math.Max(120f, lanesList.GetCombinedMinimumSize().Y);
+        _lanesContainer.CustomMinimumSize = new Vector2(0f, minHeight);
+    }
+
+    private static void ConfigureTrackRowChild(Control child, float left, float width, float height)
+    {
+        child.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+        child.Position = new Vector2(left, 0f);
+        child.Size = new Vector2(width, height);
+        child.CustomMinimumSize = new Vector2(width, height);
+    }
+
+    private void BuildCompactGraphStrip(Control content, LayerTrackGraphView graph)
+    {
+        content.MouseFilter = MouseFilterEnum.Ignore;
+        var strip = new HBoxContainer
+        {
+            Name = "CompactGraphStrip",
+            MouseFilter = MouseFilterEnum.Ignore,
+            Alignment = BoxContainer.AlignmentMode.Begin,
+        };
+        strip.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        strip.AddThemeConstantOverride("separation", 4);
+        content.AddChild(strip);
+
+        IReadOnlyList<string> ids = graph.PipelineNodeIds.Count > 0
+            ? graph.PipelineNodeIds
+            : graph.Nodes.Select(node => node.NodeId).ToArray();
+
+        if (ids.Count == 0)
+        {
+            strip.AddChild(CompactStripLabel(graph.Label, muted: true));
+            return;
+        }
+
+        for (var i = 0; i < ids.Count; i++)
+        {
+            var node = graph.Nodes.FirstOrDefault(candidate =>
+                string.Equals(candidate.NodeId, ids[i], StringComparison.Ordinal));
+            strip.AddChild(CompactChip(node?.Label ?? ids[i]));
+            if (i < ids.Count - 1)
+                strip.AddChild(CompactStripLabel(">", muted: true));
+        }
+    }
+
+    private IDisposable? BuildExpandedGraph(Control content, LayerTrackGraphView graph)
+    {
+        content.MouseFilter = MouseFilterEnum.Stop;
+        if (graph.Nodes.Count == 0)
+        {
+            var label = CompactStripLabel(graph.Label, muted: true);
+            label.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+            label.VerticalAlignment = VerticalAlignment.Center;
+            content.AddChild(label);
+            return null;
+        }
+
+        var graphEdit = new GraphEdit
+        {
+            Name = "LayerGraphEdit",
+            MouseFilter = MouseFilterEnum.Stop,
+            ClipContents = true,
+        };
+        graphEdit.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        graphEdit.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        graphEdit.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+        content.AddChild(graphEdit);
+
+        return EmbeddedNodeGraphRenderer.TryBindReadOnly(
+            graphEdit,
+            new TrackGraphEditViewModel(graph),
+            _log);
+    }
+
+    private static Label CompactChip(string text)
+    {
+        var chip = CompactStripLabel(text, muted: false);
+        chip.CustomMinimumSize = new Vector2(82f, TrackHeight);
+        chip.HorizontalAlignment = HorizontalAlignment.Center;
+        chip.AddThemeStyleboxOverride("normal", CompactChipStyle());
+        return chip;
+    }
+
+    private static Label CompactStripLabel(string text, bool muted)
+    {
+        var label = new Label
+        {
+            Text = text,
+            ClipText = true,
+            MouseFilter = MouseFilterEnum.Ignore,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        label.AddThemeFontSizeOverride("font_size", 10);
+        label.AddThemeColorOverride("font_color", muted
+            ? new Color(0.64f, 0.70f, 0.76f, 0.72f)
+            : new Color(0.90f, 0.94f, 0.98f, 0.95f));
+        return label;
+    }
+
+    private static StyleBoxFlat CompactChipStyle()
+    {
+        var style = new StyleBoxFlat
+        {
+            BgColor = new Color(0.08f, 0.12f, 0.14f, 0.78f),
+            BorderColor = new Color(0.24f, 0.36f, 0.42f, 0.72f),
+        };
+        style.SetBorderWidthAll(1);
+        style.SetCornerRadiusAll(3);
+        style.ContentMarginLeft = 5f;
+        style.ContentMarginRight = 5f;
+        return style;
+    }
+
+    private WorldGenerationGraphFamilyDocument? ResolveGenerationGraphFamily()
+    {
+        if (_ctl is null)
+            return null;
+
+        if (_cachedGraphFamilyTick == _ctl.Tick)
+            return _cachedGraphFamily;
+
+        _cachedGraphFamilyTick = _ctl.Tick;
+        try
+        {
+            _cachedGraphFamily = ResidentGenerationGraphFamilyProvider?.Invoke(_ctl.Tick);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Timeline layer graph family unavailable.");
+            _cachedGraphFamily = null;
+        }
+
+        return _cachedGraphFamily;
+    }
+
+    private static string? ResolveTrackRegime(SphereRegimeSchedule schedule, string layerId, long currentTick)
+    {
+        var active = schedule.RegimeAt(currentTick);
+        if (active is not null && HasLayer(active, layerId))
+            return active.RegimeId;
+
+        return schedule.Regimes.FirstOrDefault(regime => HasLayer(regime, layerId))?.RegimeId;
+    }
+
+    private static bool HasLayer(SphereRegime regime, string layerId)
+        => regime.ActiveLayers.Any(layer => string.Equals(layer.Value, layerId, StringComparison.Ordinal));
+
+    private void OnTrackExpandPressed(string sphere, string layerId)
+    {
+        var key = TrackKey(sphere, layerId);
+        if (!_expandedTracks.Add(key))
+            _expandedTracks.Remove(key);
+        BuildLanes();
+        UpdateLayout();
     }
 
     private async void OnTrackPressed(string sphere, string layerId)
@@ -793,9 +1126,9 @@ public partial class TimelineFace : Control, ITimelineFace
                     ? selectedGeo.Contains(track.LayerId)
                     : selectedAtmo.Contains(track.LayerId));
 
-            track.Button.Disabled = false;
-            track.Button.Modulate = isActive ? new Color(1, 1, 1, 1f) : new Color(1, 1, 1, 0.68f);
-            track.Button.AddThemeStyleboxOverride("normal", isSelected
+            track.ToggleButton.Disabled = false;
+            track.ToggleButton.Modulate = isActive ? new Color(1, 1, 1, 1f) : new Color(1, 1, 1, 0.68f);
+            track.ToggleButton.AddThemeStyleboxOverride("normal", isSelected
                 ? track.SelectedStyle
                 : isActive
                     ? track.NormalStyle
@@ -940,6 +1273,24 @@ public partial class TimelineFace : Control, ITimelineFace
         BuildLanes();
         UpdateLayout();
     }
+
+    private void DisposeTrackBindings()
+    {
+        foreach (var track in _tracks)
+        {
+            track.GraphBinding?.Dispose();
+            DisconnectIfConnected(track.ToggleButton, BaseButton.SignalName.Pressed, track.ToggleCallable);
+            DisconnectIfConnected(track.ChevronButton, BaseButton.SignalName.Pressed, track.ChevronCallable);
+        }
+
+        _tracks.Clear();
+    }
+
+    private static string TrackKey(string sphere, string layerId)
+        => $"{sphere}:{layerId}";
+
+    private static string SafeNodeName(string value)
+        => value.Replace('.', '_').Replace('-', '_').Replace(':', '_');
 
     private static void ClearChildren(Node node)
     {

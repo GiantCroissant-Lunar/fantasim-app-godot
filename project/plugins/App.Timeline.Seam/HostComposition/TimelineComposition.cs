@@ -32,6 +32,8 @@ public static class TimelineComposition
         FantaSim.App.Timeline.Seam.TimelineFace.ResidentLoggerFactory = ctx.LoggerFactory;
         FantaSim.App.Timeline.Seam.TimelineFace.ResidentCommandClient =
             registry.TryGet<FantaSim.App.Command.IClient>();
+        FantaSim.App.Timeline.Seam.TimelineFace.ResidentGenerationGraphFamilyProvider =
+            tick => registry.TryGet<FantaSim.App.World.IService>()?.GetPlanetPresentationAsync(tick).GenerationGraphFamily;
         // Default 5M ticks/sec (crust snapshot spacing); overridable by setting the static
         // before calling ComposeTimeline. The face reads this in BindResidentContext.
         FantaSim.App.Timeline.Seam.TimelineFace.ResidentTicksPerSecond = 5_000_000.0;
