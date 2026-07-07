@@ -268,3 +268,24 @@ drag like a character preview; the heavy path (crust snapshot regen and anything
 "Crust snapshot transition") DEBOUNCES until the scrub rests (~300 ms); (3) active layers each
 animate their product per applied tick — mantle per-tick field resample is its own follow-up
 slice (grid cost), but the slabs/surface must ride the light path now.
+
+### D8b (user, 2026-07-08): PROGRESSIVE RESOLUTION is the scrub mechanism; low-res track previews
+
+**User intent (verbatim spirit):** timeline sliding adjustment should be on the PLANET RESOLUTION —
+like a web image loading low-resolution first and increasing gradually. The generated planet must
+never slow the sliding. And the track preview (as a FRAME concept) should also be low resolution.
+
+**Grounding:** the cost that fights the drag is world GENERATION at full tessellation frequency
+(Default freq 4; crust snapshot regen). Generation at low frequency is drastically cheaper, and
+the adaptive-subdivision machinery already exists (logs show subdivision=fixed|adaptive; the
+2026-07-04 LOD roadmap). The D8 coalesce/debounce shipped 2026-07-08 is the interim mechanism.
+
+**Directives:**
+1. While scrubbing: the planet regenerates/renders at a LOW resolution rung (e.g. freq 2-3, cheap
+   enough to follow the hand per applied tick — replacing "freeze heavies until rest").
+2. At rest: resolution steps UP progressively through the rung ladder to full (each rung replaces
+   the last visibly, web-image style; cancel the climb if a new scrub starts).
+3. Track content previews are a FRAME concept (filmstrip thumbnails of the layer's world along
+   the time axis) rendered at LOW resolution; they join the D7c track content design.
+4. The resolution rungs should reuse the existing tessellation-frequency / adaptive-subdivision
+   ladder, not invent a parallel LOD system (reuse-Unify doctrine applies).
