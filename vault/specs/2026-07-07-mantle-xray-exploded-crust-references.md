@@ -89,3 +89,30 @@ convergence rates, replacing P2's documented geometric-convention placeholder.
 owns the volumetric `MantleAnomalyField` + gradient + tests; the app reuses M-A's shell-grid
 sampling / marching-cubes / `render.mantle` plumbing, swapped onto the new field at
 integration. Existing `PlateHistoryForcingSource` (basal layer) stays intact for M-C.
+
+## NORTH-STAR EYE GATE (user directive 2026-07-07: closeness to reference 2 is FIRST PRIORITY)
+
+The acceptance gate for the mantle view is the USER'S EYE against the reference image. Tests
+green ≠ done. After integration, the lead runs a LOOK-ITERATION LOOP — screenshot →
+compare → tune → re-render — against this checklist; do not commit look changes blind:
+
+1. **Slabs read as descending CURTAINS/sheets** hanging under the trench arcs — never blobs,
+   beads, or radial shells. Silhouettes lumpy/organic (noise working), edges torn not smooth.
+2. **Plumes read as rising columns with mushroom heads**, rooted in visible warm basal
+   structure, standing in the gaps between slab graveyards.
+3. **Layered translucency is visible**: a translucent outer envelope around an opaque core on
+   BOTH polarities (blue-over-blue, orange-over-red). If it reads as one flat surface per
+   polarity, the thresholds/alpha need work.
+4. **The ghosted surface reads as a reference frame**: coastline/boundary wireframe legible
+   over the interior at ~10-15% shell opacity; the viewer can tell where a slab is relative
+   to the surface plates.
+5. **Depth composition**: dark core sphere anchors the center; interior structures fill the
+   volume between core and shell; rim/soft lighting gives the isosurfaces 3D form (not flat
+   cutouts).
+6. **Time tells the story**: scrubbing shows slabs deepening with subduction age and the
+   basal blanket/plumes re-arranging — motion consistent with the surface plates.
+
+Tuning knobs live APP-SIDE (the app constructs `MantleFieldConfig` + `MantleViewConfig`):
+field params (ribbon width, noise amplitude/warp, blanket/plume strengths), thresholds,
+colors/alpha, grid resolution — so the iteration loop is a bundle rebuild (~1 min), NOT an
+engine repack. Iterate in the windowed app via `render.mantle` + `render.screenshot`.
