@@ -871,6 +871,14 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
 
         // Separated crust slabs at the profile's declared layer explode factor (0.4 of max offset).
         Node3D slabRoot = BuildExplodedSolidCrust(RadialSectionProfile.MantleLayerExplodeFactor);
+        // SCALE COMPENSATION (windowed gate 2026-07-08): BuildExplodedSolidCrust's child mesh
+        // instances each carry the house x2 scale (they were built for the standalone
+        // render.exploded path, parented directly under PlanetBody). The composer root applies
+        // the house x2 as well — without compensation the slabs render x4 while the isosurfaces
+        // (unit-built children) render x2, and giant slab shells englobe the interior. Halving
+        // the slab root nets the slabs back to x2. Follow-up: unify the scaling convention so
+        // piece builders emit unit-scale nodes and ONLY composition roots scale.
+        slabRoot.Scale = Vector3.One * 0.5f;
 
         // Four isosurface entries (opaque inner cores first, translucent outer halos last) — the
         // same material singletons and BuildIsosurfaceNode the x-ray path uses.

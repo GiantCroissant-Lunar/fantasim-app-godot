@@ -147,9 +147,13 @@ public partial class TimelineFace : Control, ITimelineFace
             _fitButton.Pressed += OnFitPressed;
             _zoomInButton.Pressed += OnZoomInPressed;
             _lanesContainer.GuiInput += OnLanesGuiInput;
-            _rulerRoot.MouseFilter = MouseFilterEnum.Stop;
+            // The Ruler control cannot receive input directly: LanesList (a later sibling's
+            // child) bleeds ~37px ABOVE LanesContainer's rect and overlaps the whole ruler band,
+            // and later tree order wins GUI picking (found live via the camera.debug control
+            // probe, 2026-07-08). The face's ROOT panel receives every click its children do not
+            // consume, so ruler-band scrubbing is wired here and mapped into ruler-local X.
             _rulerRoot.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
-            _rulerRoot.GuiInput += OnRulerGuiInput;
+            GuiInput += OnFaceGuiInput;
             Resized += OnLanesResized;
 
             SetupAnimationSystem();
@@ -191,8 +195,7 @@ public partial class TimelineFace : Control, ITimelineFace
         DisconnectIfConnected(_fitButton, BaseButton.SignalName.Pressed, Callable.From(OnFitPressed));
         DisconnectIfConnected(_zoomInButton, BaseButton.SignalName.Pressed, Callable.From(OnZoomInPressed));
         DisconnectIfConnected(_lanesContainer, Control.SignalName.GuiInput, Callable.From<InputEvent>(OnLanesGuiInput));
-        DisconnectIfConnected(_rulerRoot, Control.SignalName.GuiInput, Callable.From<InputEvent>(OnRulerGuiInput));
-        DisconnectIfConnected(_playheadHandle, Control.SignalName.GuiInput, Callable.From<InputEvent>(OnPlayheadHandleGuiInput));
+        DisconnectIfConnected(this, Control.SignalName.GuiInput, Callable.From<InputEvent>(OnFaceGuiInput));
         DisconnectIfConnected(this, Control.SignalName.Resized, Callable.From(OnLanesResized));
 
         // Sever the resident-to-collectible-ALC bind so the old timeline bundle's ALC can
@@ -299,6 +302,15 @@ public partial class TimelineFace : Control, ITimelineFace
         _internalTick = tick;
         _lastPushedTick = tick;
 
+        // UpdateUI renders from _lastViewSnapshot when present, and face-initiated seeks get no
+        // fresh snapshot from the service (only the ingress path round-trips one) — so a stale
+        // snapshot kept the label/playhead frozen while the world scrubbed underneath (proven
+        // live 2026-07-08; the long-standing "timeline cannot be adjusted" feedback gap). Move
+        // the snapshot to the sought tick so the UI echoes immediately; the next real service
+        // snapshot replaces it wholesale via ApplyView.
+        if (_lastViewSnapshot is not null)
+            _lastViewSnapshot = _lastViewSnapshot with { Tick = tick };
+
         if (_animationPlayer is not null)
         {
             var pos = tick / _ticksPerSecond;
@@ -337,6 +349,27 @@ public partial class TimelineFace : Control, ITimelineFace
             _ctl.Play();
     }
 
+    // True while a scrub gesture owns the mouse (press landed on a scrub surface — lanes or
+    // ruler/chrome). Motion is tracked in _Input: exactly like GlobeOrbitControls, held-button
+    // motion is routed through the viewport's GUI focus path and does not reliably reach
+    // gui_input handlers, so per-frame drag updates must be captured at the _Input stage.
+    private bool _scrubDragging;
+
+    public override void _Input(InputEvent @event)
+    {
+        if (!_nodesInitialized || _ctl is null || _rulerRoot is null) return;
+
+        switch (@event)
+        {
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false }:
+                _scrubDragging = false;
+                break;
+            case InputEventMouseMotion motion when _scrubDragging:
+                HandleScrub(motion.Position.X - _rulerRoot.GlobalPosition.X, _rulerRoot.Size.X);
+                break;
+        }
+    }
+
     private void OnLanesGuiInput(InputEvent @event)
     {
         if (_ctl is null || _lanesContainer is null) return;
@@ -345,6 +378,7 @@ public partial class TimelineFace : Control, ITimelineFace
         {
             if (mouseBtn.ButtonIndex == MouseButton.Left && mouseBtn.Pressed)
             {
+                _scrubDragging = true;
                 HandleScrub(mouseBtn.Position.X);
             }
         }
@@ -357,16 +391,20 @@ public partial class TimelineFace : Control, ITimelineFace
         }
     }
 
-    private void OnRulerGuiInput(InputEvent @event)
+    // Face-root scrub surface: fires for every mouse event the child controls (buttons, lane
+    // container, band/track buttons) did NOT consume — i.e. the ruler band, the playhead handle
+    // (visual-only, MouseFilter.Ignore), and any empty timeline chrome. Maps the face-local X
+    // into ruler-local X so the tick arithmetic matches the drawn ruler exactly.
+    private void OnFaceGuiInput(InputEvent @event)
     {
         if (_ctl is null || _rulerRoot is null) return;
 
         if (@event is InputEventMouseButton mouseBtn)
         {
-            if (mouseBtn.ButtonIndex == MouseButton.Left)
+            if (mouseBtn.ButtonIndex == MouseButton.Left && mouseBtn.Pressed)
             {
-                if (mouseBtn.Pressed)
-                    HandleScrub(mouseBtn.Position.X, _rulerRoot.Size.X);
+                _scrubDragging = true;
+                HandleScrub(FaceToRulerLocalX(mouseBtn.Position.X), _rulerRoot.Size.X);
                 AcceptEvent();
             }
         }
@@ -374,34 +412,14 @@ public partial class TimelineFace : Control, ITimelineFace
         {
             if ((mouseMotion.ButtonMask & MouseButtonMask.Left) != 0)
             {
-                HandleScrub(mouseMotion.Position.X, _rulerRoot.Size.X);
+                HandleScrub(FaceToRulerLocalX(mouseMotion.Position.X), _rulerRoot.Size.X);
                 AcceptEvent();
             }
         }
     }
 
-    private void OnPlayheadHandleGuiInput(InputEvent @event)
-    {
-        if (_ctl is null || _rulerRoot is null || _playheadHandle is null) return;
-
-        if (@event is InputEventMouseButton mouseBtn)
-        {
-            if (mouseBtn.ButtonIndex == MouseButton.Left)
-            {
-                if (mouseBtn.Pressed)
-                    HandleScrub(_playheadHandle.Position.X + mouseBtn.Position.X, _rulerRoot.Size.X);
-                _playheadHandle.AcceptEvent();
-            }
-        }
-        else if (@event is InputEventMouseMotion mouseMotion)
-        {
-            if ((mouseMotion.ButtonMask & MouseButtonMask.Left) != 0)
-            {
-                HandleScrub(_playheadHandle.Position.X + mouseMotion.Position.X, _rulerRoot.Size.X);
-                _playheadHandle.AcceptEvent();
-            }
-        }
-    }
+    private float FaceToRulerLocalX(float faceLocalX)
+        => faceLocalX - (_rulerRoot!.GlobalPosition.X - GlobalPosition.X);
 
     private void HandleScrub(float localX)
     {
@@ -413,8 +431,19 @@ public partial class TimelineFace : Control, ITimelineFace
     {
         if (_ctl is null) return;
         if (!TimelineScrubMapper.TryLocalXToTick(localX, surfaceWidth, _viewStartTick, _viewEndTick, out var tick))
+        {
+            // Loud failure per the ingress doctrine: a scrub that maps to nothing is a layout bug.
+            _log.LogInformation("timeline scrub rejected: localX={X} width={W}", localX, surfaceWidth);
             return;
+        }
+
+        // Mirror the ingress seek sequence (service seek + push/echo). _ctl.SeekTo routes to the
+        // service but never echoes back to this face — face-initiated scrubs updated the WORLD
+        // while the label/playhead/handle stayed stale (the long-standing "timeline cannot be
+        // adjusted" perception, proven live 2026-07-08). SeekTo(tick) is the local echo: it
+        // pushes the tick to the controller and refreshes the UI.
         _ctl.SeekTo(tick);
+        SeekTo(tick);
     }
 
     private void OnBandPressed(long startTick)
@@ -754,15 +783,17 @@ public partial class TimelineFace : Control, ITimelineFace
             _rulerRoot.AddChild(label);
         }
 
+        // Visual-only: the handle shows WHERE to grab, but input for the whole ruler band —
+        // including on top of the handle — arrives at the face root (OnFaceGuiInput), because the
+        // ruler band is occluded for GUI picking by the LanesList overlap (see _Ready wiring).
         _playheadHandle = new TimelinePlayheadHandle
         {
             Name = "PlayheadHandle",
             Size = new Vector2(PlayheadHandleWidth, PlayheadHandleHeight),
-            MouseFilter = MouseFilterEnum.Stop,
+            MouseFilter = MouseFilterEnum.Ignore,
             MouseDefaultCursorShape = Control.CursorShape.Hsize,
             ZIndex = 2
         };
-        _playheadHandle.GuiInput += OnPlayheadHandleGuiInput;
         _rulerRoot.AddChild(_playheadHandle);
         UpdatePlayheadHandle(_lastViewSnapshot?.Tick ?? _ctl?.Tick ?? _internalTick);
     }
