@@ -63,6 +63,28 @@ public sealed class GlobeViewModeResolverTests
             GlobeViewModeResolver.Resolve("mobile-plate", sel));
     }
 
+    // D1: the mantle is a selectable LAYER of the world stack. Focusing geosphere.mantle at
+    // mobile-plate selects the MantleInterior view (M-A interior composed with M-B separated slabs).
+    [Fact]
+    public void Mobile_plate_geosphere_mantle_layer_is_mantle_interior()
+    {
+        var sel = new TimelineLayerSelection("geosphere", "geosphere.mantle");
+        Assert.Equal(GlobeViewMode.MantleInterior,
+            GlobeViewModeResolver.Resolve("mobile-plate", sel));
+    }
+
+    [Fact]
+    public void Mobile_plate_mantle_layer_is_inactive_in_non_mobile_plate_regimes()
+    {
+        // The mantle layer exists on the mobile-plate schedule; focusing it elsewhere still yields
+        // Inactive — the mantle-interior LAYER view requires mobile-plate content (slabs to detach).
+        var sel = new TimelineLayerSelection("geosphere", "geosphere.mantle");
+        Assert.Equal(GlobeViewMode.Inactive,
+            GlobeViewModeResolver.Resolve("magma-ocean", sel));
+        Assert.Equal(GlobeViewMode.Inactive,
+            GlobeViewModeResolver.Resolve("stagnant-lid", sel));
+    }
+
     [Fact]
     public void Mobile_plate_unknown_layer_defaults_to_world()
     {

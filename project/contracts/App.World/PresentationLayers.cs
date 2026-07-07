@@ -56,6 +56,7 @@ public sealed record PlanetLayerProjectionProfile(
     double ReferenceMaxReliefMetres = 18_000.0)
 {
     public const string CrustLayerId = "geosphere.crust";
+    public const string MantleLayerId = "geosphere.mantle";
     public const string UnifyCellGeodesicSourceGrid = "UnifyCell.GeodesicSphereTessellation";
     public const string PhysicalMetresUnit = "physical-metres";
     public const string UnitSphereDisplacementUnit = "unit-sphere-displacement";

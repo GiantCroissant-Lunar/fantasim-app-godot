@@ -50,6 +50,16 @@ public enum GlobeViewMode
     /// focusing the <c>geosphere.crust</c> track.
     /// </summary>
     HypsometricTerrain,
+
+    /// <summary>
+    /// Mantle-interior LAYER view (D1): the mantle is a selectable layer of the world stack, not an
+    /// x-ray. When active, the presentation composes the M-A interior (core sphere + four anomaly
+    /// isosurfaces, field method unchanged) with the M-B crust as SEPARATED THICK SLABS at a modest
+    /// radial explode factor — discrete detached plates that still read as a sphere (the Sketchfab
+    /// exploded-plates reference). The separated slabs (not a ghost shell) are the surface reference
+    /// frame. Reached by focusing the <c>geosphere.mantle</c> track.
+    /// </summary>
+    MantleInterior,
 }
 
 /// <summary>
@@ -58,20 +68,22 @@ public enum GlobeViewMode
 /// WORLD view is the DEFAULT (no selection): a waterless world reads as a world (§5c). Focusing
 /// <c>geosphere.plate</c> selects the M0 <see cref="Continents"/> view by default; focusing it with
 /// <paramref name="plateViewOverride"/> set to <c>identity</c> selects the <see cref="PlateIdentity"/>
-/// diagnostic. <c>geosphere.crust</c> selects the hypsometric crust diagnostic; any other/unknown
-/// layer falls back to the world view. Mirrors the <see cref="RegimeSurfaceResolver"/> pattern: a
-/// pure, Godot-free mapping unit-testable from the contract tier.
+/// diagnostic. <c>geosphere.crust</c> selects the hypsometric crust diagnostic; <c>geosphere.mantle</c>
+/// selects the <see cref="MantleInterior"/> layer view (D1); any other/unknown layer falls back to
+/// the world view. Mirrors the <see cref="RegimeSurfaceResolver"/> pattern: a pure, Godot-free mapping
+/// unit-testable from the contract tier.
 /// </summary>
 public static class GlobeViewModeResolver
 {
     /// <summary>
     /// Resolves the globe view for the given regime and timeline layer selection. Returns
     /// <see cref="GlobeViewMode.Inactive"/> for non-mobile-plate regimes; <see cref="World"/>
-    /// when mobile-plate with no selection or any non-plate/non-crust layer;
+    /// when mobile-plate with no selection or any non-plate/non-crust/non-mantle layer;
     /// <see cref="Continents"/> for <c>geosphere.plate</c>;
     /// <see cref="PlateIdentity"/> for <c>geosphere.plate</c> when the host config knob
     /// <c>globe:plateView</c> is <c>identity</c>;
-    /// <see cref="HypsometricTerrain"/> for <c>geosphere.crust</c>.
+    /// <see cref="HypsometricTerrain"/> for <c>geosphere.crust</c>;
+    /// <see cref="MantleInterior"/> for <c>geosphere.mantle</c>.
     /// </summary>
     public static GlobeViewMode Resolve(string? regimeId, TimelineLayerSelection? selectedLayer)
         => Resolve(regimeId, selectedLayer, plateViewOverride: null);
@@ -100,6 +112,7 @@ public static class GlobeViewModeResolver
                 ? GlobeViewMode.PlateIdentity
                 : GlobeViewMode.Continents,
             "geosphere.crust" => GlobeViewMode.HypsometricTerrain,
+            "geosphere.mantle" => GlobeViewMode.MantleInterior,
             _ => GlobeViewMode.World,
         };
     }
