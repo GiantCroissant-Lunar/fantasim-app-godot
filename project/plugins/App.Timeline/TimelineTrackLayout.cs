@@ -12,7 +12,7 @@ public sealed record TimelineTrackLayoutPlan(IReadOnlyList<TimelineTrackLayoutRo
 
 public static class TimelineTrackLayout
 {
-    public const float CompactTrackHeight = 26f;
+    public const float CompactTrackHeight = TimelineFilmstrip.CompactTrackHeight;
     public const float ExpandedTrackHeight = 200f;
 
     public static TimelineTrackLayoutPlan Plan(
