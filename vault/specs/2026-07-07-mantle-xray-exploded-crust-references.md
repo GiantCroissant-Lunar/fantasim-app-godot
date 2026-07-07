@@ -3,6 +3,14 @@
 **Status: REFERENCE-LOCK (2026-07-07). User-supplied visual targets for the next render arc(s);
 not yet a dispatched plan. Companion to `vault/plans/2026-07-07-gplates-truth-playback-and-viewport-systems.md`.**
 
+**AMENDED 2026-07-07 (later same day) by
+`vault/specs/2026-07-07-layer-presentation-input-parity-canonical-units-directives.md` (D1):
+the volumetric FIELD method below stays locked, but the x-ray/ghost-shell PRESENTATION is
+superseded — the mantle becomes a selectable LAYER whose active view composes the M-A interior
+with the M-B separated crust (detached slabs, still spherical) instead of ghosting the surface.
+Eye-gate criterion 4 is amended accordingly (separated slabs, not a ghost shell, are the
+reference frame).**
+
 ## The three visual references (user-supplied)
 
 1. **GPlates surface motion** — Cao et al. 2024, 1.8 Ga reconstruction video. Target for
