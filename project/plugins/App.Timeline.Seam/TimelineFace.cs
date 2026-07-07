@@ -32,7 +32,7 @@ public partial class TimelineFace : Control, ITimelineFace
         public IDisposable? GraphBinding { get; set; }
     }
 
-    private sealed record PendingFilmstripFrame(int Generation, NodePath TextureRectPath);
+    private sealed record PendingFilmstripFrame(int Generation, TextureRect TextureRect);
 
     private sealed record TrackGraphPortItem(string PortId, string Label, string KindHint, bool Required);
 
@@ -1014,8 +1014,10 @@ public partial class TimelineFace : Control, ITimelineFace
             TimelineFilmstrip.ThumbnailWidth,
             TimelineFilmstrip.ThumbnailHeight);
         string inflightKey = $"{sphere}:{layerId}:{tick}:{rung}:{request.Width}x{request.Height}";
+        // Hold the TextureRect reference directly: the frame is built BEFORE the track row
+        // enters the tree, so GetPath() errors and NodePath resolution would be impossible here
+        // (windowed gate 2026-07-08). IsInstanceValid + IsInsideTree at apply time is the guard.
         var generation = _filmstripGeneration;
-        var path = textureRect.GetPath();
         if (!_filmstripInflight.Add(inflightKey))
             return;
 
@@ -1035,7 +1037,7 @@ public partial class TimelineFace : Control, ITimelineFace
             {
                 _filmstripInflight.Remove(inflightKey);
                 if (map is not null)
-                    ApplyFilmstripPreview(new PendingFilmstripFrame(generation, path), map);
+                    ApplyFilmstripPreview(new PendingFilmstripFrame(generation, textureRect), map);
             }).CallDeferred();
         });
     }
@@ -1047,8 +1049,8 @@ public partial class TimelineFace : Control, ITimelineFace
         if (pending.Generation != _filmstripGeneration || !IsInsideTree())
             return;
 
-        var textureRect = GetNodeOrNull<TextureRect>(pending.TextureRectPath);
-        if (textureRect is null || !GodotObject.IsInstanceValid(textureRect))
+        var textureRect = pending.TextureRect;
+        if (!GodotObject.IsInstanceValid(textureRect) || !textureRect.IsInsideTree())
             return;
 
         var key = new TimelineFilmstripCacheKey(
