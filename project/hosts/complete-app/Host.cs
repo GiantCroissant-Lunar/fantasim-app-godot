@@ -700,6 +700,7 @@ public partial class Host : Node
         _planetPresentation.Rebind();
         _renderComposition?.SetCutawayTarget(_planetPresentation.UpdateCutaway);
         _renderComposition?.SetExplodedTarget(_planetPresentation.UpdateExploded);
+        _renderComposition?.SetMantleTarget(_planetPresentation.UpdateMantle);
 
         // Mount the default globe camera now that the world bundle has mounted the globe at the
         // origin. Deferred so the pcam is built on the main thread after the scene tree settles.
@@ -767,6 +768,7 @@ public partial class Host : Node
             _planetPresentation?.Dispose();
             _renderComposition?.SetCutawayTarget(null);
             _renderComposition?.SetExplodedTarget(null);
+            _renderComposition?.SetMantleTarget(null);
             _planetPresentation = null;
             _composition?.Dispose();
         }

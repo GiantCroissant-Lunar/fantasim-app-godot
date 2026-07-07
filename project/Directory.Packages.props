@@ -60,8 +60,9 @@
     <PackageVersion Include="GiantCroissant.FantaSim.Geosphere.Plate.Topology.Contracts" Version="0.1.9" />
     <PackageVersion Include="GiantCroissant.FantaSim.Geosphere.Plate.Topology.Materializer" Version="0.1.9" />
     <PackageVersion Include="GiantCroissant.FantaSim.Geosphere.Plate.Rotation.Stream" Version="0.1.9" />
-    <PackageVersion Include="GiantCroissant.FantaSim.Geosphere.Asthenosphere.Convection" Version="0.1.9" />
-    <PackageVersion Include="GiantCroissant.FantaSim.Geosphere.Asthenosphere.Contracts" Version="0.1.9" />
+    <!-- 0.1.10: volumetric MantleAnomalyField (M-A x-ray consumes it via App.World.Composition). -->
+    <PackageVersion Include="GiantCroissant.FantaSim.Geosphere.Asthenosphere.Convection" Version="0.1.10" />
+    <PackageVersion Include="GiantCroissant.FantaSim.Geosphere.Asthenosphere.Contracts" Version="0.1.10" />
     <PackageVersion Include="GiantCroissant.FantaSim.Atmosphere.Genesis.Core" Version="0.1.9" />
     <PackageVersion Include="GiantCroissant.FantaSim.Atmosphere.Contracts" Version="0.1.9" />
     <PackageVersion Include="GiantCroissant.FantaSim.World.Fields.Catalog" Version="0.1.9" />

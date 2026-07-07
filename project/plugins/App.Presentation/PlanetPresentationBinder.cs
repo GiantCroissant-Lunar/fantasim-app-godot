@@ -77,6 +77,12 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     private double _cutawayWidthDeg;
     private Node3D? _cutawayFaceRoot;
     private ShaderMaterial? _hypsoPlateMaterialOverride;
+
+    // M-A mantle x-ray state (inactive by default). _mantleXrayRoot holds the dark core sphere plus
+    // the four isosurface MeshInstance3Ds (cold/warm x outer/inner) sampled from the engine's
+    // volumetric MantleAnomalyField at the current tick.
+    private Node3D? _mantleXrayRoot;
+    private bool _mantleXrayActive;
     private bool _disposed;
     private readonly string? _plateViewOverride;
     private long? _boundContinentsTick; // last tick whose membership the Continents caps show
@@ -329,6 +335,8 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         // active wedge must survive regime/snapshot refreshes, so re-apply uniforms + faces here.
         UpdateCutawayPlateShader();
         RebuildCutawayFaces();
+        // M-A: ditto for the mantle x-ray isosurfaces — re-sample at the playhead tick after rebind.
+        RebuildMantleXray();
         ApplyTimelineTick(_timeline.Tick);
 
         _log.LogInformation(
@@ -390,10 +398,18 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         ApplyLightingForView(viewMode);
 
         if (_plateSurfaceRoot is not null && GodotObject.IsInstanceValid(_plateSurfaceRoot))
-            _plateSurfaceRoot.Visible = showsPlateFeatures;
+            _plateSurfaceRoot.Visible = showsPlateFeatures || _mantleXrayActive;
 
         if (_boundaryRenderer is not null && GodotObject.IsInstanceValid(_boundaryRenderer))
-            _boundaryRenderer.Visible = showBoundaries;
+            _boundaryRenderer.Visible = showBoundaries || _mantleXrayActive;
+
+        // M-A: ghost the crust (~12% opacity, spec: 10-15%) whenever the mantle x-ray is active so
+        // the interior isosurfaces read through the surface, keeping the boundary wireframe visible
+        // to locate trenches/ridges against them. Ghosting uses GeometryInstance3D.Transparency
+        // (per-instance fade) rather than a shader ALPHA write: an ALPHA write would force the
+        // plate surface into the transparent pipeline PERMANENTLY (even at alpha 1.0), changing the
+        // normal-view render path; Transparency is a zero-cost no-op when inactive.
+        ApplyCrustGhost(_mantleXrayActive ? 0.88f : 0.0f);
 
         if (_boundarySectionRenderer is not null && GodotObject.IsInstanceValid(_boundarySectionRenderer))
             _boundarySectionRenderer.Visible = BoundarySectionVisibility.ShouldShow(showsPlateFeatures, viewMode);
@@ -401,7 +417,9 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         if (_mantle is not null && GodotObject.IsInstanceValid(_mantle))
         {
             _mantle.MaterialOverride = ResolveMantleMaterial(RegimeSurfaceResolver.Resolve(regimeId));
-            _mantle.Visible = MantleSurfaceGate.IsVisible(
+            // M-A: the opaque interior mantle sphere would occlude the x-ray isosurfaces; the x-ray
+            // mounts its own dark core sphere at the CMB radius instead.
+            _mantle.Visible = !_mantleXrayActive && MantleSurfaceGate.IsVisible(
                 viewMode,
                 platesShown: showsPlateFeatures,
                 hasPlateSurface: _plateSurfaceRoot is not null && GodotObject.IsInstanceValid(_plateSurfaceRoot));
@@ -547,12 +565,26 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         if (_activeRoot is null || !GodotObject.IsInstanceValid(_activeRoot))
             return;
 
-        var body = _activeRoot.GetNodeOrNull<Node3D>("PlanetBody");
-        if (body is null)
+        var explodedBody = _activeRoot.GetNodeOrNull<Node3D>("PlanetBody");
+        if (explodedBody is null)
             return;
 
         _explodedCrustRoot = BuildExplodedSolidCrust();
-        body.AddChild(_explodedCrustRoot);
+        explodedBody.AddChild(_explodedCrustRoot);
+    }
+
+    // M-A: entry from render.mantle. enabled=true samples the conditioned convection field at the
+    // playhead tick and mounts cold/warm isosurface meshes; enabled=false clears them and restores the
+    // plate surface. The ghosted crust + boundary wireframe visibility is applied through the standard
+    // ApplyTimelineTick path (which checks _mantleXrayActive), mirroring how cutaway re-applies.
+    public void UpdateMantle(bool enabled)
+    {
+        if (_disposed)
+            return;
+
+        _mantleXrayActive = enabled;
+        RebuildMantleXray();
+        ApplyTimelineTick(_timeline.Tick);
     }
 
     // M-B: per-plate SOLID crust. Two MeshInstance3Ds per plate under a single root: the TOP (the
@@ -708,6 +740,135 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         };
     }
 
+    // M-A: free the old mantle x-ray root; if active, sample the volumetric field at the playhead
+    // tick and mount the four isosurface meshes + dark core sphere under PlanetBody.
+    private void RebuildMantleXray()
+    {
+        if (_mantleXrayRoot is not null && GodotObject.IsInstanceValid(_mantleXrayRoot))
+        {
+            _mantleXrayRoot.GetParent()?.RemoveChild(_mantleXrayRoot);
+            _mantleXrayRoot.QueueFree();
+        }
+        _mantleXrayRoot = null;
+
+        if (!_mantleXrayActive)
+            return;
+
+        if (_activeRoot is null || !GodotObject.IsInstanceValid(_activeRoot))
+            return;
+
+        var body = _activeRoot.GetNodeOrNull<Node3D>("PlanetBody");
+        if (body is null)
+            return;
+
+        var world = _registry.TryGet<WorldService>();
+        if (world is null)
+        {
+            _log.LogWarning("Mantle x-ray skipped: world service is not registered.");
+            return;
+        }
+
+        FantaSim.App.World.MantleIsosurfaceSet set;
+        try
+        {
+            set = world.GetMantleIsosurfacesAsync(_timeline.Tick);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Mantle x-ray sampling failed at t={Tick}.", _timeline.Tick);
+            return;
+        }
+
+        _mantleXrayRoot = BuildMantleXrayRoot(set);
+        body.AddChild(_mantleXrayRoot);
+        _log.LogInformation(
+            "Mantle x-ray mounted at t={Tick}: cold outer/inner={ColdOuter}/{ColdInner} verts, warm outer/inner={WarmOuter}/{WarmInner} verts.",
+            _timeline.Tick,
+            set.ColdOuter.Vertices.Length / 3, set.ColdInner.Vertices.Length / 3,
+            set.WarmOuter.Vertices.Length / 3, set.WarmInner.Vertices.Length / 3);
+    }
+
+    // M-A: ghost/unghost every plate-surface GeometryInstance3D. Transparency (0=opaque, 1=gone) is
+    // per-instance and leaves the material untouched — no permanent transparent-pipeline switch.
+    private void ApplyCrustGhost(float transparency)
+    {
+        if (_plateSurfaceRoot is null || !GodotObject.IsInstanceValid(_plateSurfaceRoot))
+            return;
+        ApplyTransparencyRecursive(_plateSurfaceRoot, transparency);
+    }
+
+    private static void ApplyTransparencyRecursive(Node node, float transparency)
+    {
+        if (node is GeometryInstance3D geometry)
+            geometry.Transparency = transparency;
+        foreach (var child in node.GetChildren())
+            ApplyTransparencyRecursive(child, transparency);
+    }
+
+    // The four method-lock surfaces plus stage dressing (spec ingredient 6): opaque INNER cores
+    // (deep blue slab hearts / red-orange plume hearts, drawn in the opaque pass), translucent
+    // OUTER halos (drawn in the transparent pass with explicit render priority AFTER opaques),
+    // and the dark core sphere at the CMB radius. All geometry is unit-sphere; the root applies
+    // the house globe scale (x2, matching the plate surface and cutaway nodes).
+    private Node3D BuildMantleXrayRoot(FantaSim.App.World.MantleIsosurfaceSet set)
+    {
+        var root = new Node3D { Name = "MantleXray", Scale = Vector3.One * 2.0f };
+        root.AddChild(BuildCoreSphere());
+        if (!set.ColdInner.IsEmpty)
+            root.AddChild(BuildIsosurfaceNode("ColdInner", set.ColdInner, ColdInnerMaterial));
+        if (!set.WarmInner.IsEmpty)
+            root.AddChild(BuildIsosurfaceNode("WarmInner", set.WarmInner, WarmInnerMaterial));
+        if (!set.ColdOuter.IsEmpty)
+            root.AddChild(BuildIsosurfaceNode("ColdOuter", set.ColdOuter, ColdOuterMaterial));
+        if (!set.WarmOuter.IsEmpty)
+            root.AddChild(BuildIsosurfaceNode("WarmOuter", set.WarmOuter, WarmOuterMaterial));
+        return root;
+    }
+
+    // Dark core sphere at the CMB radius (0.55R) — the backdrop the anomaly volumes read against.
+    private static MeshInstance3D BuildCoreSphere() => new()
+    {
+        Name = "MantleCore",
+        Mesh = new SphereMesh { Radius = 0.55f, Height = 1.1f, RadialSegments = 48, Rings = 24 },
+        MaterialOverride = new StandardMaterial3D
+        {
+            AlbedoColor = new Color(0.05f, 0.055f, 0.07f),
+            Roughness = 1.0f,
+            Metallic = 0.0f,
+        },
+    };
+
+    private static MeshInstance3D BuildIsosurfaceNode(
+        string name,
+        FantaSim.App.World.MantleIsosurfaceMesh mesh,
+        Material material)
+    {
+        int vertexCount = mesh.Vertices.Length / 3;
+        var vertices = new Vector3[vertexCount];
+        var normals = new Vector3[vertexCount];
+        for (int i = 0; i < vertexCount; i++)
+        {
+            vertices[i] = new Vector3(mesh.Vertices[3 * i], mesh.Vertices[3 * i + 1], mesh.Vertices[3 * i + 2]);
+            normals[i] = new Vector3(mesh.Normals[3 * i], mesh.Normals[3 * i + 1], mesh.Normals[3 * i + 2]);
+        }
+
+        var arrays = new Godot.Collections.Array();
+        arrays.Resize((int)Mesh.ArrayType.Max);
+        arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+        arrays[(int)Mesh.ArrayType.Normal] = normals;
+        arrays[(int)Mesh.ArrayType.Index] = mesh.Triangles;
+
+        var arrayMesh = new ArrayMesh();
+        arrayMesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+
+        return new MeshInstance3D
+        {
+            Name = name,
+            Mesh = arrayMesh,
+            MaterialOverride = material,
+        };
+    }
+
     // M-B: BOTTOM+WALLS instance — unlit dark material needs only positions (no normals/UV). Matches
     // BuildCutawayFaceSector's ArrayMesh shape exactly.
     private static MeshInstance3D BuildExplodedSolidMeshInstance(string name, PlateCapMeshDto dto, Material material)
@@ -752,6 +913,79 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         Array.Fill(fallback, meanCrust);
         return fallback;
     }
+    private ShaderMaterial? _coldInnerMaterial;
+    private ShaderMaterial? _coldOuterMaterial;
+    private ShaderMaterial? _warmInnerMaterial;
+    private ShaderMaterial? _warmOuterMaterial;
+
+    // Opaque inner cores. Cold = deep blue with a faint glow so the slab hearts stay legible inside
+    // the dark shell; warm = red-orange with a stronger emissive (the plumes are the focal point).
+    private ShaderMaterial ColdInnerMaterial => _coldInnerMaterial ??= BuildIsosurfaceMaterial(
+        new Color(0.10f, 0.22f, 0.75f), emission: 0.5f, alpha: 1.0f, priority: 0);
+
+    private ShaderMaterial WarmInnerMaterial => _warmInnerMaterial ??= BuildIsosurfaceMaterial(
+        new Color(0.95f, 0.30f, 0.08f), emission: 1.6f, alpha: 1.0f, priority: 0);
+
+    // Translucent outer halos, drawn AFTER the opaques with explicit render priority (spec
+    // ingredient 4: layered translucency is what reads as volumetric).
+    private ShaderMaterial ColdOuterMaterial => _coldOuterMaterial ??= BuildIsosurfaceMaterial(
+        new Color(0.25f, 0.50f, 0.95f), emission: 0.25f, alpha: 0.22f, priority: 1);
+
+    private ShaderMaterial WarmOuterMaterial => _warmOuterMaterial ??= BuildIsosurfaceMaterial(
+        new Color(1.0f, 0.55f, 0.15f), emission: 0.6f, alpha: 0.22f, priority: 2);
+
+    private static ShaderMaterial BuildIsosurfaceMaterial(Color tint, float emission, float alpha, int priority)
+    {
+        var material = new ShaderMaterial
+        {
+            Shader = new Shader
+            {
+                Code = alpha >= 1.0f ? MantleIsosurfaceOpaqueShaderCode : MantleIsosurfaceTranslucentShaderCode,
+            },
+            RenderPriority = priority,
+        };
+        material.SetShaderParameter("u_tint", tint);
+        material.SetShaderParameter("u_emission_energy", emission);
+        if (alpha < 1.0f)
+            material.SetShaderParameter("u_alpha", alpha);
+        return material;
+    }
+
+    // Both isosurface shaders render double-sided (cull_disabled) so the volumes read from any
+    // angle; normals come from the anomaly-field gradient baked into the mesh. The translucent
+    // variant is a separate shader because any static ALPHA write moves a material to the
+    // transparent pipeline — the opaque cores must stay in the opaque pass (spec ingredient 4).
+    private const string MantleIsosurfaceOpaqueShaderCode = @"
+shader_type spatial;
+render_mode cull_disabled;
+
+uniform vec4 u_tint : source_color = vec4(0.2, 0.45, 0.9, 1.0);
+uniform float u_emission_energy : hint_range(0.0, 8.0) = 1.0;
+
+void fragment() {
+    ALBEDO = u_tint.rgb;
+    EMISSION = u_tint.rgb * u_emission_energy;
+    ROUGHNESS = 0.85;
+    METALLIC = 0.0;
+}
+";
+
+    private const string MantleIsosurfaceTranslucentShaderCode = @"
+shader_type spatial;
+render_mode cull_disabled, depth_draw_never;
+
+uniform vec4 u_tint : source_color = vec4(0.2, 0.45, 0.9, 1.0);
+uniform float u_emission_energy : hint_range(0.0, 8.0) = 1.0;
+uniform float u_alpha : hint_range(0.0, 1.0) = 0.25;
+
+void fragment() {
+    ALBEDO = u_tint.rgb;
+    EMISSION = u_tint.rgb * u_emission_energy;
+    ALPHA = u_alpha;
+    ROUGHNESS = 0.85;
+    METALLIC = 0.0;
+}
+";
 
     // W3a: two flat half-disc cut faces (one per wedge boundary azimuth), per-vertex COLOR encodes
     // stratum bands. Crust thickness from CellCrustThickness when available (mean), else default.
@@ -1982,6 +2216,13 @@ void fragment() {
             _cutawayFaceRoot.QueueFree();
         }
         _cutawayFaceRoot = null;
+
+        if (_mantleXrayRoot is not null && GodotObject.IsInstanceValid(_mantleXrayRoot))
+        {
+            _mantleXrayRoot.GetParent()?.RemoveChild(_mantleXrayRoot);
+            _mantleXrayRoot.QueueFree();
+        }
+        _mantleXrayRoot = null;
     }
 
     private void ReleasePlateSurfaceRenderer()

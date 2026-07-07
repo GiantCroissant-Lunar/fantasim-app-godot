@@ -49,6 +49,17 @@ public interface IService
     /// </summary>
     IReadOnlyDictionary<int, double> GetContinentalFractionByCellAt(long tick);
 
+    /// <summary>
+    /// Mantle x-ray view (M-A): the four isosurface meshes (translucent outer + opaque inner per
+    /// polarity) of the VOLUMETRIC mantle anomaly at <paramref name="tick"/>. Adapts the presentation
+    /// document's typed boundary arcs at the tick into the engine's volumetric <c>MantleAnomalyField</c>
+    /// (a true T'(direction, radius, tick) — slab ribbons with dip, basal blanket, mushroom plumes),
+    /// samples it on a shell-clipped grid, and extracts isosurfaces via CPU marching cubes with
+    /// field-gradient normals. Pure data (floats/ints) so the resident presentation seam binds it
+    /// without referencing the engine package. Any mesh may be empty at the tick. Deterministic.
+    /// </summary>
+    MantleIsosurfaceSet GetMantleIsosurfacesAsync(long tick);
+
     WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request);
     IDisposable SubscribeGenerationChanged(Action<WorldGenerationChangedEvent> callback);
 }

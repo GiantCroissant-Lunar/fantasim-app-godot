@@ -497,6 +497,9 @@ internal sealed class FakeWorldService : WorldService
     public IReadOnlyDictionary<int, double> GetContinentalFractionByCellAt(long tick)
         => throw new NotSupportedException();
 
+    public MantleIsosurfaceSet GetMantleIsosurfacesAsync(long tick)
+        => MantleIsosurfaceSet.Empty;
+
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
     {
         GenerateCalls++;

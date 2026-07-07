@@ -14,6 +14,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using ServiceArchi.Contracts;
 using FantaSim.World.Contracts.Units;
 using BoundarySectionDocument = FantaSim.App.World.Composition.BoundarySectionDocument;
+using MantleIsosurfaceExtractor = FantaSim.App.World.Composition.MantleIsosurfaceExtractor;
 using OnsetRoster = FantaSim.App.World.Composition.OnsetRoster;
 using SphereRegimeSchedule = FantaSim.App.World.Composition.SphereRegimeSchedule;
 using SphereRegimeScheduleDefaults = FantaSim.App.World.Composition.SphereRegimeScheduleDefaults;
@@ -303,6 +304,17 @@ public sealed class Service : IService, IDisposable
         if (recipe is { Kind: RotationSourceKind.Imported, RotText: { } rotText })
             return new ImportedRotationProvider(recipe.SourceName, rotText, onsetTick);
         return new GeneratedEulerPoleRotationProvider(plates, onsetTick);
+    }
+
+    public MantleIsosurfaceSet GetMantleIsosurfacesAsync(long tick)
+    {
+        if (tick < 0) throw new ArgumentOutOfRangeException(nameof(tick));
+
+        // Boundary arcs at the playhead tick drive the conditioned field (a regime's arcs differ from
+        // the onset frame's). The plate-onset tick is the v1 ActiveSinceTick for every segment.
+        var document = GetPlanetPresentationAsync(tick);
+        var onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        return MantleIsosurfaceExtractor.Extract(document.BoundaryArcs, tick, onsetTick);
     }
 
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)

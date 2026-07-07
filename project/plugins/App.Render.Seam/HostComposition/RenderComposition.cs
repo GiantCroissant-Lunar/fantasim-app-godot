@@ -20,6 +20,7 @@ public static class RenderComposition
     public const string ScreenshotCommandId = "render.screenshot";
     public const string CutawayCommandId = "render.cutaway";
     public const string ExplodedCommandId = "render.exploded";
+    public const string MantleCommandId = "render.mantle";
 
     public static IRenderCompositionHandle ComposeRender(HostCompositionContext ctx, Godot.Node hostNode)
     {
@@ -37,7 +38,7 @@ public static class RenderComposition
         if (commandService is null)
         {
             log.LogWarning("Render: no command IService registered; render.screenshot will be inert.");
-            return new RenderCompositionHandle(captureNode, registered: false, new CutawayTargetHolder(), new ExplodedTargetHolder());
+            return new RenderCompositionHandle(captureNode, registered: false, new CutawayTargetHolder(), new ExplodedTargetHolder(), new MantleTargetHolder());
         }
 
         commandService.Register(
@@ -186,8 +187,52 @@ public static class RenderComposition
                 }));
             });
 
-        log.LogInformation("registered: render.screenshot (viewport capture), render.cutaway (wedge), render.exploded (solid crust).");
-        return new RenderCompositionHandle(captureNode, registered: true, cutawayTarget, explodedTarget);
+        // M-A: render.mantle — mirrors render.cutaway. The binder mounts later (world bundle load),
+        // so the handler closes over a mutable target Host.cs wires via SetMantleTarget. Null target
+        // = binder not yet mounted; the command reports that. Empty payload => enabled=true (the
+        // common "turn it on" case); {"enabled":false} clears the view.
+        var mantleTarget = new MantleTargetHolder();
+        commandService.Register(
+            new FantaSim.App.Command.CommandDescriptor(
+                Id: MantleCommandId,
+                Title: "Mantle x-ray view",
+                Description: "Toggles the mantle x-ray view (ghosted crust + cold/warm convection isosurfaces). Payload: {\"enabled\":true|false}. Default: {\"enabled\":true}.",
+                Category: "render"),
+            (payloadJson, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                MantleRequest req;
+                try
+                {
+                    req = MantleRequestParser.Parse(payloadJson);
+                }
+                catch (ArgumentException ex)
+                {
+                    return Task.FromResult<string?>(JsonSerializer.Serialize(new { ok = false, error = ex.Message }));
+                }
+
+                var target = mantleTarget.Target;
+                if (target is null)
+                {
+                    return Task.FromResult<string?>(JsonSerializer.Serialize(new
+                    {
+                        ok = false,
+                        error = "planet presentation binder not mounted (world bundle not loaded)",
+                    }));
+                }
+
+                target(req.Enabled);
+                log.LogInformation("render.mantle: enabled={Enabled}", req.Enabled);
+                return Task.FromResult<string?>(JsonSerializer.Serialize(new
+                {
+                    ok = true,
+                    enabled = req.Enabled,
+                }));
+            });
+
+        log.LogInformation("registered: render.screenshot (viewport capture), render.cutaway (wedge), render.exploded (solid crust), render.mantle (x-ray).");
+        return new RenderCompositionHandle(captureNode, registered: true, cutawayTarget, explodedTarget, mantleTarget);
     }
 }
 
@@ -206,6 +251,7 @@ public interface IRenderCompositionHandle : IDisposable
     void SetCutawayTarget(Action<double, double>? target);
 
     void SetExplodedTarget(Action<double>? target);
+    void SetMantleTarget(Action<bool>? target);
 }
 
 internal sealed class RenderCompositionHandle : IRenderCompositionHandle
@@ -214,14 +260,21 @@ internal sealed class RenderCompositionHandle : IRenderCompositionHandle
     private readonly bool _registered;
     private readonly CutawayTargetHolder _cutawayTarget;
     private readonly ExplodedTargetHolder _explodedTarget;
+    private readonly MantleTargetHolder _mantleTarget;
     private bool _disposed;
 
-    public RenderCompositionHandle(GodotViewportCapture captureNode, bool registered, CutawayTargetHolder cutawayTarget, ExplodedTargetHolder explodedTarget)
+    public RenderCompositionHandle(
+        GodotViewportCapture captureNode,
+        bool registered,
+        CutawayTargetHolder cutawayTarget,
+        ExplodedTargetHolder explodedTarget,
+        MantleTargetHolder mantleTarget)
     {
         _captureNode = captureNode;
         _registered = registered;
         _cutawayTarget = cutawayTarget;
         _explodedTarget = explodedTarget;
+        _mantleTarget = mantleTarget;
     }
 
     public bool Registered => _registered;
@@ -234,6 +287,7 @@ internal sealed class RenderCompositionHandle : IRenderCompositionHandle
         registry?.TryGet<FantaSim.App.Command.IService>()?.Unregister(RenderComposition.ScreenshotCommandId);
         registry?.TryGet<FantaSim.App.Command.IService>()?.Unregister(RenderComposition.CutawayCommandId);
         registry?.TryGet<FantaSim.App.Command.IService>()?.Unregister(RenderComposition.ExplodedCommandId);
+        registry?.TryGet<FantaSim.App.Command.IService>()?.Unregister(RenderComposition.MantleCommandId);
     }
 
     public void SetCutawayTarget(Action<double, double>? target)
@@ -241,6 +295,8 @@ internal sealed class RenderCompositionHandle : IRenderCompositionHandle
 
     public void SetExplodedTarget(Action<double>? target)
         => _explodedTarget.Target = target;
+    public void SetMantleTarget(Action<bool>? target)
+        => _mantleTarget.Target = target;
 
     public void Dispose()
     {
@@ -266,4 +322,9 @@ internal sealed class CutawayTargetHolder
 internal sealed class ExplodedTargetHolder
 {
     public Action<double>? Target { get; set; }
+}
+
+internal sealed class MantleTargetHolder
+{
+    public Action<bool>? Target { get; set; }
 }
