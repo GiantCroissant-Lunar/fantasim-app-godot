@@ -75,7 +75,7 @@ public sealed class CameraRig : ICameraRig
     private readonly IReadOnlyDictionary<string, int> _categoryLayers;
     private readonly Dictionary<string, ViewportRig> _rigs = new(StringComparer.Ordinal);
     private readonly Dictionary<string, CameraEntry> _cameras = new(StringComparer.Ordinal);
-    private readonly PendingConfigurationById<GlobeOrbitConfiguration> _pendingGlobeOrbit = new();
+    private readonly Dictionary<string, GlobeOrbitConfiguration> _pendingGlobeOrbit = new(StringComparer.Ordinal);
     private readonly Stack<int> _freedLayerBits = new();
     private int _nextLayerIndex = 1;
 
@@ -164,14 +164,13 @@ public sealed class CameraRig : ICameraRig
             }
             ApplyCameraResource(existing.Wrapper, spec);
             existing.Wrapper.HostLayers = _rigs[spec.ViewportId].LayerBit;
-            _cameras[spec.CameraId] = new CameraEntry(existing.Node, existing.Wrapper, spec);
+            var replacement = new CameraEntry(existing.Node, existing.Wrapper, spec);
+            _cameras[spec.CameraId] = replacement;
             _log.LogInformation(
                 "Camera replaced: {CameraId} (viewport = {ViewportId}, position = {Position}).",
                 spec.CameraId, spec.ViewportId, spec.Position);
-            _pendingGlobeOrbit.TryApplyPending(
-                spec.CameraId,
-                id => _cameras.ContainsKey(id),
-                ApplyGlobeOrbitConfiguration);
+            if (_pendingGlobeOrbit.Remove(spec.CameraId, out var pendingGlobeOrbit))
+                ApplyGlobeOrbitConfiguration(spec.CameraId, replacement, pendingGlobeOrbit);
             return;
         }
 
@@ -179,7 +178,6 @@ public sealed class CameraRig : ICameraRig
             "res://addons/phantom_camera/scripts/phantom_camera/phantom_camera_3d.gd");
         var pcamNode = (Node3D)pcamScript.New();
         pcamNode.Name = $"PCam_{spec.CameraId}";
-        _rigs[spec.ViewportId].Root.AddChild(pcamNode);
 
         var position = new Vector3(spec.Position.X, spec.Position.Y, spec.Position.Z);
         var lookAt = new Vector3(spec.LookAt.X, spec.LookAt.Y, spec.LookAt.Z);
@@ -195,14 +193,15 @@ public sealed class CameraRig : ICameraRig
         pcam.HostLayers = _rigs[spec.ViewportId].LayerBit;
         ApplyCameraResource(pcam, spec);
 
-        _cameras[spec.CameraId] = new CameraEntry(pcamNode, pcam, spec);
+        var entry = new CameraEntry(pcamNode, pcam, spec);
+        if (_pendingGlobeOrbit.Remove(spec.CameraId, out var preReadyGlobeOrbit))
+            ApplyGlobeOrbitConfiguration(spec.CameraId, entry, preReadyGlobeOrbit);
+
+        _rigs[spec.ViewportId].Root.AddChild(pcamNode);
+        _cameras[spec.CameraId] = entry;
         _log.LogInformation(
             "Camera registered: {CameraId} (viewport = {ViewportId}, position = {Position}).",
             spec.CameraId, spec.ViewportId, spec.Position);
-        _pendingGlobeOrbit.TryApplyPending(
-            spec.CameraId,
-            id => _cameras.ContainsKey(id),
-            ApplyGlobeOrbitConfiguration);
     }
 
     private void ActivateImpl(string cameraId)
@@ -284,17 +283,16 @@ public sealed class CameraRig : ICameraRig
             minSpring,
             maxSpring);
 
-        if (!_pendingGlobeOrbit.ApplyOrPend(
-                cameraId,
-                configuration,
-                id => _cameras.ContainsKey(id),
-                ApplyGlobeOrbitConfiguration))
+        if (!_cameras.ContainsKey(cameraId))
         {
+            _pendingGlobeOrbit[cameraId] = configuration;
             _log.LogInformation(
                 "ConfigureGlobeOrbit pending: camera id '{CameraId}' is not registered yet.",
                 cameraId);
             return;
         }
+
+        ApplyGlobeOrbitConfiguration(cameraId, configuration);
     }
 
     private void ApplyGlobeOrbitConfiguration(string cameraId, GlobeOrbitConfiguration configuration)
@@ -302,8 +300,21 @@ public sealed class CameraRig : ICameraRig
         if (!_cameras.TryGetValue(cameraId, out var entry))
             return;
 
+        ApplyGlobeOrbitConfiguration(cameraId, entry, configuration);
+    }
+
+    private void ApplyGlobeOrbitConfiguration(
+        string cameraId,
+        CameraEntry entry,
+        GlobeOrbitConfiguration configuration)
+    {
+        // Keep the follow target node alive under the rig root before assigning it. The addon's
+        // ThirdPerson _ready path reads the target and builds its SpringArm3D from this state.
+        if (configuration.FollowTarget.GetParent() is null)
+            _rigs[entry.Spec.ViewportId].Root.AddChild(configuration.FollowTarget);
+
         // follow_mode is an @export int on the GDScript pcam; set it via Node.Set so the addon's
-        // setter (which builds the SpringArm3D + sets top_level/_is_third_person_follow) runs.
+        // setter marks ThirdPerson state before _ready builds the SpringArm3D.
         const int followModeThirdPerson = (int)FollowMode3D.ThirdPerson;
         entry.Node.Set("follow_mode", followModeThirdPerson);
         entry.Node.Set("follow_target", configuration.FollowTarget);
@@ -311,11 +322,6 @@ public sealed class CameraRig : ICameraRig
             configuration.InitialSpringLength,
             configuration.MinSpring,
             configuration.MaxSpring);
-
-        // Keep the follow target node alive under the rig root (the addon reads its global transform
-        // each frame; a detached target would free it on the next GC sweep).
-        if (configuration.FollowTarget.GetParent() is null)
-            _rigs[entry.Spec.ViewportId].Root.AddChild(configuration.FollowTarget);
 
         _log.LogInformation(
             "Camera '{CameraId}' configured for globe orbit (follow target = {TargetName}, spring = {Spring}).",
@@ -410,10 +416,10 @@ public sealed class CameraRig : ICameraRig
             "res://addons/phantom_camera/scripts/phantom_camera_host/phantom_camera_host.gd");
         var hostNode = (Node)hostScript.New();
         hostNode.Name = "PhantomCameraHost";
-        camera.AddChild(hostNode);
 
         var hostWrapper = hostNode.AsPhantomCameraHost();
         hostWrapper.HostLayers = layerBit;
+        camera.AddChild(hostNode);
 
         _rigs[viewportId] = new ViewportRig(
             rigRoot, camera, hostNode, hostWrapper, subViewport, panel, layerBit);
