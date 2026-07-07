@@ -406,7 +406,13 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             _plateSurfaceRoot.Visible = showsPlateFeatures && !_mantleXrayActive;
 
         if (_boundaryRenderer is not null && GodotObject.IsInstanceValid(_boundaryRenderer))
+        {
             _boundaryRenderer.Visible = showBoundaries || _mantleXrayActive;
+            // M-A: restyle the boundary arcs (thin desaturated filaments) whenever the mantle x-ray
+            // is active. Idempotent, and the rebind path reconstructs this renderer fresh so the style
+            // re-applies here on the first ApplyTimelineTick after mount.
+            _boundaryRenderer.ApplyMantleViewStyle(_mantleXrayActive);
+        }
 
         if (_boundarySectionRenderer is not null && GodotObject.IsInstanceValid(_boundarySectionRenderer))
             _boundarySectionRenderer.Visible = BoundarySectionVisibility.ShouldShow(showsPlateFeatures, viewMode);
@@ -944,9 +950,13 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         new Color(0.95f, 0.30f, 0.08f), emission: 1.6f, alpha: 1.0f, priority: 0);
 
     // Translucent outer halos, drawn AFTER the opaques with explicit render priority (spec
-    // ingredient 4: layered translucency is what reads as volumetric).
+    // ingredient 4: layered translucency is what reads as volumetric). Cold outer is tuned to the
+    // same visual weight as warm outer: blue reads darker than orange against the dark core and the
+    // cold field is dimmer (slab peak ~0.55 vs plume ~1.0), so the halo needs a brighter tint, a
+    // higher emission (0.25 -> 0.55, matching warm), and a touch more alpha (0.22 -> 0.28) to read
+    // as a distinct translucent envelope rather than a single flat surface.
     private ShaderMaterial ColdOuterMaterial => _coldOuterMaterial ??= BuildIsosurfaceMaterial(
-        new Color(0.25f, 0.50f, 0.95f), emission: 0.25f, alpha: 0.22f, priority: 1);
+        new Color(0.35f, 0.60f, 0.98f), emission: 0.55f, alpha: 0.28f, priority: 1);
 
     private ShaderMaterial WarmOuterMaterial => _warmOuterMaterial ??= BuildIsosurfaceMaterial(
         new Color(1.0f, 0.55f, 0.15f), emission: 0.6f, alpha: 0.22f, priority: 2);

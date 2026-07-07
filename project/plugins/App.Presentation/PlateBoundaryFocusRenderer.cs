@@ -15,20 +15,83 @@ namespace FantaSim.App.Presentation;
 /// </summary>
 public partial class PlateBoundaryFocusRenderer : Node3D
 {
+    // M-A mantle x-ray look pass: when the mantle view is active the boundary arcs restyle to THIN,
+    // desaturated soft-green filaments (spec NORTH-STAR eye-gate §4 / reference 2: "green boundary
+    // wireframe" over a ghosted shell) so they locate trenches/ridges without competing with the
+    // interior isosurfaces. The ocean shell and every arc POSITION are untouched; only ribbon
+    // half-width, color, and emission change. Toggling is idempotent and rebuilds only the per-kind
+    // arc meshes — the ocean shell is built once and never restyles.
+    private const double MantleRibbonWidthScale = 0.25; // 4x thinner filament (spec: ~3-4x).
+    private const double MantleEmissionEnergy = 0.35;   // soft glow, not a beacon.
+
+    private readonly IReadOnlyList<PlateBoundaryArc> _arcs;
+    private readonly List<MeshInstance3D> _arcInstances = new();
+    private bool _mantleStyleActive;
+
     public PlateBoundaryFocusRenderer(IReadOnlyList<PlateBoundaryArc> arcs)
     {
         Name = "PlateBoundaryFocusRenderer";
         Scale = Vector3.One * 2.0f; // Align with PlateSurface scale.
 
-        BuildBoundaryGeometry(arcs);
+        _arcs = arcs;
+        // The ocean shell is structural (dark backdrop for the arcs in the surface view) and does not
+        // restyle with the mantle toggle, so it is built once and persists across arc rebuilds.
+        AddChild(BuildOceanShell());
+        RebuildArcGeometry(mantleStyle: false);
     }
 
-    private void BuildBoundaryGeometry(IReadOnlyList<PlateBoundaryArc> arcs)
+    // M-A: restyle the boundary arcs for the mantle x-ray view. Idempotent — a no-op when the
+    // requested state matches the current state, so it is safe to invoke on every ApplyTimelineTick
+    // (the same path that drives arc visibility). Rebinds reconstruct this renderer fresh, so the
+    // mantle style re-applies through the first ApplyTimelineTick after mount when x-ray is active.
+    public void ApplyMantleViewStyle(bool active)
     {
-        AddChild(BuildOceanShell());
+        if (active == _mantleStyleActive)
+            return;
+        _mantleStyleActive = active;
+        RebuildArcGeometry(mantleStyle: active);
+    }
+
+    // Mantle arc style derives from the normal doctrine but narrows the ribbon, swaps the saturated
+    // primaries for a near-uniform desaturated green-white family (subtle hue shifts preserve
+    // type-coding), and lowers emission so the filaments locate without dominating. SurfaceHeight and
+    // RenderOnTop are inherited unchanged so arc positions and draw order are identical to the normal
+    // view.
+    private static BoundaryStyle MantleStyle(PlateBoundaryKind kind)
+    {
+        var baseStyle = BoundaryStyleMapper.Resolve(kind);
+        var mantleColor = kind switch
+        {
+            PlateBoundaryKind.Convergent => new RampColor(0.74, 0.86, 0.70), // soft green, slightly warm
+            PlateBoundaryKind.Divergent => new RampColor(0.66, 0.84, 0.78),  // soft green, slightly cool
+            PlateBoundaryKind.Transform => new RampColor(0.78, 0.87, 0.74),  // soft green, slightly yellow
+            _ => new RampColor(0.70, 0.80, 0.72),                             // muted green-gray
+        };
+        return baseStyle with
+        {
+            Color = mantleColor,
+            RibbonHalfWidth = baseStyle.RibbonHalfWidth * MantleRibbonWidthScale,
+            EmissionEnergy = MantleEmissionEnergy,
+        };
+    }
+
+    private static BoundaryStyle ResolveStyle(PlateBoundaryKind kind, bool mantleStyle)
+        => mantleStyle ? MantleStyle(kind) : BoundaryStyleMapper.Resolve(kind);
+
+    private void RebuildArcGeometry(bool mantleStyle)
+    {
+        foreach (var instance in _arcInstances)
+        {
+            if (instance is not null && GodotObject.IsInstanceValid(instance))
+            {
+                instance.GetParent()?.RemoveChild(instance);
+                instance.QueueFree();
+            }
+        }
+        _arcInstances.Clear();
 
         var byKind = new Dictionary<PlateBoundaryKind, Bucket>();
-        foreach (var arc in arcs)
+        foreach (var arc in _arcs)
         {
             if (arc.Kind == PlateBoundaryKind.Inactive) continue;
             if (arc.Points.Count < 2) continue;
@@ -39,7 +102,7 @@ public partial class PlateBoundaryFocusRenderer : Node3D
                 byKind[arc.Kind] = bucket;
             }
 
-            var style = BoundaryStyleMapper.Resolve(arc.Kind);
+            var style = ResolveStyle(arc.Kind, mantleStyle);
             AppendArcRibbon(bucket, arc.Points, (float)style.RibbonHalfWidth, (float)style.SurfaceHeight);
         }
 
@@ -48,11 +111,13 @@ public partial class PlateBoundaryFocusRenderer : Node3D
             var mesh = BuildMeshFromLists(bucket.Vertices, bucket.Normals);
             if (mesh is null) continue;
 
-            var style = BoundaryStyleMapper.Resolve(kind);
-            AddChild(BuildMeshInstance(
+            var style = ResolveStyle(kind, mantleStyle);
+            var instance = BuildMeshInstance(
                 KindName(kind),
                 mesh,
-                BuildMaterial(ToColor(style.Color), (float)style.EmissionEnergy, style.RenderOnTop)));
+                BuildMaterial(ToColor(style.Color), (float)style.EmissionEnergy, style.RenderOnTop));
+            AddChild(instance);
+            _arcInstances.Add(instance);
         }
     }
 

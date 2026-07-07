@@ -1,4 +1,5 @@
 using System;
+using FantaSim.App.Camera;
 using Godot;
 using Microsoft.Extensions.Logging;
 using PhantomCamera;
@@ -26,18 +27,16 @@ namespace FantaSim.App.Camera.Seam;
 public sealed partial class GlobeOrbitControls : Node
 {
     private PhantomCameraHost? _host;
-    private float _yawDeg;
-    private float _pitchDeg;
-    private float _springLength;
-    private float _minSpring = 1.5f;
-    private float _maxSpring = 8.0f;
-    private float _minPitchDeg = -85f;
-    private float _maxPitchDeg = 85f;
+    private float _initialYawDeg = 35f;
+    private float _initialPitchDeg = -25f;
+    private float _initialSpringLength = 4.0f;
     private float _orbitSensitivity = 0.25f;
     private float _wheelZoomFactor = 0.9f;
     private bool _dragging;
+    private bool _applyToPcamPending;
     private Vector2 _lastMousePos;
 
+    private readonly CameraOrbitState _orbit = new();
     private readonly LazyBindOnce<PhantomCameraHost> _lazyBind;
     private Func<PhantomCameraHost?>? _hostProvider;
 
@@ -50,24 +49,48 @@ public sealed partial class GlobeOrbitControls : Node
     public ILogger? Logger { private get; set; }
 
     /// <summary>Initial orbit yaw in degrees (rotation around the globe Y axis).</summary>
-    public float InitialYawDeg { get; set; } = 35f;
+    public float InitialYawDeg
+    {
+        get => _initialYawDeg;
+        set
+        {
+            _initialYawDeg = value;
+            ConfigureOrbitState();
+        }
+    }
 
     /// <summary>Initial orbit pitch in degrees (tilt; + looks down on the north pole).</summary>
-    public float InitialPitchDeg { get; set; } = -25f;
+    public float InitialPitchDeg
+    {
+        get => _initialPitchDeg;
+        set
+        {
+            _initialPitchDeg = value;
+            ConfigureOrbitState();
+        }
+    }
 
     /// <summary>Initial spring-arm length (distance from follow target to camera).</summary>
-    public float InitialSpringLength { get; set; } = 4.0f;
+    public float InitialSpringLength
+    {
+        get => _initialSpringLength;
+        set
+        {
+            _initialSpringLength = value;
+            ConfigureOrbitState();
+        }
+    }
 
     public float MinSpringLength
     {
-        get => _minSpring;
-        set => _minSpring = Math.Max(0.1f, value);
+        get => (float)_orbit.MinDistance;
+        set => _orbit.ConfigureDistanceBounds(value, _orbit.MaxDistance);
     }
 
     public float MaxSpringLength
     {
-        get => _maxSpring;
-        set => _maxSpring = Math.Max(_minSpring + 0.1f, value);
+        get => (float)_orbit.MaxDistance;
+        set => _orbit.ConfigureDistanceBounds(_orbit.MinDistance, value);
     }
 
     public float OrbitSensitivity
@@ -79,6 +102,19 @@ public sealed partial class GlobeOrbitControls : Node
     /// <summary>Bind the controls to the phantom host the rig built for the globe viewport.</summary>
     public void Bind(PhantomCameraHost host)
         => BindHost(host ?? throw new ArgumentNullException(nameof(host)));
+
+    /// <summary>
+    /// Apply a remote orbit command to the same yaw/pitch/spring state used by mouse controls.
+    /// If the PhantomCameraHost is not bound yet, the values are remembered and applied on bind.
+    /// Null values keep the current value.
+    /// </summary>
+    public CameraOrbitSnapshot ApplyOrbit(double? yawDeg, double? pitchDeg, double? distance)
+    {
+        ConfigureOrbitState();
+        var snapshot = _orbit.Apply(yawDeg, pitchDeg, distance);
+        ApplyToActivePcam();
+        return snapshot;
+    }
 
     /// <summary>
     /// Bind lazily: poll <paramref name="hostProvider"/> each <see cref="_Process"/> frame until the
@@ -94,9 +130,8 @@ public sealed partial class GlobeOrbitControls : Node
     private void BindHost(PhantomCameraHost host)
     {
         _host = host;
-        _yawDeg = InitialYawDeg;
-        _pitchDeg = Math.Clamp(InitialPitchDeg, _minPitchDeg, _maxPitchDeg);
-        _springLength = Math.Clamp(InitialSpringLength, _minSpring, _maxSpring);
+        ConfigureOrbitState();
+        _orbit.Bind();
         ApplyToActivePcam();
         _hostProvider = null;
         Logger?.LogDebug("GlobeOrbitControls bound to PhantomCameraHost.");
@@ -104,10 +139,11 @@ public sealed partial class GlobeOrbitControls : Node
 
     public override void _Process(double delta)
     {
-        if (_lazyBind.IsBound || _hostProvider is null)
-            return;
+        if (!_lazyBind.IsBound && _hostProvider is not null)
+            _lazyBind.TryResolve(_hostProvider);
 
-        _lazyBind.TryResolve(_hostProvider);
+        if (_applyToPcamPending)
+            ApplyToActivePcam();
     }
 
     public override void _UnhandledInput(InputEvent @event)
@@ -150,11 +186,7 @@ public sealed partial class GlobeOrbitControls : Node
     {
         var delta = motion.Position - _lastMousePos;
         _lastMousePos = motion.Position;
-        _yawDeg -= delta.X * _orbitSensitivity;
-        _pitchDeg = Math.Clamp(
-            _pitchDeg + delta.Y * _orbitSensitivity,
-            _minPitchDeg,
-            _maxPitchDeg);
+        _orbit.OrbitBy(-delta.X * _orbitSensitivity, delta.Y * _orbitSensitivity);
         ApplyToActivePcam();
     }
 
@@ -166,20 +198,31 @@ public sealed partial class GlobeOrbitControls : Node
 
     private void ZoomByFactor(float factor)
     {
-        _springLength = Math.Clamp(_springLength * factor, _minSpring, _maxSpring);
+        _orbit.ZoomByFactor(factor);
         ApplyToActivePcam();
     }
+
+    private void ConfigureOrbitState()
+        => _orbit.ConfigureInitial(InitialYawDeg, InitialPitchDeg, InitialSpringLength);
 
     private void ApplyToActivePcam()
     {
         if (_host is null)
+        {
+            _applyToPcamPending = true;
             return;
+        }
 
         var active = _host.GetActivePhantomCamera();
         if (active is not PhantomCamera3D pcam3d)
+        {
+            _applyToPcamPending = true;
             return;
+        }
 
-        pcam3d.SetThirdPersonRotationDegrees(new Vector3(_pitchDeg, _yawDeg, 0f));
-        pcam3d.SpringLength = _springLength;
+        var orbit = _orbit.Current;
+        pcam3d.SetThirdPersonRotationDegrees(new Vector3((float)orbit.PitchDeg, (float)orbit.YawDeg, 0f));
+        pcam3d.SpringLength = (float)orbit.Distance;
+        _applyToPcamPending = false;
     }
 }

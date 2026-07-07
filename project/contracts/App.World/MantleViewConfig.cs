@@ -37,8 +37,11 @@ public sealed record MantleViewConfig
     public double ShellFadeWidth { get; init; } = 0.03;
 
     /// <summary>Cold translucent OUTER isovalue (applied to the negated anomaly). Low: the wide
-    /// thermal halo of a slab. Aged slabs at the mobile-plate playhead peak near ~0.55.</summary>
-    public double ColdOuterThreshold { get; init; } = 0.15;
+    /// thermal halo of a slab. Aged slabs at the mobile-plate playhead peak near ~0.55 — roughly
+    /// half the warm peak (~1.0) — so equal threshold RATIOS still make the cold outer/inner surfaces
+    /// nearly coincide geometrically. 0.10 widens the halo (cold-outer/inner gap 0.25 vs warm's 0.30)
+    /// so the two cold layers read as distinct, matching the warm pair's separation.</summary>
+    public double ColdOuterThreshold { get; init; } = 0.10;
 
     /// <summary>Cold opaque INNER isovalue — the slab core.</summary>
     public double ColdInnerThreshold { get; init; } = 0.35;

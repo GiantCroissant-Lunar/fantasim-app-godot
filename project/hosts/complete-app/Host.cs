@@ -758,6 +758,7 @@ public partial class Host : Node
 
             if (_cameraComposition is not null && _composition is not null)
             {
+                _cameraComposition.SetOrbitTarget(null);
                 _cameraComposition.Unregister(_composition.Bootstrap.Registry);
                 _cameraComposition.Dispose();
                 _cameraComposition = null;

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FantaSim.App.Common;
 using Godot;
 using Microsoft.Extensions.Logging;
@@ -17,17 +18,19 @@ namespace FantaSim.App.Camera.Seam;
 public static class CameraComposition
 {
     public const string DefaultGlobeCameraId = "globe.default";
+    public const string OrbitCommandId = "camera.orbit";
 
     public static ICameraCompositionHandle ComposeCamera(HostCompositionContext ctx, Node hostNode)
     {
         var log = ctx.LoggerFactory.CreateLogger("HostComposition.Camera");
         var registry = ctx.Registry;
+        var orbitTarget = new OrbitTargetHolder();
 
         var bus = registry.TryGet<CrosscutFoundation.Messaging.IMessageBus>();
         if (bus is null)
         {
             log.LogWarning("Camera: no IMessageBus registered; camera service will be inert.");
-            return new CameraCompositionHandle(null, null, registered: false);
+            return new CameraCompositionHandle(null, null, registered: false, orbitTarget);
         }
 
         var rig = new CameraRig(hostNode, ctx.LoggerFactory);
@@ -43,8 +46,65 @@ public static class CameraComposition
                 Description = "Virtual camera service (phantom-camera seam)"
             });
 
-        log.LogInformation("registered: App.Camera IService (phantom-camera rig).");
-        return new CameraCompositionHandle(cameraService, rig, registered: true);
+        var commandService = registry.TryGet<FantaSim.App.Command.IService>();
+        var orbitCommandRegistered = false;
+        if (commandService is null)
+        {
+            log.LogWarning("Camera: no command IService registered; camera.orbit will be inert.");
+        }
+        else
+        {
+            commandService.Register(
+                new FantaSim.App.Command.CommandDescriptor(
+                    Id: OrbitCommandId,
+                    Title: "Orbit globe camera",
+                    Description: "Sets the default globe orbit framing. Payload: {\"yawDeg\":N,\"pitchDeg\":N,\"distance\":N}. All fields optional; pitch clamps to +/-85 and distance clamps to [1.5,8.0].",
+                    Category: "camera"),
+                (payloadJson, cancellationToken) =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    FantaSim.App.Camera.CameraOrbitRequest req;
+                    try
+                    {
+                        req = FantaSim.App.Camera.CameraOrbitRequestParser.Parse(payloadJson);
+                    }
+                    catch (ArgumentException ex)
+                    {
+                        return Task.FromResult<string?>(JsonSerializer.Serialize(new { ok = false, error = ex.Message }));
+                    }
+
+                    var target = orbitTarget.Target;
+                    if (target is null)
+                    {
+                        return Task.FromResult<string?>(JsonSerializer.Serialize(new
+                        {
+                            ok = false,
+                            error = "globe orbit controls not mounted (world bundle not loaded)",
+                        }));
+                    }
+
+                    var applied = target(req.YawDeg, req.PitchDeg, req.Distance);
+                    log.LogInformation(
+                        "camera.orbit: yaw={YawDeg} pitch={PitchDeg} distance={Distance}",
+                        applied.YawDeg,
+                        applied.PitchDeg,
+                        applied.Distance);
+                    return Task.FromResult<string?>(JsonSerializer.Serialize(new
+                    {
+                        ok = true,
+                        yawDeg = applied.YawDeg,
+                        pitchDeg = applied.PitchDeg,
+                        distance = applied.Distance,
+                    }));
+                });
+            orbitCommandRegistered = true;
+        }
+
+        log.LogInformation(
+            "registered: App.Camera IService (phantom-camera rig); camera.orbit registered = {OrbitCommandRegistered}.",
+            orbitCommandRegistered);
+        return new CameraCompositionHandle(cameraService, rig, registered: true, orbitTarget);
     }
 
     /// <summary>
@@ -108,6 +168,7 @@ public static class CameraComposition
             Logger = log,
         };
         hostNode.AddChild(controls);
+        real.SetOrbitTarget(controls.ApplyOrbit);
 
         if (host is not null)
         {
@@ -132,6 +193,8 @@ public interface ICameraCompositionHandle : IDisposable
     bool Registered { get; }
 
     void Unregister(IRegistry registry);
+
+    void SetOrbitTarget(Func<double?, double?, double?, FantaSim.App.Camera.CameraOrbitSnapshot>? target);
 }
 
 internal sealed class CameraCompositionHandle : ICameraCompositionHandle
@@ -140,13 +203,19 @@ internal sealed class CameraCompositionHandle : ICameraCompositionHandle
     public CameraRig? Rig { get; }
     internal bool GlobeCameraMounted;
     private readonly bool _registered;
+    private readonly OrbitTargetHolder _orbitTarget;
     private bool _disposed;
 
-    public CameraCompositionHandle(FantaSim.App.Camera.Services.Service? service, CameraRig? rig, bool registered)
+    public CameraCompositionHandle(
+        FantaSim.App.Camera.Services.Service? service,
+        CameraRig? rig,
+        bool registered,
+        OrbitTargetHolder orbitTarget)
     {
         Service = service;
         Rig = rig;
         _registered = registered;
+        _orbitTarget = orbitTarget;
     }
 
     public bool Registered => _registered;
@@ -157,7 +226,11 @@ internal sealed class CameraCompositionHandle : ICameraCompositionHandle
             return;
 
         registry?.UnregisterAll<FantaSim.App.Camera.IService>();
+        registry?.TryGet<FantaSim.App.Command.IService>()?.Unregister(CameraComposition.OrbitCommandId);
     }
+
+    public void SetOrbitTarget(Func<double?, double?, double?, FantaSim.App.Camera.CameraOrbitSnapshot>? target)
+        => _orbitTarget.Target = target;
 
     public void Dispose()
     {
@@ -167,4 +240,9 @@ internal sealed class CameraCompositionHandle : ICameraCompositionHandle
         try { Service?.Dispose(); }
         catch { }
     }
+}
+
+internal sealed class OrbitTargetHolder
+{
+    public Func<double?, double?, double?, FantaSim.App.Camera.CameraOrbitSnapshot>? Target { get; set; }
 }
