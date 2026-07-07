@@ -27,6 +27,7 @@ public partial class TimelineFace : Control, ITimelineFace
     private Control? _rulerRoot;
     private Control? _lanesContainer;
     private ColorRect? _playheadLine;
+    private TimelinePlayheadHandle? _playheadHandle;
 
     private readonly List<(Button Button, double Start, double Width)> _geosphereBands = new();
     private readonly List<(Button Button, double Start, double Width)> _atmosphereBands = new();
@@ -46,6 +47,8 @@ public partial class TimelineFace : Control, ITimelineFace
     private const int RungSpanUnits = 10;
     private const float RegimeBandHeight = 28f;
     private const float TrackHeight = 26f;
+    private const float PlayheadHandleWidth = 22f;
+    private const float PlayheadHandleHeight = 20f;
 
     private TimelineLadderRung SelectedRung => TimelineModel.SelectRungForSpan(_viewEndTick - _viewStartTick);
 
@@ -144,6 +147,9 @@ public partial class TimelineFace : Control, ITimelineFace
             _fitButton.Pressed += OnFitPressed;
             _zoomInButton.Pressed += OnZoomInPressed;
             _lanesContainer.GuiInput += OnLanesGuiInput;
+            _rulerRoot.MouseFilter = MouseFilterEnum.Stop;
+            _rulerRoot.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
+            _rulerRoot.GuiInput += OnRulerGuiInput;
             Resized += OnLanesResized;
 
             SetupAnimationSystem();
@@ -185,6 +191,8 @@ public partial class TimelineFace : Control, ITimelineFace
         DisconnectIfConnected(_fitButton, BaseButton.SignalName.Pressed, Callable.From(OnFitPressed));
         DisconnectIfConnected(_zoomInButton, BaseButton.SignalName.Pressed, Callable.From(OnZoomInPressed));
         DisconnectIfConnected(_lanesContainer, Control.SignalName.GuiInput, Callable.From<InputEvent>(OnLanesGuiInput));
+        DisconnectIfConnected(_rulerRoot, Control.SignalName.GuiInput, Callable.From<InputEvent>(OnRulerGuiInput));
+        DisconnectIfConnected(_playheadHandle, Control.SignalName.GuiInput, Callable.From<InputEvent>(OnPlayheadHandleGuiInput));
         DisconnectIfConnected(this, Control.SignalName.Resized, Callable.From(OnLanesResized));
 
         // Sever the resident-to-collectible-ALC bind so the old timeline bundle's ALC can
@@ -349,14 +357,63 @@ public partial class TimelineFace : Control, ITimelineFace
         }
     }
 
+    private void OnRulerGuiInput(InputEvent @event)
+    {
+        if (_ctl is null || _rulerRoot is null) return;
+
+        if (@event is InputEventMouseButton mouseBtn)
+        {
+            if (mouseBtn.ButtonIndex == MouseButton.Left)
+            {
+                if (mouseBtn.Pressed)
+                    HandleScrub(mouseBtn.Position.X, _rulerRoot.Size.X);
+                AcceptEvent();
+            }
+        }
+        else if (@event is InputEventMouseMotion mouseMotion)
+        {
+            if ((mouseMotion.ButtonMask & MouseButtonMask.Left) != 0)
+            {
+                HandleScrub(mouseMotion.Position.X, _rulerRoot.Size.X);
+                AcceptEvent();
+            }
+        }
+    }
+
+    private void OnPlayheadHandleGuiInput(InputEvent @event)
+    {
+        if (_ctl is null || _rulerRoot is null || _playheadHandle is null) return;
+
+        if (@event is InputEventMouseButton mouseBtn)
+        {
+            if (mouseBtn.ButtonIndex == MouseButton.Left)
+            {
+                if (mouseBtn.Pressed)
+                    HandleScrub(_playheadHandle.Position.X + mouseBtn.Position.X, _rulerRoot.Size.X);
+                _playheadHandle.AcceptEvent();
+            }
+        }
+        else if (@event is InputEventMouseMotion mouseMotion)
+        {
+            if ((mouseMotion.ButtonMask & MouseButtonMask.Left) != 0)
+            {
+                HandleScrub(_playheadHandle.Position.X + mouseMotion.Position.X, _rulerRoot.Size.X);
+                _playheadHandle.AcceptEvent();
+            }
+        }
+    }
+
     private void HandleScrub(float localX)
     {
         if (_ctl is null || _lanesContainer is null) return;
-        var totalWidth = _lanesContainer.Size.X;
-        if (totalWidth <= 0) return;
+        HandleScrub(localX, _lanesContainer.Size.X);
+    }
 
-        var fraction = localX / totalWidth;
-        var tick = (long)Math.Clamp(_viewStartTick + (fraction * (_viewEndTick - _viewStartTick)), _viewStartTick, _viewEndTick);
+    private void HandleScrub(float localX, float surfaceWidth)
+    {
+        if (_ctl is null) return;
+        if (!TimelineScrubMapper.TryLocalXToTick(localX, surfaceWidth, _viewStartTick, _viewEndTick, out var tick))
+            return;
         _ctl.SeekTo(tick);
     }
 
@@ -604,10 +661,10 @@ public partial class TimelineFace : Control, ITimelineFace
             _zoomLabel.Text = TimelineTimeFormatter.ForViewRange(_viewStartTick, _viewEndTick, SelectedRung);
         }
 
-        var span = Math.Max(1L, _viewEndTick - _viewStartTick);
-        var fraction = Math.Clamp((tick - _viewStartTick) / (double)span, 0.0, 1.0);
+        var fraction = TimelineScrubMapper.TickToFraction(tick, _viewStartTick, _viewEndTick);
         _playheadLine.Position = new Vector2((float)(fraction * _lanesContainer.Size.X), 0);
         _playheadLine.Size = new Vector2(2, _lanesContainer.Size.Y);
+        UpdatePlayheadHandle(tick);
 
         foreach (var band in _geosphereBands)
         {
@@ -658,6 +715,7 @@ public partial class TimelineFace : Control, ITimelineFace
         if (_rulerRoot is null) return;
 
         ClearChildren(_rulerRoot);
+        _playheadHandle = null;
         var width = _rulerRoot.Size.X;
         if (width <= 0) return;
         if (_viewEndTick <= _viewStartTick) return;
@@ -695,6 +753,30 @@ public partial class TimelineFace : Control, ITimelineFace
             label.AddThemeFontSizeOverride("font_size", 9);
             _rulerRoot.AddChild(label);
         }
+
+        _playheadHandle = new TimelinePlayheadHandle
+        {
+            Name = "PlayheadHandle",
+            Size = new Vector2(PlayheadHandleWidth, PlayheadHandleHeight),
+            MouseFilter = MouseFilterEnum.Stop,
+            MouseDefaultCursorShape = Control.CursorShape.Hsize,
+            ZIndex = 2
+        };
+        _playheadHandle.GuiInput += OnPlayheadHandleGuiInput;
+        _rulerRoot.AddChild(_playheadHandle);
+        UpdatePlayheadHandle(_lastViewSnapshot?.Tick ?? _ctl?.Tick ?? _internalTick);
+    }
+
+    private void UpdatePlayheadHandle(double tick)
+    {
+        if (_playheadHandle is null || _rulerRoot is null) return;
+
+        var fraction = TimelineScrubMapper.TickToFraction((long)tick, _viewStartTick, _viewEndTick);
+        var x = (float)(fraction * _rulerRoot.Size.X);
+        var halfWidth = PlayheadHandleWidth / 2f;
+        var maxX = Math.Max(-halfWidth, _rulerRoot.Size.X - halfWidth);
+        _playheadHandle.Position = new Vector2(Math.Clamp(x - halfWidth, -halfWidth, maxX), 1f);
+        _playheadHandle.Size = new Vector2(PlayheadHandleWidth, PlayheadHandleHeight);
     }
 
     private void ZoomToSpanAroundCurrentTick(long targetSpan)

@@ -19,5 +19,7 @@
     <ProjectReference Include="..\..\plugins\App.Timeline\App.Timeline.csproj" />
     <ProjectReference Include="..\..\plugins\App.World.Composition\App.World.Composition.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\..\plugins\App.Timeline.Seam\TimelineScrubMapper.cs" Link="TimelineScrubMapper.cs" />
+  </ItemGroup>
 </Project>
-
