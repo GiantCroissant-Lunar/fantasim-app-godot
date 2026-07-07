@@ -289,3 +289,10 @@ the adaptive-subdivision machinery already exists (logs show subdivision=fixed|a
    the time axis) rendered at LOW resolution; they join the D7c track content design.
 4. The resolution rungs should reuse the existing tessellation-frequency / adaptive-subdivision
    ladder, not invent a parallel LOD system (reuse-Unify doctrine applies).
+
+### D8c (user, 2026-07-08): compact track content = IMAGE filmstrip, like video/animation tools
+
+**User intent (verbatim spirit):** adjust the track so it shows an IMAGE PREVIEW at that time for
+that layer instead of just text — like video-editing or animation tools. (Refines D7c/D8b.3: the
+COMPACT track strip becomes a low-resolution filmstrip of frames along the time axis; the node
+graph remains the EXPANDED track content.)
