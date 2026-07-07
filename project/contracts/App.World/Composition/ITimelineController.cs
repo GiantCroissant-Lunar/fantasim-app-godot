@@ -28,6 +28,7 @@ public interface ITimelineController
     void Play();
     void Pause();
     void SeekTo(long tick);
+    void SeekTo(long tick, TimelineTickOrigin origin) => SeekTo(tick);
     void SelectLayer(string sphereId, string layerId);
 
     /// <summary>
@@ -46,6 +47,7 @@ public interface ITimelineController
     event Action<TimelineLayerSelection?>? LayerSelectionChanged;
 
     void PushTick(long tick);
+    void PushTick(long tick, TimelineTickOrigin origin) => PushTick(tick);
     void RegisterPlayback(Action onPlay, Action onPause, Action<long> onSeek, Func<bool> checkPlaying);
     void UnregisterPlayback();
 }

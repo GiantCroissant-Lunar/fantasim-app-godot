@@ -107,6 +107,7 @@ public partial class TimelineFace : Control, ITimelineFace
     private Control? _lanesContainer;
     private ColorRect? _playheadLine;
     private TimelinePlayheadHandle? _playheadHandle;
+    private readonly TimelineScrubCoalescer _scrubCoalescer = new();
 
     private readonly List<(Button Button, double Start, double Width)> _geosphereBands = new();
     private readonly List<(Button Button, double Start, double Width)> _atmosphereBands = new();
@@ -198,6 +199,14 @@ public partial class TimelineFace : Control, ITimelineFace
     public override void _Ready()
         => BindResidentContext(forceProxyBind: false);
 
+    public override void _Process(double delta)
+    {
+        if (_ctl is null)
+            return;
+
+        ApplyScrubAction(_scrubCoalescer.ConsumeFrame());
+    }
+
     public void RebindResidentContext()
         => BindResidentContext(forceProxyBind: true);
 
@@ -271,6 +280,8 @@ public partial class TimelineFace : Control, ITimelineFace
 
     public override void _ExitTree()
     {
+        _scrubDragging = false;
+        _scrubCoalescer.Cancel();
         if (_ctl is not null && _playbackRegistered)
         {
             _ctl.UnregisterPlayback();
@@ -388,6 +399,15 @@ public partial class TimelineFace : Control, ITimelineFace
     public void SeekTo(long tick)
     {
         if (_ctl is null) return;
+        _scrubDragging = false;
+        _scrubCoalescer.Cancel();
+        EchoSeekTo(tick);
+        _ctl.PushTick(tick);
+    }
+
+    private void EchoSeekTo(long tick)
+    {
+        if (_ctl is null) return;
         tick = Math.Clamp(tick, 0L, _ctl.MaxTick);
         _isPlaying = false;
         _internalTick = tick;
@@ -408,7 +428,6 @@ public partial class TimelineFace : Control, ITimelineFace
             _animationPlayer.Seek(pos, update: true);
         }
 
-        _ctl.PushTick(tick);
         UpdateUI();
     }
 
@@ -462,11 +481,16 @@ public partial class TimelineFace : Control, ITimelineFace
                 when TryStartPlayheadLineScrub(mouseBtn.Position):
                 AcceptEvent();
                 break;
-            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false }:
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } mouseBtn:
+                if (_scrubDragging)
+                {
+                    HandleScrubRelease(mouseBtn.Position.X - _rulerRoot.GlobalPosition.X, _rulerRoot.Size.X);
+                    AcceptEvent();
+                }
                 _scrubDragging = false;
                 break;
             case InputEventMouseMotion motion when _scrubDragging:
-                HandleScrub(motion.Position.X - _rulerRoot.GlobalPosition.X, _rulerRoot.Size.X);
+                QueueScrubMotion(motion.Position.X - _rulerRoot.GlobalPosition.X, _rulerRoot.Size.X);
                 break;
         }
     }
@@ -485,7 +509,7 @@ public partial class TimelineFace : Control, ITimelineFace
             return false;
 
         _scrubDragging = true;
-        HandleScrub(globalPosition.X - _rulerRoot.GlobalPosition.X, _rulerRoot.Size.X);
+        HandleScrubPress(globalPosition.X - _rulerRoot.GlobalPosition.X, _rulerRoot.Size.X);
         return true;
     }
 
@@ -534,14 +558,14 @@ public partial class TimelineFace : Control, ITimelineFace
             if (mouseBtn.ButtonIndex == MouseButton.Left && mouseBtn.Pressed)
             {
                 _scrubDragging = true;
-                HandleScrub(mouseBtn.Position.X);
+                HandleScrubPress(mouseBtn.Position.X);
             }
         }
         else if (@event is InputEventMouseMotion mouseMotion)
         {
             if ((mouseMotion.ButtonMask & MouseButtonMask.Left) != 0)
             {
-                HandleScrub(mouseMotion.Position.X);
+                QueueScrubMotion(mouseMotion.Position.X);
             }
         }
     }
@@ -559,7 +583,7 @@ public partial class TimelineFace : Control, ITimelineFace
             if (mouseBtn.ButtonIndex == MouseButton.Left && mouseBtn.Pressed)
             {
                 _scrubDragging = true;
-                HandleScrub(FaceToRulerLocalX(mouseBtn.Position.X), _rulerRoot.Size.X);
+                HandleScrubPress(FaceToRulerLocalX(mouseBtn.Position.X), _rulerRoot.Size.X);
                 AcceptEvent();
             }
         }
@@ -567,7 +591,7 @@ public partial class TimelineFace : Control, ITimelineFace
         {
             if ((mouseMotion.ButtonMask & MouseButtonMask.Left) != 0)
             {
-                HandleScrub(FaceToRulerLocalX(mouseMotion.Position.X), _rulerRoot.Size.X);
+                QueueScrubMotion(FaceToRulerLocalX(mouseMotion.Position.X), _rulerRoot.Size.X);
                 AcceptEvent();
             }
         }
@@ -576,29 +600,67 @@ public partial class TimelineFace : Control, ITimelineFace
     private float FaceToRulerLocalX(float faceLocalX)
         => faceLocalX - (_rulerRoot!.GlobalPosition.X - GlobalPosition.X);
 
-    private void HandleScrub(float localX)
+    private void HandleScrubPress(float localX)
     {
         if (_ctl is null || _lanesContainer is null) return;
-        HandleScrub(localX, _lanesContainer.Size.X);
+        HandleScrubPress(localX, _lanesContainer.Size.X);
     }
 
-    private void HandleScrub(float localX, float surfaceWidth)
+    private void HandleScrubPress(float localX, float surfaceWidth)
     {
-        if (_ctl is null) return;
-        if (!TimelineScrubMapper.TryLocalXToTick(localX, surfaceWidth, _viewStartTick, _viewEndTick, out var tick))
+        if (!TryScrubTick(localX, surfaceWidth, out var tick))
+            return;
+
+        ApplyScrubAction(_scrubCoalescer.Press(tick));
+    }
+
+    private void QueueScrubMotion(float localX)
+    {
+        if (_ctl is null || _lanesContainer is null) return;
+        QueueScrubMotion(localX, _lanesContainer.Size.X);
+    }
+
+    private void QueueScrubMotion(float localX, float surfaceWidth)
+    {
+        if (!TryScrubTick(localX, surfaceWidth, out var tick))
+            return;
+
+        ApplyScrubAction(_scrubCoalescer.Motion(tick));
+    }
+
+    private void HandleScrubRelease(float localX, float surfaceWidth)
+    {
+        if (!TryScrubTick(localX, surfaceWidth, out var tick))
         {
-            // Loud failure per the ingress doctrine: a scrub that maps to nothing is a layout bug.
-            _log.LogInformation("timeline scrub rejected: localX={X} width={W}", localX, surfaceWidth);
+            _scrubCoalescer.Cancel();
             return;
         }
 
-        // Mirror the ingress seek sequence (service seek + push/echo). _ctl.SeekTo routes to the
-        // service but never echoes back to this face — face-initiated scrubs updated the WORLD
-        // while the label/playhead/handle stayed stale (the long-standing "timeline cannot be
-        // adjusted" perception, proven live 2026-07-08). SeekTo(tick) is the local echo: it
-        // pushes the tick to the controller and refreshes the UI.
-        _ctl.SeekTo(tick);
-        SeekTo(tick);
+        ApplyScrubAction(_scrubCoalescer.Release(tick));
+    }
+
+    private bool TryScrubTick(float localX, float surfaceWidth, out long tick)
+    {
+        tick = 0L;
+        if (_ctl is null)
+            return false;
+
+        if (TimelineScrubMapper.TryLocalXToTick(localX, surfaceWidth, _viewStartTick, _viewEndTick, out tick))
+            return true;
+
+        // Loud failure per the ingress doctrine: a scrub that maps to nothing is a layout bug.
+        _log.LogInformation("timeline scrub rejected: localX={X} width={W}", localX, surfaceWidth);
+        return false;
+    }
+
+    private void ApplyScrubAction(TimelineScrubAction action)
+    {
+        if (_ctl is null || !action.ShouldApply)
+            return;
+
+        var tick = Math.Clamp(action.Tick, 0L, _ctl.MaxTick);
+        EchoSeekTo(tick);
+        _ctl.PushTick(tick, action.Origin);
     }
 
     private void OnBandPressed(long startTick)

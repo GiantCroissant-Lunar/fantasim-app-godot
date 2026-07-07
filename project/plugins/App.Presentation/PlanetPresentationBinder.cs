@@ -66,6 +66,8 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     private readonly PlanetPresentationReloadGate _worldRuntimeReload = new();
     private string? _boundRegimeId;
     private bool _regimeRefreshPending;
+    private readonly ScrubApplyScheduler _scrubApplyScheduler = new(restDelayMs: 300L);
+    private CancellationTokenSource? _scrubRefreshDelay;
     private long? _boundCrustSnapshotTick;
     private IReadOnlyList<long> _boundCrustSnapshotTicks = Array.Empty<long>();
     private PlanetPresentationDocument? _currentDocument;
@@ -380,10 +382,14 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     }
 
     private void ApplyTimelineTick(long tick)
+        => ApplyTimelineTick(tick, TimelineTickOrigin.Standard);
+
+    private void ApplyTimelineTick(long tick, TimelineTickOrigin origin)
     {
         var regime = _timeline.GeosphereSchedule.RegimeAt(tick);
         var regimeId = regime?.RegimeId;
         var showsPlateFeatures = regime?.ShowsPlateFeatures ?? true;
+        var heavyRefreshRequested = false;
 
         if (_boundRegimeId is not null
             && !string.Equals(_boundRegimeId, regimeId, StringComparison.Ordinal))
@@ -397,7 +403,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             _log.LogInformation(
                 "Planet regime transition {Previous} -> {Current} at t={Tick}: refreshing presentation.",
                 previousRegimeId, regimeId ?? "<none>", tick);
-            ScheduleRegimeRefresh();
+            heavyRefreshRequested = true;
         }
         else if (_boundCrustSnapshotTicks.Count > 0)
         {
@@ -414,9 +420,11 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
                 _log.LogInformation(
                     "Crust snapshot transition {Previous} -> {Current} at t={Tick}: refreshing presentation.",
                     previousSnapshot?.ToString("N0") ?? "<none>", selectedSnapshot?.ToString("N0") ?? "<none>", tick);
-                ScheduleRegimeRefresh();
+                heavyRefreshRequested = true;
             }
         }
+
+        HandleScrubAwareHeavyRefresh(tick, origin, heavyRefreshRequested);
 
         var previousDecision = _currentComposition;
         var decision = GlobeViewModeResolver.ResolveComposition(regimeId, _timeline.ActiveLayers, _plateViewOverride);
@@ -424,9 +432,11 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         var viewMode = decision.DerivedViewMode;
         _currentViewMode = viewMode;
         ApplySurfaceAppearance(decision.SurfaceColoring.ToSurfaceViewMode());
-        // M0 (spec §3.2): in the Continents view the membership map IS the content — refresh the
-        // globe snapshot at every playhead move through the light path (no crust materialization).
-        if (viewMode == GlobeViewMode.Continents)
+        // M0/D8: when the active surface owner is Continents, the membership map IS the content —
+        // refresh the globe snapshot at every playhead move through the light path (no crust
+        // materialization). Keying off SurfaceColoring keeps stacked layer views (e.g.
+        // Mantle+Plate slabs) moving even when the derived view mode is MantleInterior.
+        if (decision.SurfaceColoring == SurfaceColoringKind.Continents)
             RefreshContinentsMembership(tick);
         bool showBoundaries = viewMode == GlobeViewMode.PlateIdentity;
         ApplyLightingForView(viewMode);
@@ -1418,6 +1428,87 @@ void fragment() {
             return;
         _regimeRefreshPending = true;
         Callable.From(RefreshPresentationForRegime).CallDeferred();
+    }
+
+    private void HandleScrubAwareHeavyRefresh(long tick, TimelineTickOrigin origin, bool heavyRefreshRequested)
+    {
+        switch (origin)
+        {
+            case TimelineTickOrigin.ScrubPreview:
+                ScheduleScrubRestRefresh(tick, heavyRefreshRequested);
+                break;
+            case TimelineTickOrigin.ScrubCommit:
+                FlushScrubRestRefresh(tick);
+                if (heavyRefreshRequested)
+                    ScheduleRegimeRefresh();
+                break;
+            default:
+                CancelScrubRestRefresh();
+                if (heavyRefreshRequested)
+                    ScheduleRegimeRefresh();
+                break;
+        }
+    }
+
+    private void ScheduleScrubRestRefresh(long tick, bool heavyRefreshRequested)
+    {
+        var schedule = _scrubApplyScheduler.RecordPreview(tick, heavyRefreshRequested, System.Environment.TickCount64);
+        if (schedule is null)
+            return;
+
+        _scrubRefreshDelay?.Cancel();
+        _scrubRefreshDelay?.Dispose();
+        var cts = new CancellationTokenSource();
+        _scrubRefreshDelay = cts;
+        var dueInMs = Math.Max(0L, schedule.Value.DueAtMs - System.Environment.TickCount64);
+        _ = DelayThenFlushScrubRefreshAsync(schedule.Value.Generation, dueInMs, cts.Token);
+    }
+
+    private async Task DelayThenFlushScrubRefreshAsync(int generation, long delayMs, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(delayMs), cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (cancellationToken.IsCancellationRequested || _disposed)
+            return;
+
+        Callable.From(() => FlushScrubRestRefreshIfDue(generation)).CallDeferred();
+    }
+
+    private void FlushScrubRestRefreshIfDue(int generation)
+    {
+        if (_disposed)
+            return;
+
+        if (_scrubApplyScheduler.ConsumeDue(generation, System.Environment.TickCount64) is null)
+            return;
+
+        ScheduleRegimeRefresh();
+    }
+
+    private void FlushScrubRestRefresh(long tick)
+    {
+        if (_scrubApplyScheduler.ConsumeCommit(tick) is null)
+            return;
+
+        _scrubRefreshDelay?.Cancel();
+        _scrubRefreshDelay?.Dispose();
+        _scrubRefreshDelay = null;
+        ScheduleRegimeRefresh();
+    }
+
+    private void CancelScrubRestRefresh()
+    {
+        _scrubApplyScheduler.Clear();
+        _scrubRefreshDelay?.Cancel();
+        _scrubRefreshDelay?.Dispose();
+        _scrubRefreshDelay = null;
     }
 
     private void RefreshPresentationForRegime()
@@ -2445,6 +2536,7 @@ void fragment() {
         _watch.Dispose();
         _generationSubscription?.Dispose();
         _generationSubscription = null;
+        CancelScrubRestRefresh();
         ReleaseNodeGraphView();
         _timelineRegistration.Dispose();
         ClearActiveRoot();
@@ -2453,7 +2545,7 @@ void fragment() {
 
 internal sealed class PlanetTimelineController : ITimelineController
 {
-    private readonly Action<long> _applyTick;
+    private readonly Action<long, TimelineTickOrigin> _applyTick;
     private long _tick;
     private long _maxTick = 1;
     // D5: stacked active set (pure helper); SelectedLayer is the primary (first or null).
@@ -2463,7 +2555,7 @@ internal sealed class PlanetTimelineController : ITimelineController
     private Action<long>? _onSeek;
     private Func<bool>? _checkPlaying;
 
-    public PlanetTimelineController(Action<long> applyTick)
+    public PlanetTimelineController(Action<long, TimelineTickOrigin> applyTick)
     {
         _applyTick = applyTick ?? throw new ArgumentNullException(nameof(applyTick));
         GeosphereSchedule = EmptySchedule("geosphere");
@@ -2500,6 +2592,7 @@ internal sealed class PlanetTimelineController : ITimelineController
     public void Pause() => _onPause?.Invoke();
 
     public void SeekTo(long tick) => _onSeek?.Invoke(Math.Clamp(tick, 0L, _maxTick));
+    public void SeekTo(long tick, TimelineTickOrigin origin) => SeekTo(tick);
 
     // D5 back-compat: SelectLayer makes the active set EXACTLY {layer}.
     public void SelectLayer(string sphereId, string layerId)
@@ -2523,10 +2616,14 @@ internal sealed class PlanetTimelineController : ITimelineController
     }
 
     public void PushTick(long tick)
+        => PushTick(tick, TimelineTickOrigin.Standard);
+
+    public void PushTick(long tick, TimelineTickOrigin origin)
     {
         _tick = Math.Clamp(tick, 0L, _maxTick);
-        _applyTick(_tick);
-        TickChanged?.Invoke(_tick);
+        _applyTick(_tick, origin);
+        if (origin != TimelineTickOrigin.ScrubPreview)
+            TickChanged?.Invoke(_tick);
     }
 
     public void RegisterPlayback(Action onPlay, Action onPause, Action<long> onSeek, Func<bool> checkPlaying)
