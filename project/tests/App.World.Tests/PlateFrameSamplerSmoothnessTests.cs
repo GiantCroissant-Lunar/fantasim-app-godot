@@ -24,7 +24,12 @@ namespace FantaSim.App.World.Tests;
 /// </summary>
 public sealed class PlateFrameSamplerSmoothnessTests
 {
-    private const string FourPlateRotText = @"
+    // Covers every movable plate id of the default onset roster (ids 1..9; id 0 is left unmapped —
+    // in PLATES4 .rot, 000 is the anchor — and gets identity, which is fine: the smoothness
+    // assertions only need the MAPPED plates to move every sampled step). Before the 2026-07-07
+    // rate calibration re-fractured the default world, a four-plate fixture happened to cover the
+    // land-carrying plates; the full-coverage fixture removes that dependence on where land sits.
+    private const string NinePlateRotText = @"
 1 0.0 90.0 0.0 0.0 0
 1 4.0 90.0 0.0 6.0 0
 1 8.0 90.0 0.0 12.0 0
@@ -37,9 +42,28 @@ public sealed class PlateFrameSamplerSmoothnessTests
 4 0.0 45.0 90.0 0.0 0
 4 4.0 45.0 90.0 14.0 0
 4 8.0 45.0 90.0 28.0 0
+5 0.0 30.0 45.0 0.0 0
+5 4.0 30.0 45.0 9.0 0
+5 8.0 30.0 45.0 18.0 0
+6 0.0 -30.0 -45.0 0.0 0
+6 4.0 -30.0 -45.0 -11.0 0
+6 8.0 -30.0 -45.0 -22.0 0
+7 0.0 60.0 120.0 0.0 0
+7 4.0 60.0 120.0 7.0 0
+7 8.0 60.0 120.0 14.0 0
+8 0.0 -60.0 -120.0 0.0 0
+8 4.0 -60.0 -120.0 13.0 0
+8 8.0 -60.0 -120.0 26.0 0
+9 0.0 15.0 -90.0 0.0 0
+9 4.0 15.0 -90.0 -9.0 0
+9 8.0 15.0 -90.0 -18.0 0
 ";
 
-    private const int Frequency = 3;
+    // Matches WorldGenerationRenderOptions.Default.TessellationFrequency: the sampler's roster/
+    // tessellation and the crust spec's materialization must share one frequency, or the sampler
+    // looks up crust state by cell ids from a different tessellation (it previously "passed" at
+    // a mismatched frequency only because the old world's land happened to overlap).
+    private static readonly int Frequency = WorldGenerationRenderOptions.Default.TessellationFrequency;
     private const long TickStep = UnitConverter.TicksPerMegaAnnum / 2; // 50k ticks = 0.5 Ma
 
     [Fact]
@@ -55,7 +79,7 @@ public sealed class PlateFrameSamplerSmoothnessTests
         var materialization = await WorldCrustMaterializer.MaterializeAsync(spec);
         var snapshotState = materialization.Result.StateByTick[spec.SnapshotTicks[0]];
 
-        var provider = new ImportedRotationProvider("four-plate", FourPlateRotText, onsetTick);
+        var provider = new ImportedRotationProvider("nine-plate", NinePlateRotText, onsetTick);
         var sampler = new PlateFrameSampler(
             tessellation, plates, materialization.Topology, onsetTick, provider);
 
@@ -101,7 +125,7 @@ public sealed class PlateFrameSamplerSmoothnessTests
         var materialization = await WorldCrustMaterializer.MaterializeAsync(spec);
         var snapshotState = materialization.Result.StateByTick[spec.SnapshotTicks[0]];
 
-        var provider = new ImportedRotationProvider("four-plate", FourPlateRotText, onsetTick);
+        var provider = new ImportedRotationProvider("nine-plate", NinePlateRotText, onsetTick);
         var sampler = new PlateFrameSampler(
             tessellation, plates, materialization.Topology, onsetTick, provider);
 

@@ -89,9 +89,12 @@ public sealed class BoundaryNetworkCompletenessTests
         var model = BuildAppReconstructor(out long onsetTick);
         // Check past onset: at the onset tick the rotation is identity (the reference frame), so the
         // classification reflects the seed geometry. The full motion vocabulary (Convergent +
-        // Divergent + Transform) emerges once plates have drifted — 8 Ma past onset is the same
-        // window FrameAgreementTests uses, enough drift for all three types to appear.
-        long tick = onsetTick + 8 * UnitConverter.TicksPerMegaAnnum;
+        // Divergent + Transform) emerges once plates have drifted. With the 2026-07-07 rate
+        // calibration (default drift 0.02 -> 0.0035 rad per anchor unit, ~5.7x slower to match the
+        // real-plate median; see tools/rates/2026-07-07-rate-calibration-report.md) the same
+        // relative displacement needs a ~5.7x longer window: the old 8 Ma gate scales to ~46 Ma,
+        // and 100 Ma gives margin (measured kinds at +100 Ma: Convergent 6, Divergent 3, Transform 15).
+        long tick = onsetTick + 100 * UnitConverter.TicksPerMegaAnnum;
         var arcs = model.BuildBoundaryArcsAt(tick);
 
         var kinds = arcs.Select(a => a.Kind).Distinct().ToArray();
@@ -118,16 +121,23 @@ public sealed class BoundaryNetworkCompletenessTests
     }
 
     // Regression: the specific failure mode — boundaries whose topology truth carries a single
-    // sample point (one shared cell edge) were dropped by the old >= 2 sample guard. The default
-    // onset roster produces exactly two such boundaries (pairs (1,2) and (7,8)). Both must now
+    // sample point (one shared cell edge) were dropped by the old >= 2 sample guard. The seed is
+    // pinned to one that PRODUCES single-sample boundaries: after the 2026-07-07 rate calibration
+    // re-fractured the default world (drift feeds ConvectionFieldConfig, so upwelling positions at
+    // the onset tick moved), the app default seed 7 no longer yields any. Seed 2 at frequency 3
+    // yields exactly two — pairs (5,7) and (8,9) — keeping this recovery path exercised. Both must
     // produce a real arc with >= 2 unit-length points, so the network is closed around every plate.
     [Fact]
     public void SingleSampleBoundariesAreRecoveredNotDropped()
     {
-        var model = BuildAppReconstructor(out long onsetTick);
+        const int SingleSampleSeed = 2;
+        long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        var schedule = SphereRegimeScheduleDefaults.GeosphereFor(onsetTick);
+        var recoverRoster = OnsetRoster.Build(SingleSampleSeed, onsetTick, AppFrequency);
+        var model = GlobeReconstructor.FromOnsetRoster(recoverRoster, onsetTick, schedule, AppFrequency);
 
         var tess = new GeodesicSphereTessellation(AppFrequency);
-        var roster = OnsetRoster.Build(AppSeed, onsetTick, AppFrequency);
+        var roster = OnsetRoster.Build(SingleSampleSeed, onsetTick, AppFrequency);
         var plates = roster.SeedPlatesAt(onsetTick);
         var topology = PlateTopologyBuilder.Build(tess, plates);
         var boundaries = PlateTopologyBuilder.ClassifyBoundariesAt(

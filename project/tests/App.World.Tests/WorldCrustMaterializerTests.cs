@@ -108,13 +108,20 @@ public sealed class WorldCrustMaterializerTests
     {
         var options = WorldGenerationRenderOptions.Default;
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
-        long referenceTick = onsetTick + 2_000_000L;
+        // 10M ticks = 100 anchor units (ka) past onset. With the 2026-07-07 calibrated drift rate
+        // (~5.7x slower than the old 0.02 default; tools/rates report) the full kind vocabulary
+        // needs a longer window — at the default seed/frequency this is the first probed tick where
+        // Convergent, Divergent, AND Transform arcs all exist (measured: C7/D2/T15), so the three
+        // per-kind assertions below stay exact. Arcs are taken at the SAME tick as the state so the
+        // section kinds and the sampled crust are coherent.
+        long referenceTick = onsetTick + 10_000_000L;
 
         var spec = WorldCrustRunSpec.ForPresentation(options, onsetTick, referenceTick);
         var materialization = await WorldCrustMaterializer.MaterializeAsync(spec);
-        var (globeAtOnset, arcsAtOnset) = BuildOnsetGlobeAndArcs(options, onsetTick);
+        var globeAtOnset = BuildGlobeAtOnset(options, onsetTick);
+        var arcsAtReference = BuildReconstructor(options, onsetTick).BuildBoundaryArcsAt(referenceTick);
 
-        var sections = materialization.BuildBoundarySections(globeAtOnset, arcsAtOnset, referenceTick, NullLogger.Instance);
+        var sections = materialization.BuildBoundarySections(globeAtOnset, arcsAtReference, referenceTick, NullLogger.Instance);
 
         Assert.Contains(sections, section => section.Kind == PlateBoundaryKind.Convergent);
         Assert.Contains(sections, section => section.Kind == PlateBoundaryKind.Divergent);

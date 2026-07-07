@@ -212,10 +212,24 @@ public sealed class WorldServiceGenerationProductsTests
         using var service = new Service(new ServiceRegistry());
         var document = service.GetPlanetPresentationAsync();
 
+        // The section panel must represent every boundary kind that is actually present in the
+        // document's arcs (parity), rather than a hardcoded kind list: with the 2026-07-07
+        // calibrated drift rate the full Convergent/Divergent/Transform vocabulary emerges over
+        // ~100 anchor units of drift, so which kinds exist at the default presentation tick is a
+        // property of the world state, not a constant. Convergent is asserted explicitly as the
+        // non-vacuity anchor (present at every probed tick of the default world).
         Assert.NotNull(document.BoundarySections);
-        Assert.Contains(document.BoundarySections!, section => section.Kind == PlateBoundaryKind.Convergent);
-        Assert.Contains(document.BoundarySections!, section => section.Kind == PlateBoundaryKind.Divergent);
-        Assert.Contains(document.BoundarySections!, section => section.Kind == PlateBoundaryKind.Transform);
+        Assert.NotEmpty(document.BoundarySections!);
+        Assert.NotNull(document.BoundaryArcs);
+        var arcKinds = document.BoundaryArcs!
+            .Where(arc => arc.Kind != PlateBoundaryKind.Inactive && arc.Points.Count >= 2)
+            .Select(arc => arc.Kind)
+            .Distinct()
+            .ToArray();
+        Assert.NotEmpty(arcKinds);
+        Assert.Contains(PlateBoundaryKind.Convergent, arcKinds);
+        foreach (var kind in arcKinds)
+            Assert.Contains(document.BoundarySections!, section => section.Kind == kind);
         Assert.All(document.BoundarySections!, section => Assert.NotEmpty(section.Samples));
     }
 
