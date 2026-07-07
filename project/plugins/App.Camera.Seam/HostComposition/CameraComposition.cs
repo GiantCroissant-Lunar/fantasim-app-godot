@@ -99,6 +99,19 @@ public static class CameraComposition
                     }));
                 });
             orbitCommandRegistered = true;
+
+            commandService.Register(
+                new FantaSim.App.Command.CommandDescriptor(
+                    Id: "camera.debug",
+                    Title: "Camera rig introspection",
+                    Description: "Reports the live camera-rig state: real camera position/current, phantom host, " +
+                                 "manager autoload, and every registered pcam's addon-visible state. Diagnostic; no side effects.",
+                    Category: "camera"),
+                async (payloadJson, cancellationToken) =>
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    return await rig.DebugSnapshotAsync().ConfigureAwait(false);
+                });
         }
 
         log.LogInformation(

@@ -339,6 +339,77 @@ public sealed class CameraRig : ICameraRig
     public PhantomCameraHost? GetHost(string viewportId = "main")
         => _rigs.TryGetValue(viewportId, out var rig) ? rig.HostWrapper : null;
 
+    /// <summary>
+    /// Live rig introspection for the `camera.debug` ingress command: reports the real camera,
+    /// the phantom host, the manager autoload, and every registered pcam's addon-visible state.
+    /// Marshals onto the Godot main thread like every other rig operation, so it is safe to call
+    /// from a command handler thread.
+    /// </summary>
+    public Task<string> DebugSnapshotAsync(string viewportId = "main")
+    {
+        var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Callable.From(() =>
+        {
+            try { tcs.TrySetResult(DebugSnapshotImpl(viewportId)); }
+            catch (Exception ex) { tcs.TrySetException(ex); }
+        }).CallDeferred();
+        return tcs.Task;
+    }
+
+    private string DebugSnapshotImpl(string viewportId)
+    {
+        var snapshot = new Godot.Collections.Dictionary();
+        snapshot["viewportId"] = viewportId;
+
+        if (!_rigs.TryGetValue(viewportId, out var rig))
+        {
+            snapshot["rigExists"] = false;
+            return Json.Stringify(snapshot, "  ");
+        }
+
+        snapshot["rigExists"] = true;
+        snapshot["layerBit"] = rig.LayerBit;
+        snapshot["cameraInTree"] = rig.Camera.IsInsideTree();
+        snapshot["cameraCurrent"] = rig.Camera.Current;
+        snapshot["cameraGlobalPosition"] = rig.Camera.IsInsideTree() ? rig.Camera.GlobalPosition : Vector3.Zero;
+        snapshot["hostInTree"] = rig.Host.IsInsideTree();
+        snapshot["hostLayers"] = (int)rig.Host.Get("host_layers");
+        snapshot["hostProcessMode"] = (int)rig.Host.ProcessMode;
+
+        var tree = _parent.GetTree();
+        var manager = tree?.Root.GetNodeOrNull("PhantomCameraManager");
+        snapshot["managerAutoloadPresent"] = manager is not null;
+        if (manager is not null)
+        {
+            // The addon manager tracks registered pcams/hosts in private arrays; read them for truth.
+            snapshot["managerPcamCount"] = ((Godot.Collections.Array)manager.Call("get_phantom_camera_3ds")).Count;
+            snapshot["managerHostCount"] = ((Godot.Collections.Array)manager.Call("get_phantom_camera_hosts")).Count;
+        }
+
+        var activePcam = rig.HostWrapper.GetActivePhantomCamera();
+        snapshot["hostActivePcam"] = activePcam is PhantomCamera3D active ? active.Node3D.Name.ToString() : "(none)";
+
+        var pcams = new Godot.Collections.Array();
+        foreach (var (id, entry) in _cameras)
+        {
+            var p = new Godot.Collections.Dictionary();
+            p["id"] = id;
+            p["inTree"] = entry.Node.IsInsideTree();
+            p["globalPosition"] = entry.Node.IsInsideTree() ? entry.Node.GlobalPosition : Vector3.Zero;
+            p["visible"] = entry.Node.Visible;
+            p["priority"] = (int)entry.Node.Get("priority");
+            p["hostLayers"] = (int)entry.Node.Get("host_layers");
+            p["followMode"] = (int)entry.Node.Get("follow_mode");
+            p["followTarget"] = entry.Node.Get("follow_target").Obj is Node3D t ? t.Name.ToString() : "(null)";
+            p["springLength"] = (float)entry.Node.Get("spring_length");
+            p["isActive"] = (bool)entry.Node.Call("is_active");
+            pcams.Add(p);
+        }
+        snapshot["pcams"] = pcams;
+
+        return Json.Stringify(snapshot, "  ");
+    }
+
     private void EnsureViewportRig(string viewportId)
     {
         if (_rigs.ContainsKey(viewportId))
