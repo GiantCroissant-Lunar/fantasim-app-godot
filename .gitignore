@@ -70,3 +70,7 @@ CLAUDE.md
 # agent-session scratch (delegation logs + staged dispatch prompts) - not source
 .agent/logs/
 .agent/run/
+
+# Plate-rate calibration: downloaded Cao et al. 2024 dataset (Zenodo, CC-BY-4.0).
+# Re-fetch with tools/rates/fetch-cao2024.sh — do not commit third-party data.
+tools/rates/data/
