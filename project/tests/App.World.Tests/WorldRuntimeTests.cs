@@ -130,11 +130,15 @@ public class WorldRuntimeTests
         var truthStore = new ConcurrentAppendProbeTruthEventStore(TimeSpan.FromMilliseconds(75));
         try
         {
+            // The assertion under test is serialization (12 appends, never concurrent), not
+            // latency: the last of 12 queued asks waits behind 11 × 75 ms probe delays plus
+            // 12 generations, which crosses a 5 s ask timeout on a loaded parallel runner.
+            // Keep the timeout generous so only a genuine hang can trip it.
             using var truthWriter = ActorTruthEventWriter.Start(
                 actorSystem,
                 truthStore,
                 actorName: $"truth-writer-{Guid.NewGuid():N}",
-                askTimeout: TimeSpan.FromSeconds(5));
+                askTimeout: TimeSpan.FromSeconds(30));
             using var runtime = new WorldRuntime(registry, descriptors: null, truthWriter);
 
             // When multiple callers ask generation to append concurrently

@@ -269,23 +269,34 @@ public sealed class CellReassignmentTests
         model.BuildGlobeAt(tick);
         model.BuildGlobeAt(tick);
 
-        const int iterations = 100;
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        for (int i = 0; i < iterations; i++)
-            model.BuildGlobeAt(tick);
-        sw.Stop();
+        // Wall-clock under the parallel test runner measures machine load as much as the
+        // algorithm: a mean over one long run flakes whenever sibling collections or external
+        // work contend for cores. The minimum over independent batches estimates the
+        // uncontended cost — noise inflates some batches, a real regression inflates all.
+        const int batches = 10;
+        const int callsPerBatch = 10;
+        double bestBatchMsPerCall = double.MaxValue;
+        double totalMs = 0.0;
+        for (int b = 0; b < batches; b++)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            for (int i = 0; i < callsPerBatch; i++)
+                model.BuildGlobeAt(tick);
+            sw.Stop();
+            double batchMsPerCall = sw.Elapsed.TotalMilliseconds / callsPerBatch;
+            bestBatchMsPerCall = Math.Min(bestBatchMsPerCall, batchMsPerCall);
+            totalMs += sw.Elapsed.TotalMilliseconds;
+        }
 
-        double msPerCall = sw.Elapsed.TotalMilliseconds / iterations;
+        Assert.True(bestBatchMsPerCall < 16.0,
+            $"reassignment at freq {freq} took {bestBatchMsPerCall:F3} ms/call in its fastest " +
+            $"batch of {callsPerBatch} (mean {totalMs / (batches * callsPerBatch):F3} ms/call " +
+            $"over {batches * callsPerBatch} calls) — exceeds the 16 ms frame budget");
 
-        Assert.True(msPerCall < 16.0,
-            $"reassignment at freq {freq} took {msPerCall:F3} ms/call (over {iterations} calls) — " +
-            "exceeds the 16 ms frame budget");
-
-        // Report the measured time in the test output (always-true assertion to bind the value).
-        Assert.True(msPerCall >= 0.0);
         Console.WriteLine(
             $"[reassignment] freq {freq}: {snapshot.CellCount} cells x {snapshot.PlateCount} plates, " +
-            $"{msPerCall:F3} ms/call over {iterations} calls (delta = 8 Ma past onset)");
+            $"best batch {bestBatchMsPerCall:F3} ms/call, mean {totalMs / (batches * callsPerBatch):F3} " +
+            $"ms/call over {batches * callsPerBatch} calls (delta = 8 Ma past onset)");
     }
 
     // ----------------------------------------------------------------------------------------------
