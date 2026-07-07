@@ -19,6 +19,7 @@ public static class RenderComposition
 {
     public const string ScreenshotCommandId = "render.screenshot";
     public const string CutawayCommandId = "render.cutaway";
+    public const string ExplodedCommandId = "render.exploded";
 
     public static IRenderCompositionHandle ComposeRender(HostCompositionContext ctx, Godot.Node hostNode)
     {
@@ -36,7 +37,7 @@ public static class RenderComposition
         if (commandService is null)
         {
             log.LogWarning("Render: no command IService registered; render.screenshot will be inert.");
-            return new RenderCompositionHandle(captureNode, registered: false, new CutawayTargetHolder());
+            return new RenderCompositionHandle(captureNode, registered: false, new CutawayTargetHolder(), new ExplodedTargetHolder());
         }
 
         commandService.Register(
@@ -140,8 +141,53 @@ public static class RenderComposition
                 }));
             });
 
-        log.LogInformation("registered: render.screenshot (viewport capture), render.cutaway (wedge).");
-        return new RenderCompositionHandle(captureNode, registered: true, cutawayTarget);
+        // M-B: render.exploded — the exploded solid-crust view. Mirrors render.cutaway: the binder
+        // is mounted later (world bundle load) so the handler closes over a mutable target that
+        // Host.cs wires via SetExplodedTarget. Null target = binder not yet mounted; the command
+        // reports that. ExplodedRequestParser is the Godot-free parser (unit-tested).
+        var explodedTarget = new ExplodedTargetHolder();
+        commandService.Register(
+            new FantaSim.App.Command.CommandDescriptor(
+                Id: ExplodedCommandId,
+                Title: "Exploded solid crust",
+                Description: "Activates the exploded solid-crust view (per-plate watertight slabs translated radially along their centroid direction). Payload: {\"factor\":N} where N in [0,1]. Factor 0 = assembled solid crust (thickness/side walls visible at the silhouette, no translation); factor 1 = maximum radial explode. Default: {\"factor\":0.0} (assembled).",
+                Category: "render"),
+            (payloadJson, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                ExplodedRequest req;
+                try
+                {
+                    req = ExplodedRequestParser.Parse(payloadJson);
+                }
+                catch (ArgumentException ex)
+                {
+                    return Task.FromResult<string?>(JsonSerializer.Serialize(new { ok = false, error = ex.Message }));
+                }
+
+                var target = explodedTarget.Target;
+                if (target is null)
+                {
+                    return Task.FromResult<string?>(JsonSerializer.Serialize(new
+                    {
+                        ok = false,
+                        error = "planet presentation binder not mounted (world bundle not loaded)",
+                    }));
+                }
+
+                target(req.Factor);
+                log.LogInformation("render.exploded: factor={Factor}", req.Factor);
+                return Task.FromResult<string?>(JsonSerializer.Serialize(new
+                {
+                    ok = true,
+                    factor = req.Factor,
+                    assembled = req.IsAssembled,
+                }));
+            });
+
+        log.LogInformation("registered: render.screenshot (viewport capture), render.cutaway (wedge), render.exploded (solid crust).");
+        return new RenderCompositionHandle(captureNode, registered: true, cutawayTarget, explodedTarget);
     }
 }
 
@@ -158,6 +204,8 @@ public interface IRenderCompositionHandle : IDisposable
     void Unregister(IRegistry registry);
 
     void SetCutawayTarget(Action<double, double>? target);
+
+    void SetExplodedTarget(Action<double>? target);
 }
 
 internal sealed class RenderCompositionHandle : IRenderCompositionHandle
@@ -165,13 +213,15 @@ internal sealed class RenderCompositionHandle : IRenderCompositionHandle
     private readonly GodotViewportCapture _captureNode;
     private readonly bool _registered;
     private readonly CutawayTargetHolder _cutawayTarget;
+    private readonly ExplodedTargetHolder _explodedTarget;
     private bool _disposed;
 
-    public RenderCompositionHandle(GodotViewportCapture captureNode, bool registered, CutawayTargetHolder cutawayTarget)
+    public RenderCompositionHandle(GodotViewportCapture captureNode, bool registered, CutawayTargetHolder cutawayTarget, ExplodedTargetHolder explodedTarget)
     {
         _captureNode = captureNode;
         _registered = registered;
         _cutawayTarget = cutawayTarget;
+        _explodedTarget = explodedTarget;
     }
 
     public bool Registered => _registered;
@@ -183,10 +233,14 @@ internal sealed class RenderCompositionHandle : IRenderCompositionHandle
 
         registry?.TryGet<FantaSim.App.Command.IService>()?.Unregister(RenderComposition.ScreenshotCommandId);
         registry?.TryGet<FantaSim.App.Command.IService>()?.Unregister(RenderComposition.CutawayCommandId);
+        registry?.TryGet<FantaSim.App.Command.IService>()?.Unregister(RenderComposition.ExplodedCommandId);
     }
 
     public void SetCutawayTarget(Action<double, double>? target)
         => _cutawayTarget.Target = target;
+
+    public void SetExplodedTarget(Action<double>? target)
+        => _explodedTarget.Target = target;
 
     public void Dispose()
     {
@@ -207,4 +261,9 @@ internal sealed class RenderCompositionHandle : IRenderCompositionHandle
 internal sealed class CutawayTargetHolder
 {
     public Action<double, double>? Target { get; set; }
+}
+
+internal sealed class ExplodedTargetHolder
+{
+    public Action<double>? Target { get; set; }
 }

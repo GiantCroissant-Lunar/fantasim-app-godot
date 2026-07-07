@@ -18,6 +18,9 @@ public interface IPlanetPresentation : IDisposable
 
     /// <summary>W3a cutaway wedge (render.cutaway ingress); width 0 clears.</summary>
     void UpdateCutaway(double azimuthDeg, double widthDeg);
+
+    /// <summary>M-B exploded solid crust (render.exploded ingress); factor in [0,1]. Factor 0 = assembled.</summary>
+    void UpdateExploded(double factor);
 }
 
 /// <summary>

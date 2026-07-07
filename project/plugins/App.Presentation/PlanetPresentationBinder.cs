@@ -81,6 +81,28 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     private readonly string? _plateViewOverride;
     private long? _boundContinentsTick; // last tick whose membership the Continents caps show
 
+    // M-B exploded solid-crust state (inactive until render.exploded is invoked at least once).
+    private bool _explodedActive;
+    private double _explodedFactor;
+    private Node3D? _explodedCrustRoot;
+
+    // M-B cached build inputs captured at plate-surface bind time so UpdateExploded can rebuild
+    // byte-identical TOP DTOs (same Continents/terrain colors) without recomputing the heavy surface
+    // path, and the solid thickness exaggeration matches the surface relief exaggeration exactly.
+    private IReadOnlyList<PlateCap>? _lastCaps;
+    private double _lastExaggeration;
+    private IReadOnlyList<PlateSolidCentroid>? _lastCentroids;
+    private GlobeViewMode _lastViewMode;
+    private bool _lastIsTerrain;
+    private IReadOnlyDictionary<int, RampColor[]>? _lastPerPlateVertexColors;
+    private IReadOnlyList<RampColor>? _lastPerCellColor;
+    private IReadOnlyList<float>? _lastPerCellEmission;
+    private VertexTintJitter? _lastJitter;
+    private PlateCapMeshColorMode _lastColorMode;
+    private PlateCapMeshNormalMode _lastNormalMode;
+    private IReadOnlyList<RampColor>? _lastContinentsCellColors;
+    private byte[]? _lastContinentsFrontier;
+
     public PlanetPresentationBinder(
         IRegistry registry,
         ResourceService resource,
@@ -445,6 +467,21 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         ApplyTimelineTick(_timeline.Tick);
     }
 
+    // M-B: entry from render.exploded. Factor 0 = assembled solid crust (solids in place, thickness
+    // and side walls visible at the silhouette); factor in (0,1] radially translates each plate along
+    // its area-weighted centroid direction. Activation hides the single-surface plate root and shows
+    // the per-plate solid slabs instead; there is no deactivate path for M-B (spec: activation only).
+    public void UpdateExploded(double factor)
+    {
+        if (_disposed)
+            return;
+
+        _explodedActive = true;
+        _explodedFactor = factor;
+        RebuildExplodedCrust();
+        ApplyTimelineTick(_timeline.Tick);
+    }
+
     private void UpdateCutawayPlateShader()
     {
         var mat = HypsoPlateMaterialOverride;
@@ -487,6 +524,233 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
 
         _cutawayFaceRoot = BuildCutawayFaces();
         body.AddChild(_cutawayFaceRoot);
+    }
+
+    // M-B: free the old exploded crust root, then if active build a new one and parent it under
+    // PlanetBody. Mirrors RebuildCutawayFaces. When exploded is active the single-surface plate
+    // root is hidden so only the per-plate solid slabs render.
+    private void RebuildExplodedCrust()
+    {
+        if (_explodedCrustRoot is not null && GodotObject.IsInstanceValid(_explodedCrustRoot))
+        {
+            _explodedCrustRoot.GetParent()?.RemoveChild(_explodedCrustRoot);
+            _explodedCrustRoot.QueueFree();
+        }
+        _explodedCrustRoot = null;
+
+        if (_plateSurfaceRoot is not null && GodotObject.IsInstanceValid(_plateSurfaceRoot))
+            _plateSurfaceRoot.Visible = !_explodedActive;
+
+        if (!_explodedActive)
+            return;
+
+        if (_activeRoot is null || !GodotObject.IsInstanceValid(_activeRoot))
+            return;
+
+        var body = _activeRoot.GetNodeOrNull<Node3D>("PlanetBody");
+        if (body is null)
+            return;
+
+        _explodedCrustRoot = BuildExplodedSolidCrust();
+        body.AddChild(_explodedCrustRoot);
+    }
+
+    // M-B: per-plate SOLID crust. Two MeshInstance3Ds per plate under a single root: the TOP (the
+    // attributed cap surface DTO — same Continents/terrain colors as the hidden single-surface —
+    // with the plate's explode offset baked into positions) and the BOTTOM+WALLS (the
+    // PlateSolidBuilder output, dark unlit material). Both Scale = Vector3.One * 2.0f to match
+    // PlateSurfaceRenderer and BuildCutawayFaceSector. No per-plate GPU rotation exists in this
+    // path, so a baked position offset is exactly correct.
+    private Node3D BuildExplodedSolidCrust()
+    {
+        var root = new Node3D { Name = "ExplodedCrust" };
+
+        var document = _currentDocument;
+        var snapshot = document?.GlobeSnapshot;
+        if (document is null || snapshot is null)
+            return root;
+
+        var caps = _lastCaps;
+        var centroids = _lastCentroids;
+        if (caps is null || centroids is null)
+            return root;
+
+        var thickness = ResolveCrustThicknessMetres(document);
+        var solids = PlateSolidBuilder.Build(caps, thickness, _lastExaggeration);
+        var exploded = PlateSolidBuilder.ApplyExplodedFactor(solids, centroids, _explodedFactor);
+
+        var byPlate = new Dictionary<int, PlateSolidCentroid>(centroids.Count);
+        foreach (var c in centroids)
+            byPlate[c.PlateId] = c;
+
+        var offsetMag = _explodedFactor * PlateSolidBuilder.DefaultMaxOffset;
+
+        for (int i = 0; i < caps.Count; i++)
+        {
+            var cap = caps[i];
+            if (!byPlate.TryGetValue(cap.PlateId, out var centroid))
+                continue;
+
+            var solid = exploded[i];
+
+            var topDto = BuildExplodedTopDto(cap, centroid, offsetMag);
+            root.AddChild(BuildExplodedMeshInstance($"Plate{cap.PlateId}_Top", topDto, HypsoPlateMaterialOverride));
+
+            var solidDto = BuildExplodedSolidDto(cap, solid);
+            root.AddChild(BuildExplodedSolidMeshInstance($"Plate{cap.PlateId}_Solid", solidDto, ExplodedCrustDarkMaterial));
+        }
+
+        return root;
+    }
+
+    // M-B: same PlateCapMeshBuilder.Build* branch the surface uses (cached inputs), with the plate's
+    // explode offset baked into the DTO positions (uniform per-plate translation — correct because
+    // there is NO per-plate GPU rotation in this path).
+    private PlateCapMeshDto BuildExplodedTopDto(PlateCap cap, PlateSolidCentroid centroid, double offsetMag)
+    {
+        var dx = centroid.CentroidDirection.X * offsetMag;
+        var dy = centroid.CentroidDirection.Y * offsetMag;
+        var dz = centroid.CentroidDirection.Z * offsetMag;
+
+        PlateCapMeshDto dto = _lastIsTerrain
+            ? PlateCapMeshBuilder.BuildTerrain(
+                cap,
+                _lastPerPlateVertexColors!,
+                _lastPerCellEmission!,
+                _lastJitter,
+                _lastColorMode,
+                _lastPerCellColor,
+                _lastNormalMode)
+            : _lastViewMode == GlobeViewMode.Continents
+                ? PlateCapMeshBuilder.BuildContinents(
+                    cap,
+                    _lastContinentsCellColors!,
+                    _lastContinentsFrontier!)
+                : PlateCapMeshBuilder.BuildPlateIdentity(cap);
+
+        if (offsetMag == 0.0)
+            return dto;
+
+        var positions = dto.Positions;
+        for (int v = 0; v < positions.Length; v += 3)
+        {
+            positions[v + 0] = (float)(positions[v + 0] + dx);
+            positions[v + 1] = (float)(positions[v + 1] + dy);
+            positions[v + 2] = (float)(positions[v + 2] + dz);
+        }
+        return dto;
+    }
+
+    // M-B: BOTTOM + SIDE WALLS from the exploded solid. The solid's Triangles = [top | bottom | walls]
+    // concatenated; top+bottom each have cap.Surface.Triangles.Length indices; walls follow. We deref
+    // the bottom+wall triangle range into a non-indexed Vector3 list (unlit dark material needs no
+    // normals/UV).
+    private static PlateCapMeshDto BuildExplodedSolidDto(PlateCap cap, PlateSolid solid)
+    {
+        int topIndexCount = cap.Surface.Triangles.Length;
+        int bottomWallIndexCount = solid.Triangles.Length - topIndexCount;
+
+        var positions = new float[bottomWallIndexCount * 3];
+        int w = 0;
+        for (int t = topIndexCount; t < solid.Triangles.Length; t++)
+        {
+            int idx = solid.Triangles[t];
+            var p = solid.Positions[idx];
+            positions[w++] = (float)p.X;
+            positions[w++] = (float)p.Y;
+            positions[w++] = (float)p.Z;
+        }
+
+        return new PlateCapMeshDto(
+            PlateId: cap.PlateId,
+            NormalMode: PlateCapMeshNormalMode.Flat,
+            VertexCount: bottomWallIndexCount,
+            TriangleCount: bottomWallIndexCount / 3,
+            Positions: positions,
+            Normals: Array.Empty<float>(),
+            Colors: Array.Empty<float>(),
+            Uv2: Array.Empty<float>());
+    }
+
+    private static MeshInstance3D BuildExplodedMeshInstance(string name, PlateCapMeshDto dto, Material material)
+    {
+        var vertices = new Vector3[dto.VertexCount];
+        var normals = new Vector3[dto.VertexCount];
+        var colors = new Color[dto.VertexCount];
+        var uv2 = new Vector2[dto.VertexCount];
+
+        for (int i = 0; i < dto.VertexCount; i++)
+        {
+            int v3 = i * 3;
+            vertices[i] = new Vector3(dto.Positions[v3 + 0], dto.Positions[v3 + 1], dto.Positions[v3 + 2]);
+            normals[i] = new Vector3(dto.Normals[v3 + 0], dto.Normals[v3 + 1], dto.Normals[v3 + 2]);
+            colors[i] = new Color(dto.Colors[v3 + 0], dto.Colors[v3 + 1], dto.Colors[v3 + 2]);
+            int uv = i * 2;
+            uv2[i] = new Vector2(dto.Uv2[uv + 0], dto.Uv2[uv + 1]);
+        }
+
+        var arrays = new Godot.Collections.Array();
+        arrays.Resize((int)Mesh.ArrayType.Max);
+        arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+        arrays[(int)Mesh.ArrayType.Normal] = normals;
+        arrays[(int)Mesh.ArrayType.Color] = colors;
+        arrays[(int)Mesh.ArrayType.TexUV2] = uv2;
+
+        var mesh = new ArrayMesh();
+        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+
+        return new MeshInstance3D
+        {
+            Name = name,
+            Mesh = mesh,
+            Scale = Vector3.One * 2.0f,
+            MaterialOverride = material,
+        };
+    }
+
+    // M-B: BOTTOM+WALLS instance — unlit dark material needs only positions (no normals/UV). Matches
+    // BuildCutawayFaceSector's ArrayMesh shape exactly.
+    private static MeshInstance3D BuildExplodedSolidMeshInstance(string name, PlateCapMeshDto dto, Material material)
+    {
+        var vertices = new Vector3[dto.VertexCount];
+        for (int i = 0; i < dto.VertexCount; i++)
+        {
+            int v3 = i * 3;
+            vertices[i] = new Vector3(dto.Positions[v3 + 0], dto.Positions[v3 + 1], dto.Positions[v3 + 2]);
+        }
+
+        var arrays = new Godot.Collections.Array();
+        arrays.Resize((int)Mesh.ArrayType.Max);
+        arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+
+        var mesh = new ArrayMesh();
+        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+
+        return new MeshInstance3D
+        {
+            Name = name,
+            Mesh = mesh,
+            Scale = Vector3.One * 2.0f,
+            MaterialOverride = material,
+        };
+    }
+
+    // M-B: per-cell crust thickness in metres, with the SAME null/mean fallback BuildCutawayFaces
+    // uses so the solid reads when the document has no materialized thickness yet.
+    private IReadOnlyList<double> ResolveCrustThicknessMetres(PlanetPresentationDocument document)
+    {
+        var crustThickness = document.CellCrustThickness;
+        if (crustThickness is { Count: > 0 })
+            return crustThickness;
+
+        double meanCrust = CutawayStratumProfile.DefaultCrustThicknessMetres;
+        var snapshot = document.GlobeSnapshot;
+        int cellCount = snapshot is not null ? snapshot.CellCount : 0;
+        if (cellCount <= 0)
+            return new[] { meanCrust };
+        var fallback = new double[cellCount];
+        Array.Fill(fallback, meanCrust);
+        return fallback;
     }
 
     // W3a: two flat half-disc cut faces (one per wedge boundary azimuth), per-vertex COLOR encodes
@@ -669,6 +933,8 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         if (_plateSurfaceRoot is PlateSurfaceRenderer renderer && GodotObject.IsInstanceValid(renderer))
         {
             BindPlateSurface(renderer, _currentDocument, _currentViewMode);
+            if (_explodedActive)
+                RebuildExplodedCrust();
             return;
         }
 
@@ -683,6 +949,8 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
 
         _plateSurfaceRoot = BuildPlateSurface(_currentDocument, _currentViewMode);
         body.AddChild(_plateSurfaceRoot);
+        if (_explodedActive)
+            RebuildExplodedCrust();
     }
 
     // M0 light refresh (spec §3.2): swap ONLY the globe snapshot to the playhead's reassigned
@@ -1013,6 +1281,25 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         var material = HypsoPlateMaterialOverride;
         PlateSurfaceMaterialTuning.ForView(viewMode).ApplyTo(material);
         renderer.SetMeshes(meshes, material);
+
+        // M-B: cache the build inputs so UpdateExploded can rebuild byte-identical TOP DTOs (same
+        // Continents/terrain colors + emission) and the solid thickness exaggeration matches the
+        // surface relief exaggeration exactly. Centroids come from the BASE unit-sphere corners
+        // (tick/relief-invariant) so the explode direction stays stable across ticks.
+        _lastCaps = caps;
+        _lastExaggeration = projection.MetresToUnitRadius;
+        _lastCentroids = PlateSolidBuilder.ComputeCentroids(snapshot);
+        _lastViewMode = viewMode;
+        _lastIsTerrain = isTerrain;
+        _lastPerPlateVertexColors = perPlateVertexColors;
+        _lastPerCellColor = perCellColor;
+        _lastPerCellEmission = perCellEmission;
+        _lastJitter = jitter;
+        _lastColorMode = colorMode;
+        _lastNormalMode = normalMode;
+        _lastContinentsCellColors = continentsCellColors;
+        _lastContinentsFrontier = continentsFrontier;
+
         _log.LogInformation(
             "Planet plate surface bound: view={ViewMode}, subdivision={Subdivision}, plates={PlateCount}, triangles={TriangleCount}, meshVertices={VertexCount}, scale={Scale}, trueScale={TrueScale}, amplification={Amplification}x.",
             viewMode,
@@ -1556,6 +1843,16 @@ void fragment() {
     private Material? _stagnantMantleMaterial;
     private Material? _baseMantleMaterial;
     private static Material? _hypsoPlateMaterial;
+
+    // M-B: darker unlit material for the solid-crust BOTTOM + SIDE WALLS — distinct from the
+    // attributed surface so the slab silhouette reads as thickness, not as more surface. Unlit +
+    // cull_disabled matches the cutaway render_mode; lit + real normals is a future refinement.
+    private static readonly Material ExplodedCrustDarkMaterial = new StandardMaterial3D
+    {
+        AlbedoColor = new Color(0.12f, 0.10f, 0.09f),
+        ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+        CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+    };
 
     private static Shader MagmaShader => _magmaShader ??= new Shader { Code = MagmaShaderCode };
     private static Shader StagnantShader => _stagnantShader ??= new Shader { Code = StagnantShaderCode };
