@@ -34,6 +34,10 @@ public partial class TimelineFace : Control, ITimelineFace
 
     private sealed record PendingFilmstripFrame(int Generation, TextureRect TextureRect);
 
+    private sealed record QueuedFilmstripFrame(
+        LayerFilmstripPreviewRequest Request,
+        string RequestKey);
+
     private sealed record TrackGraphPortItem(string PortId, string Label, string KindHint, bool Required);
 
     private sealed record TrackGraphNodeItem(
@@ -116,7 +120,11 @@ public partial class TimelineFace : Control, ITimelineFace
     private readonly List<(Button Button, double Start, double Width)> _atmosphereBands = new();
     private readonly List<TrackRowBinding> _tracks = new();
     private readonly Dictionary<TimelineFilmstripCacheKey, ImageTexture> _filmstripTextureCache = new();
-    private readonly HashSet<string> _filmstripInflight = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TimelineFilmstripCacheKey> _filmstripRequestTextureKeys = new(StringComparer.Ordinal);
+    private readonly Queue<QueuedFilmstripFrame> _filmstripQueue = new();
+    private readonly HashSet<string> _filmstripQueuedKeys = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _filmstripActiveKeys = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, List<PendingFilmstripFrame>> _filmstripWaiters = new(StringComparer.Ordinal);
     private readonly HashSet<string> _expandedTracks = new(StringComparer.Ordinal);
     private WorldGenerationGraphFamilyDocument? _cachedGraphFamily;
     private long? _cachedGraphFamilyTick;
@@ -142,8 +150,14 @@ public partial class TimelineFace : Control, ITimelineFace
     private const float PlayheadLineGrabMargin = 8f;
     private const float PlayheadHandleWidth = 22f;
     private const float PlayheadHandleHeight = 20f;
+    private const int MaxConcurrentFilmstripRequests = 3;
+    private const double ViewRebuildCoalesceSeconds = 0.08;
 
     private TimelineLadderRung SelectedRung => TimelineModel.SelectRungForSpan(_viewEndTick - _viewStartTick);
+    private int _filmstripActiveRequests;
+    private int _filmstripGeneration;
+    private int _viewRebuildVersion;
+    private bool _viewRebuildQueued;
 
     private readonly ILogger _log;
 
@@ -703,6 +717,7 @@ public partial class TimelineFace : Control, ITimelineFace
     private void OnLanesResized()
     {
         UpdateLayout();
+        ScheduleViewRebuild();
     }
 
     private void UpdateLayout()
@@ -722,14 +737,31 @@ public partial class TimelineFace : Control, ITimelineFace
             band.Button.Size = new Vector2((float)(band.Width * width), RegimeBandHeight);
         }
 
+        UpdateTrackContentLayout(width);
         UpdateUI();
         UpdateRuler();
+    }
+
+    private void UpdateTrackContentLayout(float laneWidth)
+    {
+        float contentWidth = ResolveTrackContentWidth(laneWidth);
+        foreach (var track in _tracks)
+        {
+            float rowHeight = Math.Max(track.RowRoot.CustomMinimumSize.Y, track.RowRoot.Size.Y);
+            track.ContentRoot.Position = new Vector2(TrackHeaderWidth + TrackContentGap, 0f);
+            track.ContentRoot.Size = new Vector2(contentWidth, rowHeight);
+            track.ContentRoot.CustomMinimumSize = new Vector2(contentWidth, rowHeight);
+
+            var strip = track.ContentRoot.GetNodeOrNull<Control>("CompactFilmstrip");
+            if (strip is not null)
+                strip.Size = new Vector2(contentWidth, TrackHeight);
+        }
     }
 
     private void BuildLanes()
     {
         if (_ctl is null || _lanesContainer is null) return;
-        _filmstripGeneration++;
+        SupersedeFilmstripGeneration();
 
         var geosphereRegimesRoot = GetNode<Control>("VBoxContainer/LanesContainer/LanesList/GeosphereLane/GeosphereRegimes");
         var geosphereTracksRoot = GetNode<Control>("VBoxContainer/LanesContainer/LanesList/GeosphereLane/GeosphereTracks");
@@ -868,18 +900,14 @@ public partial class TimelineFace : Control, ITimelineFace
                 MouseFilter = expanded ? MouseFilterEnum.Stop : MouseFilterEnum.Ignore,
                 ClipContents = true,
             };
-            content.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-            content.OffsetLeft = TrackHeaderWidth + TrackContentGap;
-            content.OffsetTop = 0f;
-            content.OffsetRight = 0f;
-            content.OffsetBottom = 0f;
+            ConfigureTrackContent(content, ResolveTrackContentWidth(_lanesContainer?.Size.X ?? 0f), rowLayout.Height);
             row.AddChild(content);
 
             IDisposable? graphBinding = null;
             if (expanded)
                 graphBinding = BuildExpandedGraph(content, graph);
             else
-                BuildCompactFilmstrip(content, trackSphere, trackLayerId);
+                BuildCompactFilmstrip(content, schedule, trackSphere, trackLayerId);
 
             var toggleCallable = Callable.From(() => OnTrackPressed(trackSphere, trackLayerId));
             var chevronCallable = Callable.From(() => OnTrackExpandPressed(trackSphere, trackLayerId));
@@ -926,21 +954,37 @@ public partial class TimelineFace : Control, ITimelineFace
         child.CustomMinimumSize = new Vector2(width, height);
     }
 
-    private void BuildCompactFilmstrip(Control content, string sphere, string layerId)
+    private static void ConfigureTrackContent(Control content, float width, float height)
+    {
+        content.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+        content.Position = new Vector2(TrackHeaderWidth + TrackContentGap, 0f);
+        content.Size = new Vector2(width, height);
+        content.CustomMinimumSize = new Vector2(width, height);
+    }
+
+    private static float ResolveTrackContentWidth(float laneWidth)
+        => Math.Max(1f, laneWidth - TrackHeaderWidth - TrackContentGap);
+
+    private void BuildCompactFilmstrip(
+        Control content,
+        SphereRegimeSchedule schedule,
+        string sphere,
+        string layerId)
     {
         content.MouseFilter = MouseFilterEnum.Ignore;
+        var contentWidth = ResolveTrackContentWidth(_lanesContainer?.Size.X ?? content.Size.X);
         var strip = new Control
         {
             Name = "CompactFilmstrip",
             MouseFilter = MouseFilterEnum.Ignore,
             ClipContents = true,
         };
-        strip.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        strip.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+        strip.Position = Vector2.Zero;
+        strip.Size = new Vector2(contentWidth, TrackHeight);
+        strip.CustomMinimumSize = new Vector2(contentWidth, TrackHeight);
         content.AddChild(strip);
 
-        var contentWidth = Math.Max(
-            TimelineFilmstrip.ThumbnailWidth,
-            (_lanesContainer?.Size.X ?? 0f) - TrackHeaderWidth - TrackContentGap);
         var slots = TimelineFilmstrip.PlanSlots(
             _viewStartTick,
             _viewEndTick,
@@ -954,16 +998,26 @@ public partial class TimelineFace : Control, ITimelineFace
         }
 
         var rung = SelectedRung.Symbol;
+        var orderedSlots = TimelineFilmstrip.OrderSlotsNearestToTick(slots, _ctl?.Tick ?? _viewStartTick);
         foreach (var slot in slots)
         {
-            var frame = BuildFilmstripFramePlaceholder(slot);
+            bool activeAtSlot = schedule.RegimeAt(slot.Tick)?.ActiveLayers.Any(layer =>
+                string.Equals(layer.Value, layerId, StringComparison.Ordinal)) == true;
+            var frame = BuildFilmstripFramePlaceholder(slot, activeAtSlot);
             strip.AddChild(frame);
+        }
+
+        foreach (var slot in orderedSlots)
+        {
+            var frame = strip.GetNodeOrNull<Control>($"Frame_{slot.Index}");
+            if (frame is null)
+                continue;
             var textureRect = frame.GetNode<TextureRect>("Texture");
             RequestFilmstripTexture(textureRect, sphere, layerId, slot.Tick, rung);
         }
     }
 
-    private static Control BuildFilmstripFramePlaceholder(TimelineFilmstripFrameSlot slot)
+    private static Control BuildFilmstripFramePlaceholder(TimelineFilmstripFrameSlot slot, bool activeAtSlot)
     {
         var frame = new PanelContainer
         {
@@ -977,10 +1031,10 @@ public partial class TimelineFace : Control, ITimelineFace
         var style = new StyleBoxFlat
         {
             BgColor = new Color(0.09f, 0.11f, 0.12f, 0.86f),
-            BorderColor = new Color(0.18f, 0.23f, 0.26f, 0.72f),
+            BorderColor = new Color(0.24f, 0.30f, 0.34f, 0.82f),
         };
         style.SetBorderWidthAll(1);
-        style.SetCornerRadiusAll(2);
+        style.SetCornerRadiusAll(0);
         frame.AddThemeStyleboxOverride("panel", style);
 
         var texture = new TextureRect
@@ -989,6 +1043,7 @@ public partial class TimelineFace : Control, ITimelineFace
             MouseFilter = MouseFilterEnum.Ignore,
             StretchMode = TextureRect.StretchModeEnum.Scale,
             ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            Modulate = activeAtSlot ? Colors.White : new Color(1f, 1f, 1f, 0.58f),
         };
         texture.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         frame.AddChild(texture);
@@ -1013,44 +1068,96 @@ public partial class TimelineFace : Control, ITimelineFace
             rung,
             TimelineFilmstrip.ThumbnailWidth,
             TimelineFilmstrip.ThumbnailHeight);
-        string inflightKey = $"{sphere}:{layerId}:{tick}:{rung}:{request.Width}x{request.Height}";
+        string requestKey = FilmstripRequestKey(request);
+        if (_filmstripRequestTextureKeys.TryGetValue(requestKey, out var cachedKey)
+            && _filmstripTextureCache.TryGetValue(cachedKey, out var cachedTexture)
+            && GodotObject.IsInstanceValid(cachedTexture))
+        {
+            textureRect.Texture = cachedTexture;
+            return;
+        }
+
         // Hold the TextureRect reference directly: the frame is built BEFORE the track row
         // enters the tree, so GetPath() errors and NodePath resolution would be impossible here
         // (windowed gate 2026-07-08). IsInstanceValid + IsInsideTree at apply time is the guard.
         var generation = _filmstripGeneration;
-        if (!_filmstripInflight.Add(inflightKey))
+        if (!_filmstripWaiters.TryGetValue(requestKey, out var waiters))
+        {
+            waiters = new List<PendingFilmstripFrame>();
+            _filmstripWaiters[requestKey] = waiters;
+        }
+
+        waiters.Add(new PendingFilmstripFrame(generation, textureRect));
+        if (_filmstripActiveKeys.Contains(requestKey) || !_filmstripQueuedKeys.Add(requestKey))
             return;
 
+        _filmstripQueue.Enqueue(new QueuedFilmstripFrame(request, requestKey));
+        PumpFilmstripQueue();
+    }
+
+    private void PumpFilmstripQueue()
+    {
+        var provider = ResidentFilmstripPreviewProvider;
+        if (provider is null)
+            return;
+
+        while (_filmstripActiveRequests < MaxConcurrentFilmstripRequests && _filmstripQueue.Count > 0)
+        {
+            var queued = _filmstripQueue.Dequeue();
+            _filmstripQueuedKeys.Remove(queued.RequestKey);
+            PruneFilmstripWaiters(queued.RequestKey);
+            if (!_filmstripWaiters.ContainsKey(queued.RequestKey))
+            {
+                continue;
+            }
+
+            _filmstripActiveRequests++;
+            _filmstripActiveKeys.Add(queued.RequestKey);
+            StartFilmstripRequest(provider, queued);
+        }
+    }
+
+    private void StartFilmstripRequest(
+        Func<LayerFilmstripPreviewRequest, LayerFilmstripPreviewMap?> provider,
+        QueuedFilmstripFrame queued)
+    {
         _ = Task.Run(() =>
         {
             LayerFilmstripPreviewMap? map = null;
             try
             {
-                map = provider(request);
+                map = provider(queued.Request);
             }
             catch (Exception ex)
             {
-                _log.LogWarning(ex, "Timeline filmstrip preview failed for {LayerId} at {Tick}.", layerId, tick);
+                _log.LogWarning(
+                    ex,
+                    "Timeline filmstrip preview failed for {LayerId} at {Tick}.",
+                    queued.Request.LayerId,
+                    queued.Request.Tick);
             }
 
             Callable.From(() =>
             {
-                _filmstripInflight.Remove(inflightKey);
+                _filmstripActiveRequests = Math.Max(0, _filmstripActiveRequests - 1);
+                _filmstripActiveKeys.Remove(queued.RequestKey);
                 if (map is not null)
-                    ApplyFilmstripPreview(new PendingFilmstripFrame(generation, textureRect), map);
+                    ApplyFilmstripPreview(queued.RequestKey, map);
+                _filmstripWaiters.Remove(queued.RequestKey);
+                PumpFilmstripQueue();
             }).CallDeferred();
         });
     }
 
-    private int _filmstripGeneration;
+    private static string FilmstripRequestKey(LayerFilmstripPreviewRequest request)
+        => $"{request.SphereId}:{request.LayerId}:{request.Tick}:{request.ViewRung}:{request.Width}x{request.Height}";
 
-    private void ApplyFilmstripPreview(PendingFilmstripFrame pending, LayerFilmstripPreviewMap map)
+    private void ApplyFilmstripPreview(string requestKey, LayerFilmstripPreviewMap map)
     {
-        if (pending.Generation != _filmstripGeneration || !IsInsideTree())
+        if (!IsInsideTree())
             return;
 
-        var textureRect = pending.TextureRect;
-        if (!GodotObject.IsInstanceValid(textureRect) || !textureRect.IsInsideTree())
+        if (!_filmstripWaiters.TryGetValue(requestKey, out var waiters))
             return;
 
         var key = new TimelineFilmstripCacheKey(
@@ -1068,7 +1175,28 @@ public partial class TimelineFace : Control, ITimelineFace
             _filmstripTextureCache[key] = texture;
         }
 
-        textureRect.Texture = texture;
+        _filmstripRequestTextureKeys[requestKey] = key;
+        foreach (var pending in waiters)
+        {
+            if (pending.Generation != _filmstripGeneration)
+                continue;
+
+            var textureRect = pending.TextureRect;
+            if (!GodotObject.IsInstanceValid(textureRect) || !textureRect.IsInsideTree())
+                continue;
+
+            textureRect.Texture = texture;
+        }
+    }
+
+    private void PruneFilmstripWaiters(string requestKey)
+    {
+        if (!_filmstripWaiters.TryGetValue(requestKey, out var waiters))
+            return;
+
+        waiters.RemoveAll(pending => pending.Generation != _filmstripGeneration);
+        if (waiters.Count == 0)
+            _filmstripWaiters.Remove(requestKey);
     }
 
     private IDisposable? BuildExpandedGraph(Control content, LayerTrackGraphView graph)
@@ -1443,25 +1571,64 @@ public partial class TimelineFace : Control, ITimelineFace
     {
         if (_ctl is null) return;
         long span = Math.Max(MinViewSpanTicks, endTick - startTick);
+        long nextStart;
+        long nextEnd;
         if (span >= _ctl.MaxTick)
         {
-            _viewStartTick = 0L;
-            _viewEndTick = _ctl.MaxTick;
+            nextStart = 0L;
+            nextEnd = _ctl.MaxTick;
         }
         else
         {
             long start = Math.Clamp(startTick, 0L, _ctl.MaxTick - span);
-            _viewStartTick = start;
-            _viewEndTick = start + span;
+            nextStart = start;
+            nextEnd = start + span;
         }
 
-        BuildLanes();
+        if (nextStart == _viewStartTick && nextEnd == _viewEndTick)
+            return;
+
+        _viewStartTick = nextStart;
+        _viewEndTick = nextEnd;
+        ScheduleViewRebuild();
         UpdateLayout();
+    }
+
+    private async void ScheduleViewRebuild()
+    {
+        if (!IsInsideTree())
+            return;
+
+        _viewRebuildVersion++;
+        if (_viewRebuildQueued)
+            return;
+
+        _viewRebuildQueued = true;
+        while (IsInsideTree())
+        {
+            int targetVersion = _viewRebuildVersion;
+            var tree = GetTree();
+            if (tree is null)
+                break;
+
+            await ToSignal(tree.CreateTimer(ViewRebuildCoalesceSeconds), SceneTreeTimer.SignalName.Timeout);
+            if (!IsInsideTree())
+                break;
+
+            if (targetVersion != _viewRebuildVersion)
+                continue;
+
+            _viewRebuildQueued = false;
+            BuildLanes();
+            UpdateLayout();
+            return;
+        }
+
+        _viewRebuildQueued = false;
     }
 
     private void DisposeTrackBindings()
     {
-        _filmstripGeneration++;
         foreach (var track in _tracks)
         {
             track.GraphBinding?.Dispose();
@@ -1470,6 +1637,15 @@ public partial class TimelineFace : Control, ITimelineFace
         }
 
         _tracks.Clear();
+    }
+
+    private void SupersedeFilmstripGeneration()
+    {
+        _filmstripGeneration++;
+        _filmstripQueue.Clear();
+        _filmstripQueuedKeys.Clear();
+        foreach (var requestKey in _filmstripWaiters.Keys.ToArray())
+            PruneFilmstripWaiters(requestKey);
     }
 
     private void DisposeFilmstripTextureCache()
@@ -1481,7 +1657,12 @@ public partial class TimelineFace : Control, ITimelineFace
         }
 
         _filmstripTextureCache.Clear();
-        _filmstripInflight.Clear();
+        _filmstripRequestTextureKeys.Clear();
+        _filmstripQueue.Clear();
+        _filmstripQueuedKeys.Clear();
+        _filmstripActiveKeys.Clear();
+        _filmstripWaiters.Clear();
+        _filmstripActiveRequests = 0;
     }
 
     private static string TrackKey(string sphere, string layerId)

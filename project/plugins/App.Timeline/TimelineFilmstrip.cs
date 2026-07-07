@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace FantaSim.App.Timeline;
 
@@ -7,6 +8,11 @@ public readonly record struct TimelineFilmstripFrameSlot(
     int Index,
     float X,
     float Width,
+    long Tick);
+
+public readonly record struct TimelineFilmstripFrameRequestPlan(
+    int Generation,
+    int SlotIndex,
     long Tick);
 
 public readonly record struct TimelineFilmstripCacheKey(
@@ -53,4 +59,28 @@ public static class TimelineFilmstrip
 
         return slots;
     }
+
+    public static IReadOnlyList<TimelineFilmstripFrameSlot> OrderSlotsNearestToTick(
+        IReadOnlyList<TimelineFilmstripFrameSlot> slots,
+        long playheadTick)
+    {
+        ArgumentNullException.ThrowIfNull(slots);
+        return slots
+            .OrderBy(slot => Distance(slot.Tick, playheadTick))
+            .ThenBy(slot => slot.Index)
+            .ToArray();
+    }
+
+    public static IReadOnlyList<TimelineFilmstripFrameRequestPlan> SupersedeQueuedRequests(
+        IReadOnlyList<TimelineFilmstripFrameRequestPlan> queued,
+        int currentGeneration)
+    {
+        ArgumentNullException.ThrowIfNull(queued);
+        return queued
+            .Where(request => request.Generation == currentGeneration)
+            .ToArray();
+    }
+
+    private static ulong Distance(long a, long b)
+        => a >= b ? (ulong)(a - b) : (ulong)(b - a);
 }

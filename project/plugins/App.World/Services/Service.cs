@@ -9,11 +9,14 @@ using FantaSim.App.World.Crust;
 using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Globe;
 using FantaSim.Geosphere.Crust;
+using FantaSim.Geosphere.Asthenosphere.Convection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using ServiceArchi.Contracts;
 using FantaSim.World.Contracts.Units;
+using UnifyMaths;
 using BoundarySectionDocument = FantaSim.App.World.Composition.BoundarySectionDocument;
+using MantleHistoryAdapter = FantaSim.App.World.Composition.MantleHistoryAdapter;
 using MantleIsosurfaceExtractor = FantaSim.App.World.Composition.MantleIsosurfaceExtractor;
 using OnsetRoster = FantaSim.App.World.Composition.OnsetRoster;
 using SphereRegimeSchedule = FantaSim.App.World.Composition.SphereRegimeSchedule;
@@ -304,7 +307,7 @@ public sealed class Service : IService, IDisposable
             "geosphere.plate" => BuildPlateFilmstripPreview(request, previewOptions),
             "geosphere.magma-ocean" => BuildProceduralFilmstripPreview(request, previewFrequency, "magma-ocean", new(225, 74, 38), new(255, 190, 72)),
             "geosphere.stagnant-lid" => BuildProceduralFilmstripPreview(request, previewFrequency, "stagnant-lid", new(54, 68, 74), new(125, 101, 82)),
-            "geosphere.mantle" => BuildProceduralFilmstripPreview(request, previewFrequency, "mantle-placeholder", new(89, 37, 112), new(232, 105, 54)),
+            "geosphere.mantle" => BuildMantleFilmstripPreview(request, previewOptions),
             _ when string.Equals(request.SphereId, "atmosphere", StringComparison.Ordinal)
                 => BuildProceduralFilmstripPreview(request, previewFrequency, "atmosphere-placeholder", new(39, 93, 143), new(145, 203, 224)),
             _ => BuildProceduralFilmstripPreview(request, previewFrequency, "layer-placeholder", new(70, 82, 92), new(128, 146, 156)),
@@ -380,6 +383,52 @@ public sealed class Service : IService, IDisposable
             request.Width,
             request.Height,
             "plate-low-res",
+            rgba);
+    }
+
+    private LayerFilmstripPreviewMap BuildMantleFilmstripPreview(
+        LayerFilmstripPreviewRequest request,
+        WorldGenerationRenderOptions previewOptions)
+    {
+        long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        var reconstructor = GetCachedGlobeReconstructor(previewOptions, onsetTick);
+        var arcs = reconstructor.BuildBoundaryArcsAt(request.Tick);
+        var history = MantleHistoryAdapter.Build(arcs, onsetTick);
+        var mantleConfig = MantleViewConfig.Default;
+        var fieldConfig = new MantleFieldConfig
+        {
+            Seed = MantleIsosurfaceExtractor.FieldSeed,
+            CmbRadius = mantleConfig.InnerRadius,
+            SlabSheetThickness = 0.03,
+            SlabPolylineSamples = 20,
+        };
+        var field = new MantleAnomalyField(fieldConfig, history, request.Tick);
+
+        const double shellRadius = 0.75;
+        var rgba = new byte[request.Width * request.Height * 4];
+        for (int y = 0; y < request.Height; y++)
+        {
+            for (int x = 0; x < request.Width; x++)
+            {
+                var direction = LayerFilmstripEquirect.PixelToDirection(x, y, request.Width, request.Height);
+                double anomaly = field.EvaluateAt(new Vector3D(
+                    direction.X * shellRadius,
+                    direction.Y * shellRadius,
+                    direction.Z * shellRadius));
+                WritePixel(rgba, x, y, request.Width, ColorMantleAnomaly(anomaly));
+            }
+        }
+
+        return new LayerFilmstripPreviewMap(
+            request.SphereId,
+            request.LayerId,
+            request.Tick,
+            request.Tick,
+            request.ViewRung,
+            previewOptions.TessellationFrequency,
+            request.Width,
+            request.Height,
+            "mantle-shell-low-res",
             rgba);
     }
 
@@ -914,6 +963,21 @@ public sealed class Service : IService, IDisposable
         byte g = (byte)(72 + ((h >> 8) & 0x7f));
         byte b = (byte)(72 + ((h >> 16) & 0x7f));
         return new Rgb(r, g, b);
+    }
+
+    private static Rgb ColorMantleAnomaly(double anomaly)
+    {
+        var neutral = new Rgb(28, 23, 34);
+        if (anomaly < 0.0)
+        {
+            double t = Math.Clamp(-anomaly / MantleViewConfig.Default.ColdInnerThreshold, 0.0, 1.0);
+            return Lerp(neutral, new Rgb(89, 153, 250), t);
+        }
+        else
+        {
+            double t = Math.Clamp(anomaly / MantleViewConfig.Default.WarmInnerThreshold, 0.0, 1.0);
+            return Lerp(neutral, new Rgb(242, 77, 20), t);
+        }
     }
 
     private static GlobeVec3 Normalize(GlobeVec3 v)
