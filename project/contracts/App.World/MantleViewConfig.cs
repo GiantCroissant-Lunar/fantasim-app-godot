@@ -18,7 +18,10 @@ public sealed record MantleViewConfig
 {
     /// <summary>Per-axis resolution of the Cartesian sampling grid. 56^3 keeps a refresh interactive
     /// (~176k lattice samples); raise for higher-fidelity stills.</summary>
-    public int GridResolution { get; init; } = 56;
+    public int GridResolution { get; init; } = 88;
+    // Look-loop: 56 gave ~0.036R cells — thicker than the slab sheets (0.03R), so marching cubes
+    // blurred curtains into lobes. 88 gives ~0.023R cells (curtains resolve); extraction is a
+    // one-shot ~20-30s on toggle, acceptable for a diagnostic view (spec: resolution is the lever).
 
     /// <summary>Inner radius of the sampled shell as a fraction of the unit sphere — the engine
     /// field's CMB radius (0.55).</summary>

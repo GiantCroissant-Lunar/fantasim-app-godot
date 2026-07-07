@@ -66,6 +66,11 @@ public static class MantleIsosurfaceExtractor
         {
             Seed = FieldSeed,
             CmbRadius = cfg.InnerRadius,
+            // Look-loop (north-star eye gate, criterion 1): slabs must read as thin HANGING
+            // CURTAINS, not rounded lobes. Thinner Gaussian sheets + denser polyline sampling
+            // keep the along-trench continuity while flattening the cross-section.
+            SlabSheetThickness = 0.03,
+            SlabPolylineSamples = 20,
         };
         var field = new MantleAnomalyField(fieldConfig, history, tick);
 

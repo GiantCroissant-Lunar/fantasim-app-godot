@@ -397,19 +397,16 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         bool showBoundaries = viewMode == GlobeViewMode.PlateIdentity;
         ApplyLightingForView(viewMode);
 
+        // M-A look-loop: GeometryInstance3D.Transparency proved unreliable against the custom
+        // hypso/continents shaders in the exported app (surface stayed opaque — windowed gate
+        // 2026-07-07). Do what the reference imagery does instead: HIDE the terrain surface in
+        // mantle view; the x-ray root carries its own translucent ghost shell + the boundary
+        // wireframe stays visible as the locator.
         if (_plateSurfaceRoot is not null && GodotObject.IsInstanceValid(_plateSurfaceRoot))
-            _plateSurfaceRoot.Visible = showsPlateFeatures || _mantleXrayActive;
+            _plateSurfaceRoot.Visible = showsPlateFeatures && !_mantleXrayActive;
 
         if (_boundaryRenderer is not null && GodotObject.IsInstanceValid(_boundaryRenderer))
             _boundaryRenderer.Visible = showBoundaries || _mantleXrayActive;
-
-        // M-A: ghost the crust (~12% opacity, spec: 10-15%) whenever the mantle x-ray is active so
-        // the interior isosurfaces read through the surface, keeping the boundary wireframe visible
-        // to locate trenches/ridges against them. Ghosting uses GeometryInstance3D.Transparency
-        // (per-instance fade) rather than a shader ALPHA write: an ALPHA write would force the
-        // plate surface into the transparent pipeline PERMANENTLY (even at alpha 1.0), changing the
-        // normal-view render path; Transparency is a zero-cost no-op when inactive.
-        ApplyCrustGhost(_mantleXrayActive ? 0.88f : 0.0f);
 
         if (_boundarySectionRenderer is not null && GodotObject.IsInstanceValid(_boundarySectionRenderer))
             _boundarySectionRenderer.Visible = BoundarySectionVisibility.ShouldShow(showsPlateFeatures, viewMode);
@@ -822,8 +819,28 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             root.AddChild(BuildIsosurfaceNode("ColdOuter", set.ColdOuter, ColdOuterMaterial));
         if (!set.WarmOuter.IsEmpty)
             root.AddChild(BuildIsosurfaceNode("WarmOuter", set.WarmOuter, WarmOuterMaterial));
+        root.AddChild(BuildGhostShell());
         return root;
     }
+
+    // Translucent ghost shell at the surface radius — the reference-image framing device: the
+    // viewer sees the interior THROUGH a faint skin that still reads as "the planet". Drawn last
+    // in the transparent pass (priority above the outer isosurfaces), back faces culled so the
+    // far side doesn't double the haze.
+    private static MeshInstance3D BuildGhostShell() => new()
+    {
+        Name = "GhostShell",
+        Mesh = new SphereMesh { Radius = 1.0f, Height = 2.0f, RadialSegments = 96, Rings = 48 },
+        MaterialOverride = new StandardMaterial3D
+        {
+            Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+            AlbedoColor = new Color(0.75f, 0.82f, 0.9f, 0.10f),
+            Roughness = 0.9f,
+            Metallic = 0.0f,
+            CullMode = BaseMaterial3D.CullModeEnum.Back,
+            RenderPriority = 3,
+        },
+    };
 
     // Dark core sphere at the CMB radius (0.55R) — the backdrop the anomaly volumes read against.
     private static MeshInstance3D BuildCoreSphere() => new()
