@@ -219,3 +219,23 @@ time-domain (bands/keys); detail panes are untimed UI below the header. Feasibil
 view already exists as a mountable view; embedding = mounting it inside an expandable track
 container with a layer filter. One arc with D5: toggle-stack + inspect-detail are the two halves
 of the same track-header UI.
+
+### D7c CORRECTED (user, 2026-07-08 + Godot docs research): the layer graph IS an AnimationTree-style blend graph
+
+The earlier "dropdown shows the world-generation graph" translation was WRONG. The reference model
+is Godot's own animation architecture (docs: tutorials/animation/animation_tree):
+- **AnimationPlayer** = the library + track/keyframe timeline (tracks with headers over time).
+- **AnimationTree** = a NODE GRAPH (AnimationNodeBlendTree: 2D graph with one Output; Animation
+  nodes pull clips FROM the player; Blend2/Add2/TimeScale nodes compose them; per-node FILTERS
+  select which tracks a blend affects).
+- Composition lives in the GRAPH; the timeline holds the raw tracks; graph nodes reference them.
+
+**Translation for FantaSim:** each LAYER track is an Animation-node-like INPUT; layer composition
+(D5's stacking rules — who owns surface coloring, what adds geometry) is a blend-tree-shaped graph
+of compose nodes with per-layer filters, feeding ONE Output = the rendered planet view. The
+timeline face already drives playback through a real AnimationPlayer + AnimationTree
+(SetupAnimationSystem) — the layer-composition graph should live THERE (the tree's graph, or a
+parallel graph of the same shape), viewable/editable like Godot's AnimationTree editor panel, not
+as a separate world-generation-graph dropdown. D5's active-set toggles become enable/weight
+parameters ON graph nodes. The wave-6 LayerCompositionDecision table is the interim hardcoding of
+what this graph will express.
