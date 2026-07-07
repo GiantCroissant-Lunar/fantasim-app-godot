@@ -15,26 +15,26 @@ public sealed class TimelineTrackLayoutTests
             new TimelineTrackLayoutInput("mantle", IsExpanded: false),
         });
 
-        Assert.Equal(252f, plan.TotalHeight);
+        Assert.Equal(280f, plan.TotalHeight);
         Assert.Collection(
             plan.Rows,
             row =>
             {
                 Assert.Equal("plate", row.TrackKey);
                 Assert.Equal(0f, row.Y);
-                Assert.Equal(26f, row.Height);
+                Assert.Equal(40f, row.Height);
             },
             row =>
             {
                 Assert.Equal("crust", row.TrackKey);
-                Assert.Equal(26f, row.Y);
+                Assert.Equal(40f, row.Y);
                 Assert.Equal(200f, row.Height);
             },
             row =>
             {
                 Assert.Equal("mantle", row.TrackKey);
-                Assert.Equal(226f, row.Y);
-                Assert.Equal(26f, row.Height);
+                Assert.Equal(240f, row.Y);
+                Assert.Equal(40f, row.Height);
             });
     }
 }

@@ -51,7 +51,7 @@ public sealed class Service : IService, IDisposable
         new(0, Array.Empty<string>(), 0L);
     private IReadOnlyList<long> _cachedCrustSnapshotTicks = Array.Empty<long>();
     private readonly object _crustProductCacheGate = new();
-    private readonly Dictionary<long, CrustTickProducts> _crustProductCache = new();
+    private readonly Dictionary<CrustProductCacheKey, CrustTickProducts> _crustProductCache = new();
     private RotationSourceRecipe _rotationSourceRecipe = RotationSourceRecipe.Default;
 
     private Exception? _lastSubscriberError;
@@ -279,6 +279,141 @@ public sealed class Service : IService, IDisposable
 
         var sampledState = sampler.SampleAt(tick, StateKeyedAt(products, tick), plateIdByCell);
         return ContinentalFractionsFromState(sampledState);
+    }
+
+    public LayerFilmstripPreviewMap GetLayerFilmstripPreview(LayerFilmstripPreviewRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.Tick < 0) throw new ArgumentOutOfRangeException(nameof(request.Tick));
+        if (request.Width <= 0) throw new ArgumentOutOfRangeException(nameof(request.Width));
+        if (request.Height <= 0) throw new ArgumentOutOfRangeException(nameof(request.Height));
+
+        var family = WorldGenerationGraphDefaults.BuildFamily();
+        var renderOptions = ResolvePlanetRenderOptions(family);
+        int previewFrequency = ResolveFilmstripFrequency(request.ViewRung);
+        var previewOptions = renderOptions with
+        {
+            TessellationFrequency = previewFrequency,
+            SurfaceSubdivision = SurfaceSubdivisionMode.Fixed,
+            AdaptiveSubdivisionMaxDepth = 0,
+        };
+
+        return request.LayerId switch
+        {
+            "geosphere.crust" => BuildCrustFilmstripPreview(request, previewOptions),
+            "geosphere.plate" => BuildPlateFilmstripPreview(request, previewOptions),
+            "geosphere.magma-ocean" => BuildProceduralFilmstripPreview(request, previewFrequency, "magma-ocean", new(225, 74, 38), new(255, 190, 72)),
+            "geosphere.stagnant-lid" => BuildProceduralFilmstripPreview(request, previewFrequency, "stagnant-lid", new(54, 68, 74), new(125, 101, 82)),
+            "geosphere.mantle" => BuildProceduralFilmstripPreview(request, previewFrequency, "mantle-placeholder", new(89, 37, 112), new(232, 105, 54)),
+            _ when string.Equals(request.SphereId, "atmosphere", StringComparison.Ordinal)
+                => BuildProceduralFilmstripPreview(request, previewFrequency, "atmosphere-placeholder", new(39, 93, 143), new(145, 203, 224)),
+            _ => BuildProceduralFilmstripPreview(request, previewFrequency, "layer-placeholder", new(70, 82, 92), new(128, 146, 156)),
+        };
+    }
+
+    private LayerFilmstripPreviewMap BuildCrustFilmstripPreview(
+        LayerFilmstripPreviewRequest request,
+        WorldGenerationRenderOptions previewOptions)
+    {
+        long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        if (request.Tick < onsetTick)
+            return BuildProceduralFilmstripPreview(request, previewOptions.TessellationFrequency, "pre-crust", new(45, 49, 54), new(100, 85, 68));
+
+        var products = GetOrBuildCrustTickProducts(previewOptions, onsetTick, request.Tick);
+        var reconstructor = GetCachedGlobeReconstructor(previewOptions, onsetTick);
+        var currentGlobe = reconstructor.BuildGlobeAt(request.Tick);
+        var currentArcs = reconstructor.BuildBoundaryArcsAt(request.Tick);
+        var rotationProvider = BuildRotationProvider(products.Materialization.Result.Plates, onsetTick);
+        var sampler = new PlateFrameSampler(
+            products.Materialization.Tessellation,
+            products.Materialization.Result.Plates,
+            products.Materialization.Topology,
+            onsetTick,
+            rotationProvider);
+        var plateIdByCell = currentGlobe.Cells.ToDictionary(c => c.CellId, c => c.PlateId);
+        var stateForSampling = StateKeyedAt(products, request.Tick);
+        var sampledState = sampler.SampleAt(request.Tick, stateForSampling, plateIdByCell);
+        var elevations = sampler.SampleElevationsAt(
+            request.Tick,
+            stateForSampling,
+            currentArcs,
+            previewOptions.BoundaryProfiles,
+            previewOptions.HydrosphereMode,
+            plateIdByCell);
+
+        var cells = BuildFilmstripCells(currentGlobe, cell =>
+        {
+            double fraction = sampledState.TryGetValue(cell.CellId, out var state) ? state.ContinentalFraction : 0.0;
+            double elevation = cell.CellId >= 0 && cell.CellId < elevations.Length ? elevations[cell.CellId] : 0.0;
+            return (fraction, elevation);
+        });
+        var rgba = RasterizeCells(request.Width, request.Height, cells, ColorCrustCell);
+        return new LayerFilmstripPreviewMap(
+            request.SphereId,
+            request.LayerId,
+            request.Tick,
+            products.SnapshotTick,
+            request.ViewRung,
+            previewOptions.TessellationFrequency,
+            request.Width,
+            request.Height,
+            "crust-low-res",
+            rgba);
+    }
+
+    private LayerFilmstripPreviewMap BuildPlateFilmstripPreview(
+        LayerFilmstripPreviewRequest request,
+        WorldGenerationRenderOptions previewOptions)
+    {
+        long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        var reconstructor = GetCachedGlobeReconstructor(previewOptions, onsetTick);
+        var globe = reconstructor.BuildGlobeAt(request.Tick);
+        var cells = BuildFilmstripCells(globe, cell => (cell.PlateId, 0.0));
+        var rgba = RasterizeCells(request.Width, request.Height, cells, ColorPlateCell);
+        return new LayerFilmstripPreviewMap(
+            request.SphereId,
+            request.LayerId,
+            request.Tick,
+            request.Tick,
+            request.ViewRung,
+            previewOptions.TessellationFrequency,
+            request.Width,
+            request.Height,
+            "plate-low-res",
+            rgba);
+    }
+
+    private static LayerFilmstripPreviewMap BuildProceduralFilmstripPreview(
+        LayerFilmstripPreviewRequest request,
+        int sourceFrequency,
+        string sourceKind,
+        Rgb low,
+        Rgb high)
+    {
+        var rgba = new byte[request.Width * request.Height * 4];
+        for (int y = 0; y < request.Height; y++)
+        {
+            double v = request.Height <= 1 ? 0.0 : y / (double)(request.Height - 1);
+            for (int x = 0; x < request.Width; x++)
+            {
+                double u = request.Width <= 1 ? 0.0 : x / (double)(request.Width - 1);
+                double wave = 0.5 + (0.5 * Math.Sin((u * Math.PI * 4.0) + (request.Tick * 0.00000008)));
+                double t = Math.Clamp((v * 0.65) + (wave * 0.35), 0.0, 1.0);
+                WritePixel(rgba, x, y, request.Width, Lerp(low, high, t));
+            }
+        }
+
+        return new LayerFilmstripPreviewMap(
+            request.SphereId,
+            request.LayerId,
+            request.Tick,
+            request.Tick,
+            request.ViewRung,
+            sourceFrequency,
+            request.Width,
+            request.Height,
+            sourceKind,
+            rgba);
     }
 
     /// <summary>
@@ -666,9 +801,10 @@ public sealed class Service : IService, IDisposable
             onsetTick + MobilePlateWindowTicks);
         var snapshotTick = series.SelectSnapshotForPlayhead(arcTick) ?? arcTick;
 
+        var key = new CrustProductCacheKey(renderOptions.TessellationFrequency, snapshotTick);
         lock (_crustProductCacheGate)
         {
-            if (_crustProductCache.TryGetValue(snapshotTick, out var cached))
+            if (_crustProductCache.TryGetValue(key, out var cached))
                 return cached;
         }
 
@@ -681,7 +817,7 @@ public sealed class Service : IService, IDisposable
 
         lock (_crustProductCacheGate)
         {
-            _crustProductCache[snapshotTick] = products;
+            _crustProductCache[key] = products;
         }
 
         return products;
@@ -697,6 +833,114 @@ public sealed class Service : IService, IDisposable
         foreach (var (cellId, s) in state)
             result[cellId] = s.ContinentalFraction;
         return result;
+    }
+
+    private static int ResolveFilmstripFrequency(string? viewRung)
+    {
+        if (string.Equals(viewRung, "jz", StringComparison.Ordinal)
+            || string.Equals(viewRung, "ka", StringComparison.Ordinal))
+        {
+            return 3;
+        }
+
+        return 2;
+    }
+
+    private static IReadOnlyList<LayerFilmstripCellSample> BuildFilmstripCells(
+        WorldGlobeSnapshot globe,
+        Func<GlobeCell, (double Primary, double Secondary)> values)
+    {
+        ArgumentNullException.ThrowIfNull(globe);
+        ArgumentNullException.ThrowIfNull(values);
+
+        var cells = new List<LayerFilmstripCellSample>(globe.Cells.Count);
+        foreach (var cell in globe.Cells)
+        {
+            var center = Normalize(new GlobeVec3(
+                (cell.C0.X + cell.C1.X + cell.C2.X) / 3f,
+                (cell.C0.Y + cell.C1.Y + cell.C2.Y) / 3f,
+                (cell.C0.Z + cell.C1.Z + cell.C2.Z) / 3f));
+            var (primary, secondary) = values(cell);
+            cells.Add(new LayerFilmstripCellSample(
+                cell.CellId,
+                center.X,
+                center.Y,
+                center.Z,
+                cell.PlateId,
+                primary,
+                secondary));
+        }
+
+        return cells;
+    }
+
+    private static byte[] RasterizeCells(
+        int width,
+        int height,
+        IReadOnlyList<LayerFilmstripCellSample> cells,
+        Func<LayerFilmstripCellSample, Rgb> colorForCell)
+    {
+        var rgba = new byte[width * height * 4];
+        if (cells.Count == 0)
+            return rgba;
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                var direction = LayerFilmstripEquirect.PixelToDirection(x, y, width, height);
+                int cellIndex = LayerFilmstripEquirect.NearestCellIndex(direction, cells);
+                WritePixel(rgba, x, y, width, colorForCell(cells[cellIndex]));
+            }
+        }
+
+        return rgba;
+    }
+
+    private static Rgb ColorCrustCell(LayerFilmstripCellSample cell)
+    {
+        double land = Math.Clamp(cell.Primary, 0.0, 1.0);
+        double relief = Math.Clamp((cell.Secondary + 1800.0) / 5200.0, 0.0, 1.0);
+        var ocean = Lerp(new Rgb(19, 63, 99), new Rgb(56, 123, 151), relief);
+        var lowland = Lerp(new Rgb(72, 112, 64), new Rgb(154, 134, 82), relief);
+        var mountain = Lerp(lowland, new Rgb(224, 220, 191), Math.Clamp((relief - 0.72) / 0.28, 0.0, 1.0));
+        return Lerp(ocean, mountain, land);
+    }
+
+    private static Rgb ColorPlateCell(LayerFilmstripCellSample cell)
+    {
+        uint h = (uint)(cell.PlateId * 1103515245 + 12345);
+        byte r = (byte)(72 + (h & 0x7f));
+        byte g = (byte)(72 + ((h >> 8) & 0x7f));
+        byte b = (byte)(72 + ((h >> 16) & 0x7f));
+        return new Rgb(r, g, b);
+    }
+
+    private static GlobeVec3 Normalize(GlobeVec3 v)
+    {
+        double len = Math.Sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z);
+        if (len < 1e-9)
+            return new GlobeVec3(0f, 0f, 1f);
+
+        return new GlobeVec3((float)(v.X / len), (float)(v.Y / len), (float)(v.Z / len));
+    }
+
+    private static Rgb Lerp(Rgb a, Rgb b, double t)
+    {
+        t = Math.Clamp(t, 0.0, 1.0);
+        return new Rgb(
+            (byte)Math.Round(a.R + ((b.R - a.R) * t)),
+            (byte)Math.Round(a.G + ((b.G - a.G) * t)),
+            (byte)Math.Round(a.B + ((b.B - a.B) * t)));
+    }
+
+    private static void WritePixel(byte[] rgba, int x, int y, int width, Rgb color)
+    {
+        int i = ((y * width) + x) * 4;
+        rgba[i] = color.R;
+        rgba[i + 1] = color.G;
+        rgba[i + 2] = color.B;
+        rgba[i + 3] = 255;
     }
 
     private static IReadOnlyList<CellCrustFeature> BuildCellFeaturesFromSampledState(
@@ -743,6 +987,10 @@ public sealed class Service : IService, IDisposable
         WorldCrustMaterialization Materialization,
         WorldGlobeSnapshot GlobeAtSnapshot,
         IReadOnlyList<PlateBoundaryArc> ArcsAtSnapshot);
+
+    private readonly record struct CrustProductCacheKey(int Frequency, long SnapshotTick);
+
+    private readonly record struct Rgb(byte R, byte G, byte B);
 
     private readonly object _globeReconstructorGate = new();
     private (int Seed, int Frequency) _globeReconstructorKey;

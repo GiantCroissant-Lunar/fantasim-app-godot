@@ -50,6 +50,13 @@ public interface IService
     IReadOnlyDictionary<int, double> GetContinentalFractionByCellAt(long tick);
 
     /// <summary>
+    /// Cheap CPU thumbnail source for timeline compact track filmstrips. Implementations must use
+    /// low-resolution world data (frequency 2/3 class) and must not fetch the full presentation
+    /// document or trigger full-frequency crust generation just to paint a preview.
+    /// </summary>
+    LayerFilmstripPreviewMap GetLayerFilmstripPreview(LayerFilmstripPreviewRequest request);
+
+    /// <summary>
     /// Mantle x-ray view (M-A): the four isosurface meshes (translucent outer + opaque inner per
     /// polarity) of the VOLUMETRIC mantle anomaly at <paramref name="tick"/>. Adapts the presentation
     /// document's typed boundary arcs at the tick into the engine's volumetric <c>MantleAnomalyField</c>
