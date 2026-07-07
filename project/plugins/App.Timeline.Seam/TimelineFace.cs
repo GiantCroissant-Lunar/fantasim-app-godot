@@ -607,7 +607,7 @@ public partial class TimelineFace : Control, ITimelineFace
         var commandClient = ResidentCommandClient;
         if (commandClient is null)
         {
-            _ctl.SelectLayer(sphere, layerId);
+            _ctl.ToggleLayer(sphere, layerId);
             UpdateUI();
             return;
         }
@@ -624,22 +624,22 @@ public partial class TimelineFace : Control, ITimelineFace
                 regimeId = schedule.RegimeAt(_ctl.Tick)?.RegimeId
             });
             var result = await commandClient.CommandAsync(new CommandRequest(
-                Command: "timeline.select_layer",
+                Command: "timeline.toggle_layer",
                 PayloadJson: payload,
                 ActorKind: "user",
                 ActorId: "godot"));
             if (!result.Ok)
             {
                 _log.LogWarning(
-                    "Timeline layer selection command failed: {LayerId} ({Error})",
+                    "Timeline layer toggle command failed: {LayerId} ({Error})",
                     layerId,
                     result.Error?.Message ?? "unknown error");
             }
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Timeline layer selection command failed for {LayerId}.", layerId);
-            _ctl.SelectLayer(sphere, layerId);
+            _log.LogError(ex, "Timeline layer toggle command failed for {LayerId}.", layerId);
+            _ctl.ToggleLayer(sphere, layerId);
         }
 
         UpdateUI();
@@ -710,7 +710,13 @@ public partial class TimelineFace : Control, ITimelineFace
         var activeGeoLayers = _ctl.GeosphereSchedule.RegimeAt(tick)?.ActiveLayers.Select(l => l.Value).ToHashSet() ?? new HashSet<string>();
         var activeAtmoLayers = _ctl.AtmosphereSchedule.RegimeAt(tick)?.ActiveLayers.Select(l => l.Value).ToHashSet() ?? new HashSet<string>();
 
-        var selected = _ctl.SelectedLayer;
+        var selectedGeo = _ctl.ActiveLayers
+            .Where(l => string.Equals(l.SphereId, "geosphere", StringComparison.Ordinal))
+            .Select(l => l.LayerId).ToHashSet();
+        var selectedAtmo = _ctl.ActiveLayers
+            .Where(l => string.Equals(l.SphereId, "atmosphere", StringComparison.Ordinal))
+            .Select(l => l.LayerId).ToHashSet();
+
         foreach (var track in _tracks)
         {
             bool isActive = track.Sphere == "geosphere"
@@ -718,9 +724,9 @@ public partial class TimelineFace : Control, ITimelineFace
                 : activeAtmoLayers.Contains(track.LayerId);
 
             bool isSelected = isActive
-                && selected is not null
-                && string.Equals(selected.SphereId, track.Sphere, StringComparison.Ordinal)
-                && string.Equals(selected.LayerId, track.LayerId, StringComparison.Ordinal);
+                && (track.Sphere == "geosphere"
+                    ? selectedGeo.Contains(track.LayerId)
+                    : selectedAtmo.Contains(track.LayerId));
 
             track.Button.Disabled = false;
             track.Button.Modulate = isActive ? new Color(1, 1, 1, 1f) : new Color(1, 1, 1, 0.68f);
