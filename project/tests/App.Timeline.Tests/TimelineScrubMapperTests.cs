@@ -62,4 +62,102 @@ public class TimelineScrubMapperTests
     {
         Assert.Equal(expected, TimelineScrubMapper.TickToFraction(tick, start, end), precision: 6);
     }
+
+    [Fact]
+    public void ZoomWindowAroundLocalX_KeepsCursorTickUnderCursor()
+    {
+        var mapped = TimelineScrubMapper.TryZoomWindowAroundLocalX(
+            localX: 25f,
+            surfaceWidth: 100f,
+            viewStartTick: 100L,
+            viewEndTick: 500L,
+            targetSpanTicks: 200L,
+            minViewSpanTicks: 1L,
+            maxTick: 1_000L,
+            out var start,
+            out var end);
+
+        Assert.True(mapped);
+        Assert.Equal(150L, start);
+        Assert.Equal(350L, end);
+
+        var cursorTickAfterZoom = start + ((end - start) * 0.25);
+        Assert.Equal(200.0, cursorTickAfterZoom, precision: 6);
+    }
+
+    [Fact]
+    public void ZoomWindowAroundLocalX_ClampsAtTimelineStart()
+    {
+        var mapped = TimelineScrubMapper.TryZoomWindowAroundLocalX(
+            localX: 10f,
+            surfaceWidth: 100f,
+            viewStartTick: 0L,
+            viewEndTick: 200L,
+            targetSpanTicks: 400L,
+            minViewSpanTicks: 1L,
+            maxTick: 1_000L,
+            out var start,
+            out var end);
+
+        Assert.True(mapped);
+        Assert.Equal(0L, start);
+        Assert.Equal(400L, end);
+    }
+
+    [Fact]
+    public void ZoomWindowAroundLocalX_ClampsAtTimelineEnd()
+    {
+        var mapped = TimelineScrubMapper.TryZoomWindowAroundLocalX(
+            localX: 90f,
+            surfaceWidth: 100f,
+            viewStartTick: 800L,
+            viewEndTick: 1_000L,
+            targetSpanTicks: 400L,
+            minViewSpanTicks: 1L,
+            maxTick: 1_000L,
+            out var start,
+            out var end);
+
+        Assert.True(mapped);
+        Assert.Equal(600L, start);
+        Assert.Equal(1_000L, end);
+    }
+
+    [Fact]
+    public void ZoomWindowAroundLocalX_ClampsTargetSpanToTimeline()
+    {
+        var mapped = TimelineScrubMapper.TryZoomWindowAroundLocalX(
+            localX: 50f,
+            surfaceWidth: 100f,
+            viewStartTick: 300L,
+            viewEndTick: 700L,
+            targetSpanTicks: 2_000L,
+            minViewSpanTicks: 1L,
+            maxTick: 1_000L,
+            out var start,
+            out var end);
+
+        Assert.True(mapped);
+        Assert.Equal(0L, start);
+        Assert.Equal(1_000L, end);
+    }
+
+    [Fact]
+    public void ZoomWindowAroundLocalX_IgnoresUnavailableSurface()
+    {
+        var mapped = TimelineScrubMapper.TryZoomWindowAroundLocalX(
+            localX: 50f,
+            surfaceWidth: 0f,
+            viewStartTick: 100L,
+            viewEndTick: 500L,
+            targetSpanTicks: 200L,
+            minViewSpanTicks: 1L,
+            maxTick: 1_000L,
+            out var start,
+            out var end);
+
+        Assert.False(mapped);
+        Assert.Equal(100L, start);
+        Assert.Equal(500L, end);
+    }
 }

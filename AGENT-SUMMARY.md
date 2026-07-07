@@ -2,43 +2,53 @@
 
 ## Directive
 
-Implemented D2.2 timeline scrub affordances in `App.Timeline.Seam`:
+Implemented D6 timeline input behavior in `App.Timeline.Seam`:
 
-- The ruler container now accepts left click and left-drag input and routes it through the same scrub mapping used by lane drag.
-- The timeline has a visible 22px-wide playhead handle rendered inside the ruler row, with a horizontal-resize hover cursor.
-- Existing lane drag-scrub remains wired to the same `HandleScrub` path.
-- Ruler tick marks, labels, and baseline remain visually unchanged and continue to ignore mouse input as individual children.
+- The vertical playhead line now has an 8px grab margin on either side through the full lanes
+  height. A left press in that zone is intercepted from `TimelineFace._Input`, starts
+  `_scrubDragging`, accepts the event, and routes through the existing scrub/`SeekTo` echo path
+  before lane buttons can consume it.
+- Mouse wheel over the ruler or lanes zooms the time scale. Wheel up zooms to the next finer
+  ladder span; wheel down zooms to the next coarser span.
+- Wheel zoom is centered on the cursor tick by preserving the cursor's fractional position in
+  the visible window, clamped to `[MinViewSpanTicks, MaxTick]`.
+- Pinch magnify gestures use the same cursor-centered zoom helper when Godot emits
+  `InputEventMagnifyGesture`.
+- Existing +/-/Fit buttons remain wired; +/- now share the same clamped zoom-window arithmetic.
 
 ## Files Changed
 
+- `AGENT-SUMMARY.md`
 - `project/plugins/App.Timeline.Seam/TimelineFace.cs`
 - `project/plugins/App.Timeline.Seam/TimelineScrubMapper.cs`
-- `project/plugins/App.Timeline.Seam/TimelinePlayheadHandle.cs`
-- `project/tests/App.Timeline.Tests/App.Timeline.Tests.csproj`
 - `project/tests/App.Timeline.Tests/TimelineScrubMapperTests.cs`
 
 ## Verification Performed
 
+- `dotnet test project/tests/App.Timeline.Tests/App.Timeline.Tests.csproj --no-restore --filter TimelineScrubMapperTests` passed.
+- `dotnet test project/tests/App.Timeline.Tests/App.Timeline.Tests.csproj --no-restore` passed.
 - `git diff --check` passed.
-- Roslyn syntax/type check for `TimelineScrubMapper.cs` passed with .NET SDK reference assemblies.
-- Roslyn syntax/type check for `TimelinePlayheadHandle.cs` passed against cached `GodotSharp.dll`; emitted only a framework-version reference warning from the manual compiler invocation.
-- `task test` was attempted from the worktree root. Tool restore completed, then `dotnet build project/FantaSim.sln` failed after about five minutes with:
+- `dotnet build project/plugins/App.Timeline.Seam/App.Timeline.Seam.csproj --no-restore` failed because the Godot seam assets file is missing:
+  - `NETSDK1004: Assets file 'project/plugins/App.Timeline.Seam/.godot/mono/temp/obj/project.assets.json' not found. Run a NuGet package restore to generate this file.`
+- `dotnet build project/plugins/App.Timeline.Seam/App.Timeline.Seam.csproj` was attempted. It remained at `Determining projects to restore...` for five minutes, then exited with:
   - `Build FAILED.`
   - `0 Warning(s)`
   - `0 Error(s)`
-  - `task: Failed to run task "test": task: Failed to run task "build": exit status 1`
-- A focused no-restore build could not run because this worktree has no generated MSBuild/NuGet assets for the Godot seam/test projects.
-- Windowed app verification was not run because this environment has no display.
-- Commit was attempted but blocked by sandbox permissions: Git could not create `.git/worktrees/app-w5-timeline-ux/index.lock` because the shared `.git` metadata is read-only from this session.
+- Windowed app verification was not run per directive constraint.
+- Conventional commit was attempted, but staging failed because the sandbox cannot create the
+  shared worktree git lock:
+  - `fatal: Unable to create '.../.git/worktrees/app-w6-timeline/index.lock': Operation not permitted`
 
 ## Lead Manual Acceptance Checklist
 
-Please verify in the windowed app with real mouse input:
-
-1. Click the ruler around mid-span and confirm the timeline seeks there.
-2. Drag across the ruler and confirm the timeline scrubs continuously.
-3. Grab the visible playhead handle and drag it left/right; confirm it scrubs and tracks the current playhead position.
-4. Confirm regime band click-to-seek still works.
-5. Confirm track buttons still select layers through `timeline.select_layer`.
-6. Confirm Play/Pause, zoom out, Fit, and zoom in still work.
-7. Confirm the handle does not steal clicks from regime/track buttons below the ruler.
+1. In the windowed app, grab the playhead line in the middle of a lane, over a regime/track button,
+   and drag left/right. Confirm it scrubs and the button underneath does not fire.
+2. Wheel up over the ruler at a known tick. Confirm the view zooms in and that tick stays under the
+   cursor.
+3. Wheel down over the lanes at a known tick. Confirm the view zooms out and that tick stays under
+   the cursor unless clamped at the timeline edge.
+4. Confirm ruler click/drag scrub still works.
+5. Confirm lane scrub and band seek still work away from the playhead grab zone.
+6. Confirm track buttons still select layers.
+7. Confirm Play, Fit, +, and - buttons still work.
+8. Confirm label/playhead/handle echo updates immediately after scrubbing/seeking.
