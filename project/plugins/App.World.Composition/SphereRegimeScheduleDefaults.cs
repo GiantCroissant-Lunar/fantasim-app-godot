@@ -105,7 +105,12 @@ public static class SphereRegimeScheduleDefaults
                     RegimeId: "mobile-plate",
                     StartTick: onsetTick,
                     EndTick: SphereRegime.OpenEnd,
-                    ActiveLayers: new[] { new LayerId("geosphere.plate"), new LayerId("geosphere.crust") }),
+                    ActiveLayers: new[]
+                    {
+                        new LayerId("geosphere.plate"),
+                        new LayerId("geosphere.crust"),
+                        new LayerId("geosphere.mantle"),
+                    }),
             });
 
     /// <summary>
