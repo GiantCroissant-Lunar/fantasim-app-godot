@@ -21,6 +21,7 @@
     <ProjectReference Include="..\..\contracts\App.World.Rendering\App.World.Rendering.csproj" />
     <ProjectReference Include="..\..\contracts\App.Ui\App.Ui.csproj" />
     <ProjectReference Include="..\..\contracts\App.Resource\App.Resource.csproj" />
+    <ProjectReference Include="..\..\contracts\App.Camera\App.Camera.csproj" />
     <ProjectReference Include="..\App.Ui.NodeGraph\App.Ui.NodeGraph.csproj" />
     <ProjectReference Include="..\App.NodeGraph\App.NodeGraph.csproj" />
     <ProjectReference Include="..\App.Resource.Bundle.Seam\App.Resource.Bundle.Seam.csproj" />

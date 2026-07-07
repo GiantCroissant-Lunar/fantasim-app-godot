@@ -1346,6 +1346,12 @@ void fragment() {
         root.AddChild(environment);
         _planetEnvironment = environment;
 
+        if (_registry.TryGet<FantaSim.App.Camera.IService>() is not null)
+        {
+            _log.LogDebug("Planet fallback camera skipped; App.Camera IService is registered.");
+            return;
+        }
+
         var camera = new Camera3D
         {
             Name = "PlanetCamera",

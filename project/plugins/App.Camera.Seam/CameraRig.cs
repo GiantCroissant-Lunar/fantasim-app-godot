@@ -63,12 +63,19 @@ public sealed class CameraRig : ICameraRig
         public CameraSpec Spec { get; }
     }
 
+    private sealed record GlobeOrbitConfiguration(
+        Node3D FollowTarget,
+        float InitialSpringLength,
+        float MinSpring,
+        float MaxSpring);
+
     private readonly Node _parent;
     private readonly Control? _panelHost;
     private readonly ILogger _log;
     private readonly IReadOnlyDictionary<string, int> _categoryLayers;
     private readonly Dictionary<string, ViewportRig> _rigs = new(StringComparer.Ordinal);
     private readonly Dictionary<string, CameraEntry> _cameras = new(StringComparer.Ordinal);
+    private readonly PendingConfigurationById<GlobeOrbitConfiguration> _pendingGlobeOrbit = new();
     private readonly Stack<int> _freedLayerBits = new();
     private int _nextLayerIndex = 1;
 
@@ -161,6 +168,10 @@ public sealed class CameraRig : ICameraRig
             _log.LogInformation(
                 "Camera replaced: {CameraId} (viewport = {ViewportId}, position = {Position}).",
                 spec.CameraId, spec.ViewportId, spec.Position);
+            _pendingGlobeOrbit.TryApplyPending(
+                spec.CameraId,
+                id => _cameras.ContainsKey(id),
+                ApplyGlobeOrbitConfiguration);
             return;
         }
 
@@ -188,6 +199,10 @@ public sealed class CameraRig : ICameraRig
         _log.LogInformation(
             "Camera registered: {CameraId} (viewport = {ViewportId}, position = {Position}).",
             spec.CameraId, spec.ViewportId, spec.Position);
+        _pendingGlobeOrbit.TryApplyPending(
+            spec.CameraId,
+            id => _cameras.ContainsKey(id),
+            ApplyGlobeOrbitConfiguration);
     }
 
     private void ActivateImpl(string cameraId)
@@ -217,6 +232,7 @@ public sealed class CameraRig : ICameraRig
 
         var viewportId = entry.Spec.ViewportId;
         _cameras.Remove(cameraId);
+        _pendingGlobeOrbit.Remove(cameraId);
         entry.Node.QueueFree();
         _log.LogInformation("Camera unregistered: {CameraId}.", cameraId);
 
@@ -262,26 +278,51 @@ public sealed class CameraRig : ICameraRig
     {
         if (followTarget is null) throw new ArgumentNullException(nameof(followTarget));
 
-        if (!_cameras.TryGetValue(cameraId, out var entry))
+        var configuration = new GlobeOrbitConfiguration(
+            followTarget,
+            initialSpringLength,
+            minSpring,
+            maxSpring);
+
+        if (!_pendingGlobeOrbit.ApplyOrPend(
+                cameraId,
+                configuration,
+                id => _cameras.ContainsKey(id),
+                ApplyGlobeOrbitConfiguration))
         {
-            _log.LogWarning("ConfigureGlobeOrbit ignored: unknown camera id '{CameraId}'.", cameraId);
+            _log.LogInformation(
+                "ConfigureGlobeOrbit pending: camera id '{CameraId}' is not registered yet.",
+                cameraId);
             return;
         }
+    }
+
+    private void ApplyGlobeOrbitConfiguration(string cameraId, GlobeOrbitConfiguration configuration)
+    {
+        if (!_cameras.TryGetValue(cameraId, out var entry))
+            return;
 
         // follow_mode is an @export int on the GDScript pcam; set it via Node.Set so the addon's
         // setter (which builds the SpringArm3D + sets top_level/_is_third_person_follow) runs.
         const int followModeThirdPerson = (int)FollowMode3D.ThirdPerson;
         entry.Node.Set("follow_mode", followModeThirdPerson);
-        entry.Node.Set("follow_target", followTarget);
-        entry.Wrapper.SpringLength = Math.Clamp(initialSpringLength, minSpring, maxSpring);
+        entry.Node.Set("follow_target", configuration.FollowTarget);
+        entry.Wrapper.SpringLength = Math.Clamp(
+            configuration.InitialSpringLength,
+            configuration.MinSpring,
+            configuration.MaxSpring);
 
         // Keep the follow target node alive under the rig root (the addon reads its global transform
         // each frame; a detached target would free it on the next GC sweep).
-        _rigs[entry.Spec.ViewportId].Root.AddChild(followTarget);
+        if (configuration.FollowTarget.GetParent() is null)
+            _rigs[entry.Spec.ViewportId].Root.AddChild(configuration.FollowTarget);
 
         _log.LogInformation(
             "Camera '{CameraId}' configured for globe orbit (follow target = {TargetName}, spring = {Spring}).",
-            cameraId, followTarget.Name, initialSpringLength);
+            cameraId, configuration.FollowTarget.Name, configuration.InitialSpringLength);
+        _log.LogInformation(
+            "Globe orbit follow engaged: cameraId={CameraId} followTarget={FollowTarget}.",
+            cameraId, configuration.FollowTarget.Name);
     }
 
     /// <summary>
