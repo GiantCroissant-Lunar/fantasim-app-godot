@@ -26,7 +26,14 @@ namespace FantaSim.App.World.Composition;
 /// </remarks>
 public sealed class OnsetRoster
 {
-    private const double DefaultAngularDriftPerMegaAnnum = 0.02;
+    // Calibrated 2026-07-07 against real plate-stage rates from Cao et al. 2024 (1.8 Ga GPlates
+    // model): 0.0035 rad/Ma ≈ 0.20°/Ma is the Phanerozoic movers MEDIAN. The previous 0.02 rad/Ma
+    // was the movers p90 (~5.7× too fast for a default). See
+    // tools/rates/2026-07-07-rate-calibration-report.md ( quaternion stage-rate analysis of the
+    // real .rot files). The lively upper below is kept as a documented alternative, not wired.
+    private const double DefaultAngularDriftPerMegaAnnum = 0.0035;
+    // ~p90 of real plates — "lively" option, see tools/rates/2026-07-07-rate-calibration-report.md.
+    private const double LivelyUpperAngularDriftPerMegaAnnum = 0.017;
     private static readonly double DefaultAngularDriftPerTick =
         UnitConverter.RadiansPerMegaAnnumToRadiansPerTick(DefaultAngularDriftPerMegaAnnum);
 
