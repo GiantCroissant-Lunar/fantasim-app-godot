@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using FantaSim.App.Timeline;
 using FantaSim.App.World;
 using Xunit;
@@ -35,6 +36,44 @@ public sealed class TimelineFilmstripTests
                 Assert.Equal(58f, slot.Width);
                 Assert.Equal(1_884, slot.Tick);
             });
+    }
+
+    [Fact]
+    public void PlanSlots_NarrowContentStillSpansTheVisibleRangeWithOneSlot()
+    {
+        var slots = TimelineFilmstrip.PlanSlots(100, 200, contentWidth: 48f, frameWidth: 96);
+
+        var slot = Assert.Single(slots);
+        Assert.Equal(0f, slot.X);
+        Assert.Equal(48f, slot.Width);
+        Assert.Equal(150, slot.Tick);
+    }
+
+    [Fact]
+    public void OrderSlotsNearestToTick_ExpandsOutwardFromPlayhead()
+    {
+        var slots = TimelineFilmstrip.PlanSlots(0, 1_000, contentWidth: 500f, frameWidth: 100);
+
+        var ordered = TimelineFilmstrip.OrderSlotsNearestToTick(slots, playheadTick: 520);
+
+        Assert.Equal(new[] { 2, 3, 1, 4, 0 }, ordered.Select(slot => slot.Index).ToArray());
+    }
+
+    [Fact]
+    public void SupersedeQueuedRequests_DropsFramesFromOlderViewGenerations()
+    {
+        var queued = new[]
+        {
+            new TimelineFilmstripFrameRequestPlan(10, 0, 100),
+            new TimelineFilmstripFrameRequestPlan(11, 1, 200),
+            new TimelineFilmstripFrameRequestPlan(10, 2, 300),
+        };
+
+        var current = TimelineFilmstrip.SupersedeQueuedRequests(queued, currentGeneration: 11);
+
+        var request = Assert.Single(current);
+        Assert.Equal(1, request.SlotIndex);
+        Assert.Equal(200, request.Tick);
     }
 
     [Fact]
