@@ -47,6 +47,7 @@ public partial class TimelineFace : Control, ITimelineFace
     private const int RungSpanUnits = 10;
     private const float RegimeBandHeight = 28f;
     private const float TrackHeight = 26f;
+    private const float PlayheadLineGrabMargin = 8f;
     private const float PlayheadHandleWidth = 22f;
     private const float PlayheadHandleHeight = 20f;
 
@@ -361,6 +362,16 @@ public partial class TimelineFace : Control, ITimelineFace
 
         switch (@event)
         {
+            case InputEventMouseButton mouseBtn when mouseBtn.Pressed && TryHandleTimelineWheelZoom(mouseBtn):
+                AcceptEvent();
+                break;
+            case InputEventMagnifyGesture magnify when TryHandleTimelineMagnifyZoom(magnify):
+                AcceptEvent();
+                break;
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } mouseBtn
+                when TryStartPlayheadLineScrub(mouseBtn.Position):
+                AcceptEvent();
+                break;
             case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false }:
                 _scrubDragging = false;
                 break;
@@ -369,6 +380,60 @@ public partial class TimelineFace : Control, ITimelineFace
                 break;
         }
     }
+
+    private bool TryStartPlayheadLineScrub(Vector2 globalPosition)
+    {
+        if (_playheadLine is null || _lanesContainer is null || _rulerRoot is null)
+            return false;
+
+        var lineRect = _playheadLine.GetGlobalRect();
+        var lanesRect = _lanesContainer.GetGlobalRect();
+        var grabRect = new Rect2(
+            new Vector2(lineRect.Position.X - PlayheadLineGrabMargin, lanesRect.Position.Y),
+            new Vector2(lineRect.Size.X + (PlayheadLineGrabMargin * 2f), lanesRect.Size.Y));
+        if (!grabRect.HasPoint(globalPosition))
+            return false;
+
+        _scrubDragging = true;
+        HandleScrub(globalPosition.X - _rulerRoot.GlobalPosition.X, _rulerRoot.Size.X);
+        return true;
+    }
+
+    private bool TryHandleTimelineWheelZoom(InputEventMouseButton mouseBtn)
+    {
+        if (_ctl is null || _rulerRoot is null || !IsTimelineZoomPosition(mouseBtn.Position))
+            return false;
+
+        TimelineLadderRung? targetRung = mouseBtn.ButtonIndex switch
+        {
+            MouseButton.WheelUp => TimelineModel.TryGetFinerRung(SelectedRung),
+            MouseButton.WheelDown => TimelineModel.TryGetCoarserRung(SelectedRung),
+            _ => null
+        };
+        if (targetRung is null)
+            return false;
+
+        return ZoomToSpanAroundLocalX(
+            TimelineModel.SpanTicksForRung(targetRung, RungSpanUnits),
+            mouseBtn.Position.X - _rulerRoot.GlobalPosition.X);
+    }
+
+    private bool TryHandleTimelineMagnifyZoom(InputEventMagnifyGesture magnify)
+    {
+        if (_ctl is null || _rulerRoot is null || magnify.Factor <= 0f || !IsTimelineZoomPosition(magnify.Position))
+            return false;
+
+        var currentSpan = Math.Max(MinViewSpanTicks, _viewEndTick - _viewStartTick);
+        var targetSpan = Math.Max(MinViewSpanTicks, (long)Math.Round(currentSpan / magnify.Factor));
+        if (targetSpan == currentSpan)
+            return false;
+
+        return ZoomToSpanAroundLocalX(targetSpan, magnify.Position.X - _rulerRoot.GlobalPosition.X);
+    }
+
+    private bool IsTimelineZoomPosition(Vector2 globalPosition)
+        => _rulerRoot?.GetGlobalRect().HasPoint(globalPosition) == true
+           || _lanesContainer?.GetGlobalRect().HasPoint(globalPosition) == true;
 
     private void OnLanesGuiInput(InputEvent @event)
     {
@@ -820,11 +885,40 @@ public partial class TimelineFace : Control, ITimelineFace
     {
         if (_ctl is null) return;
         long span = Math.Max(MinViewSpanTicks, _viewEndTick - _viewStartTick);
-        long nextSpan = Math.Clamp(targetSpan, MinViewSpanTicks, _ctl.MaxTick);
         long anchor = Math.Clamp(_ctl.Tick, _viewStartTick, _viewEndTick);
         double anchorFraction = span > 0 ? (anchor - _viewStartTick) / (double)span : 0.5;
-        long nextStart = anchor - (long)(nextSpan * anchorFraction);
-        SetViewRange(nextStart, nextStart + nextSpan);
+        TimelineScrubMapper.ZoomWindowAroundFraction(
+            _viewStartTick,
+            _viewEndTick,
+            targetSpan,
+            MinViewSpanTicks,
+            _ctl.MaxTick,
+            anchorFraction,
+            out var nextStart,
+            out var nextEnd);
+        SetViewRange(nextStart, nextEnd);
+    }
+
+    private bool ZoomToSpanAroundLocalX(long targetSpan, float rulerLocalX)
+    {
+        if (_ctl is null || _rulerRoot is null) return false;
+        if (!TimelineScrubMapper.TryZoomWindowAroundLocalX(
+            rulerLocalX,
+            _rulerRoot.Size.X,
+            _viewStartTick,
+            _viewEndTick,
+            targetSpan,
+            MinViewSpanTicks,
+            _ctl.MaxTick,
+            out var nextStart,
+            out var nextEnd))
+        {
+            _log.LogInformation("timeline zoom rejected: localX={X} width={W}", rulerLocalX, _rulerRoot.Size.X);
+            return false;
+        }
+
+        SetViewRange(nextStart, nextEnd);
+        return true;
     }
 
     private void SetViewRange(long startTick, long endTick)
