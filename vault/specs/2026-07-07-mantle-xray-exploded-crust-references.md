@@ -45,4 +45,47 @@ not yet a dispatched plan. Companion to `vault/plans/2026-07-07-gplates-truth-pl
 
 Ordering note: the two open windowed defects (inert per-tick light path in export; camera host
 lookup) precede any new render arc — M-A/M-B are pointless if the app can't smoothly seek or
-orbit what they draw.
+orbit what they draw. (CLOSED 2026-07-07: P8 landed; light-path report was a gate artifact.)
+
+## Volumetric field method — v2, METHOD-LOCKED 2026-07-07 (user-approved discussion)
+
+**Diagnosis of v1:** `PlateHistoryForcingSource` normalizes every query onto the unit sphere —
+the anomaly is RADIALLY CONSTANT (it is a basal-forcing layer, correct for M-C traction), and
+its sources are per-segment point kernels. Any isosurface of it is a sphere-ish shell; lateral
+structure is blobs. "I only see a sphere" is the expected output of v1, not a bug in the
+sampler. The fix is a true volumetric `T'(direction, radius, tick)`.
+
+**Decision: field-first** (not geometry-first meshes): one coherent volumetric field means
+cutaway slices work for free, thresholds are tunable, and the SAME field evaluated at
+asthenosphere depth is what M-C traction later consumes. Geometry-first is the fallback only
+if isosurfaced plumes prove too blobby.
+
+**The six ingredients (each maps to a reference-image property):**
+1. **Slab ribbons, polyline-sampled.** Convergent boundary arcs sampled as polylines (never
+   midpoints); each sample sweeps a curve downward — lateral displacement grows with depth
+   (dip), depth extent = subduction age × sink rate, capped at the CMB (~0.55R). Anomaly =
+   Gaussian sheet around the swept ribbon, amplitude decaying with age. Scrubbing time shows
+   slabs GROWING — history made visible.
+2. **Plume tubes rooted in a basal blanket.** Broad warm blanket near the CMB in regions far
+   from downwelling (inverse-distance-to-slab — the LLSVP analog per Cao 2021: slabs sculpt
+   basal structures); plumes = vertical tubes rising from blanket maxima to ~0.9R with
+   widened mushroom heads.
+3. **Domain-warped fBm modulation** of ribbon/tube surfaces (multi-scale, deterministic,
+   SplitMix64-seeded) — the organic lumpy silhouette; analytic primitives alone read as
+   clip-art.
+4. **Two thresholds per polarity:** translucent outer + opaque inner isosurface (blue/blue,
+   orange/red) — layered translucency is what reads as volumetric. Godot: opaque core sphere
+   + inner surfaces first, transparent outers with explicit render priority.
+5. **Normals from the field gradient**, not mesh triangles — smooth at modest grid cost.
+6. **Stage dressing:** dark core sphere ~0.55R, crust ghosted 10–15% with white coastline +
+   green boundary wireframe, soft rim light. Composes with M-B: the exploded crust parts to
+   reveal this interior.
+
+**Honesty upgrade bundled in:** polyline sources allow computing REAL relative velocity at
+each boundary point from the two plates' Euler poles → physically-derived dip directions and
+convergence rates, replacing P2's documented geometric-convention placeholder.
+
+**Division of labor:** engine (fantasim-world, `Geosphere.Asthenosphere.Convection` plugin)
+owns the volumetric `MantleAnomalyField` + gradient + tests; the app reuses M-A's shell-grid
+sampling / marching-cubes / `render.mantle` plumbing, swapped onto the new field at
+integration. Existing `PlateHistoryForcingSource` (basal layer) stays intact for M-C.
