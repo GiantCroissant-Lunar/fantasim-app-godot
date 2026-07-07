@@ -248,3 +248,23 @@ pipeline); the timeline stacks these tracks and the stack composes (D5). The Ani
 research above stays as the composition-semantics reference (inputs → compose nodes w/ filters →
 one Output), but the PRESENTATION is per-track embedded graphs, not a single separate graph
 panel. Design round starts from THIS sentence.
+
+## D8 (user, 2026-07-08 late): smooth timeline sliding + the world IS the animation preview
+
+**User intent:** the timeline cannot slide smoothly — resolve it. And the AnimationPlayer/Tree
+should show the GENERATED WORLD of that layer the way an animation preview shows an animated
+character: scrub/play a layer's track and the planet animates that layer's product.
+
+**Known roots (measured this session):** every scrub motion event fires a full seek →
+presentation rebuild → CrustGenerationTrigger (heavy; the seek→visible-rebind latency was
+measured at ≥4s during sweeps — the standing "triple-rebind perf" item). Dragging fires many
+seeks per second. The mantle layer additionally never resamples per tick (composed root rebuilds
+only on layer transitions).
+
+**Directives:** (1) scrub seeks COALESCE — at most one applied tick per frame (latest wins),
+intermediate ticks dropped; (2) the per-tick apply SPLITS: the light path (fraction/rotation
+updates — exists since P8) runs on every applied tick so the planet visibly animates under the
+drag like a character preview; the heavy path (crust snapshot regen and anything logging
+"Crust snapshot transition") DEBOUNCES until the scrub rests (~300 ms); (3) active layers each
+animate their product per applied tick — mantle per-tick field resample is its own follow-up
+slice (grid cost), but the slabs/surface must ride the light path now.
