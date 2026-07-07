@@ -8,7 +8,7 @@ namespace FantaSim.App.Timeline.Tests;
 public sealed class TimelineFilmstripTests
 {
     [Fact]
-    public void PlanSlots_CoversVisibleRangeWithOneFramePerN Pixels()
+    public void PlanSlots_CoversVisibleRangeWithOneFramePerNPixels()
     {
         var slots = TimelineFilmstrip.PlanSlots(1_000, 2_000, contentWidth: 250f, frameWidth: 96);
 

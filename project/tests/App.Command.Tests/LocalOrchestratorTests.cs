@@ -450,6 +450,8 @@ public class CommandServiceTests
 /// <summary>Minimal fake App.World.IService for orchestration tests.</summary>
 internal sealed class FakeWorldService : WorldService
 {
+    public FantaSim.App.World.LayerFilmstripPreviewMap? GetLayerFilmstripPreview(FantaSim.App.World.LayerFilmstripPreviewRequest request) => null;
+
     public int GenerateCalls;
     public int OverviewCalls;
     public int ProductsCalls;
