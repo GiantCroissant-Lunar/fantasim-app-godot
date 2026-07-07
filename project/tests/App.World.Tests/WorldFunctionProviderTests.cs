@@ -60,7 +60,7 @@ public sealed class WorldFunctionProviderTests
         Assert.Equal(WorldGenerationRenderOptions.Default.TessellationFrequency, (int)result["frequency"]!);
         Assert.Equal(DefaultPresentationPlateCount(), (int)result["plateCount"]!);
         Assert.Equal(UnitConverter.MegaAnnumToTickDelta(8.0), (long)result["canonicalTick"]!);
-        Assert.Equal(8.0, (double)result["durationMegaAnnum"]!, 12);
+        Assert.Equal(UnitConverter.MegaAnnumToTickDelta(8.0), (long)result["durationTicks"]!);
 
         // And the boundary classification includes a convergent boundary (drives orogeny)
         var boundaryTypes = result["boundaryTypes"]!.AsObject();
@@ -95,8 +95,11 @@ public sealed class WorldFunctionProviderTests
         });
 
         Assert.Equal(UnitConverter.MegaAnnumToTickDelta(1.25), (long)summary["canonicalTick"]!);
-        Assert.Equal(1.25, (double)summary["durationMegaAnnum"]!, 12);
-        Assert.Equal(UnitConverter.TicksPerMegaAnnum, (long)summary["ticksPerMegaAnnum"]!);
+        Assert.Equal(UnitConverter.MegaAnnumToTickDelta(1.25), (long)summary["durationTicks"]!);
+
+        var timeScale = summary["timeScale"]!.AsObject();
+        Assert.Equal("ka", (string?)timeScale["rung"]);
+        Assert.Equal(UnitConverter.TicksPerMegaAnnum, (long)timeScale["ticksPerRung"]!);
     }
 
     [Fact]
@@ -109,7 +112,7 @@ public sealed class WorldFunctionProviderTests
         var result = await executor.ExecuteAsync(graph);
 
         Assert.Equal(12_345L, (long)result["canonicalTick"]!);
-        Assert.Equal(UnitConverter.TickDeltaToMegaAnnum(12_345), (double)result["durationMegaAnnum"]!, 12);
+        Assert.Equal(12_345L, (long)result["durationTicks"]!);
     }
 
     [Fact]
@@ -127,6 +130,34 @@ public sealed class WorldFunctionProviderTests
 
         Assert.Equal(2, (int)summary["frequency"]!);
         Assert.Equal(2, (int)summary["plateCount"]!);
+    }
+
+    // ---------------------------------------------------------------------
+    // Guard (D4.1): crust.generate result JSON uses canonical vocabulary only.
+    // No Ma/MegaAnnum/annum leak anywhere in keys or values; the canonical
+    // duration/time-scale fields are present. Mirrors the CanonicalTimeLabelTests
+    // guard pattern but applied to the whole function-result JSON.
+    // ---------------------------------------------------------------------
+    [Fact]
+    public async Task Crust_generate_result_emits_no_MegaAnnum_and_uses_canonical_fields()
+    {
+        var provider = new WorldFunctionProvider();
+
+        var result = await provider.InvokeAsync("crust.generate", new JsonObject());
+        var json = result.ToJsonString();
+
+        // Case-insensitive "annum" catches durationMegaAnnum/ticksPerMegaAnnum/Megaannum; the quoted
+        // "Ma" catches any "unit":"Ma" value. A bare "Ma" would false-positive on "main"/"Mountain".
+        Assert.DoesNotContain("annum", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("\"Ma\"", json, StringComparison.Ordinal);
+
+        Assert.True(result.ContainsKey("durationTicks"));
+        Assert.NotEmpty((string?)result["durationLabel"]);
+        Assert.DoesNotContain("Ma", (string?)result["durationLabel"], StringComparison.Ordinal);
+
+        var timeScale = result["timeScale"]!.AsObject();
+        Assert.Equal("ka", (string?)timeScale["rung"]);
+        Assert.Equal(UnitConverter.TicksPerMegaAnnum, (long)timeScale["ticksPerRung"]!);
     }
 
     private static int DefaultPresentationPlateCount()

@@ -12,6 +12,7 @@ using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Globe;
 using FantaSim.Geosphere.Crust;
 using FantaSim.Geosphere.Plate.Topology;
+using FantaSim.World.Contracts.Quantities;
 using FantaSim.World.Contracts.Units;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -331,7 +332,7 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
             functionId: CrustGenerate,
             spec.TessellationFrequency,
             spec.EndTick,
-            spec.DurationMegaAnnum,
+            spec.EndTick,
             materialization.Tessellation,
             materialization.Topology,
             materialization.Result,
@@ -342,7 +343,7 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
         string functionId,
         int frequency,
         long canonicalTick,
-        double durationMegaAnnum,
+        long durationTicks,
         GeodesicSphereTessellation tessellation,
         PlateTopology topology,
         CrustEvolutionResult result,
@@ -408,13 +409,15 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
             ["frequency"] = frequency,
             ["ticks"] = canonicalTick,
             ["canonicalTick"] = canonicalTick,
-            ["durationMegaAnnum"] = durationMegaAnnum,
-            ["ticksPerMegaAnnum"] = UnitConverter.TicksPerMegaAnnum,
+            // D4.1: canonical vocabulary only (ticks + odometer label + anchor rung), never Ma/MegaAnnum.
+            // The anchor rung "ka" is numerically 100_000 ticks == the legacy Ma anchor, so consumers
+            // dividing by ticksPerRung keep the same scale factor.
+            ["durationTicks"] = durationTicks,
+            ["durationLabel"] = CanonicalTimeLabel.ForTick(durationTicks, UnitConverter.TicksPerMegaAnnum),
             ["timeScale"] = new JsonObject
             {
-                ["unit"] = "Ma",
-                ["tickScaleNumerator"] = UnitConverter.TicksPerMegaAnnum,
-                ["tickScaleDenominator"] = 1,
+                ["rung"] = BaselineScaleProfiles.GeospherePlateTime.AnchorScaleSymbol,
+                ["ticksPerRung"] = UnitConverter.TicksPerMegaAnnum,
             },
             ["cellCount"] = tessellation.CellCount,
             ["plateCount"] = result.Plates.Count,
