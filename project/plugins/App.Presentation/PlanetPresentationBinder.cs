@@ -83,6 +83,14 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     // volumetric MantleAnomalyField at the current tick.
     private Node3D? _mantleXrayRoot;
     private bool _mantleXrayActive;
+
+    // D1 mantle-interior LAYER view state (inactive by default). _mantleLayerRoot holds the composed
+    // tree from MantleInteriorViewComposer: core sphere + four isosurfaces + separated crust slabs
+    // (NO ghost shell — the slabs are the reference frame). Driven by viewMode == MantleInterior,
+    // reconciled in ApplyTimelineTick; entering/leaving the layer builds/frees the root.
+    private Node3D? _mantleLayerRoot;
+    private bool _mantleLayerActive;
+
     private bool _disposed;
     private readonly string? _plateViewOverride;
     private long? _boundContinentsTick; // last tick whose membership the Continents caps show
@@ -404,21 +412,33 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         bool showBoundaries = viewMode == GlobeViewMode.PlateIdentity;
         ApplyLightingForView(viewMode);
 
+        // D1: reconcile the mantle-interior LAYER view. The composed root is built/freed on
+        // transition into/out of MantleInterior (the field sampling is too heavy for every tick).
+        // Mirrors the x-ray toggle lifecycle but driven by the resolved view mode.
+        bool mantleLayerActive = viewMode == GlobeViewMode.MantleInterior;
+        if (mantleLayerActive != _mantleLayerActive)
+        {
+            _mantleLayerActive = mantleLayerActive;
+            RebuildMantleLayer();
+        }
+
         // M-A look-loop: GeometryInstance3D.Transparency proved unreliable against the custom
         // hypso/continents shaders in the exported app (surface stayed opaque — windowed gate
         // 2026-07-07). Do what the reference imagery does instead: HIDE the terrain surface in
         // mantle view; the x-ray root carries its own translucent ghost shell + the boundary
-        // wireframe stays visible as the locator.
+        // wireframe stays visible as the locator. D1: the mantle-interior LAYER view likewise
+        // hides the regular surface (the separated slabs are the reference frame instead).
         if (_plateSurfaceRoot is not null && GodotObject.IsInstanceValid(_plateSurfaceRoot))
-            _plateSurfaceRoot.Visible = showsPlateFeatures && !_mantleXrayActive;
+            _plateSurfaceRoot.Visible = showsPlateFeatures && !_mantleXrayActive && !_mantleLayerActive;
 
+        bool mantleLocatorActive = _mantleXrayActive || _mantleLayerActive;
         if (_boundaryRenderer is not null && GodotObject.IsInstanceValid(_boundaryRenderer))
         {
-            _boundaryRenderer.Visible = showBoundaries || _mantleXrayActive;
-            // M-A: restyle the boundary arcs (thin desaturated filaments) whenever the mantle x-ray
-            // is active. Idempotent, and the rebind path reconstructs this renderer fresh so the style
-            // re-applies here on the first ApplyTimelineTick after mount.
-            _boundaryRenderer.ApplyMantleViewStyle(_mantleXrayActive);
+            _boundaryRenderer.Visible = showBoundaries || mantleLocatorActive;
+            // M-A / D1: restyle the boundary arcs (thin desaturated filaments) whenever a mantle
+            // view is active. Idempotent, and the rebind path reconstructs this renderer fresh so
+            // the style re-applies here on the first ApplyTimelineTick after mount.
+            _boundaryRenderer.ApplyMantleViewStyle(mantleLocatorActive);
         }
 
         if (_boundarySectionRenderer is not null && GodotObject.IsInstanceValid(_boundarySectionRenderer))
@@ -428,8 +448,8 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         {
             _mantle.MaterialOverride = ResolveMantleMaterial(RegimeSurfaceResolver.Resolve(regimeId));
             // M-A: the opaque interior mantle sphere would occlude the x-ray isosurfaces; the x-ray
-            // mounts its own dark core sphere at the CMB radius instead.
-            _mantle.Visible = !_mantleXrayActive && MantleSurfaceGate.IsVisible(
+            // mounts its own dark core sphere at the CMB radius instead. D1: same for the layer view.
+            _mantle.Visible = !mantleLocatorActive && MantleSurfaceGate.IsVisible(
                 viewMode,
                 platesShown: showsPlateFeatures,
                 hasPlateSurface: _plateSurfaceRoot is not null && GodotObject.IsInstanceValid(_plateSurfaceRoot));
@@ -603,7 +623,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     // PlateSolidBuilder output, dark unlit material). Both Scale = Vector3.One * 2.0f to match
     // PlateSurfaceRenderer and BuildCutawayFaceSector. No per-plate GPU rotation exists in this
     // path, so a baked position offset is exactly correct.
-    private Node3D BuildExplodedSolidCrust()
+    private Node3D BuildExplodedSolidCrust(double? factorOverride = null)
     {
         var root = new Node3D { Name = "ExplodedCrust" };
 
@@ -617,19 +637,24 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         if (caps is null || centroids is null)
             return root;
 
+        // D1: the mantle-interior layer passes MantleLayerExplodeFactor so the slabs detach at a
+        // modest, profile-declared fraction of DefaultMaxOffset. render.exploded passes null so
+        // the agent look-dev knob (_explodedFactor) stays in control of that path.
+        double factor = factorOverride ?? _explodedFactor;
+
         var thickness = ResolveCrustThicknessMetres(document);
         // D3: the slab thickness exaggeration is EXPLICIT and distinct from the surface relief
         // exaggeration (_lastExaggeration). The profile exposes the metres-to-unit-radius scale
         // PlateSolidBuilder expects (CrustThicknessExaggeration / PlanetRadiusMetres), so 30 km of
         // crust reads as ~0.038R slab walls — independent of the ~3e-5 surface relief lens.
         var solids = PlateSolidBuilder.Build(caps, thickness, _radialProfile.ThicknessDepthScale());
-        var exploded = PlateSolidBuilder.ApplyExplodedFactor(solids, centroids, _explodedFactor);
+        var exploded = PlateSolidBuilder.ApplyExplodedFactor(solids, centroids, factor);
 
         var byPlate = new Dictionary<int, PlateSolidCentroid>(centroids.Count);
         foreach (var c in centroids)
             byPlate[c.PlateId] = c;
 
-        var offsetMag = _explodedFactor * PlateSolidBuilder.DefaultMaxOffset;
+        var offsetMag = factor * PlateSolidBuilder.DefaultMaxOffset;
 
         for (int i = 0; i < caps.Count; i++)
         {
@@ -800,6 +825,76 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             _timeline.Tick,
             set.ColdOuter.Vertices.Length / 3, set.ColdInner.Vertices.Length / 3,
             set.WarmOuter.Vertices.Length / 3, set.WarmInner.Vertices.Length / 3);
+    }
+
+    // D1: free the old mantle-interior layer root; if active, sample the volumetric field at the
+    // playhead tick and mount the composed tree (core sphere + four isosurfaces + separated crust
+    // slabs, NO ghost shell) via MantleInteriorViewComposer. Mirrors RebuildMantleXray's lifecycle
+    // but composes the slabs instead of ghosting the surface. Called on view-mode transition into
+    // MantleInterior (reconciled in ApplyTimelineTick).
+    private void RebuildMantleLayer()
+    {
+        if (_mantleLayerRoot is not null && GodotObject.IsInstanceValid(_mantleLayerRoot))
+        {
+            _mantleLayerRoot.GetParent()?.RemoveChild(_mantleLayerRoot);
+            _mantleLayerRoot.QueueFree();
+        }
+        _mantleLayerRoot = null;
+
+        if (!_mantleLayerActive)
+            return;
+
+        if (_activeRoot is null || !GodotObject.IsInstanceValid(_activeRoot))
+            return;
+
+        var body = _activeRoot.GetNodeOrNull<Node3D>("PlanetBody");
+        if (body is null)
+            return;
+
+        var world = _registry.TryGet<WorldService>();
+        if (world is null)
+        {
+            _log.LogWarning("Mantle layer view skipped: world service is not registered.");
+            return;
+        }
+
+        FantaSim.App.World.MantleIsosurfaceSet set;
+        try
+        {
+            set = world.GetMantleIsosurfacesAsync(_timeline.Tick);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Mantle layer sampling failed at t={Tick}.", _timeline.Tick);
+            return;
+        }
+
+        // Separated crust slabs at the profile's declared layer explode factor (0.4 of max offset).
+        Node3D slabRoot = BuildExplodedSolidCrust(RadialSectionProfile.MantleLayerExplodeFactor);
+
+        // Four isosurface entries (opaque inner cores first, translucent outer halos last) — the
+        // same material singletons and BuildIsosurfaceNode the x-ray path uses.
+        var entries = new List<MantleInteriorViewComposer.IsosurfaceEntry>(4);
+        if (!set.ColdInner.IsEmpty)
+            entries.Add(new(BuildIsosurfaceNode("ColdInner", set.ColdInner, ColdInnerMaterial), RenderPriority: 0));
+        if (!set.WarmInner.IsEmpty)
+            entries.Add(new(BuildIsosurfaceNode("WarmInner", set.WarmInner, WarmInnerMaterial), RenderPriority: 0));
+        if (!set.ColdOuter.IsEmpty)
+            entries.Add(new(BuildIsosurfaceNode("ColdOuter", set.ColdOuter, ColdOuterMaterial), RenderPriority: 2));
+        if (!set.WarmOuter.IsEmpty)
+            entries.Add(new(BuildIsosurfaceNode("WarmOuter", set.WarmOuter, WarmOuterMaterial), RenderPriority: 2));
+
+        _mantleLayerRoot = MantleInteriorViewComposer.Compose(
+            coreSphere: BuildCoreSphere(),
+            isosurfaces: entries,
+            separatedSlabRoot: slabRoot);
+        body.AddChild(_mantleLayerRoot);
+        _log.LogInformation(
+            "Mantle interior layer mounted at t={Tick}: cold outer/inner={ColdOuter}/{ColdInner} verts, warm outer/inner={WarmOuter}/{WarmInner} verts, slabs={SlabChildren}.",
+            _timeline.Tick,
+            set.ColdOuter.Vertices.Length / 3, set.ColdInner.Vertices.Length / 3,
+            set.WarmOuter.Vertices.Length / 3, set.WarmInner.Vertices.Length / 3,
+            slabRoot.GetChildCount());
     }
 
     // M-A: ghost/unghost every plate-surface GeometryInstance3D. Transparency (0=opaque, 1=gone) is
@@ -2272,6 +2367,14 @@ void fragment() {
             _mantleXrayRoot.QueueFree();
         }
         _mantleXrayRoot = null;
+
+        if (_mantleLayerRoot is not null && GodotObject.IsInstanceValid(_mantleLayerRoot))
+        {
+            _mantleLayerRoot.GetParent()?.RemoveChild(_mantleLayerRoot);
+            _mantleLayerRoot.QueueFree();
+        }
+        _mantleLayerRoot = null;
+        _mantleLayerActive = false;
     }
 
     private void ReleasePlateSurfaceRenderer()
