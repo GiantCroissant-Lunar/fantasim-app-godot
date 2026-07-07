@@ -201,3 +201,21 @@ composition rules should live in the graph, not in binder branches.
 
 **Sequencing note:** D5+D7b are one architecture arc (stacked layers expressed as graph
 composition); D6 and D7a are bounded UX/config packets that can ship independently.
+
+### D7c — refinement (user, 2026-07-08): per-track dropdown detail in the timeline
+
+**User intent (verbatim spirit):** the Godot timeline (AnimationPlayer) can actually have node-graph
+content: create a HEADER for each track with a dropdown UI, so expanding a track shows the node
+graph — or other detail — of that layer.
+
+**Design translation (proposed):** the timeline is the single home of the layer stack. Each track
+row = one layer, with a header carrying (a) the D5 active-toggle and (b) an expand/dropdown
+control. Expanding grows the track row into a detail pane hosting that layer's node-graph subview
+— the existing graph rendering, FILTERED to the layer's subgraph (the P4b per-regime layer-gen
+nodes are the natural anchor; D7b's composition nodes join it) — or other per-layer detail
+(parameters, field stats). This replaces the floating full-graph panel as the primary
+discoverability path (D7a's toggle remains for the whole-graph view). Track content strips stay
+time-domain (bands/keys); detail panes are untimed UI below the header. Feasibility: the graph
+view already exists as a mountable view; embedding = mounting it inside an expandable track
+container with a layer filter. One arc with D5: toggle-stack + inspect-detail are the two halves
+of the same track-header UI.
