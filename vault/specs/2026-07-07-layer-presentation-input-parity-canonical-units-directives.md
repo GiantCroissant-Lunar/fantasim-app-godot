@@ -239,3 +239,12 @@ parallel graph of the same shape), viewable/editable like Godot's AnimationTree 
 as a separate world-generation-graph dropdown. D5's active-set toggles become enable/weight
 parameters ON graph nodes. The wave-6 LayerCompositionDecision table is the interim hardcoding of
 what this graph will express.
+
+### D7c FINAL (user, verbatim lock): "each track has node graph as its content"
+
+The track's CONTENT AREA — the strip that in Godot's AnimationPlayer would hold keyframes — holds
+that layer's NODE GRAPH. Track = layer; content = the layer's graph (its generation/composition
+pipeline); the timeline stacks these tracks and the stack composes (D5). The AnimationTree
+research above stays as the composition-semantics reference (inputs → compose nodes w/ filters →
+one Output), but the PRESENTATION is per-track embedded graphs, not a single separate graph
+panel. Design round starts from THIS sentence.
