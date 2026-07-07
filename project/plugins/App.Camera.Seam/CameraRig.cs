@@ -345,21 +345,55 @@ public sealed class CameraRig : ICameraRig
     /// Marshals onto the Godot main thread like every other rig operation, so it is safe to call
     /// from a command handler thread.
     /// </summary>
-    public Task<string> DebugSnapshotAsync(string viewportId = "main")
+    public Task<string> DebugSnapshotAsync(string viewportId = "main", Vector2? probePoint = null)
     {
         var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
         Callable.From(() =>
         {
-            try { tcs.TrySetResult(DebugSnapshotImpl(viewportId)); }
+            try { tcs.TrySetResult(DebugSnapshotImpl(viewportId, probePoint)); }
             catch (Exception ex) { tcs.TrySetException(ex); }
         }).CallDeferred();
         return tcs.Task;
     }
 
-    private string DebugSnapshotImpl(string viewportId)
+    /// <summary>
+    /// Names every visible Control whose global rect contains <paramref name="point"/> (window
+    /// pixels) and whose mouse filter is not Ignore — i.e. every candidate that can consume a mouse
+    /// press before it reaches <c>_UnhandledInput</c>. The debug command exposes this as `probeX`/
+    /// `probeY` so an input-swallowing overlay identifies itself by node path.
+    /// </summary>
+    private static void CollectControlsAt(Node node, Vector2 point, Godot.Collections.Array hits)
+    {
+        if (node is Control c
+            && c.IsVisibleInTree()
+            && c.MouseFilter != Control.MouseFilterEnum.Ignore
+            && c.GetGlobalRect().HasPoint(point))
+        {
+            var h = new Godot.Collections.Dictionary();
+            h["path"] = c.GetPath().ToString();
+            h["mouseFilter"] = c.MouseFilter.ToString();
+            h["rect"] = c.GetGlobalRect().ToString();
+            hits.Add(h);
+        }
+
+        foreach (var child in node.GetChildren())
+            CollectControlsAt(child, point, hits);
+    }
+
+    private string DebugSnapshotImpl(string viewportId, Vector2? probePoint = null)
     {
         var snapshot = new Godot.Collections.Dictionary();
         snapshot["viewportId"] = viewportId;
+
+        if (probePoint is { } probe)
+        {
+            var hits = new Godot.Collections.Array();
+            var root = _parent.GetTree()?.Root;
+            if (root is not null)
+                CollectControlsAt(root, probe, hits);
+            snapshot["probePoint"] = probe;
+            snapshot["controlsAtProbe"] = hits;
+        }
 
         if (!_rigs.TryGetValue(viewportId, out var rig))
         {
@@ -388,6 +422,23 @@ public sealed class CameraRig : ICameraRig
 
         var activePcam = rig.HostWrapper.GetActivePhantomCamera();
         snapshot["hostActivePcam"] = activePcam is PhantomCamera3D active ? active.Node3D.Name.ToString() : "(none)";
+
+        if (GlobeOrbitControls.ActiveInstance is { } controls)
+        {
+            var input = new Godot.Collections.Dictionary();
+            input["hostBound"] = controls.DiagHostBound;
+            input["draggingNow"] = controls.DiagDraggingNow;
+            input["pressesSeen"] = controls.DiagPressesSeen;
+            input["releasesSeen"] = controls.DiagReleasesSeen;
+            input["wheelSeen"] = controls.DiagWheelSeen;
+            input["motionsSeen"] = controls.DiagMotionsSeen;
+            input["dragMotionsApplied"] = controls.DiagDragMotionsApplied;
+            snapshot["orbitInput"] = input;
+        }
+        else
+        {
+            snapshot["orbitInput"] = "(no GlobeOrbitControls in tree)";
+        }
 
         var pcams = new Godot.Collections.Array();
         foreach (var (id, entry) in _cameras)

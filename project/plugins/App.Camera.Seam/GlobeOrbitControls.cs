@@ -40,9 +40,29 @@ public sealed partial class GlobeOrbitControls : Node
     private readonly LazyBindOnce<PhantomCameraHost> _lazyBind;
     private Func<PhantomCameraHost?>? _hostProvider;
 
+    // ---- input-path diagnostics (read by CameraRig.DebugSnapshotImpl via ActiveInstance) ----
+    // Counters sit BEFORE the host-null early returns so camera.debug can distinguish "events
+    // never delivered" from "events delivered but the host/pcam link is broken".
+    internal static GlobeOrbitControls? ActiveInstance { get; private set; }
+    internal int DiagPressesSeen;
+    internal int DiagReleasesSeen;
+    internal int DiagWheelSeen;
+    internal int DiagMotionsSeen;
+    internal int DiagDragMotionsApplied;
+    internal bool DiagDraggingNow => _dragging;
+    internal bool DiagHostBound => _host is not null;
+
     public GlobeOrbitControls()
     {
         _lazyBind = new LazyBindOnce<PhantomCameraHost>(BindHost);
+    }
+
+    public override void _EnterTree() => ActiveInstance = this;
+
+    public override void _ExitTree()
+    {
+        if (ReferenceEquals(ActiveInstance, this))
+            ActiveInstance = null;
     }
 
     /// <summary>Optional logger for lazy-bind diagnostics (bound confirmation).</summary>
@@ -146,8 +166,23 @@ public sealed partial class GlobeOrbitControls : Node
             ApplyToActivePcam();
     }
 
+    // Input routing is deliberately SPLIT between the two callbacks (windowed-verified 2026-07-08):
+    // the PRESS decides gesture ownership in _UnhandledInput — a press the UI claimed (timeline
+    // scrub, ledger buttons) never starts a globe drag — but the MOTION of an owned drag is tracked
+    // in _Input. Once a button is held, the viewport routes motion through the GUI mouse-focus
+    // path and it never reaches _UnhandledInput (empirical: wheel and press arrived, drag motion
+    // never did), so motion-in-_UnhandledInput silently dead-ends — the "cannot rotate the planet"
+    // defect. _Input fires for every event, and gating on _dragging keeps it inert outside an
+    // owned gesture. Release is also handled in _Input so an over-UI release cannot strand the
+    // drag flag. This is the same capture split as the official drag-and-drop example
+    // (docs: tutorials/inputs/input_examples).
     public override void _UnhandledInput(InputEvent @event)
     {
+        if (@event is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left or MouseButton.Right })
+            DiagPressesSeen++;
+        if (@event is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelUp or MouseButton.WheelDown })
+            DiagWheelSeen++;
+
         if (_host is null)
             return;
 
@@ -156,11 +191,30 @@ public sealed partial class GlobeOrbitControls : Node
             case InputEventMouseButton mouse:
                 HandleMouseButton(mouse);
                 break;
-            case InputEventMouseMotion motion when _dragging:
-                HandleDrag(motion);
-                break;
             case InputEventMagnifyGesture pinch:
                 HandlePinch(pinch);
+                break;
+        }
+    }
+
+    public override void _Input(InputEvent @event)
+    {
+        if (@event is InputEventMouseMotion)
+            DiagMotionsSeen++;
+        if (@event is InputEventMouseButton { Pressed: false, ButtonIndex: MouseButton.Left or MouseButton.Right })
+            DiagReleasesSeen++;
+
+        if (_host is null)
+            return;
+
+        switch (@event)
+        {
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left or MouseButton.Right, Pressed: false }:
+                _dragging = false;
+                break;
+            case InputEventMouseMotion motion when _dragging:
+                DiagDragMotionsApplied++;
+                HandleDrag(motion);
                 break;
         }
     }
@@ -170,8 +224,11 @@ public sealed partial class GlobeOrbitControls : Node
         switch (mouse.ButtonIndex)
         {
             case MouseButton.Left or MouseButton.Right:
-                _dragging = mouse.Pressed;
-                if (_dragging) _lastMousePos = mouse.Position;
+                if (mouse.Pressed)
+                {
+                    _dragging = true;
+                    _lastMousePos = mouse.Position;
+                }
                 break;
             case MouseButton.WheelUp:
                 if (mouse.Pressed) ZoomByFactor(_wheelZoomFactor);

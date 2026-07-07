@@ -10,7 +10,12 @@ public static class UiComposition
     public static void ComposeUi(HostCompositionContext ctx, Godot.SceneTree tree)
     {
         var log = ctx.LoggerFactory.CreateLogger("HostComposition.Ui");
-        var uiRoot = new Godot.Control { Name = "UiRoot" };
+        // UiRoot is a pure mount container — it must be transparent to input. A Control's default
+        // MouseFilter is Stop, and a full-rect Stop control consumes every mouse press in the
+        // window (globe drag-to-rotate was dead app-wide; found via the camera.debug control
+        // probe, 2026-07-08). Ignore skips ONLY this control in hit-testing; the mounted child
+        // panels (ledger, graph, timeline) keep their own filters and stay interactive.
+        var uiRoot = new Godot.Control { Name = "UiRoot", MouseFilter = Godot.Control.MouseFilterEnum.Ignore };
         uiRoot.SetAnchorsPreset(Godot.Control.LayoutPreset.FullRect);
         uiRoot.SetOffsetsPreset(Godot.Control.LayoutPreset.FullRect);
         tree.Root.CallDeferred("add_child", uiRoot);

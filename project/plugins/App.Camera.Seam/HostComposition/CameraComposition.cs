@@ -110,7 +110,24 @@ public static class CameraComposition
                 async (payloadJson, cancellationToken) =>
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    return await rig.DebugSnapshotAsync().ConfigureAwait(false);
+                    Vector2? probe = null;
+                    if (!string.IsNullOrWhiteSpace(payloadJson))
+                    {
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(payloadJson);
+                            if (doc.RootElement.TryGetProperty("probeX", out var px)
+                                && doc.RootElement.TryGetProperty("probeY", out var py))
+                            {
+                                probe = new Vector2((float)px.GetDouble(), (float)py.GetDouble());
+                            }
+                        }
+                        catch (JsonException)
+                        {
+                            // Malformed payload: fall through to the probe-less snapshot.
+                        }
+                    }
+                    return await rig.DebugSnapshotAsync(probePoint: probe).ConfigureAwait(false);
                 });
         }
 
