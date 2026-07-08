@@ -109,9 +109,16 @@ subordinate to this list where they conflict.
    hash/version compatibility + fail-hard boot validation. No version contract exists today.
 
 Two gating experiments before implementation starts (both small, windowed):
-- **E1 (script registration):** tiny Godot.NET.Sdk assembly with one Node script class → strip from
-  publish output → deliver via common.pck → Default-load before scene instantiation → verify
-  `.tscn` script binding + `GetScript()` in the EXPORTED app. **STILL OPEN.**
+- **E1 (script registration): RAN 2026-07-08 — FAIL (both halves), verdict binding.**
+  Godot-facing script assemblies are EXCLUDED from common.pck. Detail that matters: the exported
+  experiment hosts crashed (SIGSEGV, CoreCLR `MethodTable::RunClassInitEx`) whenever the
+  loader/reflection bootstrap code was present — before `_Ready`, before the pck was even touched
+  — while smoke controls ran clean. So E1 never reached the script-binding question; it instead
+  demonstrated the fresh-harness loader pattern itself is fragile in exported Godot 4.7 mono apps.
+  Consequences: (a) Godot script assemblies stay in the exe, definitively for this phase;
+  (b) the phase-2.5 pure-support loader MUST be built on fantasim's daily-proven extraction path
+  (`BundleExtractor` + explicit Default-ALC load), spiked inside the real app — not a greenfield
+  `Assembly.LoadFrom` harness. Report: session scratchpad `e1-experiment/E1-REPORT.md`.
 - **E2 (strip viability): RAN 2026-07-08 — lazy loading CONFIRMED.** `Arch.dll` stripped from a
   copy of the exported app: the app booted COMPLETELY (`Host._Ready` ran, plugin host built, all
   compositions, `composition activated.` logged) and failed only at FIRST USE —
