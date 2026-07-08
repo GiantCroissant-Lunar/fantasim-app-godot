@@ -59,6 +59,23 @@ launch; functional reload unaffected. Diagnose with the gcroot recipe (memory
 - Parity finding: old timeline staging silently under-shipped `UnifyMaths.Abstractions.dll`;
   deps-driven staging now ships it (accepted, verified safe).
 
+## Post-merge addendum — dual-copy audit (`5183681`, user-flagged)
+
+7 of the world bundle's 51 assemblies were ALSO in the resident host output (dual copies —
+latent type-identity splits). Deps-graph audit confirmed closure violations: shared `Arch` →
+Arch.LowLevel/Collections.Pooled/CommunityToolkit.HighPerformance/Microsoft.Extensions.ObjectPool;
+shared `Akka` → ObjectPool; shared `UnifyMaths` → UnifyMaths.Abstractions (carried privately by
+TWO bundles). All promoted to shared (+ Schedulers + UnifySerialization.MessagePack.Runtime, whose
+"bundle ships without it" csproj comment had been false since before phase 1); the stale
+ObjectPool collectible override dropped. World bundle 51→44. **`stage_bundle.py --check-dual`**
+now audits every bundle against the host output (wired into `bundle:stagetool:test`; exit 1 on
+new drift; allowlist carries exactly one known item — the timeline T3 dual copy that phase 2
+deletes). Windowed-gated after: clean boot, steady-state `old ALC collected for bundle world`.
+
+**Audit principle for phases 2+:** an assembly present in BOTH a bundle and the host output is
+always wrong — either promote it to the shared policy (if the host legitimately ships it) or
+find why the host output has it and cut that. `--check-dual` enforces this from now on.
+
 ## Next
 
 1. **Phase 2: Timeline T3 → timeline bundle** (deletes the Host rebind machinery; plan via
