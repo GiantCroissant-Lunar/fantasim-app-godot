@@ -17,6 +17,7 @@
        into a collectible presentation bundle later needs only the mount-protocol contracts and a
        manifest (alc-pin diagnosis report §4, P3-P5), not another file move. -->
   <ItemGroup>
+    <ProjectReference Include="..\..\contracts\App.Presentation\App.Presentation.csproj" />
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
     <ProjectReference Include="..\..\contracts\App.World.Rendering\App.World.Rendering.csproj" />
     <ProjectReference Include="..\..\contracts\App.Ui\App.Ui.csproj" />
