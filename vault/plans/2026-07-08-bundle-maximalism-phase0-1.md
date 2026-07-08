@@ -723,6 +723,14 @@ history) before proceeding. Repeat the same before/after check for `stage`, `ass
 `activity` (each currently stages exactly its one root DLL; the stager may ADD a `*.deps.json`
 sidecar — that is expected and acceptable, DLL sets must match).
 
+> **Gate outcome (2026-07-08):** stage/assist/activity/world parity EMPTY. `timeline` gained
+> `UnifyMaths.Abstractions.dll` — verified as a CORRECT addition, not a filter bug: the assembly
+> is in timeline's real deps closure, is NOT policy-shared (only `UnifyMaths` +
+> `UnifyMaths.Numerics` are exact-shared; no shared contract references `.Abstractions`), and the
+> world bundle already ships it as collectible cargo, windowed-verified. The old hand-copy task
+> was silently under-staging — precisely the drift class this tool eliminates. Delta accepted;
+> timeline hot-reload re-proven in Task 6.
+
 - [ ] **Step 7: Rewire the Taskfile**
 
 Replace each `bundle:<id>:build` task body. `bundle:stage:build` becomes:

@@ -1,25 +1,40 @@
 {
-  "comment": "Registry of collectible bundles. Single source of truth for (a) the SharedAssemblyPolicy excludedExactMatches (assembly name = pluginAssembly minus .dll) so the bundle loads into its own collectible ALC instead of the shared parent, and (b) the load-time lint in BundleHost. Every bundle under project/bundles/<id>/ with a pluginAssembly MUST have an entry here.",
+  "comment": "Registry of collectible bundles. Single source of truth for (a) the SharedAssemblyPolicy excludedExactMatches (assembly name = pluginAssembly minus .dll) so the bundle loads into its own collectible ALC instead of the shared parent, (b) the load-time lint in BundleHost, and (c) the generic stager tools/bundles/stage_bundle.py ('projects' entries: root csprojs + their build output dirs). Every bundle under project/bundles/<id>/ with a pluginAssembly MUST have an entry here.",
   "bundles": [
     {
       "bundleId": "stage",
-      "pluginAssembly": "FantaSim.App.Stage.dll"
+      "pluginAssembly": "FantaSim.App.Stage.dll",
+      "projects": [
+        { "csproj": "project/plugins/App.Stage/App.Stage.csproj", "output": "project/plugins/App.Stage/bin/Debug/net8.0", "assembly": "FantaSim.App.Stage" }
+      ]
     },
     {
       "bundleId": "assist",
-      "pluginAssembly": "FantaSim.App.Assist.dll"
+      "pluginAssembly": "FantaSim.App.Assist.dll",
+      "projects": [
+        { "csproj": "project/plugins/App.Assist/App.Assist.csproj", "output": "project/plugins/App.Assist/bin/Debug/net8.0", "assembly": "FantaSim.App.Assist" }
+      ]
     },
     {
       "bundleId": "timeline",
-      "pluginAssembly": "FantaSim.App.Timeline.dll"
+      "pluginAssembly": "FantaSim.App.Timeline.dll",
+      "projects": [
+        { "csproj": "project/plugins/App.Timeline/App.Timeline.csproj", "output": "project/plugins/App.Timeline/.godot/mono/temp/bin/Debug", "assembly": "FantaSim.App.Timeline" }
+      ]
     },
     {
       "bundleId": "activity",
-      "pluginAssembly": "FantaSim.App.Ui.Activity.dll"
+      "pluginAssembly": "FantaSim.App.Ui.Activity.dll",
+      "projects": [
+        { "csproj": "project/plugins/App.Ui.Activity/App.Ui.Activity.csproj", "output": "project/plugins/App.Ui.Activity/bin/Debug/net8.0", "assembly": "FantaSim.App.Ui.Activity" }
+      ]
     },
     {
       "bundleId": "world",
       "pluginAssembly": "FantaSim.App.World.dll",
+      "projects": [
+        { "csproj": "project/plugins/App.World/App.World.csproj", "output": "project/plugins/App.World/bin/Debug/net8.0", "assembly": "FantaSim.App.World" }
+      ],
       "assemblyNames": [
         "FantaSim.App.World",
         "FantaSim.App.World.FieldView",
