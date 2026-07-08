@@ -44,7 +44,6 @@
         "ConcurrentCollections",
         "Dahomey.Cbor",
         "Microsoft.Extensions.Http",
-        "Microsoft.Extensions.ObjectPool",
         "Microsoft.IO.RecyclableMemoryStream",
         "Microsoft.Spatial",
         "Semver",

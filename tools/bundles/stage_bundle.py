@@ -122,15 +122,64 @@ def stage(bundle_id, registry, policy, build=True):
     print(f"[stage_bundle] {bundle_id}: staged {len(staged)} assemblies into {dest}")
 
 
+HOST_OUTPUT_DIR = REPO_ROOT / "project/hosts/complete-app/.godot/mono/temp/bin/Debug"
+
+# Known dual copies with an owning plan — each entry MUST cite the work that removes it.
+# Anything NOT in this list failing --check-dual is new drift and must be fixed, not added here.
+KNOWN_DUAL_COPIES = {
+    # Bundle-maximalism phase 2 (Timeline T3 -> timeline bundle) removes the host's
+    # ProjectReference to plugins/App.Timeline; until then the resident T3 copy and the
+    # bundle's plugin copy coexist, talking only through shared contracts.
+    # See vault/specs/2026-07-08-bundle-oriented-maximalism.md phase table.
+    ("timeline", "FantaSim.App.Timeline.dll"),
+}
+
+
+def find_dual_copies(bundle_dir, host_assembly_names):
+    """DLLs staged in a bundle that ALSO exist in the resident host output.
+
+    A dual copy is the MessagePack-class type-identity trap: the resident side binds the
+    resident copy while the bundle's ALC loads its private one, and any type crossing the
+    boundary splits (2026-07-08 audit: 7 of 51 world-bundle assemblies were dual copies)."""
+    if not bundle_dir.is_dir():
+        return []
+    return sorted(f.name for f in bundle_dir.glob("*.dll") if f.name in host_assembly_names)
+
+
+def check_dual(registry):
+    if not HOST_OUTPUT_DIR.is_dir():
+        print(f"[stage_bundle] --check-dual skipped: host output not built ({HOST_OUTPUT_DIR})")
+        return False
+    host_names = {f.name for f in HOST_OUTPUT_DIR.glob("*.dll")}
+    violations = False
+    for entry in registry["bundles"]:
+        bundle_id = entry["bundleId"]
+        dual = [d for d in find_dual_copies(BUNDLES_DIR / bundle_id, host_names)
+                if (bundle_id, d) not in KNOWN_DUAL_COPIES]
+        if dual:
+            violations = True
+            print(f"[stage_bundle] DUAL COPIES in bundle '{entry['bundleId']}' "
+                  f"(also in resident host output — promote to shared-assembly-policy.json "
+                  f"or drop the collectible override): {', '.join(dual)}")
+    if not violations:
+        print("[stage_bundle] --check-dual: no dual copies; bundle/resident split is clean")
+    return violations
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("bundles", nargs="*", help="bundle ids to stage")
     parser.add_argument("--all", action="store_true", help="stage every bundle with a 'projects' entry")
     parser.add_argument("--no-build", action="store_true", help="skip dotnet build of root projects")
+    parser.add_argument("--check-dual", action="store_true",
+                        help="audit staged bundles for assemblies duplicated in the resident host output; exit 1 on findings")
     args = parser.parse_args(argv)
 
     registry = load_json(REGISTRY_PATH)
     policy = load_json(POLICY_PATH)
+
+    if args.check_dual and not args.bundles and not args.all:
+        return 1 if check_dual(registry) else 0
 
     ids = args.bundles
     if args.all:
@@ -140,6 +189,9 @@ def main(argv=None):
 
     for bundle_id in ids:
         stage(bundle_id, registry, policy, build=not args.no_build)
+
+    if args.check_dual:
+        return 1 if check_dual(registry) else 0
 
 
 if __name__ == "__main__":

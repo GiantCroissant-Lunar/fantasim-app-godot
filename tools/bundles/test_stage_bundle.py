@@ -44,6 +44,21 @@ class DepsWalkTests(unittest.TestCase):
         self.assertEqual(assets, [("SurrealDb.Net/0.6.0", "lib/net8.0/SurrealDb.Net.dll")])
 
 
+class DualCopyTests(unittest.TestCase):
+    def test_reports_only_dlls_present_on_both_sides(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = Path(tmp) / "world"
+            bundle.mkdir()
+            (bundle / "OnlyBundle.dll").write_bytes(b"x")
+            (bundle / "Shared.dll").write_bytes(b"x")
+            (bundle / "manifest.json").write_text("{}")
+            host_names = {"Shared.dll", "OnlyHost.dll"}
+            self.assertEqual(stage_bundle.find_dual_copies(bundle, host_names), ["Shared.dll"])
+
+    def test_missing_bundle_dir_is_empty(self):
+        self.assertEqual(stage_bundle.find_dual_copies(Path("/nonexistent-xyz"), {"A.dll"}), [])
+
+
 class ResolveAssetTests(unittest.TestCase):
     def test_prefers_build_output_then_nuget(self):
         with tempfile.TemporaryDirectory() as tmp:

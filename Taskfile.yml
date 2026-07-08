@@ -114,9 +114,10 @@ tasks:
       - ln -sfn {{.ARTIFACTS_VERSION}} {{.BUILD_DIR}}/_artifacts/latest  # -f replace, -n don't deref existing symlink
 
   bundle:stagetool:test:
-    desc: Run the generic bundle stager's unit tests
+    desc: Run the generic bundle stager's unit tests + the dual-copy audit
     cmds:
       - python3 -m unittest discover -s tools/bundles -p "test_*.py"
+      - python3 tools/bundles/stage_bundle.py --check-dual
 
   bundle:stage:build:
     desc: Build + stage the App.Stage tier assembly into the bundle source dir (generic stager)
