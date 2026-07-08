@@ -78,8 +78,8 @@ bundles/
 
 | Phase | Move | Note |
 |---|---|---|
-| 0 | Policy inversion + generic `bundle:stage` tooling | makes every later phase cheaper/safer |
-| 1 | Presentation → world bundle | serves mantle-look directly; collapses the shared Cartography/App.World.Rendering closure created 2026-07-03 (binder-resident fix reverses cleanly) |
+| 0 | ✅ SHIPPED 2026-07-08 (`ff9a872`, `5d78a2c`) — policy externalized to `shared-assembly-policy.json` + generic stager `tools/bundles/stage_bundle.py` | polarity FLIP still pending (post-phase-2 gated edit to the json) |
+| 1 | ✅ SHIPPED 2026-07-08 (`f633d84`…`9714ed7`, windowed-gated: `old ALC collected for bundle world`) — Presentation ships inside world.pck | closure shrink still pending (post-flip); residual: first-reload-after-boot ALC pin (chip filed); see handover/2026-07-08-bundle-maximalism-phase0-1-handover.md |
 | 2 | Timeline T3 → timeline bundle | deletes Host.cs:121–205 rebind machinery + the dual-copy smell (host ProjectReference AND bundle-excluded assembly) |
 | — | **frontier resumes (D8b, D5/D7b)**; phases below interleave | |
 | 3 | NodeGraph + Ui.NodeGraph + evict `ShowIiiGraph` from Host → ui bundle | Host demo is a ~200-line resident consumer; must move anyway |
