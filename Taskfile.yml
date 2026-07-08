@@ -92,10 +92,15 @@ tasks:
       GITVERSION_MAJORMINORPATCH: '{{.GITVERSION_MAJORMINORPATCH}}'
 
   build:godot:desktop:
-    desc: Export the Godot app for desktop platforms only via UnifyBuild
+    desc: Export the Godot app for desktop platforms only via UnifyBuild (strips + provisions the common resident layer)
     deps: [restore, build, artifacts:latest]
     cmds:
       - '{{.UNIFY}} BuildGodotDesktop'
+      # Phase 2.5 (S3): a produced app is ALWAYS stripped of common assemblies and provisioned
+      # with common.pck + the expected catalog. Deviation D3: lives here (not IUnifyGodot) until
+      # the strip contract is proven; upstreaming is queued.
+      - task: bundle:common
+      - python3 tools/bundles/strip_common_from_export.py --app {{.BUILD_DIR}}/_artifacts/{{.ARTIFACTS_VERSION}}/godot/osx/{{.ASSEMBLY}}.app --manifest project/bundles/common/manifest.json --assembly {{.ASSEMBLY}} --common-pck {{.BUILD_DIR}}/_artifacts/{{.ARTIFACTS_VERSION}}/godot/bundles/common.pck
     env:
       GITVERSION_MAJORMINORPATCH: '{{.GITVERSION_MAJORMINORPATCH}}'
 

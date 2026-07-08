@@ -102,8 +102,10 @@ public static class CommonResidentLayerBootstrap
             }
             else
             {
-                // S1/S2 manual mode. Task 11 (S4) makes this FATAL.
-                Log("WARNING: loading common.pck without an expectation file (pre-S4 manual mode).");
+                // S4: a common.pck with no expectation file is a half-provisioned install -
+                // the strip tool always writes both. Editor/unstripped runs return earlier
+                // (neither file exists), so this is unambiguous corruption.
+                throw Fail($"common.pck present but {expectedPath} missing - half-provisioned install; re-run the export (build:godot:desktop strips + provisions both)");
             }
 
             // NO eager preload — serve on demand through the Resolving hook. Preloading via
