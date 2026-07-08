@@ -20,6 +20,15 @@ disappears.
    registration-gated pending pattern (phase-1 proven). No new resident rendezvous contract.
 4. Host's `BundleReloadHook` is DELETED entirely in Task 5 (world rebind flows through
    `RuntimeChanged`; verified in the gate via a remote-commanded reload).
+5. **(Amended after dispatch round 1, 2026-07-08.)** The "transitional double-compose" invariant
+   is WITHDRAWN — it is unsatisfiable once the seam→T3 reference is cut (the seam-resident
+   `TimelineComposition` can no longer construct the T3 service; round 1 "solved" this by
+   inverting the dependency, a tier violation). Corrected design: `TimelineFace`'s resident
+   statics are replaced by a registry-mediated `ITimelineFaceContext` contract (T1) that the
+   plugin RegisterOwns and the face resolves at bind time; `DeferredTimelineFace` (pure C#)
+   moves into the plugin; resident `TimelineComposition` and the host machinery are deleted on
+   the SAME branch (Tasks 2–5 collapse; the branch merges atomically). The statics were the pin
+   surface — this design removes it rather than managing it.
 
 **Transitional invariant:** until Task 5, the host STILL boots-composes timeline; the plugin's
 composition replaces it (ComposeTimeline-style replace-by-unregister + command Register
