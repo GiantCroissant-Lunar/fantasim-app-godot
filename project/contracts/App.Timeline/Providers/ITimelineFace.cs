@@ -13,6 +13,13 @@ namespace FantaSim.App.Timeline.Providers;
 public interface ITimelineFace
 {
     /// <summary>
+    /// Re-resolve the registry-mediated resident context. Used when the world controller changes
+    /// without re-instantiating the timeline scene.
+    /// </summary>
+    [CrossDelegate]
+    void RebindResidentContext();
+
+    /// <summary>
     /// Start the animation playback (transitions the AnimationTree to the "playing" state).
     /// Called on the main thread by the T3 (which may receive the request off-thread).
     /// </summary>

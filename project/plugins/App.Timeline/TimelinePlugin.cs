@@ -5,11 +5,12 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
+using FantaSim.App.Command;
 using FantaSim.App.Resource;
 using FantaSim.App.SceneFlow;
 using FantaSim.App.Timeline.Providers;
+using FantaSim.App.World;
 using FantaSim.App.World.Composition;
-using Godot;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PluginArchi.Extensibility.Abstractions;
@@ -25,26 +26,28 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
     internal const string SelectLayerCommandId = "timeline.select_layer";
     internal const string ToggleLayerCommandId = "timeline.toggle_layer";
 
-    private readonly ITimelineResidentBridge _residentBridge;
+    private readonly Func<ITimelineFaceProxy> _faceProxyFactory;
     private IDisposable? _activatorRegistration;
     private IDisposable? _timelineRegistration;
+    private IDisposable? _faceContextRegistration;
     private IRegistry? _registry;
     private ILoggerFactory? _loggerFactory;
     private ILogger? _log;
     private ResourceService? _resource;
     private Services.Service? _timelineService;
+    private ITimelineFaceProxy? _faceProxy;
     private Action<long>? _tickChangedHandler;
     private ITimelineController? _subscribedController;
     private bool _worldRebindPending;
 
     public TimelinePlugin()
-        : this(new TimelineResidentBridge())
+        : this(static () => new DeferredTimelineFace())
     {
     }
 
-    internal TimelinePlugin(ITimelineResidentBridge residentBridge)
+    internal TimelinePlugin(Func<ITimelineFaceProxy> faceProxyFactory)
     {
-        _residentBridge = residentBridge ?? throw new ArgumentNullException(nameof(residentBridge));
+        _faceProxyFactory = faceProxyFactory ?? throw new ArgumentNullException(nameof(faceProxyFactory));
     }
 
     public ValueTask InitializeAsync(IPluginContext context, CancellationToken ct = default)
@@ -81,8 +84,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
 
         UnsubscribeResourceEvents();
         UnregisterTimelineCommands();
-        SeverTimelineService();
-        _residentBridge.ClearAll();
+        SeverTimelineService(unbindProxy: true);
 
         _activatorRegistration?.Dispose();
         _activatorRegistration = null;
@@ -103,15 +105,15 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
         var controller = _registry.TryGet<ITimelineController>();
         if (controller is null)
         {
-            SeverTimelineService();
-            _residentBridge.ClearWorldBinding();
+            SeverTimelineService(unbindProxy: false);
             if (markPendingWhenMissing)
                 _worldRebindPending = true;
             _log?.LogWarning("TimelinePlugin: no ITimelineController registered; timeline service inert pending world registration.");
             return false;
         }
 
-        SeverTimelineService();
+        var proxy = _faceProxy ??= _faceProxyFactory();
+        SeverTimelineService(unbindProxy: false);
 
         foreach (var existing in _registry.GetAll<IService>())
         {
@@ -120,10 +122,25 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
         }
         _registry.UnregisterAll<IService>();
 
-        var deferredFace = _residentBridge.CreateDeferredFace();
-        _residentBridge.BindResidentContext(controller, deferredFace, _registry, _loggerFactory);
+        var faceContext = new TimelineFaceContext(
+            controller,
+            proxy,
+            _registry.TryGet<IClient>(),
+            tick => _registry.TryGet<FantaSim.App.World.IService>()?.GetPlanetPresentationAsync(tick).GenerationGraphFamily,
+            request => _registry.TryGet<FantaSim.App.World.IService>()?.GetLayerFilmstripPreview(request),
+            _loggerFactory,
+            ticksPerSecond: 5_000_000.0);
+        _faceContextRegistration = _registry.RegisterOwned<ITimelineFaceContext>(
+            faceContext,
+            new ServiceRegistration
+            {
+                OwnerId = "timeline.plugin",
+                Priority = 100,
+                Tags = new[] { "timeline", "timeline-face-context" },
+                Description = "Timeline face resident context (timeline bundle)"
+            });
 
-        var timelineService = new Services.Service(deferredFace, controller, _loggerFactory);
+        var timelineService = new Services.Service(proxy, controller, _loggerFactory);
         _tickChangedHandler = tick => timelineService.AcceptTickFromFace(tick);
         _subscribedController = controller;
         controller.TickChanged += _tickChangedHandler;
@@ -146,7 +163,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
         return true;
     }
 
-    private void SeverTimelineService()
+    private void SeverTimelineService(bool unbindProxy)
     {
         UnregisterTimelineCommands();
 
@@ -160,6 +177,16 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
 
         _timelineService?.Dispose();
         _timelineService = null;
+
+        _faceContextRegistration?.Dispose();
+        _faceContextRegistration = null;
+
+        _faceProxy?.RebindResidentContext();
+        if (unbindProxy)
+        {
+            _faceProxy?.UnbindCrossTarget();
+            _faceProxy = null;
+        }
     }
 
     private void RegisterTimelineCommands(ITimelineController controller, Services.Service timelineService)
@@ -260,8 +287,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
         if (!string.Equals(args.BundleId, "world", StringComparison.Ordinal))
             return;
 
-        SeverTimelineService();
-        _residentBridge.ClearWorldBinding();
+        SeverTimelineService(unbindProxy: false);
         _worldRebindPending = true;
         _log?.LogInformation("TimelinePlugin: world runtime changing; timeline binding severed.");
     }
@@ -282,8 +308,8 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
 
         if (_timelineService is not null && _subscribedController is not null)
         {
-            _residentBridge
-                .RebindSceneFaceAndPushAsync(_registry, _timelineService, _subscribedController, CancellationToken.None)
+            _faceProxy?.RebindResidentContext();
+            _timelineService.SeekAsync(_subscribedController.Tick, CancellationToken.None)
                 .GetAwaiter()
                 .GetResult();
         }
@@ -352,101 +378,42 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
     }
 }
 
-internal interface ITimelineResidentBridge
+internal sealed class TimelineFaceContext : ITimelineFaceContext, IDisposable
 {
-    ITimelineFace CreateDeferredFace();
+    private bool _disposed;
 
-    void BindResidentContext(
+    public TimelineFaceContext(
         ITimelineController controller,
-        ITimelineFace proxy,
-        IRegistry registry,
-        ILoggerFactory loggerFactory);
-
-    void ClearWorldBinding();
-
-    void ClearAll();
-
-    Task RebindSceneFaceAndPushAsync(
-        IRegistry registry,
-        IService service,
-        ITimelineController controller,
-        CancellationToken cancellationToken);
-}
-
-internal sealed class TimelineResidentBridge : ITimelineResidentBridge
-{
-    public ITimelineFace CreateDeferredFace()
-        => new Seam.DeferredTimelineFace();
-
-    public void BindResidentContext(
-        ITimelineController controller,
-        ITimelineFace proxy,
-        IRegistry registry,
-        ILoggerFactory loggerFactory)
+        ITimelineFaceProxy proxy,
+        object? commandClient,
+        Func<long, WorldGenerationGraphFamilyDocument?> generationGraphFamilyProvider,
+        Func<LayerFilmstripPreviewRequest, LayerFilmstripPreviewMap?> filmstripPreviewProvider,
+        ILoggerFactory loggerFactory,
+        double ticksPerSecond)
     {
-        Seam.TimelineFace.ResidentController = controller;
-        Seam.TimelineFace.ResidentProxy = proxy as Seam.DeferredTimelineFace;
-        Seam.TimelineFace.ResidentLoggerFactory = loggerFactory;
-        Seam.TimelineFace.ResidentCommandClient = registry.TryGet<FantaSim.App.Command.IClient>();
-        Seam.TimelineFace.ResidentGenerationGraphFamilyProvider =
-            tick => registry.TryGet<FantaSim.App.World.IService>()?.GetPlanetPresentationAsync(tick).GenerationGraphFamily;
-        Seam.TimelineFace.ResidentFilmstripPreviewProvider =
-            request => registry.TryGet<FantaSim.App.World.IService>()?.GetLayerFilmstripPreview(request);
-        Seam.TimelineFace.ResidentTicksPerSecond = 5_000_000.0;
+        Controller = controller ?? throw new ArgumentNullException(nameof(controller));
+        Proxy = proxy ?? throw new ArgumentNullException(nameof(proxy));
+        CommandClient = commandClient;
+        GenerationGraphFamilyProvider = generationGraphFamilyProvider ?? throw new ArgumentNullException(nameof(generationGraphFamilyProvider));
+        FilmstripPreviewProvider = filmstripPreviewProvider ?? throw new ArgumentNullException(nameof(filmstripPreviewProvider));
+        LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+        TicksPerSecond = ticksPerSecond;
     }
 
-    public void ClearWorldBinding()
-    {
-        Seam.TimelineFace.ResidentController?.UnregisterPlayback();
-        Seam.TimelineFace.ResidentController = null;
-        Seam.TimelineFace.ResidentGenerationGraphFamilyProvider = null;
-        Seam.TimelineFace.ResidentFilmstripPreviewProvider = null;
-    }
+    public ITimelineController Controller { get; }
+    public ITimelineFaceProxy Proxy { get; }
+    public object? CommandClient { get; }
+    public Func<long, WorldGenerationGraphFamilyDocument?> GenerationGraphFamilyProvider { get; }
+    public Func<LayerFilmstripPreviewRequest, LayerFilmstripPreviewMap?> FilmstripPreviewProvider { get; }
+    public ILoggerFactory LoggerFactory { get; }
+    public double TicksPerSecond { get; }
 
-    public void ClearAll()
+    public void Dispose()
     {
-        ClearWorldBinding();
-        Seam.TimelineFace.ResidentProxy?.UnbindCrossTarget();
-        Seam.TimelineFace.ResidentProxy = null;
-        Seam.TimelineFace.ResidentLoggerFactory = null;
-        Seam.TimelineFace.ResidentCommandClient = null;
-    }
-
-    public async Task RebindSceneFaceAndPushAsync(
-        IRegistry registry,
-        IService service,
-        ITimelineController controller,
-        CancellationToken cancellationToken)
-    {
-        var sceneRegistry = registry.TryGet<FantaSim.App.Resource.Bundle.IBundleSceneRegistry>();
-        if (sceneRegistry?.GetSceneOrNull("timeline") is not Seam.TimelineFace face)
-        {
-            await service.SeekAsync(controller.Tick, cancellationToken).ConfigureAwait(false);
+        if (_disposed)
             return;
-        }
 
-        if (OS.GetThreadCallerId() == OS.GetMainThreadId())
-        {
-            face.RebindResidentContext();
-            await service.SeekAsync(controller.Tick, cancellationToken).ConfigureAwait(false);
-            return;
-        }
-
-        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        Callable.From(() =>
-        {
-            try
-            {
-                face.RebindResidentContext();
-                service.SeekAsync(controller.Tick, cancellationToken).GetAwaiter().GetResult();
-                done.TrySetResult();
-            }
-            catch (Exception ex)
-            {
-                done.TrySetException(ex);
-            }
-        }).CallDeferred();
-
-        await done.Task.ConfigureAwait(false);
+        _disposed = true;
+        Controller.UnregisterPlayback();
     }
 }

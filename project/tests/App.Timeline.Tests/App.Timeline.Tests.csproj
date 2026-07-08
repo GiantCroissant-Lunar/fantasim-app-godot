@@ -13,11 +13,11 @@
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
     <PackageReference Include="GodotSharp" Version="4.7.0" />
+    <PackageReference Include="GiantCroissant.ServiceArchi.Core" Version="0.1.1" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\contracts\App.Timeline\App.Timeline.csproj" />
     <ProjectReference Include="..\..\plugins\App.Timeline\App.Timeline.csproj" />
-    <ProjectReference Include="..\..\plugins\App.World.Composition\App.World.Composition.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\..\plugins\App.Timeline.Seam\TimelineScrubMapper.cs" Link="TimelineScrubMapper.cs" />

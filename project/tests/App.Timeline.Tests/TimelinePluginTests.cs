@@ -24,31 +24,35 @@ public sealed class TimelinePluginTests
     {
         var registry = NewRegistry();
         var controller = new FakeTimelineController();
-        var bridge = new FakeResidentBridge();
+        var proxy = new FakeFaceProxy();
         registry.Register<ITimelineController>(controller);
 
-        var plugin = new TimelinePlugin(bridge);
+        var plugin = new TimelinePlugin(() => proxy);
         await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
 
         var service = registry.TryGet<FantaSim.App.Timeline.IService>();
+        var context = registry.TryGet<ITimelineFaceContext>();
         Assert.NotNull(service);
-        Assert.Same(controller, bridge.BoundController);
-        Assert.Equal(1, bridge.CreatedFaces);
+        Assert.NotNull(context);
+        Assert.Same(controller, context.Controller);
+        Assert.Same(proxy, context.Proxy);
     }
 
     [Fact]
-    public async Task ShutdownUnregistersTimelineServiceAndClearsBridge()
+    public async Task ShutdownUnregistersTimelineServiceAndClearsFaceContext()
     {
         var registry = NewRegistry();
         registry.Register<ITimelineController>(new FakeTimelineController());
-        var bridge = new FakeResidentBridge();
+        var proxy = new FakeFaceProxy();
 
-        var plugin = new TimelinePlugin(bridge);
+        var plugin = new TimelinePlugin(() => proxy);
         await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
         await plugin.ShutdownAsync();
 
         Assert.Null(registry.TryGet<FantaSim.App.Timeline.IService>());
-        Assert.Equal(1, bridge.ClearAllCalls);
+        Assert.Null(registry.TryGet<ITimelineFaceContext>());
+        Assert.Equal(1, proxy.RebindResidentContextCalls);
+        Assert.Equal(1, proxy.UnbindCrossTargetCalls);
     }
 
     [Fact]
@@ -59,7 +63,7 @@ public sealed class TimelinePluginTests
         registry.Register<FantaSim.App.Command.IService>(commands);
         registry.Register<ITimelineController>(new FakeTimelineController());
 
-        var plugin = new TimelinePlugin(new FakeResidentBridge());
+        var plugin = new TimelinePlugin(() => new FakeFaceProxy());
         await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
         Assert.Contains(commands.Commands, command => command.Id == TimelinePlugin.SeekCommandId);
         Assert.Contains(commands.Commands, command => command.Id == TimelinePlugin.SelectLayerCommandId);
@@ -75,40 +79,43 @@ public sealed class TimelinePluginTests
     {
         var registry = NewRegistry();
         var resource = new FakeResourceService { WorldLoaded = true };
-        var bridge = new FakeResidentBridge();
+        var proxy = new FakeFaceProxy();
         registry.Register<FantaSim.App.Resource.IService>(resource);
 
-        var plugin = new TimelinePlugin(bridge);
+        var plugin = new TimelinePlugin(() => proxy);
         await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
 
         Assert.False(plugin.TryConsumePendingWorldRebind());
-        Assert.Equal(0, bridge.RebindCalls);
+        Assert.Equal(0, proxy.RebindResidentContextCalls);
 
         registry.Register<ITimelineController>(new FakeTimelineController());
 
         Assert.True(plugin.TryConsumePendingWorldRebind());
-        Assert.Equal(1, bridge.RebindCalls);
+        Assert.NotNull(registry.TryGet<ITimelineFaceContext>());
+        Assert.Equal(1, proxy.RebindResidentContextCalls);
     }
 
     [Fact]
-    public async Task WorldRuntimeChangingSeversResidentControllerBridge()
+    public async Task WorldRuntimeChangingSeversFaceContextButKeepsProxyForRebind()
     {
         var registry = NewRegistry();
         var resource = new FakeResourceService { WorldLoaded = true };
         var controller = new FakeTimelineController();
-        var bridge = new FakeResidentBridge();
+        var proxy = new FakeFaceProxy();
         registry.Register<FantaSim.App.Resource.IService>(resource);
         registry.Register<ITimelineController>(controller);
 
-        var plugin = new TimelinePlugin(bridge);
+        var plugin = new TimelinePlugin(() => proxy);
         await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
-        Assert.Same(controller, bridge.BoundController);
+        Assert.Same(controller, registry.TryGet<ITimelineFaceContext>()?.Controller);
 
         resource.RaiseRuntimeChanging("world", ResourceRuntimeOperation.Reload);
 
-        Assert.Null(bridge.BoundController);
-        Assert.Equal(1, bridge.ClearWorldBindingCalls);
+        Assert.Null(registry.TryGet<ITimelineFaceContext>());
         Assert.Null(registry.TryGet<FantaSim.App.Timeline.IService>());
+        Assert.Equal(1, controller.UnregisterPlaybackCalls);
+        Assert.Equal(1, proxy.RebindResidentContextCalls);
+        Assert.Equal(0, proxy.UnbindCrossTargetCalls);
     }
 
     private static IRegistry NewRegistry() => new ServiceRegistry();
@@ -125,49 +132,36 @@ public sealed class TimelinePluginTests
         public IServiceProvider Services { get; }
     }
 
-    private sealed class FakeResidentBridge : ITimelineResidentBridge
+    private sealed class FakeFaceProxy : ITimelineFaceProxy
     {
-        public int CreatedFaces { get; private set; }
-        public int ClearAllCalls { get; private set; }
-        public int ClearWorldBindingCalls { get; private set; }
-        public int RebindCalls { get; private set; }
-        public ITimelineController? BoundController { get; private set; }
+        public int RebindResidentContextCalls { get; private set; }
+        public int UnbindCrossTargetCalls { get; private set; }
+        public bool IsCrossBound { get; private set; }
+        public ITimelineFace? Target { get; private set; }
 
-        public ITimelineFace CreateDeferredFace()
+        public void RebindResidentContext()
         {
-            CreatedFaces++;
-            return new FakeFace();
+            RebindResidentContextCalls++;
+            Target?.RebindResidentContext();
         }
 
-        public void BindResidentContext(
-            ITimelineController controller,
-            ITimelineFace proxy,
-            IRegistry registry,
-            Microsoft.Extensions.Logging.ILoggerFactory loggerFactory)
-            => BoundController = controller;
-
-        public void ClearWorldBinding()
+        public void BindCrossTarget(ITimelineFace target)
         {
-            ClearWorldBindingCalls++;
-            BoundController?.UnregisterPlayback();
-            BoundController = null;
+            Target = target;
+            IsCrossBound = true;
         }
 
-        public void ClearAll()
+        public void UnbindCrossTarget()
         {
-            ClearWorldBinding();
-            ClearAllCalls++;
+            Target = null;
+            IsCrossBound = false;
+            UnbindCrossTargetCalls++;
         }
 
-        public Task RebindSceneFaceAndPushAsync(
-            IRegistry registry,
-            FantaSim.App.Timeline.IService service,
-            ITimelineController controller,
-            CancellationToken cancellationToken)
-        {
-            RebindCalls++;
-            return service.SeekAsync(controller.Tick, cancellationToken);
-        }
+        public void Play() => Target?.Play();
+        public void Pause() => Target?.Pause();
+        public void SeekTo(long tick) => Target?.SeekTo(tick);
+        public void ApplyView(TimelineViewSnapshot snapshot) => Target?.ApplyView(snapshot);
     }
 
     private sealed class FakeCommandService : FantaSim.App.Command.IService
@@ -222,14 +216,6 @@ public sealed class TimelinePluginTests
         }
     }
 
-    private sealed class FakeFace : ITimelineFace
-    {
-        public void Play() { }
-        public void Pause() { }
-        public void SeekTo(long tick) { }
-        public void ApplyView(TimelineViewSnapshot snapshot) { }
-    }
-
     private sealed class FakeTimelineController : ITimelineController
     {
         private long _tick;
@@ -239,10 +225,11 @@ public sealed class TimelinePluginTests
         public long Tick => _tick;
         public long MaxTick => 120_000_000;
         public bool IsPlaying { get; private set; }
+        public int UnregisterPlaybackCalls { get; private set; }
         public SphereRegimeSchedule GeosphereSchedule { get; } =
-            SphereRegimeScheduleDefaults.GeosphereFor(SphereRegimeScheduleDefaults.PlateOnsetTick);
+            TimelineTestSchedules.Geosphere();
         public SphereRegimeSchedule AtmosphereSchedule { get; } =
-            SphereRegimeScheduleDefaults.AtmosphereFor(SphereRegimeScheduleDefaults.PlateOnsetTick);
+            TimelineTestSchedules.Atmosphere();
         public TimelineLayerSelection? SelectedLayer => _selectedLayer;
         public IReadOnlyList<TimelineLayerSelection> ActiveLayers => _activeLayers;
         public event Action<long>? TickChanged;
@@ -279,6 +266,6 @@ public sealed class TimelinePluginTests
         }
 
         public void RegisterPlayback(Action onPlay, Action onPause, Action<long> onSeek, Func<bool> checkPlaying) { }
-        public void UnregisterPlayback() { }
+        public void UnregisterPlayback() => UnregisterPlaybackCalls++;
     }
 }

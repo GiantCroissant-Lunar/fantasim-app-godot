@@ -39,7 +39,6 @@ public partial class Host : Node
     private SceneTierPckWatcher? _sceneTierPckWatcher;
     private IDisposable? _worldBundleWatch;
     private bool _ecsWorldReady;
-    private bool _timelineReloadPending;
     private bool _worldReloadPending;
 
     public override void _Ready()
@@ -68,8 +67,8 @@ public partial class Host : Node
         SceneFlowComposition.ComposeSceneFlow(ctx);
         (_ecs, _ecsWorldReady) = EcsComposition.ComposeEcs(ctx);
         CommandComposition.ComposeCommand(ctx);
-        RegisterBundleReloadHook(ctx.Registry);
         RegisterPresentationOptions(ctx.Registry);
+        TimelineFace.SetResidentRegistry(ctx.Registry);
         IiiComposition.ComposeIii(ctx, tree, this);
         GpuComposition.ComposeGpu(ctx);
         GpuShaderComposition.ComposeGpuShader(ctx);
@@ -134,9 +133,6 @@ public partial class Host : Node
         if (e.Operation != FantaSim.App.Resource.ResourceRuntimeOperation.Reload)
             return;
 
-        if (string.Equals(e.BundleId, "timeline", StringComparison.OrdinalIgnoreCase))
-            _timelineReloadPending = true;
-
         if (string.Equals(e.BundleId, "world", StringComparison.OrdinalIgnoreCase))
         {
             // Sever every resident->bundle reference BEFORE the old ALC unloads: the render-ingress
@@ -174,19 +170,6 @@ public partial class Host : Node
             }
         }
 
-        if (_timelineReloadPending)
-        {
-            _timelineReloadPending = false;
-            if (resource?.IsLoaded("timeline") == true)
-                HandleTimelineBundleReloaded();
-        }
-    }
-
-    private void RegisterBundleReloadHook(IRegistry registry)
-    {
-        registry.Register<FantaSim.App.Command.IBundleReloadHook>(
-            new BundleReloadHook(this),
-            new ServiceRegistration { Tags = new[] { "timeline", "world", "hot-reload" }, Description = "Resident rebind after bundle reload (timeline, world)" });
     }
 
     private void RegisterPresentationOptions(IRegistry registry)
@@ -213,67 +196,9 @@ public partial class Host : Node
         Callable.From(() =>
         {
             BindPlanetPresentation(registry);
-            // The new bundle's binder re-registered ITimelineController; recompose the resident
-            // timeline service + face against the new controller instance.
-            HandleTimelineBundleReloaded();
         }).CallDeferred();
         _log.LogInformation("world bundle reloaded; presentation rebind scheduled.");
         RecordActivity(ActivityEntryKind.Log, "world.presentation.rebound", "system", "world", outcome: "rebind scheduled");
-    }
-
-    private void HandleTimelineBundleReloaded()
-    {
-        if (_composition is null)
-            return;
-
-        TimelineComposition.ComposeTimeline(new HostCompositionContext(_composition));
-        _log.LogInformation("timeline resident composition rebound after bundle reload.");
-        RecordActivity(
-            ActivityEntryKind.Log,
-            "timeline.composition.rebound",
-            "system",
-            "timeline",
-            outcome: "rebound after bundle reload");
-
-        Callable.From(RebindTimelineFaceAndPushCurrentView).CallDeferred();
-    }
-
-    private void RebindTimelineFaceAndPushCurrentView()
-    {
-        if (_composition is null)
-            return;
-
-        var registry = _composition.Bootstrap.Registry;
-        var sceneRegistry = registry.TryGet<IBundleSceneRegistry>();
-        if (sceneRegistry?.GetSceneOrNull("timeline") is TimelineFace face)
-            face.RebindResidentContext();
-
-        var controller = registry.TryGet<FantaSim.App.World.Composition.ITimelineController>();
-        var timeline = registry.TryGet<FantaSim.App.Timeline.IService>();
-        if (controller is null || timeline is null)
-            return;
-
-        _ = timeline.SeekAsync(controller.Tick);
-    }
-
-    private sealed class BundleReloadHook : FantaSim.App.Command.IBundleReloadHook
-    {
-        private readonly Host _host;
-
-        public BundleReloadHook(Host host)
-        {
-            _host = host;
-        }
-
-        public Task AfterReloadAsync(string bundleId, CancellationToken cancellationToken = default)
-        {
-            if (string.Equals(bundleId, "timeline", StringComparison.OrdinalIgnoreCase))
-                _host.HandleTimelineBundleReloaded();
-            if (string.Equals(bundleId, "world", StringComparison.OrdinalIgnoreCase))
-                _host.HandleWorldBundleReloaded();
-
-            return Task.CompletedTask;
-        }
     }
 
     private Task ShowActivityViewIfConfiguredAsync()
@@ -686,11 +611,6 @@ public partial class Host : Node
             RecordSceneActivity(stage.SceneId, stage.ParentSceneId, resource.IsLoaded("stage"), sceneFlow.ActiveScenes.Count);
 
             await LoadWorldBundleAndMountPlanetAsync(registry, resource).ConfigureAwait(false);
-
-            // Timeline depends on the resident planet timeline controller. Compose it after the
-            // world domain bundle has supplied the planet presentation document, but before the
-            // timeline scene bundle instantiates its resident TimelineFace.
-            TimelineComposition.ComposeTimeline(new HostCompositionContext(_composition!));
 
             // Enter assist UNDER stage — a nested dynamic parent. Assist shares the one app kernel
             // through stage's child provider, across two collectible ALCs (same kernel hash in the log).

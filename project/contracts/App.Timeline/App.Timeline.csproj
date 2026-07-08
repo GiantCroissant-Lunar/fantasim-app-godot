@@ -5,7 +5,8 @@
     <RootNamespace>FantaSim.App.Timeline</RootNamespace>
     <AssemblyName>FantaSim.App.Timeline.Contracts</AssemblyName>
     <!-- ServiceArchi Tier 1: engine-agnostic timeline contract - IService, playback DTOs,
-         view-snapshot records, UI model helpers, ITimelineFace, and the T2 proxy. The T3
+         view-snapshot records, UI model helpers, ITimelineFace, face context/proxy contracts,
+         and the T2 proxy. The T3
          orchestrator is plugins/App.Timeline; the Godot TimelineFace is the resident T4 seam
          plugins/App.Timeline.Seam. Mirrors App.Camera contracts. -->
     <ServiceArchiTier>T1</ServiceArchiTier>
@@ -19,7 +20,6 @@
     <!-- Shared contracts consumed by the pure timeline UI model helpers. -->
     <ProjectReference Include="..\App.World\App.World.csproj" />
     <ProjectReference Include="..\Cross.Abstractions\Cross.Abstractions.csproj" />
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Shared\World.Shared.csproj" />
   </ItemGroup>
 
   <!-- PluginArchi: [assembly: PluginSharedContract] (timeline contract types cross the
@@ -29,6 +29,8 @@
     <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" />
     <PackageReference Include="GiantCroissant.ServiceArchi.Contracts" />
     <PackageReference Include="GiantCroissant.ServiceArchi.SourceGen" PrivateAssets="all" />
+    <PackageReference Include="GiantCroissant.FantaSim.World.Shared.Contracts" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
 </Project>

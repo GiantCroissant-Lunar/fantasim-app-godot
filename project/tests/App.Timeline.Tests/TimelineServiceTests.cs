@@ -17,6 +17,7 @@ public class TimelineServiceTests
         public long LastSeekTick;
         public TimelineViewSnapshot? LastSnapshot;
 
+        public void RebindResidentContext() { }
         public void Play() => PlayCalls++;
         public void Pause() => PauseCalls++;
         public void SeekTo(long tick) { SeekCalls++; LastSeekTick = tick; }
@@ -26,8 +27,8 @@ public class TimelineServiceTests
     private static (Service svc, FakeFace face) Build(long maxTick = 120_000_000)
     {
         var face = new FakeFace();
-        var geo = SphereRegimeScheduleDefaults.GeosphereFor(SphereRegimeScheduleDefaults.PlateOnsetTick);
-        var atmo = SphereRegimeScheduleDefaults.AtmosphereFor(SphereRegimeScheduleDefaults.PlateOnsetTick);
+        var geo = TimelineTestSchedules.Geosphere();
+        var atmo = TimelineTestSchedules.Atmosphere();
         // The T3 service holds a controller reference for schedule lookups but drives the
         // face directly. We use a minimal fake controller shape via a stub is not needed -
         // the Service takes ITimelineController for read-only schedule access.

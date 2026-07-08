@@ -46,9 +46,7 @@
          the Godot camera rig over the vendored phantom-camera addon). -->
     <ProjectReference Include="..\..\plugins\App.Camera\App.Camera.csproj" />
     <ProjectReference Include="..\..\plugins\App.Camera.Seam\App.Camera.Seam.csproj" />
-    <!-- Timeline service: T3 (App.Timeline, engine-agnostic orchestrator) + T4 (App.Timeline.Seam,
-         the Godot timeline face). -->
-    <ProjectReference Include="..\..\plugins\App.Timeline\App.Timeline.csproj" />
+    <!-- Timeline face: resident T4 seam only; T3 App.Timeline ships in the collectible timeline bundle. -->
     <ProjectReference Include="..\..\plugins\App.Timeline.Seam\App.Timeline.Seam.csproj" />
     <!-- Remote command ingress: T3 (App.Remote, HTTP transport over the command IClient) + T4
          (App.Remote.Seam, the Godot main-thread bridge node). Gated by FANTASIM_REMOTE_ENABLED=1. -->

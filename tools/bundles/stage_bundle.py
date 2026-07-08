@@ -113,7 +113,19 @@ def stage(bundle_id, registry, policy, build=True):
 
         if build:
             subprocess.run(
-                ["dotnet", "build", str(csproj), "-c", "Debug", "-v", "q", "-nologo"],
+                [
+                    "dotnet",
+                    "build",
+                    str(csproj),
+                    "-c",
+                    "Debug",
+                    "-v",
+                    "q",
+                    "-nologo",
+                    "--disable-build-servers",
+                    "-p:UseSharedCompilation=false",
+                    "-p:BuildInParallel=false",
+                ],
                 check=True, cwd=REPO_ROOT)
             # The configured dir must be the REAL TargetDir: a stale dir silently ships fossil
             # assemblies (timeline.pck shipped a pre-refactor App.Timeline.dll whose
@@ -154,11 +166,6 @@ HOST_OUTPUT_DIR = REPO_ROOT / "project/hosts/complete-app/.godot/mono/temp/bin/D
 # Known dual copies with an owning plan — each entry MUST cite the work that removes it.
 # Anything NOT in this list failing --check-dual is new drift and must be fixed, not added here.
 KNOWN_DUAL_COPIES = {
-    # Bundle-maximalism phase 2 (Timeline T3 -> timeline bundle) removes the host's
-    # ProjectReference to plugins/App.Timeline; until then the resident T3 copy and the
-    # bundle's plugin copy coexist, talking only through shared contracts.
-    # See vault/specs/2026-07-08-bundle-oriented-maximalism.md phase table.
-    ("timeline", "FantaSim.App.Timeline.dll"),
 }
 
 
