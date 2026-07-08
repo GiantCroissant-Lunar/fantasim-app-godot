@@ -28,7 +28,17 @@
     <ProjectReference Include="..\App.Resource.Bundle.Seam\App.Resource.Bundle.Seam.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="GiantCroissant.RegistryArchi.Contracts" Version="0.1.2" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.1" />
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions">
+      <Version>0.1.6</Version>
+    </PackageReference>
+    <PackageReference Include="GiantCroissant.PluginArchi.SourceGenerators" PrivateAssets="all">
+      <Version>0.1.6</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions">
+      <Version>10.0.1</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection">
+      <Version>10.0.1</Version>
+    </PackageReference>
   </ItemGroup>
 </Project>

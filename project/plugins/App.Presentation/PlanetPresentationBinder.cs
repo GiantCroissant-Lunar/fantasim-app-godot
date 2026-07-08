@@ -204,7 +204,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Planet presentation document failed.");
+            _log.LogError(ex, "Planet presentation document failed: {Message}", ex.Message);
             return;
         }
 
@@ -846,7 +846,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Mantle x-ray sampling failed at t={Tick}.", _timeline.Tick);
+            _log.LogError(ex, "Mantle x-ray sampling failed at t={Tick}: {Message}", _timeline.Tick, ex.Message);
             return;
         }
 
@@ -897,7 +897,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Mantle layer sampling failed at t={Tick}.", _timeline.Tick);
+            _log.LogError(ex, "Mantle layer sampling failed at t={Tick}: {Message}", _timeline.Tick, ex.Message);
             return;
         }
 
@@ -1405,7 +1405,7 @@ void fragment() {
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Continents membership refresh failed at t={Tick}.", tick);
+            _log.LogError(ex, "Continents membership refresh failed at t={Tick}: {Message}", tick, ex.Message);
             return;
         }
 
@@ -1535,7 +1535,7 @@ void fragment() {
         catch (Exception ex)
         {
             _regimeRefreshPending = false;
-            _log.LogError(ex, "Planet presentation document failed during regime refresh at tick {Tick}.", _timeline.Tick);
+            _log.LogError(ex, "Planet presentation document failed during regime refresh at tick {Tick}: {Message}", _timeline.Tick, ex.Message);
             return;
         }
 
