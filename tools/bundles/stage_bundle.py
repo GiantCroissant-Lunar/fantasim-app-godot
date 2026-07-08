@@ -265,6 +265,20 @@ def common_candidates(policy, host_dir):
         key=lambda p: p.stem)
 
 
+def host_locked_names(host_script_dll, candidate_names):
+    """Candidate names the autoload script assembly (complete-app.dll) references directly.
+
+    Godot's script bridge resolves the autoload assembly's references at script REGISTRATION
+    — before Host._Ready, so before the common loader can run (S2 gate finding 2026-07-08:
+    R3 + 7 contracts assemblies aborted Host instantiation). These stay exe cargo this phase.
+    AssemblyRef names live null-delimited in the CLI #Strings heap."""
+    host_script_dll = Path(host_script_dll)
+    if not host_script_dll.is_file():
+        return set()
+    data = host_script_dll.read_bytes()
+    return {n for n in candidate_names if b"\x00" + n.encode("utf-8") + b"\x00" in data}
+
+
 def is_godot_facing(dll_path):
     """E1 rule: Godot-facing assemblies never enter common.pck. Assembly references are
     ASCII in CLI metadata, so a byte scan for GodotSharp is a reliable reject signal."""
@@ -278,8 +292,14 @@ def stage_common_from_dir(policy, host_dir, dest):
     dest.mkdir(parents=True, exist_ok=True)
     clean_bundle_dir(dest)
 
+    candidates = common_candidates(policy, host_dir)
+    locked = host_locked_names(Path(host_dir) / "complete-app.dll", {c.stem for c in candidates})
     entries = []
-    for dll in common_candidates(policy, host_dir):
+    for dll in candidates:
+        if dll.stem in locked:
+            print(f"[stage_bundle] common: {dll.stem} is referenced by the autoload script "
+                  f"assembly (resolved at script registration, before Host._Ready) — exe-locked, SKIPPED")
+            continue
         if is_godot_facing(dll):
             if dll.stem in gated:
                 print(f"[stage_bundle] common: {dll.stem} is Godot-facing - detector-gated, SKIPPED")

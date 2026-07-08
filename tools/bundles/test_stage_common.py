@@ -53,6 +53,19 @@ class CommonCandidateTests(unittest.TestCase):
         with self.assertRaises(stage_bundle.StagingError):
             stage_bundle.stage_common_from_dir(self.POLICY, host, Path(tempfile.mkdtemp()))
 
+    def test_host_locked_candidates_are_skipped(self):
+        host = self._host_dir(["Arch", "MessagePipe"])
+        # autoload script assembly referencing MessagePipe -> exe-locked, skipped from common
+        (host / "complete-app.dll").write_bytes(b"MZ..\x00MessagePipe\x00..")
+        out = Path(tempfile.mkdtemp())
+        stage_bundle.stage_common_from_dir(self.POLICY, host, out)
+        import json as _json
+        manifest = _json.loads((out / "manifest.json").read_text())
+        names = {a["metadata"]["assemblyName"] for a in manifest["managed"]["assemblies"]}
+        self.assertIn("Arch", names)
+        self.assertNotIn("MessagePipe", names)
+        self.assertNotIn("complete-app", names)
+
     def test_stage_common_writes_manifest_with_sha(self):
         host = self._host_dir(["Arch", "MessagePipe", "FantaSim.App.Timeline.Contracts"])
         # gated entry present but Godot-facing -> skipped with warning, not error

@@ -49,12 +49,48 @@
     "TimeDete."
   ],
   "common": {
-    "comment": "Assemblies packed into common.pck (resident layer, Default ALC, packaging granularity only). Stripped from the exported exe by tools/bundles/strip_common_from_export.py. S1 scope = Arch; S2 expands to the first-cut list.",
+    "comment": "Assemblies packed into common.pck (resident layer, Default ALC, packaging granularity only). Stripped from the exported exe by tools/bundles/strip_common_from_export.py. First-cut list per the 2026-07-08 design brief \u00a7E; Godot-facing candidates are detector-vetoed (E1). ReactiveUI/DynamicData/BoomHud.Foundation from the brief's list are NOT in the real host closure (verified 2026-07-08) and were dropped.",
     "exactMatches": [
-      "Arch"
+      "Arch",
+      "Arch.LowLevel",
+      "Collections.Pooled",
+      "CommunityToolkit.HighPerformance",
+      "Schedulers",
+      "MessagePack",
+      "MessagePack.Annotations",
+      "UnifySerialization.MessagePack.Runtime",
+      "UnifyMaths",
+      "UnifyMaths.Numerics",
+      "UnifyMaths.Abstractions",
+      "UnifyStorage.Abstractions",
+      "UnifyStorage.Runtime.LiteDb",
+      "LiteDB",
+      "Cartography.Globe.Core",
+      "Cartography.Globe.Contracts",
+      "Cartography.Shared.Contracts",
+      "FantaSim.Cross.Abstractions",
+      "FantaSim.World.Fields.Contracts",
+      "FantaSim.World.Fields.Core",
+      "FantaSim.World.Shared.Contracts",
+      "FantaSim.App.World.Rendering",
+      "Akka",
+      "Newtonsoft.Json",
+      "R3",
+      "BoomHud.Abstractions"
     ],
-    "prefixes": [],
-    "suffixRules": [],
-    "detectorGated": []
+    "prefixes": [
+      "MessagePipe",
+      "UnifyEcs.",
+      "TimeDete."
+    ],
+    "suffixRules": [
+      {
+        "prefix": "FantaSim.App.",
+        "suffix": ".Contracts"
+      }
+    ],
+    "detectorGated": [
+      "BoomHud.Abstractions"
+    ]
   }
 }
