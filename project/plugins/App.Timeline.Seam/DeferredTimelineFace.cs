@@ -5,10 +5,10 @@ using FantaSim.App.World.Composition;
 namespace FantaSim.App.Timeline.Seam;
 
 /// <summary>
-/// Resident-to-collectible-ALC binder for ITimelineFace. The source generator emits
+/// Resident face binder for ITimelineFace. The source generator emits
 /// BindCrossTarget / UnbindCrossTarget / IsCrossBound + forwarding methods for Play,
 /// Pause, SeekTo, ApplyView (the [CrossDelegate]-marked surface). When the timeline
-/// bundle hot-reloads, Host.cs calls UnbindCrossTarget() before the old ALC unloads,
+/// bundle hot-reloads, TimelinePlugin calls UnbindCrossTarget() before the old ALC unloads,
 /// then BindCrossTarget(newFace) after the new scene instantiates.
 ///
 /// The T3 Service holds a reference to this binder (as ITimelineFace). When no target

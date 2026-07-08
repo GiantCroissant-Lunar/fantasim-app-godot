@@ -330,11 +330,10 @@ public partial class TimelineFace : Control, ITimelineFace
         DisconnectIfConnected(this, Control.SignalName.GuiInput, Callable.From<InputEvent>(OnFaceGuiInput));
         DisconnectIfConnected(this, Control.SignalName.Resized, Callable.From(OnLanesResized));
 
-        // Sever the resident-to-collectible-ALC bind so the old timeline bundle's ALC can
-        // collect on hot-reload. ResidentProxy holds a generated __crossTarget typed as
-        // ITimelineFace (defined in the collectible App.Timeline assembly); without unbinding,
-        // the static keeps the old ALC pinned. ResidentLoggerFactory is nulled for symmetry
-        // so every resident-set static is cleared on exit (it is repopulated before re-entry).
+        // Sever the resident-to-face bind so stale callbacks do not survive scene reloads.
+        // ResidentProxy holds a generated __crossTarget typed as shared ITimelineFace; without
+        // unbinding, the static can keep an obsolete face target alive. ResidentLoggerFactory is
+        // nulled for symmetry so every resident-set static is cleared on exit.
         ResidentProxy?.UnbindCrossTarget();
         ResidentProxy = null;
         ResidentLoggerFactory = null;
