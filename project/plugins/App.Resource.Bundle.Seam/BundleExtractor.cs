@@ -58,6 +58,36 @@ public sealed class BundleExtractor
         return new BundleExtractionResult(bundleTempDir, managedVisitor.PluginAssemblyPath, dataVisitor.ExtractedFiles);
     }
 
+    /// <summary>
+    /// Extracts exactly the named DLLs from the bundle into one temp session dir. Unlike
+    /// Extract() this returns EVERY extracted path (the common resident layer preloads all of
+    /// them into the Default ALC); any missing or unextractable DLL is an error, not a skip.
+    /// </summary>
+    public IReadOnlyList<(string FileName, string ExtractedPath)> ExtractAllManaged(
+        string bundleResPath, IReadOnlyList<string> dllFileNames)
+    {
+        var bundleTempDir = NewBundleTempDir(bundleResPath);
+        var context = new BundleExtractionContext(bundleTempDir);
+        var extracted = new List<(string, string)>(dllFileNames.Count);
+        var missing = new List<string>();
+
+        foreach (var fileName in dllFileNames)
+        {
+            var entry = new BundleEntry(bundleResPath + "/" + fileName, fileName);
+            var path = GodotFileAccess.FileExists(entry.ResPath) ? context.TryExtract(entry) : null;
+            if (path is null)
+                missing.Add(fileName);
+            else
+                extracted.Add((fileName, path));
+        }
+
+        if (missing.Count > 0)
+            throw new InvalidOperationException(
+                $"common bundle extraction failed for: {string.Join(", ", missing)} (bundle {bundleResPath})");
+
+        return extracted;
+    }
+
     private static string NewBundleTempDir(string bundleResPath)
     {
         var loadId = Interlocked.Increment(ref _loadSeq);

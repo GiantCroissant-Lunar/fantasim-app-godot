@@ -43,6 +43,18 @@ public partial class Host : Node
 
     public override void _Ready()
     {
+        // NOTHING else may live in this method body: JIT-compiling _Ready resolves every type
+        // token it mentions BEFORE the first statement executes, which would demand common-layer
+        // assemblies (via seam type layouts) before EnsureLoaded can serve them from common.pck
+        // (S2 gate, 2026-07-08: Timeline.Contracts FNFE thrown "at Host._Ready()" itself).
+        // ComposeAndStart is NoInlining so its body JITs only when called — after EnsureLoaded.
+        FantaSim.App.Resource.Bundle.CommonResidentLayer.CommonResidentLayerBootstrap.EnsureLoaded();
+        ComposeAndStart();
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private void ComposeAndStart()
+    {
         GD.Print("[Host] composition root starting...");
 
         _composition = AppComposition.Activate();

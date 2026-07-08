@@ -92,10 +92,15 @@ tasks:
       GITVERSION_MAJORMINORPATCH: '{{.GITVERSION_MAJORMINORPATCH}}'
 
   build:godot:desktop:
-    desc: Export the Godot app for desktop platforms only via UnifyBuild
+    desc: Export the Godot app for desktop platforms only via UnifyBuild (strips + provisions the common resident layer)
     deps: [restore, build, artifacts:latest]
     cmds:
       - '{{.UNIFY}} BuildGodotDesktop'
+      # Phase 2.5 (S3): a produced app is ALWAYS stripped of common assemblies and provisioned
+      # with common.pck + the expected catalog. Deviation D3: lives here (not IUnifyGodot) until
+      # the strip contract is proven; upstreaming is queued.
+      - task: bundle:common
+      - python3 tools/bundles/strip_common_from_export.py --app {{.BUILD_DIR}}/_artifacts/{{.ARTIFACTS_VERSION}}/godot/osx/{{.ASSEMBLY}}.app --manifest project/bundles/common/manifest.json --assembly {{.ASSEMBLY}} --common-pck {{.BUILD_DIR}}/_artifacts/{{.ARTIFACTS_VERSION}}/godot/bundles/common.pck
     env:
       GITVERSION_MAJORMINORPATCH: '{{.GITVERSION_MAJORMINORPATCH}}'
 
@@ -194,6 +199,18 @@ tasks:
       - mkdir -p {{.BUILD_DIR}}/_artifacts/{{.ARTIFACTS_VERSION}}/godot/bundles
       - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "iii PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.ARTIFACTS_VERSION}}/godot/bundles/iii.pck'
 
+  bundle:common:build:
+    desc: Stage the common resident-layer assemblies + manifest (policy 'common' section)
+    cmds:
+      - python3 tools/bundles/stage_bundle.py --stage-common
+
+  bundle:common:
+    desc: Stage + export the common resident-layer PCK (manifest + dlls; Default-ALC, never collectible)
+    deps: [bundle:link, bundle:common:build, artifacts:latest]
+    cmds:
+      - mkdir -p {{.BUILD_DIR}}/_artifacts/{{.ARTIFACTS_VERSION}}/godot/bundles
+      - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "common PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.ARTIFACTS_VERSION}}/godot/bundles/common.pck'
+
   bundle:world:
     desc: Build the world data-bundle DLLs + export the collectible world bundle PCK (manifest + dlls, no scene)
     deps: [bundle:link, bundle:world:build, artifacts:latest]
@@ -202,8 +219,8 @@ tasks:
       - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "world PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.ARTIFACTS_VERSION}}/godot/bundles/world.pck'
 
   bundles:
-    desc: Export all collectible bundle PCKs (stage + assist + timeline + activity + world + iii)
-    deps: [bundle:stage, bundle:assist, bundle:timeline, bundle:activity, bundle:world, bundle:iii]
+    desc: Export all collectible bundle PCKs (stage + assist + timeline + activity + world + iii + common)
+    deps: [bundle:stage, bundle:assist, bundle:timeline, bundle:activity, bundle:world, bundle:iii, bundle:common]
 
   bundle:install:
     desc: Copy exported bundle PCKs next to the exported app exe so the windowed app resolves them
@@ -227,6 +244,7 @@ tasks:
       - cp "{{.PCKS}}/activity.pck" "{{.MACOS}}/bundles/activity.pck"
       - cp "{{.PCKS}}/world.pck" "{{.MACOS}}/bundles/world.pck"
       - cp "{{.PCKS}}/iii.pck" "{{.MACOS}}/bundles/iii.pck"
+      - cp "{{.PCKS}}/common.pck" "{{.MACOS}}/bundles/common.pck"
 
   run:exported:
     desc: Launch the exported WINDOWED app (with console) so bundle load is observable; never headless

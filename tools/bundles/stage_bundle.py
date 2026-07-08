@@ -10,6 +10,7 @@ Replaces the per-bundle hand-written Taskfile staging (the 2026-07-03 MessagePac
 lesson: hand mirrors of the share list WILL drift).
 """
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -21,6 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 REGISTRY_PATH = REPO_ROOT / "project/hosts/complete-app/config/collectible-bundles.json"
 POLICY_PATH = REPO_ROOT / "project/hosts/complete-app/config/shared-assembly-policy.json"
 BUNDLES_DIR = REPO_ROOT / "project/bundles"
+COMMON_BUNDLE_ID = "common"
 
 
 class StagingError(RuntimeError):
@@ -180,6 +182,30 @@ def find_dual_copies(bundle_dir, host_assembly_names):
     return sorted(f.name for f in bundle_dir.glob("*.dll") if f.name in host_assembly_names)
 
 
+def cross_bundle_violations(bundles_root, collectible_ids, common_id):
+    """(bundle, other, dll) triples for bundle∩common and bundle∩bundle overlaps.
+
+    Two ALCs (or an ALC and the Default context) each loading a private copy of the same
+    assembly is the type-identity split class - always a staging bug, never allowlisted."""
+    bundles_root = Path(bundles_root)
+
+    def names(bundle_id):
+        d = bundles_root / bundle_id
+        return {f.name for f in d.glob("*.dll")} if d.is_dir() else set()
+
+    violations = []
+    common_names = names(common_id)
+    for bundle_id in sorted(collectible_ids):
+        for dll in sorted(names(bundle_id) & common_names):
+            violations.append((bundle_id, common_id, dll))
+    ids = sorted(collectible_ids)
+    for i, a in enumerate(ids):
+        for b in ids[i + 1:]:
+            for dll in sorted(names(a) & names(b)):
+                violations.append((a, b, dll))
+    return violations
+
+
 def check_dual(registry):
     if not HOST_OUTPUT_DIR.is_dir():
         print(f"[stage_bundle] --check-dual skipped: host output not built ({HOST_OUTPUT_DIR})")
@@ -193,11 +219,120 @@ def check_dual(registry):
         if dual:
             violations = True
             print(f"[stage_bundle] DUAL COPIES in bundle '{entry['bundleId']}' "
-                  f"(also in resident host output — promote to shared-assembly-policy.json "
+                  f"(also in resident host output - promote to shared-assembly-policy.json "
                   f"or drop the collectible override): {', '.join(dual)}")
+    collectible_ids = [e["bundleId"] for e in registry["bundles"]]
+    for bundle_id, other, dll in cross_bundle_violations(BUNDLES_DIR, collectible_ids, COMMON_BUNDLE_ID):
+        violations = True
+        print(f"[stage_bundle] CROSS-BUNDLE DUAL COPY: '{bundle_id}' and '{other}' both stage {dll}")
     if not violations:
         print("[stage_bundle] --check-dual: no dual copies; bundle/resident split is clean")
     return violations
+
+
+def _common_policy(policy):
+    section = policy.get("common")
+    if not section:
+        raise StagingError("shared-assembly-policy.json has no 'common' section")
+    return section
+
+
+def _matches_common(name, section):
+    if name in set(section.get("exactMatches", [])):
+        return True
+    if any(name.startswith(p) for p in section.get("prefixes", [])):
+        return True
+    for rule in section.get("suffixRules", []):
+        if name.startswith(rule["prefix"]) and name.endswith(rule["suffix"]):
+            return True
+    return False
+
+
+def common_candidates(policy, host_dir):
+    """Every host-output DLL selected by the policy's common section.
+
+    Each exactMatch MUST be present (a listed assembly the host no longer ships is a config
+    bug, not a skip); prefix/suffix rules match whatever exists."""
+    section = _common_policy(policy)
+    host_dir = Path(host_dir)
+    found = {p.stem: p for p in host_dir.glob("*.dll")}
+    missing = [n for n in section.get("exactMatches", []) if n not in found]
+    if missing:
+        raise StagingError(
+            f"common exactMatches not present in host output {host_dir}: {', '.join(missing)}")
+    return sorted(
+        (p for name, p in found.items() if _matches_common(name, section)),
+        key=lambda p: p.stem)
+
+
+def host_locked_names(host_script_dll, candidate_names):
+    """Candidate names the autoload script assembly (complete-app.dll) references directly.
+
+    Godot's script bridge resolves the autoload assembly's references at script REGISTRATION
+    — before Host._Ready, so before the common loader can run (S2 gate finding 2026-07-08:
+    R3 + 7 contracts assemblies aborted Host instantiation). These stay exe cargo this phase.
+    AssemblyRef names live null-delimited in the CLI #Strings heap."""
+    host_script_dll = Path(host_script_dll)
+    if not host_script_dll.is_file():
+        return set()
+    data = host_script_dll.read_bytes()
+    return {n for n in candidate_names if b"\x00" + n.encode("utf-8") + b"\x00" in data}
+
+
+def is_godot_facing(dll_path):
+    """E1 rule: Godot-facing assemblies never enter common.pck. Assembly references are
+    ASCII in CLI metadata, so a byte scan for GodotSharp is a reliable reject signal."""
+    return b"GodotSharp" in Path(dll_path).read_bytes()
+
+
+def stage_common_from_dir(policy, host_dir, dest):
+    section = _common_policy(policy)
+    gated = set(section.get("detectorGated", []))
+    dest = Path(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+    clean_bundle_dir(dest)
+
+    candidates = common_candidates(policy, host_dir)
+    locked = host_locked_names(Path(host_dir) / "complete-app.dll", {c.stem for c in candidates})
+    entries = []
+    for dll in candidates:
+        if dll.stem in locked:
+            print(f"[stage_bundle] common: {dll.stem} is referenced by the autoload script "
+                  f"assembly (resolved at script registration, before Host._Ready) — exe-locked, SKIPPED")
+            continue
+        if is_godot_facing(dll):
+            if dll.stem in gated:
+                print(f"[stage_bundle] common: {dll.stem} is Godot-facing - detector-gated, SKIPPED")
+                continue
+            raise StagingError(
+                f"common candidate {dll.stem} references GodotSharp - Godot-facing assemblies "
+                f"never enter common.pck (E1); remove it from the policy's common section")
+        shutil.copy2(dll, dest)
+        sha = hashlib.sha256(dll.read_bytes()).hexdigest()
+        entries.append({
+            "id": dll.stem,
+            "uri": f"res://bundles/common/{dll.name}",
+            "kind": "dll",
+            "metadata": {"assemblyName": dll.stem, "sha256": sha},
+        })
+
+    manifest = {
+        "bundleId": COMMON_BUNDLE_ID,
+        "displayName": "Common resident layer",
+        "version": "0.1.0",
+        "metadata": {"bundleType": "resident-layer"},
+        "managed": {"assemblies": entries},
+    }
+    (dest / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    print(f"[stage_bundle] common: staged {len(entries)} assemblies into {dest}")
+    return manifest
+
+
+def stage_common(policy):
+    if not HOST_OUTPUT_DIR.is_dir():
+        raise StagingError(
+            f"host output not built ({HOST_OUTPUT_DIR}) - build complete-app.csproj first")
+    return stage_common_from_dir(policy, HOST_OUTPUT_DIR, BUNDLES_DIR / COMMON_BUNDLE_ID)
 
 
 def main(argv=None):
@@ -207,10 +342,17 @@ def main(argv=None):
     parser.add_argument("--no-build", action="store_true", help="skip dotnet build of root projects")
     parser.add_argument("--check-dual", action="store_true",
                         help="audit staged bundles for assemblies duplicated in the resident host output; exit 1 on findings")
+    parser.add_argument("--stage-common", action="store_true",
+                        help="stage the common resident-layer bundle (policy 'common' section) + manifest")
     args = parser.parse_args(argv)
 
     registry = load_json(REGISTRY_PATH)
     policy = load_json(POLICY_PATH)
+
+    if args.stage_common:
+        stage_common(policy)
+        if not args.bundles and not args.all and not args.check_dual:
+            return 0
 
     if args.check_dual and not args.bundles and not args.all:
         return 1 if check_dual(registry) else 0
