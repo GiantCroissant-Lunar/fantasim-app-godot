@@ -30,7 +30,10 @@ public static class CommonResidentLayerBootstrap
             if (_loaded)
                 return;
 
-            var baseDir = AppContext.BaseDirectory;
+            // OS.GetExecutablePath(), NOT AppContext.BaseDirectory: in a Godot .NET export
+            // BaseDirectory is the per-arch data dir (Contents/Resources/data_*), while the
+            // bundle convention is exe-adjacent (Contents/MacOS) — see GodotBundleDirectoryResolver.
+            var baseDir = OS.GetExecutablePath().GetBaseDir();
             var pckPath = Path.Combine(baseDir, "bundles", "common.pck");
             var expectedPath = Path.Combine(baseDir, "config", "common-resident-expected.json");
             var hasPck = File.Exists(pckPath);
@@ -39,7 +42,7 @@ public static class CommonResidentLayerBootstrap
             // Provisioning matrix (plan D7): neither -> unstripped exe or editor run, skip.
             if (!hasPck && !hasExpected)
             {
-                GD.Print("[CommonResidentLayer] no common.pck and no expectation file - unstripped run; skipping.");
+                Log("no common.pck and no expectation file - unstripped run; skipping.");
                 return;
             }
 
@@ -93,7 +96,7 @@ public static class CommonResidentLayerBootstrap
             else
             {
                 // S1/S2 manual mode. Task 11 (S4) makes this FATAL.
-                GD.Print("[CommonResidentLayer] WARNING: loading common.pck without an expectation file (pre-S4 manual mode).");
+                Log("WARNING: loading common.pck without an expectation file (pre-S4 manual mode).");
             }
 
             // Preload in manifest order. Skip names the Default ALC already has: an unstripped
@@ -108,7 +111,7 @@ public static class CommonResidentLayerBootstrap
                 var simpleName = Path.GetFileNameWithoutExtension(fileName);
                 if (alreadyLoaded.Contains(simpleName))
                 {
-                    GD.Print($"[CommonResidentLayer] {simpleName} already loaded in Default ALC (unstripped exe copy) - pck copy skipped.");
+                    Log($"{simpleName} already loaded in Default ALC (unstripped exe copy) - pck copy skipped.");
                     continue;
                 }
                 AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
@@ -116,7 +119,7 @@ public static class CommonResidentLayerBootstrap
             }
 
             _loaded = true;
-            GD.Print($"[CommonResidentLayer] loaded {loadedCount}/{extracted.Count} assemblies from common.pck.");
+            Log($"loaded {loadedCount}/{extracted.Count} assemblies from common.pck.");
         }
     }
 
@@ -128,12 +131,22 @@ public static class CommonResidentLayerBootstrap
         return map.TryGetValue(name.Name, out var path) ? context.LoadFromAssemblyPath(path) : null;
     }
 
+    // GD.Print does not reach a nohup-captured stdout in the exported app; the windowed
+    // gate reads the log, so mirror every message to the process Console too.
+    private static void Log(string message)
+    {
+        var line = "[CommonResidentLayer] " + message;
+        GD.Print(line);
+        Console.WriteLine(line);
+    }
+
     // Returns (rather than throws) so call sites `throw Fail(...)` — definite-assignment
     // analysis does not honor [DoesNotReturn], only nullable analysis does (CS0165 otherwise).
     private static InvalidOperationException Fail(string message)
     {
-        // _log does not exist yet (AppComposition has not run) - GD channels only.
+        // _log does not exist yet (AppComposition has not run) - GD/Console channels only.
         GD.PrintErr("[CommonResidentLayer] FATAL: " + message);
+        Console.Error.WriteLine("[CommonResidentLayer] FATAL: " + message);
         OS.Alert(message, "common resident layer");
         return new InvalidOperationException("[CommonResidentLayer] " + message);
     }
