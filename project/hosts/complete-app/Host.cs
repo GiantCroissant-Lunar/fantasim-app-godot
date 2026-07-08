@@ -37,6 +37,7 @@ public partial class Host : Node
     private IRenderCompositionHandle? _renderComposition;
     private ICameraCompositionHandle? _cameraComposition;
     private SceneTierPckWatcher? _sceneTierPckWatcher;
+    private IDisposable? _worldBundleWatch;
     private bool _ecsWorldReady;
     private bool _timelineReloadPending;
     private bool _worldReloadPending;
@@ -97,6 +98,8 @@ public partial class Host : Node
 
     public override void _ExitTree()
     {
+        _worldBundleWatch?.Dispose();
+        _worldBundleWatch = null;
         if (_resource is not null)
         {
             _resource.RuntimeChanging -= OnResourceRuntimeChanging;
@@ -118,6 +121,12 @@ public partial class Host : Node
 
         _resource.RuntimeChanging += OnResourceRuntimeChanging;
         _resource.RuntimeChanged += OnResourceRuntimeChanged;
+
+        // The world pck watch is HOST-owned (bundle-maximalism phase 1): the binder that used to
+        // own it now ships inside the world bundle, and a bundle-owned watcher cancels its own
+        // reload mid-flight when the unload phase disposes it — the load half never runs. The
+        // watch must outlive the bundle it reloads (same pattern as IiiComposition's iii watch).
+        _worldBundleWatch = _resource.WatchResource("world");
     }
 
     private void OnResourceRuntimeChanging(object? sender, FantaSim.App.Resource.ResourceRuntimeChangingEventArgs e)
@@ -152,9 +161,17 @@ public partial class Host : Node
 
         if (_worldReloadPending)
         {
-            _worldReloadPending = false;
-            if (resource?.IsLoaded("world") == true)
+            // Consume the flag only once the NEW bundle's plugin has registered its presentation
+            // — Changed events from OTHER bundles' reloads interleave with the world reload, and
+            // IsLoaded("world") is still true for the OLD copy during its own unload phase. If the
+            // registration is absent, leave the flag armed; the world reload's own Changed event
+            // completes the rebind.
+            if (resource?.IsLoaded("world") == true
+                && registry.TryGet<IPlanetPresentation>() is not null)
+            {
+                _worldReloadPending = false;
                 HandleWorldBundleReloaded();
+            }
         }
 
         if (_timelineReloadPending)

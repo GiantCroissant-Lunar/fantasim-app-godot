@@ -43,7 +43,6 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     private readonly ILogger _log;
     private readonly PlanetTimelineController _timeline;
     private readonly IDisposable _timelineRegistration;
-    private readonly IDisposable _watch;
     private IDisposable? _generationSubscription;
     private Node3D? _activeRoot;
     private Node3D? _plateSurfaceRoot;
@@ -171,7 +170,11 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
 
         _resource.RuntimeChanging += OnResourceRuntimeChanging;
         _resource.RuntimeChanged += OnResourceRuntimeChanged;
-        _watch = _resource.WatchResource(WorldBundleId);
+        // The world pck WATCH deliberately does NOT live here (bundle-maximalism phase 1): this
+        // binder ships inside the world bundle, and a watcher owned by the bundle cancels its own
+        // reload mid-flight when the unload phase disposes it (the load half never runs). The
+        // resident host owns the watch (Host.SubscribeResourceRuntimeEvents); this binder only
+        // unmounts on RuntimeChanging and is recreated by the new bundle's PresentationPlugin.
     }
 
     private void ResetRegimeTracking()
@@ -2533,7 +2536,6 @@ void fragment() {
         _timeline.LayerSelectionChanged -= OnLayerSelectionChanged;
         _resource.RuntimeChanging -= OnResourceRuntimeChanging;
         _resource.RuntimeChanged -= OnResourceRuntimeChanged;
-        _watch.Dispose();
         _generationSubscription?.Dispose();
         _generationSubscription = null;
         CancelScrubRestRefresh();
