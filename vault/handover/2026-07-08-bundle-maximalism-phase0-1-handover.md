@@ -41,14 +41,41 @@
    `IsLoaded("world")` is true for the OLD copy during its own unload window. The host now consumes
    `_worldReloadPending` only when the NEW bundle's `IPlanetPresentation` registration exists.
 
-## Known residual (chip filed: "Fix first-reload boot ALC pin for world bundle")
+## Known residual — RESOLVED same day (boot ALC pin)
 
-The FIRST world reload after app boot leaves the boot ALC pinned (`old ALC still pinned … reload
-degraded`); every later cycle collects. Root is boot-only wiring not severed by the first
-recompose. Suspicious lead: `TimelineComposition.cs:56` unsubscribes the prior `TickChanged`
-handler from the NEW controller instead of the OLD one. Bounded cost: one leaked ALC per app
-launch; functional reload unaffected. Diagnose with the gcroot recipe (memory
-`fantasim-alc-shared-type-identity`).
+~~The FIRST world reload after app boot leaves the boot ALC pinned.~~ **FIXED + windowed-gated
+(two consecutive world reloads both log `old ALC collected for bundle world`; seek healthy after).**
+
+**Actual root (gcroot on the live app, ClrMD):** NOT the suspected TimelineComposition
+unsubscribe. `timeline.pck` had been shipping a **fossil `FantaSim.App.Timeline.dll`**
+(pre-`2c770b2`, Jun 23) because the bundle's `collectible-bundles.json` `output` entry still
+pointed at the dead Godot.NET.Sdk dir (`.godot/mono/temp/bin/Debug`) after the csproj moved to
+Microsoft.NET.Sdk (`bin/Debug/net8.0`). The fossil's `TimelinePlugin.ActiveController` static
+(a design deleted from source two weeks earlier) captured the BOOT world ALC's
+`PlanetTimelineController` at scene entry and never re-resolved — pin chain: timeline ALC
+LoaderAllocator statics → boot controller → boot world ALC, for the life of the app. Later
+reload generations were never captured, hence the boot-only signature.
+
+**Fixes (one commit, `fix(reload): boot ALC pin — timeline.pck shipped a fossil App.Timeline.dll`):**
+- `collectible-bundles.json`: timeline `output` → `bin/Debug/net8.0`.
+- `stage_bundle.py`: after building, FAIL if the configured output dir ≠ the csproj's real
+  msbuild `TargetDir` (this whole fossil-staging class is now a hard error; 2 unit tests).
+- `shared-assembly-policy.json`: + `FantaSim.Cross.Abstractions` (the fresh timeline deps
+  closure pulls it; `--check-dual` flagged the new dual copy — the audit works).
+- `TimelineComposition`: the suspected lead was a REAL adjacent bug (dump showed the stale
+  handler in the current controller's `TickChanged` list) — the prior handler is now
+  unsubscribed from the controller it was subscribed to (`_subscribedController`), and released
+  when composing inert.
+- `TimelineFace.BindResidentContext`: on controller swap, clear `_playbackRegistered` after
+  unregistering so the NEW controller gets `RegisterPlayback` (Play/Pause callbacks silently
+  died after the first reload before this).
+
+**Diagnosis notes for next time:** `dotnet-dump analyze` (and stock ClrMD `LoadDump`) can fail
+on a macOS core with "An item with the same key has already been added" — a fresh second dump
+loaded fine. Apple's hardened lldb SIGKILLs on loading the SOS plugin (`.lldbinit`) — not a
+route on this Mac. A ~40-line ClrMD console app (heap scan for `PluginLoadContext` `_state=1`,
+modules grouped by `fantasim_bundles/<pid>/<bundle>/<n>` extraction dir, `GCRoot.EnumerateRootPaths`
+on surviving objects) reproduced the full dumpheap→gcroot recipe and named the static box.
 
 ## Standing decisions locked this arc
 
