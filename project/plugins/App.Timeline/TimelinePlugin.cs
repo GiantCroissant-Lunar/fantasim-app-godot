@@ -30,6 +30,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
     private IDisposable? _activatorRegistration;
     private IDisposable? _timelineRegistration;
     private IDisposable? _faceContextRegistration;
+    private TimelineFaceContext? _faceContext;
     private IRegistry? _registry;
     private ILoggerFactory? _loggerFactory;
     private ILogger? _log;
@@ -112,8 +113,11 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             return false;
         }
 
-        var proxy = _faceProxy ??= _faceProxyFactory();
+        // Sever BEFORE creating the proxy: on first compose the proxy must not receive a
+        // rebind for a binding that never existed (the rebind after recompose is pushed by
+        // TryConsumePendingWorldRebind, not here).
         SeverTimelineService(unbindProxy: false);
+        var proxy = _faceProxy ??= _faceProxyFactory();
 
         foreach (var existing in _registry.GetAll<IService>())
         {
@@ -130,6 +134,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             request => _registry.TryGet<FantaSim.App.World.IService>()?.GetLayerFilmstripPreview(request),
             _loggerFactory,
             ticksPerSecond: 5_000_000.0);
+        _faceContext = faceContext;
         _faceContextRegistration = _registry.RegisterOwned<ITimelineFaceContext>(
             faceContext,
             new ServiceRegistration
@@ -180,6 +185,12 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
 
         _faceContextRegistration?.Dispose();
         _faceContextRegistration = null;
+
+        // Disposing the registration only removes it from the registry; the context instance
+        // must be disposed explicitly so UnregisterPlayback releases the (possibly dying)
+        // world controller — the playback pin from the plan's Pin map.
+        _faceContext?.Dispose();
+        _faceContext = null;
 
         _faceProxy?.RebindResidentContext();
         if (unbindProxy)
