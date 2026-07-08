@@ -723,6 +723,14 @@ history) before proceeding. Repeat the same before/after check for `stage`, `ass
 `activity` (each currently stages exactly its one root DLL; the stager may ADD a `*.deps.json`
 sidecar — that is expected and acceptable, DLL sets must match).
 
+> **Gate outcome (2026-07-08):** stage/assist/activity/world parity EMPTY. `timeline` gained
+> `UnifyMaths.Abstractions.dll` — verified as a CORRECT addition, not a filter bug: the assembly
+> is in timeline's real deps closure, is NOT policy-shared (only `UnifyMaths` +
+> `UnifyMaths.Numerics` are exact-shared; no shared contract references `.Abstractions`), and the
+> world bundle already ships it as collectible cargo, windowed-verified. The old hand-copy task
+> was silently under-staging — precisely the drift class this tool eliminates. Delta accepted;
+> timeline hot-reload re-proven in Task 6.
+
 - [ ] **Step 7: Rewire the Taskfile**
 
 Replace each `bundle:<id>:build` task body. `bundle:stage:build` becomes:
@@ -1381,6 +1389,22 @@ timeline recompose) after reload. complete-app references the T1 contract only."
 ```
 
 ---
+
+> **Task 4/5 execution notes (2026-07-08):**
+> - Task 4's agent swapped the host csproj to the contract reference early (NU1107 forced it),
+>   leaving commit `3ff5152` with a broken host build that the sln config masks — Task 5's Host.cs
+>   rewiring restored it. Lesson: `dotnet test FantaSim.sln` green does NOT prove the host
+>   compiles; always build `complete-app.csproj` explicitly.
+> - `SeamConfigBanTests` bans `CrosscutFoundation.Config` inside `plugins/App.Presentation`, so
+>   the plan's config reads in `PresentationPlugin.CreateDefault` were replaced by a shared
+>   `PlanetPresentationOptions` record in `contracts/App.Presentation`: the HOST reads
+>   `globe:plateView` / `world:showGraph` and registers the options before the world bundle loads
+>   (`Host.RegisterPresentationOptions`); the plugin resolves it with a `Default` fallback.
+> - The binder gained `{Message}` args on five `LogError` calls (agent build-fix; behavior-equivalent).
+> - Closure audit result: world bundle 50 → 51 assemblies, sole addition
+>   `FantaSim.App.Presentation.dll`. Host output drop check: only the presentation impl left the
+>   host; `CrosscutFoundation.Persistence.Contracts.dll` (package id `...Persistence.Abstractions`)
+>   and both MessagePack pins still present.
 
 ### Task 6: Windowed verification gate (in-session, NOT delegated)
 

@@ -24,7 +24,7 @@
     <ProjectReference Include="..\..\contracts\App.World.Rendering\App.World.Rendering.csproj" />
     <!-- Host-slim (2026-07-03): the planet presentation lives in its own plugin now; the host is a
          composition root only. -->
-    <ProjectReference Include="..\..\plugins\App.Presentation\App.Presentation.csproj" />
+    <ProjectReference Include="..\..\contracts\App.Presentation\App.Presentation.csproj" />
     <ProjectReference Include="..\..\plugins\App.Resource\App.Resource.csproj" />
     <ProjectReference Include="..\..\plugins\App.Resource.Bundle.Seam\App.Resource.Bundle.Seam.csproj" />
     <ProjectReference Include="..\..\plugins\App.SceneFlow\App.SceneFlow.csproj" />

@@ -113,11 +113,15 @@ tasks:
       # relative target (just the version dir name) so latest survives _artifacts being moved/copied
       - ln -sfn {{.ARTIFACTS_VERSION}} {{.BUILD_DIR}}/_artifacts/latest  # -f replace, -n don't deref existing symlink
 
-  bundle:stage:build:
-    desc: Build the App.Stage tier assembly and stage its DLL into the bundle source dir
+  bundle:stagetool:test:
+    desc: Run the generic bundle stager's unit tests
     cmds:
-      - dotnet build project/plugins/App.Stage/App.Stage.csproj -c Debug -v q -nologo
-      - cp project/plugins/App.Stage/bin/Debug/net8.0/FantaSim.App.Stage.dll project/bundles/stage/FantaSim.App.Stage.dll
+      - python3 -m unittest discover -s tools/bundles -p "test_*.py"
+
+  bundle:stage:build:
+    desc: Build + stage the App.Stage tier assembly into the bundle source dir (generic stager)
+    cmds:
+      - python3 tools/bundles/stage_bundle.py stage
 
   bundle:stage:
     desc: Build the stage tier DLL + export the collectible stage bundle PCK (manifest + scene + dll)
@@ -127,10 +131,9 @@ tasks:
       - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "stage PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.ARTIFACTS_VERSION}}/godot/bundles/stage.pck'
 
   bundle:assist:build:
-    desc: Build the App.Assist tier assembly and stage its DLL into the bundle source dir
+    desc: Build + stage the App.Assist tier assembly into the bundle source dir (generic stager)
     cmds:
-      - dotnet build project/plugins/App.Assist/App.Assist.csproj -c Debug -v q -nologo
-      - cp project/plugins/App.Assist/bin/Debug/net8.0/FantaSim.App.Assist.dll project/bundles/assist/FantaSim.App.Assist.dll
+      - python3 tools/bundles/stage_bundle.py assist
 
   bundle:assist:
     desc: Build the assist tier DLL + export the collectible assist bundle PCK (manifest + dll, no scene)
@@ -140,11 +143,11 @@ tasks:
       - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "assist PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.ARTIFACTS_VERSION}}/godot/bundles/assist.pck'
 
   bundle:timeline:build:
-    desc: Build the App.Timeline scene-tier assembly and stage its DLL into the bundle source dir
+    desc: Build + stage the App.Timeline scene-tier assembly into the bundle source dir (generic stager)
     cmds:
-      - dotnet build project/plugins/App.Timeline/App.Timeline.csproj -c Debug -v q -nologo
-      # App.Timeline is a Godot.NET.Sdk project: its DLL lands in .godot/mono/temp/bin (not bin/Debug/net8.0).
-      - cp project/plugins/App.Timeline/.godot/mono/temp/bin/Debug/FantaSim.App.Timeline.dll project/bundles/timeline/FantaSim.App.Timeline.dll
+      # Output dir quirk (Godot.NET.Sdk -> .godot/mono/temp/bin) is encoded in the bundle's
+      # "projects" entry in collectible-bundles.json, not here.
+      - python3 tools/bundles/stage_bundle.py timeline
 
   bundle:timeline:
     desc: Build the timeline hud-view DLL + export the collectible timeline bundle PCK (manifest + dll, no scene)
@@ -154,10 +157,9 @@ tasks:
       - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "timeline PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.ARTIFACTS_VERSION}}/godot/bundles/timeline.pck'
 
   bundle:activity:build:
-    desc: Build the App.Ui.Activity bundle assembly and stage its DLL into the bundle source dir
+    desc: Build + stage the App.Ui.Activity bundle assembly into the bundle source dir (generic stager)
     cmds:
-      - dotnet build project/plugins/App.Ui.Activity/App.Ui.Activity.csproj -c Debug -v q -nologo
-      - cp project/plugins/App.Ui.Activity/bin/Debug/net8.0/FantaSim.App.Ui.Activity.dll project/bundles/activity/FantaSim.App.Ui.Activity.dll
+      - python3 tools/bundles/stage_bundle.py activity
 
   bundle:activity:
     desc: Build the activity ledger UI bundle DLL/data + export the collectible activity bundle PCK (manifest + dll, no scene)
@@ -174,124 +176,9 @@ tasks:
       - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "activity PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.ARTIFACTS_VERSION}}/godot/bundles/activity.pck'
 
   bundle:world:build:
-    desc: Build the App.World data-bundle assemblies and stage their DLLs into the bundle source dir
+    desc: Build + stage the App.World data-bundle assemblies into the bundle source dir (generic stager)
     cmds:
-      - dotnet build project/plugins/App.World/App.World.csproj -c Debug -v q -nologo
-      - dotnet build project/plugins/App.World.Composition/App.World.Composition.csproj -c Debug -v q -nologo
-      - dotnet build project/plugins/App.World.FieldView/App.World.FieldView.csproj -c Debug -v q -nologo
-      - find project/bundles/world -maxdepth 1 -type f -name '*.dll' -delete
-      - find project/bundles/world -maxdepth 1 -type f -name '*.deps.json' -delete
-      # Stage the world bundle from the real deps graph, filtered through Bootstrap's shared policy.
-      # Resident/shared contracts stay out of the bundle unless collectible-bundles.json explicitly
-      # excludes that exact assembly from parent sharing.
-      - |
-        set -eu
-        app_world_out="project/plugins/App.World/bin/Debug/net8.0"
-        bundle_dir="project/bundles/world"
-        cp "$app_world_out/FantaSim.App.World.deps.json" project/bundles/world/
-        collectible_names="$(jq -r '.bundles[] | select(.bundleId == "world") | (.assemblyNames // [])[]' project/hosts/complete-app/config/collectible-bundles.json)"
-        nuget_root="${NUGET_PACKAGES:-$HOME/.nuget/packages}"
-
-        is_collectible_override() {
-          printf '%s\n' "$collectible_names" | grep -Fxq "$1"
-        }
-
-        is_shared_exact() {
-          case "$1" in
-            FantaSim.World.Fields.Contracts|\
-            FantaSim.World.Fields.Core|\
-            FantaSim.World.Shared.Contracts|\
-            UnifyMaths|\
-            UnifyMaths.Numerics|\
-            UnifyStorage.Abstractions|\
-            UnifyStorage.Runtime.LiteDb|\
-            Arch|\
-            MessagePack|\
-            MessagePack.Annotations|\
-            FantaSim.App.World.Rendering|\
-            Cartography.Globe.Core|\
-            Cartography.Globe.Contracts|\
-            Cartography.Shared.Contracts)
-              return 0
-              ;;
-          esac
-          return 1
-        }
-
-        is_shared_prefix() {
-          case "$1" in
-            System.*|\
-            Microsoft.*|\
-            Godot*|\
-            GodotSharp*|\
-            netstandard|\
-            PluginArchi.*|\
-            ServiceArchi.*|\
-            RegistryArchi.*|\
-            DependencyArchi.*|\
-            CrosscutFoundation.*|\
-            MessagePipe*|\
-            BoomHud*|\
-            R3|\
-            ReactiveUI|\
-            DynamicData|\
-            FantaSim.App.*|\
-            FantaSim.App.World.*|\
-            FantaSim.App.Command.*|\
-            Akka*|\
-            Newtonsoft.Json|\
-            UnifyEcs.*|\
-            TimeDete.*)
-              return 0
-              ;;
-          esac
-          return 1
-        }
-
-        should_stage() {
-          asm="$1"
-          if is_collectible_override "$asm"; then
-            return 0
-          fi
-          if is_shared_exact "$asm" || is_shared_prefix "$asm"; then
-            return 1
-          fi
-          return 0
-        }
-
-        staged_names="$(mktemp)"
-        jq -r '
-          .targets[]
-          | to_entries[]
-          | .key as $package
-          | (.value.runtime // {})
-          | keys[]
-          | [$package, .]
-          | @tsv
-        ' "$app_world_out/FantaSim.App.World.deps.json" | while IFS="$(printf '\t')" read -r package asset; do
-          asm="$(basename "$asset" .dll)"
-          if ! should_stage "$asm"; then
-            continue
-          fi
-          if grep -Fxq "$asm" "$staged_names"; then
-            continue
-          fi
-          printf '%s\n' "$asm" >> "$staged_names"
-          src="$app_world_out/$asm.dll"
-          if [ -f "$src" ]; then
-            cp "$src" "$bundle_dir/"
-            continue
-          fi
-          package_id="${package%/*}"
-          package_version="${package##*/}"
-          package_dir="$(printf '%s' "$package_id" | tr '[:upper:]' '[:lower:]')"
-          src="$nuget_root/$package_dir/$package_version/$asset"
-          if [ ! -f "$src" ]; then
-            echo "missing package runtime asset for world bundle: $src" >&2
-            exit 1
-          fi
-          cp "$src" "$bundle_dir/"
-        done
+      - python3 tools/bundles/stage_bundle.py world
 
   bundle:iii:build:
     desc: Stage iii worker manifests into the bundle source dir

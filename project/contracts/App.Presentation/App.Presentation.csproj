@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>FantaSim.App.Presentation</RootNamespace>
+    <AssemblyName>FantaSim.App.Presentation.Contracts</AssemblyName>
+    <!-- ServiceArchi Tier 1: host-facing planet-presentation mount surface. The binder (T4 impl)
+         lives in plugins/App.Presentation and ships INSIDE world.pck (bundle-maximalism phase 1);
+         the resident host talks to it only through this shared contract. No T2 proxy: the world
+         bundle's PresentationPlugin registers the instance and the host resolves it per use. -->
+    <ServiceArchiTier>T1</ServiceArchiTier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="ServiceArchiTier" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" />
+  </ItemGroup>
+
+</Project>

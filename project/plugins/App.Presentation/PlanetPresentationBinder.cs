@@ -43,7 +43,6 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
     private readonly ILogger _log;
     private readonly PlanetTimelineController _timeline;
     private readonly IDisposable _timelineRegistration;
-    private readonly IDisposable _watch;
     private IDisposable? _generationSubscription;
     private Node3D? _activeRoot;
     private Node3D? _plateSurfaceRoot;
@@ -171,7 +170,11 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
 
         _resource.RuntimeChanging += OnResourceRuntimeChanging;
         _resource.RuntimeChanged += OnResourceRuntimeChanged;
-        _watch = _resource.WatchResource(WorldBundleId);
+        // The world pck WATCH deliberately does NOT live here (bundle-maximalism phase 1): this
+        // binder ships inside the world bundle, and a watcher owned by the bundle cancels its own
+        // reload mid-flight when the unload phase disposes it (the load half never runs). The
+        // resident host owns the watch (Host.SubscribeResourceRuntimeEvents); this binder only
+        // unmounts on RuntimeChanging and is recreated by the new bundle's PresentationPlugin.
     }
 
     private void ResetRegimeTracking()
@@ -204,7 +207,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Planet presentation document failed.");
+            _log.LogError(ex, "Planet presentation document failed: {Message}", ex.Message);
             return;
         }
 
@@ -846,7 +849,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Mantle x-ray sampling failed at t={Tick}.", _timeline.Tick);
+            _log.LogError(ex, "Mantle x-ray sampling failed at t={Tick}: {Message}", _timeline.Tick, ex.Message);
             return;
         }
 
@@ -897,7 +900,7 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Mantle layer sampling failed at t={Tick}.", _timeline.Tick);
+            _log.LogError(ex, "Mantle layer sampling failed at t={Tick}: {Message}", _timeline.Tick, ex.Message);
             return;
         }
 
@@ -1405,7 +1408,7 @@ void fragment() {
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "Continents membership refresh failed at t={Tick}.", tick);
+            _log.LogError(ex, "Continents membership refresh failed at t={Tick}: {Message}", tick, ex.Message);
             return;
         }
 
@@ -1535,7 +1538,7 @@ void fragment() {
         catch (Exception ex)
         {
             _regimeRefreshPending = false;
-            _log.LogError(ex, "Planet presentation document failed during regime refresh at tick {Tick}.", _timeline.Tick);
+            _log.LogError(ex, "Planet presentation document failed during regime refresh at tick {Tick}: {Message}", _timeline.Tick, ex.Message);
             return;
         }
 
@@ -2533,7 +2536,6 @@ void fragment() {
         _timeline.LayerSelectionChanged -= OnLayerSelectionChanged;
         _resource.RuntimeChanging -= OnResourceRuntimeChanging;
         _resource.RuntimeChanged -= OnResourceRuntimeChanged;
-        _watch.Dispose();
         _generationSubscription?.Dispose();
         _generationSubscription = null;
         CancelScrubRestRefresh();

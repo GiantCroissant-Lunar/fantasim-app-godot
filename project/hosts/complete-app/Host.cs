@@ -37,8 +37,10 @@ public partial class Host : Node
     private IRenderCompositionHandle? _renderComposition;
     private ICameraCompositionHandle? _cameraComposition;
     private SceneTierPckWatcher? _sceneTierPckWatcher;
+    private IDisposable? _worldBundleWatch;
     private bool _ecsWorldReady;
     private bool _timelineReloadPending;
+    private bool _worldReloadPending;
 
     public override void _Ready()
     {
@@ -50,7 +52,7 @@ public partial class Host : Node
         ApplyInitialWindowSize();
 
         _collectibleBundles = LoadCollectibleBundles();
-        _composition.Bootstrap.BuildPluginHost(_collectibleBundles);
+        _composition.Bootstrap.BuildPluginHost(_collectibleBundles, LoadSharedAssemblyPolicy());
 
         _ = _composition.Bootstrap.RunAsync();
 
@@ -66,7 +68,8 @@ public partial class Host : Node
         SceneFlowComposition.ComposeSceneFlow(ctx);
         (_ecs, _ecsWorldReady) = EcsComposition.ComposeEcs(ctx);
         CommandComposition.ComposeCommand(ctx);
-        RegisterTimelineReloadHook(ctx.Registry);
+        RegisterBundleReloadHook(ctx.Registry);
+        RegisterPresentationOptions(ctx.Registry);
         IiiComposition.ComposeIii(ctx, tree, this);
         GpuComposition.ComposeGpu(ctx);
         GpuShaderComposition.ComposeGpuShader(ctx);
@@ -95,6 +98,8 @@ public partial class Host : Node
 
     public override void _ExitTree()
     {
+        _worldBundleWatch?.Dispose();
+        _worldBundleWatch = null;
         if (_resource is not null)
         {
             _resource.RuntimeChanging -= OnResourceRuntimeChanging;
@@ -116,39 +121,104 @@ public partial class Host : Node
 
         _resource.RuntimeChanging += OnResourceRuntimeChanging;
         _resource.RuntimeChanged += OnResourceRuntimeChanged;
+
+        // The world pck watch is HOST-owned (bundle-maximalism phase 1): the binder that used to
+        // own it now ships inside the world bundle, and a bundle-owned watcher cancels its own
+        // reload mid-flight when the unload phase disposes it — the load half never runs. The
+        // watch must outlive the bundle it reloads (same pattern as IiiComposition's iii watch).
+        _worldBundleWatch = _resource.WatchResource("world");
     }
 
     private void OnResourceRuntimeChanging(object? sender, FantaSim.App.Resource.ResourceRuntimeChangingEventArgs e)
     {
-        if (e.Operation == FantaSim.App.Resource.ResourceRuntimeOperation.Reload
-            && string.Equals(e.BundleId, "timeline", StringComparison.OrdinalIgnoreCase))
-        {
+        if (e.Operation != FantaSim.App.Resource.ResourceRuntimeOperation.Reload)
+            return;
+
+        if (string.Equals(e.BundleId, "timeline", StringComparison.OrdinalIgnoreCase))
             _timelineReloadPending = true;
+
+        if (string.Equals(e.BundleId, "world", StringComparison.OrdinalIgnoreCase))
+        {
+            // Sever every resident->bundle reference BEFORE the old ALC unloads: the render-ingress
+            // delegates, the camera orbit target, and the host's contract handle all point at
+            // objects typed in the outgoing world ALC.
+            _worldReloadPending = true;
+            _renderComposition?.SetCutawayTarget(null);
+            _renderComposition?.SetExplodedTarget(null);
+            _renderComposition?.SetMantleTarget(null);
+            _cameraComposition?.SetOrbitTarget(null);
+            _planetPresentation = null;
         }
     }
 
     private void OnResourceRuntimeChanged(object? sender, EventArgs e)
     {
-        if (!_timelineReloadPending)
-            return;
-
-        _timelineReloadPending = false;
         if (_composition is null)
             return;
 
         var registry = _composition.Bootstrap.Registry;
         var resource = registry.TryGet<FantaSim.App.Resource.IService>();
-        if (resource?.IsLoaded("timeline") != true)
-            return;
 
-        HandleTimelineBundleReloaded();
+        if (_worldReloadPending)
+        {
+            // Consume the flag only once the NEW bundle's plugin has registered its presentation
+            // — Changed events from OTHER bundles' reloads interleave with the world reload, and
+            // IsLoaded("world") is still true for the OLD copy during its own unload phase. If the
+            // registration is absent, leave the flag armed; the world reload's own Changed event
+            // completes the rebind.
+            if (resource?.IsLoaded("world") == true
+                && registry.TryGet<IPlanetPresentation>() is not null)
+            {
+                _worldReloadPending = false;
+                HandleWorldBundleReloaded();
+            }
+        }
+
+        if (_timelineReloadPending)
+        {
+            _timelineReloadPending = false;
+            if (resource?.IsLoaded("timeline") == true)
+                HandleTimelineBundleReloaded();
+        }
     }
 
-    private void RegisterTimelineReloadHook(IRegistry registry)
+    private void RegisterBundleReloadHook(IRegistry registry)
     {
         registry.Register<FantaSim.App.Command.IBundleReloadHook>(
-            new TimelineReloadHook(this),
-            new ServiceRegistration { Tags = new[] { "timeline", "hot-reload" }, Description = "Timeline resident rebind after bundle reload" });
+            new BundleReloadHook(this),
+            new ServiceRegistration { Tags = new[] { "timeline", "world", "hot-reload" }, Description = "Resident rebind after bundle reload (timeline, world)" });
+    }
+
+    private void RegisterPresentationOptions(IRegistry registry)
+    {
+        // The App.Presentation seam may not read config (SeamConfigBanTests); the host reads the
+        // knobs and hands them across the ALC boundary as a shared options record, registered
+        // before the world bundle loads so PresentationPlugin can resolve it.
+        registry.Register<PlanetPresentationOptions>(
+            new PlanetPresentationOptions(
+                // M0 (spec D1): globe:plateView=identity (env globe__plateView) keeps the
+                // PlateIdentity diagnostic on the geosphere.plate track; default is Continents.
+                _config?.Get("globe:plateView"),
+                // P4: the world-generation node-graph panel stays env-gated behind world:showGraph.
+                _config?.GetValue("world:showGraph", false) ?? false),
+            new ServiceRegistration { Tags = new[] { "presentation", "options" }, Description = "planet presentation options (host config bridge)" });
+    }
+
+    private void HandleWorldBundleReloaded()
+    {
+        if (_composition is null)
+            return;
+
+        var registry = _composition.Bootstrap.Registry;
+        Callable.From(() =>
+        {
+            BindPlanetPresentation(registry);
+            // The new bundle's binder re-registered ITimelineController; recompose the resident
+            // timeline service + face against the new controller instance.
+            HandleTimelineBundleReloaded();
+        }).CallDeferred();
+        _log.LogInformation("world bundle reloaded; presentation rebind scheduled.");
+        RecordActivity(ActivityEntryKind.Log, "world.presentation.rebound", "system", "world", outcome: "rebind scheduled");
     }
 
     private void HandleTimelineBundleReloaded()
@@ -186,11 +256,11 @@ public partial class Host : Node
         _ = timeline.SeekAsync(controller.Tick);
     }
 
-    private sealed class TimelineReloadHook : FantaSim.App.Command.IBundleReloadHook
+    private sealed class BundleReloadHook : FantaSim.App.Command.IBundleReloadHook
     {
         private readonly Host _host;
 
-        public TimelineReloadHook(Host host)
+        public BundleReloadHook(Host host)
         {
             _host = host;
         }
@@ -199,6 +269,8 @@ public partial class Host : Node
         {
             if (string.Equals(bundleId, "timeline", StringComparison.OrdinalIgnoreCase))
                 _host.HandleTimelineBundleReloaded();
+            if (string.Equals(bundleId, "world", StringComparison.OrdinalIgnoreCase))
+                _host.HandleWorldBundleReloaded();
 
             return Task.CompletedTask;
         }
@@ -684,19 +756,22 @@ public partial class Host : Node
         if (!resource.IsLoaded("world"))
             return;
 
-        var sceneRegistry = registry.Get<IBundleSceneRegistry>();
-        _planetPresentation?.Dispose();
-        _planetPresentation = PresentationComposition.CreatePlanetPresentation(
-            registry,
-            resource,
-            sceneRegistry,
-            _composition!.Bootstrap.LoggerFactory,
-            // M0 (spec D1): globe:plateView=identity (env globe__plateView) keeps the PlateIdentity
-            // diagnostic on the geosphere.plate track; default is the Continents membership view.
-            _config?.Get("globe:plateView"),
-            // P4: the world-generation node graph panel is env-gated behind world:showGraph (default
-            // false; env override world__showGraph=true), matching the iii graph's graph:show gate.
-            _config?.GetValue("world:showGraph", false) ?? false);
+        BindPlanetPresentation(registry);
+    }
+
+    // Bundle-maximalism phase 1: the binder lives INSIDE the world bundle. Its PresentationPlugin
+    // creates and owns it (incl. disposal); the host only resolves the shared contract, mounts,
+    // and wires the ingress targets. The host holds NO owning reference — _planetPresentation is
+    // severed on world RuntimeChanging so the old ALC can collect.
+    private void BindPlanetPresentation(IRegistry registry)
+    {
+        _planetPresentation = registry.TryGet<IPlanetPresentation>();
+        if (_planetPresentation is null)
+        {
+            _log.LogWarning("world bundle loaded but IPlanetPresentation is not registered; planet stays unmounted.");
+            return;
+        }
+
         _planetPresentation.Rebind();
         _renderComposition?.SetCutawayTarget(_planetPresentation.UpdateCutaway);
         _renderComposition?.SetExplodedTarget(_planetPresentation.UpdateExploded);
@@ -743,6 +818,16 @@ public partial class Host : Node
         return CollectibleBundles.ParseJson(json);
     }
 
+    private static SharedAssemblyPolicyConfig LoadSharedAssemblyPolicy()
+    {
+        // Fail hard: without the share-lists the plugin host would share nothing and every bundle
+        // would duplicate the kernel closure (type-identity chaos). No silent fallback.
+        const string configPath = "res://config/shared-assembly-policy.json";
+        if (!Godot.FileAccess.FileExists(configPath))
+            throw new InvalidOperationException($"Missing required config: {configPath}");
+        return SharedAssemblyPolicyConfig.ParseJson(Godot.FileAccess.GetFileAsString(configPath));
+    }
+
     public override void _Notification(int what)
     {
         if (what == NotificationWMCloseRequest || what == NotificationExitTree)
@@ -766,11 +851,12 @@ public partial class Host : Node
 
             _sceneTierPckWatcher?.Dispose();
             _sceneTierPckWatcher = null;
-            _planetPresentation?.Dispose();
+            // The world bundle's PresentationPlugin owns binder disposal (runs in the plugin-host
+            // teardown inside _composition.Dispose()); the host only drops its handle.
+            _planetPresentation = null;
             _renderComposition?.SetCutawayTarget(null);
             _renderComposition?.SetExplodedTarget(null);
             _renderComposition?.SetMantleTarget(null);
-            _planetPresentation = null;
             _composition?.Dispose();
         }
         base._Notification(what);
