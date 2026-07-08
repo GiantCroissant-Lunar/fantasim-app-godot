@@ -100,6 +100,15 @@ public sealed partial class PresentationPlugin : ILifecyclePlugin
         var loggerFactory = context.Services.GetRequiredService<ILoggerFactory>();
         var resource = registry.Get<ResourceService>();
         var sceneRegistry = registry.Get<IBundleSceneRegistry>();
-        return PresentationComposition.CreatePlanetPresentation(registry, resource, sceneRegistry, loggerFactory);
+        // Config knobs arrive via the host-registered options record (the seam itself may not read
+        // config — SeamConfigBanTests); absent registration means defaults.
+        var options = registry.TryGet<PlanetPresentationOptions>() ?? PlanetPresentationOptions.Default;
+        return PresentationComposition.CreatePlanetPresentation(
+            registry,
+            resource,
+            sceneRegistry,
+            loggerFactory,
+            options.PlateViewOverride,
+            options.ShowWorldGraph);
     }
 }

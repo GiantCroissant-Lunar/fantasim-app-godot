@@ -33,10 +33,12 @@
       "bundleId": "world",
       "pluginAssembly": "FantaSim.App.World.dll",
       "projects": [
-        { "csproj": "project/plugins/App.World/App.World.csproj", "output": "project/plugins/App.World/bin/Debug/net8.0", "assembly": "FantaSim.App.World" }
+        { "csproj": "project/plugins/App.World/App.World.csproj", "output": "project/plugins/App.World/bin/Debug/net8.0", "assembly": "FantaSim.App.World" },
+        { "csproj": "project/plugins/App.Presentation/App.Presentation.csproj", "output": "project/plugins/App.Presentation/.godot/mono/temp/bin/Debug", "assembly": "FantaSim.App.Presentation" }
       ],
       "assemblyNames": [
         "FantaSim.App.World",
+        "FantaSim.App.Presentation",
         "FantaSim.App.World.FieldView",
         "FantaSim.App.World.Composition",
         "ConcurrentCollections",
