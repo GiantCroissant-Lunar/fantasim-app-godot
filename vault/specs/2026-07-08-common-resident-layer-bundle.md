@@ -80,6 +80,42 @@ After phase 2.5, the flip becomes clean and total: **shared = T1 contracts + the
 every non-contract FantaSim.App.* prefix leaves the share list; domain bundles carry domain code
 only. The flip is an edit to the policy json + one windowed gate, exactly as phase 0 intended.
 
+## Adversarial review outcome (2026-07-08, codex/gpt-5.5 high, read-only cross-model)
+
+Verdict: **implementable only with these amendments** (full findings:
+`.agent/logs/codex/common-bundle-review-20260708.log`). The mechanics section above is
+subordinate to this list where they conflict.
+
+1. **Signature-free bootstrap stage.** `Host._Ready` cannot be the load site: the CLR may force
+   `Host`'s field/method-signature assemblies at type-load time, and `AppComposition.Activate()`
+   constructs the Akka `ActorSystem` in the Bootstrap ctor — common assemblies are needed BEFORE
+   any of that runs. A tiny bootstrap entry (no common-layer types in any signature) must install
+   an `AssemblyLoadContext.Default.Resolving` hook and load `common.pck` before
+   `AppComposition.Activate()` or any composition.
+2. **Strict resident-layer loader, separate from PluginArchi.** `BundleHost`/`IsolatedLoader`
+   only load into collectible contexts; the common layer needs its own loader: extract, load every
+   DLL into `AssemblyLoadContext.Default`, fail-hard on missing/mismatch, never unload. (Confirmed:
+   merely extracting to a temp dir does NOT make Default probing find the assemblies — they must be
+   loaded, or the Resolving hook must map them.)
+3. **Post-export strip step.** `export_presets.cfg` cannot exclude managed DLLs — Godot's C# export
+   packages the full `dotnet publish` closure (UnifyBuild's BuildGodot delegates to it). The strip
+   runs after export, removes common-layer DLLs from the app's data dirs, and the `--check-dual`
+   family gains exe∩common / bundle∩common / bundle∩bundle scans as the acceptance gate.
+4. **Godot-facing assemblies stay in the exe for the first cut** (BoomHud.Godot.Runtime, any
+   Godot.NET.Sdk assembly with script classes). Whether GodotSharp script registration works for
+   Default-loaded, PCK-delivered assemblies is an open experiment — until it passes, only pure
+   support DLLs go to common.
+5. **The catalog/version gate builds FIRST** (bundle-delivery phases B/C): common bundle identity +
+   hash/version compatibility + fail-hard boot validation. No version contract exists today.
+
+Two gating experiments before implementation starts (both small, windowed):
+- **E1 (script registration):** tiny Godot.NET.Sdk assembly with one Node script class → strip from
+  publish output → deliver via common.pck → Default-load before scene instantiation → verify
+  `.tscn` script binding + `GetScript()` in the EXPORTED app.
+- **E2 (strip viability):** export normally, strip `Arch.dll` from the app data dirs, preload it
+  from a temp path before `EcsComposition.ComposeEcs`, confirm boot + binding to the preloaded
+  instance.
+
 ## Acceptance
 
 - Exported app binary contains no assembly that `common.pck` carries (exe∩common empty).
