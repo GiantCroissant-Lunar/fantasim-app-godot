@@ -221,15 +221,18 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
                 await timelineService.SeekAsync(tick, cancellationToken).ConfigureAwait(false);
                 if (controller.Tick != tick)
                     controller.PushTick(tick);
-                return JsonSerializer.Serialize(new
+                // JsonObject, NOT JsonSerializer.Serialize(anonymous): anonymous types compile
+                // into this collectible assembly, and the resident serializer's per-Type cache
+                // roots their LoaderAllocator — the ALC never collects (gcroot-proven 2026-07-08).
+                return new JsonObject
                 {
-                    ok = true,
-                    requestedTick = tick,
-                    tick = controller.Tick,
-                    serviceTick = timelineService.Tick,
-                    maxTick = controller.MaxTick,
-                    state = timelineService.State.ToString(),
-                });
+                    ["ok"] = true,
+                    ["requestedTick"] = tick,
+                    ["tick"] = controller.Tick,
+                    ["serviceTick"] = timelineService.Tick,
+                    ["maxTick"] = controller.MaxTick,
+                    ["state"] = timelineService.State.ToString(),
+                }.ToJsonString();
             });
 
         commandService.Register(
@@ -246,13 +249,13 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
                         $"Layer '{layerId}' in sphere '{sphereId}' is not active at tick {controller.Tick}.");
 
                 controller.SelectLayer(sphereId, layerId);
-                return Task.FromResult<string?>(JsonSerializer.Serialize(new
+                return Task.FromResult<string?>(new JsonObject
                 {
-                    ok = true,
-                    sphereId,
-                    layerId,
-                    tick = controller.Tick,
-                }));
+                    ["ok"] = true,
+                    ["sphereId"] = sphereId,
+                    ["layerId"] = layerId,
+                    ["tick"] = controller.Tick,
+                }.ToJsonString());
             });
 
         commandService.Register(
@@ -273,15 +276,19 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
                         $"Layer '{layerId}' in sphere '{sphereId}' is not active at tick {controller.Tick}.");
 
                 controller.ToggleLayer(sphereId, layerId);
-                return Task.FromResult<string?>(JsonSerializer.Serialize(new
+                var activeLayers = new JsonArray();
+                foreach (var l in controller.ActiveLayers)
+                    activeLayers.Add(new JsonObject { ["sphereId"] = l.SphereId, ["layerId"] = l.LayerId });
+
+                return Task.FromResult<string?>(new JsonObject
                 {
-                    ok = true,
-                    sphereId,
-                    layerId,
-                    active = !alreadyActive,
-                    tick = controller.Tick,
-                    activeLayers = controller.ActiveLayers.Select(l => new { sphereId = l.SphereId, layerId = l.LayerId }),
-                }));
+                    ["ok"] = true,
+                    ["sphereId"] = sphereId,
+                    ["layerId"] = layerId,
+                    ["active"] = !alreadyActive,
+                    ["tick"] = controller.Tick,
+                    ["activeLayers"] = activeLayers,
+                }.ToJsonString());
             });
     }
 
