@@ -1,6 +1,7 @@
 {
   "comment": "Share-lists for the plugin host's SharedAssemblyPolicy. SINGLE SOURCE OF TRUTH consumed by App.Common/Bootstrap.cs (runtime) AND tools/bundles/stage_bundle.py (bundle staging). excludedExactMatches come from collectible-bundles.json at runtime. Flipping bundle-maximalism polarity (share contracts only) is an edit to THIS file once phase 1 proves.",
   "exactMatches": [
+    "FantaSim.Cross.Abstractions",
     "FantaSim.World.Fields.Contracts",
     "FantaSim.World.Fields.Core",
     "FantaSim.World.Shared.Contracts",

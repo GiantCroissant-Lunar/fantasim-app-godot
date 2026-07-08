@@ -241,8 +241,14 @@ public partial class TimelineFace : Control, ITimelineFace
             return;
         }
 
+        // A controller swap (world hot-reload) must re-register playback on the NEW controller:
+        // clear the flag after unregistering from the old one, or the RegisterPlayback below is
+        // skipped and Play/Pause/Seek callbacks silently stay unwired after the first reload.
         if (_playbackRegistered && !ReferenceEquals(_ctl, controller))
+        {
             _ctl?.UnregisterPlayback();
+            _playbackRegistered = false;
+        }
 
         _ctl = controller;
         SetProcess(true);

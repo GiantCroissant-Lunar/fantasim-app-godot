@@ -64,6 +64,22 @@ def resolve_asset(output_dir, assembly_name, package, asset, nuget_root):
     raise StagingError(f"missing runtime asset for bundle staging: {local} and {remote}")
 
 
+def output_dir_mismatch(configured_output, reported_target_dir):
+    """None when the configured output dir IS the project's real TargetDir, else the real dir.
+
+    msbuild reports TargetDir with a trailing slash; both sides are resolved before comparing.
+    """
+    actual = Path(reported_target_dir).resolve()
+    return None if actual == Path(configured_output).resolve() else actual
+
+
+def msbuild_target_dir(csproj):
+    result = subprocess.run(
+        ["dotnet", "msbuild", str(csproj), "-getProperty:TargetDir", "-p:Configuration=Debug", "-nologo"],
+        check=True, capture_output=True, text=True, cwd=REPO_ROOT)
+    return result.stdout.strip()
+
+
 def bundle_entry(registry, bundle_id):
     for entry in registry["bundles"]:
         if entry["bundleId"] == bundle_id:
@@ -99,6 +115,17 @@ def stage(bundle_id, registry, policy, build=True):
             subprocess.run(
                 ["dotnet", "build", str(csproj), "-c", "Debug", "-v", "q", "-nologo"],
                 check=True, cwd=REPO_ROOT)
+            # The configured dir must be the REAL TargetDir: a stale dir silently ships fossil
+            # assemblies (timeline.pck shipped a pre-refactor App.Timeline.dll whose
+            # TimelinePlugin.ActiveController static pinned the boot world ALC, 2026-07-08 —
+            # the csproj had moved from Godot.NET.Sdk to Microsoft.NET.Sdk and the output
+            # entry was never updated).
+            mismatch = output_dir_mismatch(output, msbuild_target_dir(csproj))
+            if mismatch is not None:
+                raise StagingError(
+                    f"bundle '{bundle_id}': configured output '{output}' is not {csproj.name}'s "
+                    f"real TargetDir '{mismatch}' — fix the 'output' entry in {REGISTRY_PATH} "
+                    f"(a stale dir stages fossil assemblies)")
 
         plugin_dll = output / f"{assembly}.dll"
         if not plugin_dll.is_file():

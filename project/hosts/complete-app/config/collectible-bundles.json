@@ -19,7 +19,7 @@
       "bundleId": "timeline",
       "pluginAssembly": "FantaSim.App.Timeline.dll",
       "projects": [
-        { "csproj": "project/plugins/App.Timeline/App.Timeline.csproj", "output": "project/plugins/App.Timeline/.godot/mono/temp/bin/Debug", "assembly": "FantaSim.App.Timeline" }
+        { "csproj": "project/plugins/App.Timeline/App.Timeline.csproj", "output": "project/plugins/App.Timeline/bin/Debug/net8.0", "assembly": "FantaSim.App.Timeline" }
       ]
     },
     {

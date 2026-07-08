@@ -82,5 +82,28 @@ class ResolveAssetTests(unittest.TestCase):
                 stage_bundle.resolve_asset(Path(tmp), "Nope", "Nope/1.0.0", "lib/net8.0/Nope.dll", Path(tmp))
 
 
+class OutputDirMismatchTests(unittest.TestCase):
+    """The configured 'output' dir must be the project's REAL msbuild TargetDir.
+
+    A stale configured dir silently ships fossil assemblies: the build succeeds into the
+    real TargetDir while the stager copies whatever old dll still sits in the configured
+    dir (this is exactly how timeline.pck shipped a pre-refactor FantaSim.App.Timeline.dll
+    whose TimelinePlugin.ActiveController static pinned the boot world ALC, 2026-07-08).
+    """
+
+    def test_same_dir_with_trailing_slash_is_a_match(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(stage_bundle.output_dir_mismatch(Path(tmp), tmp + "/"))
+
+    def test_different_dir_reports_the_actual_target_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            configured = Path(tmp) / "stale" / "bin"
+            actual = Path(tmp) / "real" / "bin"
+            actual.mkdir(parents=True)
+            self.assertEqual(
+                stage_bundle.output_dir_mismatch(configured, str(actual)),
+                actual.resolve())
+
+
 if __name__ == "__main__":
     unittest.main()

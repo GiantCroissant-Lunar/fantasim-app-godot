@@ -14,6 +14,11 @@ public static class TimelineComposition
     // double-advance the service tick on every playhead frame.
     private static Action<long>? _tickChangedHandler;
 
+    // The controller _tickChangedHandler is subscribed to. A world reload REPLACES the
+    // registered controller instance, so unsubscribing from the freshly resolved one is a
+    // silent no-op that leaves the outgoing controller wired to the disposed service.
+    private static FantaSim.App.World.Composition.ITimelineController? _subscribedController;
+
     public static void ComposeTimeline(HostCompositionContext ctx)
     {
         var log = ctx.LoggerFactory.CreateLogger("HostComposition.Timeline");
@@ -21,6 +26,12 @@ public static class TimelineComposition
         var controller = registry.TryGet<FantaSim.App.World.Composition.ITimelineController>();
         if (controller is null)
         {
+            // Going inert: release the previous controller too, or the statics below would
+            // keep the outgoing world ALC's controller alive with no re-compose to sever it.
+            if (_tickChangedHandler is not null && _subscribedController is not null)
+                _subscribedController.TickChanged -= _tickChangedHandler;
+            _tickChangedHandler = null;
+            _subscribedController = null;
             log.LogWarning("Timeline: no ITimelineController registered; timeline service will be inert.");
             return;
         }
@@ -50,10 +61,11 @@ public static class TimelineComposition
         }
         registry.UnregisterAll<FantaSim.App.Timeline.IService>();
 
-        // Unsubscribe the prior TickChanged handler before re-subscribing so a hot-reload
-        // re-compose does not stack two handlers (which would double-advance the service tick).
-        if (_tickChangedHandler is not null)
-            controller.TickChanged -= _tickChangedHandler;
+        // Unsubscribe the prior TickChanged handler from the controller it was SUBSCRIBED to
+        // (not the freshly resolved one) so a hot-reload re-compose does not stack two handlers
+        // (which would double-advance the service tick).
+        if (_tickChangedHandler is not null && _subscribedController is not null)
+            _subscribedController.TickChanged -= _tickChangedHandler;
 
         // Build the T3 service with the controller's schedules. The T3 Service drives the face
         // via ITimelineFace; the face also calls back into the controller (PushTick) during
@@ -68,6 +80,7 @@ public static class TimelineComposition
         // stay in sync with the canonical controller tick. AcceptTickFromFace guards on
         // State == Playing so scrub-only PushTick calls do not double-advance the service.
         _tickChangedHandler = tick => timelineService.AcceptTickFromFace(tick);
+        _subscribedController = controller;
         controller.TickChanged += _tickChangedHandler;
 
         registry.Register<FantaSim.App.Timeline.IService>(
