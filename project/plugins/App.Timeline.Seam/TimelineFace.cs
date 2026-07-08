@@ -215,7 +215,18 @@ public partial class TimelineFace : Control, ITimelineFace
     }
 
     public void RebindResidentContext()
-        => BindResidentContext(forceProxyBind: true);
+    {
+        // TimelinePlugin raises this from the resource watcher's thread-pool thread; the bind
+        // walks into UpdateLayout/AddChild, which Godot only allows on the main thread. The
+        // deleted host machinery marshaled via CallDeferred — the face owns that marshal now.
+        if (OS.GetThreadCallerId() == OS.GetMainThreadId())
+        {
+            BindResidentContext(forceProxyBind: true);
+            return;
+        }
+
+        Callable.From(() => BindResidentContext(forceProxyBind: true)).CallDeferred();
+    }
 
     private void BindResidentContext(bool forceProxyBind)
     {

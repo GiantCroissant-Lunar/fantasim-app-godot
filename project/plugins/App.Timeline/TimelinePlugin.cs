@@ -317,13 +317,10 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
         if (!ComposeTimeline(markPendingWhenMissing: false))
             return false;
 
-        if (_timelineService is not null && _subscribedController is not null)
-        {
-            _faceProxy?.RebindResidentContext();
-            _timelineService.SeekAsync(_subscribedController.Tick, CancellationToken.None)
-                .GetAwaiter()
-                .GetResult();
-        }
+        // No manual tick push here: the face's BindResidentContext ends with SeekTo(_ctl.Tick),
+        // so the rebind itself delivers the current controller tick — on the main thread, after
+        // the cross target is actually bound (a seek pushed before the bind lands is a no-op).
+        _faceProxy?.RebindResidentContext();
 
         return true;
     }
