@@ -90,6 +90,25 @@ bundles/
 | 7 | Ecs | frame-pump rebind handle + actor teardown; the scope doc's Akka gotcha is live |
 | 8 | Managed Iii | only if native side holds no GCHandles into managed collectible code |
 
+## Polarity-flip worklist (codex policy audit, 2026-07-08)
+
+Full findings: `.agent/logs/codex/policy-audit-20260708.log`. Before the flip:
+
+- **Decide the 7 non-contract `FantaSim.App.*` assemblies that configured bundle deps reference
+  without a collectible override:** App.Common, App.Ecs, App.NodeGraph, App.Resource,
+  App.Resource.Bundle.Seam, App.Ui.NodeGraph, App.World.Rendering — each needs an explicit
+  resident-allowlist / common-layer / bundle-local decision (27-item broader audit list in the log).
+- **Policy noise to clean AT flip time** (behavior-neutral now, smaller flip diff): dead prefixes
+  `ReactiveUI`/`DynamicData` (match nothing loaded), redundant `GodotSharp` (covered by `Godot`),
+  `FantaSim.App.World.`/`FantaSim.App.Command.` (covered by `FantaSim.App.`). Keep `netstandard`
+  with a comment — facade-name resolution requests from netstandard-targeted shared assemblies
+  (UnifyMaths et al.) may still hit it at runtime even though no file matches on disk.
+- **Fixed immediately (audit's one real closure bug):** shared `UnifyStorage.Runtime.LiteDb`
+  depended on unshared `LiteDB` (host ships it; a future Activity/storage bundle would have staged
+  a private copy) — `LiteDB` promoted to exactMatches.
+- Clean bills: no bundle∩bundle duplicates; all remaining world overrides verified host-absent;
+  no stale overrides.
+
 ## Standing risks
 
 - **Resident→collectible delegates** (render cutaway/exploded/mantle targets, camera orbit

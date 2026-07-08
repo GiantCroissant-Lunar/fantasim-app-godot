@@ -10,6 +10,7 @@
     "UnifyMaths.Abstractions",
     "UnifyStorage.Abstractions",
     "UnifyStorage.Runtime.LiteDb",
+    "LiteDB",
     "Arch",
     "Arch.LowLevel",
     "Collections.Pooled",
