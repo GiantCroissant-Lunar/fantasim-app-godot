@@ -55,6 +55,33 @@ Godot-facing assemblies STAY in the exe (E1); lazy loading works, first demand i
   (editor/unstripped run); expected without pck → FATAL from day one; pck without expected →
   load with warning until Task 11 (S4) flips it to FATAL.
 
+## Gate findings — normative amendments (2026-07-08 evening, all landed)
+
+The S1/S2 windowed gates found four load-order/binder mechanisms the plan's original design
+missed. Each is now code + this section supersedes the corresponding plan text:
+
+1. **Exe-dir derivation (S1):** `AppContext.BaseDirectory` in a Godot export is the per-arch
+   data dir; the loader derives via `OS.GetExecutablePath().GetBaseDir()` like
+   GodotBundleDirectoryResolver. Loader messages also mirror to Console (GD.Print is invisible
+   in nohup-captured logs). `6e9fd1d`
+2. **Autoload-locked assemblies (S2, D8):** Godot's script bridge resolves the autoload script
+   assembly's direct references at REGISTRATION, before Host._Ready. `host_locked_names()` in
+   stage_bundle.py auto-excludes them (measured: R3 + 7 FantaSim.App.*.Contracts). `36c560c`
+3. **_Ready JIT isolation (S2):** JIT of _Ready resolves every type token in its body before
+   statement 1 runs; Host._Ready is now exactly EnsureLoaded() + NoInlining ComposeAndStart().
+   `dd874c9`
+4. **Component ALC + on-demand serving (S2):** Godot hosts the game graph in an
+   IsolatedComponentLoadContext, NOT Default — the loader hooks the context of its own assembly
+   and serves extracted DLLs from the Resolving event ONLY (no eager preload: path-preloaded
+   strong-named assemblies failed MemberRef resolution with MissingMethodException; requests
+   arrive PublicKeyToken=null and hook-served resolution binds the exact requested identity).
+   Task 3's preload loop is superseded. `effe2a4`
+
+List corrections: ReactiveUI, DynamicData, BoomHud.Foundation are not in the real host closure
+(dropped); final first cut = **36 assemblies**. Windowed evidence: S2 full gate PASS (boot,
+world reload + timeline hot-reload `old ALC collected`, 0 pins), S3 single-command
+self-stripping export PASS, S4 negative test PASS (half-provisioned = boot-fatal).
+
 ## Global Constraints
 
 - `common.pck` loads into `AssemblyLoadContext.Default` ONLY — never a collectible ALC.
