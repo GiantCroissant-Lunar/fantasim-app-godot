@@ -11,7 +11,8 @@ using Godot;
 namespace FantaSim.App.Resource.Bundle.CommonResidentLayer;
 
 /// <summary>
-/// Loads bundles/common.pck into the DEFAULT AssemblyLoadContext before any composition runs.
+/// Loads bundles/common.pck into the app's COMPONENT AssemblyLoadContext (Godot hosts the
+/// game assembly graph in an IsolatedComponentLoadContext, not Default) before composition.
 /// Called as the FIRST statement of Host._Ready. Never touches collectible ALC machinery —
 /// the common layer is packaging granularity, not hot-reload (spec: PluginArchi is two-tier).
 /// </summary>
@@ -57,9 +58,15 @@ public static class CommonResidentLayerBootstrap
             if (manifest?.Managed?.Assemblies is not { Count: > 0 } assemblies)
                 throw Fail($"common.pck has no manifest.json with managed.assemblies under {BundleResPath}");
 
-            // Resolving hook BEFORE any load (brief RISKS: dependency order - a preload's
-            // dependency may resolve before its own preload turn).
-            AssemblyLoadContext.Default.Resolving += OnDefaultResolving;
+            // Hook the COMPONENT load context, not Default: Godot hosts complete-app.dll and
+            // its whole dependency graph in an IsolatedComponentLoadContext (asmload trace,
+            // S2 gate 2026-07-08). Every stripped-assembly demand originates there, and its
+            // fallback chain never consults Default.Resolving. This seam assembly lives in
+            // that same context, so resolve it from ourselves.
+            var componentAlc = AssemblyLoadContext.GetLoadContext(typeof(CommonResidentLayerBootstrap).Assembly)
+                ?? AssemblyLoadContext.Default;
+            Log($"hooking load context '{componentAlc.Name ?? componentAlc.GetType().Name}'.");
+            componentAlc.Resolving += OnComponentResolving;
 
             var dllNames = assemblies!.Select(a => Path.GetFileName(a.Uri)).ToList();
             var extracted = new BundleExtractor().ExtractAllManaged(BundleResPath, dllNames);
@@ -99,36 +106,28 @@ public static class CommonResidentLayerBootstrap
                 Log("WARNING: loading common.pck without an expectation file (pre-S4 manual mode).");
             }
 
-            // Preload in manifest order. Skip names the Default ALC already has: an unstripped
-            // exe copy wins, and a duplicate LoadFromAssemblyPath of the same simple name would
-            // create a type-identity split (the MessagePack lesson, 2026-07-02).
-            var alreadyLoaded = new HashSet<string>(
-                AssemblyLoadContext.Default.Assemblies.Select(a => a.GetName().Name ?? string.Empty),
-                StringComparer.Ordinal);
-            var loadedCount = 0;
-            foreach (var (fileName, path) in extracted)
-            {
-                var simpleName = Path.GetFileNameWithoutExtension(fileName);
-                if (alreadyLoaded.Contains(simpleName))
-                {
-                    Log($"{simpleName} already loaded in Default ALC (unstripped exe copy) - pck copy skipped.");
-                    continue;
-                }
-                AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
-                loadedCount++;
-            }
-
+            // NO eager preload — serve on demand through the Resolving hook. Preloading via
+            // LoadFromAssemblyPath registered strong-named assemblies in a way the binder did
+            // not accept for MemberRef resolution from TPA callers (S2 gate 2026-07-08:
+            // byte-identical MessagePipe/Akka threw MissingMethodException while unsigned Arch
+            // worked). An assembly returned FROM the Resolving event is bound to the exact
+            // requested identity — the supported extension point. Manifest order is irrelevant:
+            // demand drives resolution.
             _loaded = true;
-            Log($"loaded {loadedCount}/{extracted.Count} assemblies from common.pck.");
+            Log($"extracted {extracted.Count} assemblies from common.pck; serving on demand via the component ALC's Resolving.");
         }
     }
 
-    private static Assembly? OnDefaultResolving(AssemblyLoadContext context, AssemblyName name)
+    private static Assembly? OnComponentResolving(AssemblyLoadContext context, AssemblyName name)
     {
         var map = _extractedByName;
         if (map is null || name.Name is null)
             return null;
-        return map.TryGetValue(name.Name, out var path) ? context.LoadFromAssemblyPath(path) : null;
+        var served = map.TryGetValue(name.Name, out var path);
+        // Diagnostic channel: every resolution MISS that reaches this hook is
+        // either us serving a common assembly or a genuine failure about to surface — log both.
+        Console.WriteLine($"[CommonResidentLayer] resolving: {name} -> {(served ? path : "NOT OURS (miss)")}");
+        return served ? context.LoadFromAssemblyPath(path!) : null;
     }
 
     // GD.Print does not reach a nohup-captured stdout in the exported app; the windowed
