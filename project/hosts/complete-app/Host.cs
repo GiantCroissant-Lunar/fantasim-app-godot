@@ -50,7 +50,7 @@ public partial class Host : Node
         ApplyInitialWindowSize();
 
         _collectibleBundles = LoadCollectibleBundles();
-        _composition.Bootstrap.BuildPluginHost(_collectibleBundles);
+        _composition.Bootstrap.BuildPluginHost(_collectibleBundles, LoadSharedAssemblyPolicy());
 
         _ = _composition.Bootstrap.RunAsync();
 
@@ -741,6 +741,16 @@ public partial class Host : Node
             return CollectibleBundles.Empty;
         var json = Godot.FileAccess.GetFileAsString(configPath);
         return CollectibleBundles.ParseJson(json);
+    }
+
+    private static SharedAssemblyPolicyConfig LoadSharedAssemblyPolicy()
+    {
+        // Fail hard: without the share-lists the plugin host would share nothing and every bundle
+        // would duplicate the kernel closure (type-identity chaos). No silent fallback.
+        const string configPath = "res://config/shared-assembly-policy.json";
+        if (!Godot.FileAccess.FileExists(configPath))
+            throw new InvalidOperationException($"Missing required config: {configPath}");
+        return SharedAssemblyPolicyConfig.ParseJson(Godot.FileAccess.GetFileAsString(configPath));
     }
 
     public override void _Notification(int what)

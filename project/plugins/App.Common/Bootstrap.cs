@@ -90,9 +90,10 @@ public sealed class Bootstrap
     public IPluginHost PluginHost =>
         _pluginHost ?? throw new InvalidOperationException("BuildPluginHost has not been called.");
 
-    public void BuildPluginHost(CollectibleBundles collectibleBundles)
+    public void BuildPluginHost(CollectibleBundles collectibleBundles, SharedAssemblyPolicyConfig sharedPolicy)
     {
         ArgumentNullException.ThrowIfNull(collectibleBundles);
+        ArgumentNullException.ThrowIfNull(sharedPolicy);
 
         if (_pluginHost is not null)
             throw new InvalidOperationException("BuildPluginHost has already been called.");
@@ -108,57 +109,8 @@ public sealed class Bootstrap
             })
             .WithParentContext(hostContext)
             .WithSharedPolicy(new SharedAssemblyPolicy(
-                exactMatches: new[]
-                {
-                    // Each name is shared WITH resident code; the tag is the forcing resident consumer.
-                    "FantaSim.World.Fields.Contracts",   // App.Ecs
-                    "FantaSim.World.Fields.Core",         // App.Ecs
-                    "FantaSim.World.Shared.Contracts",   // App.Timeline
-                    "UnifyMaths",                         // contracts/App.World; keeps .Numerics collectible
-                    "UnifyMaths.Numerics",                // Cartography.Globe.Core (resident via App.World.Rendering): Tolerance.Strict.Epsilon. Promoted to shared because Cartography.Globe.Core is shared (2026-07-03 rendering-contracts extraction).
-                    "UnifyStorage.Abstractions",          // App.Activity
-                    "UnifyStorage.Runtime.LiteDb",        // App.Activity
-                    "Arch",                               // transitive of shared UnifyEcs.Runtime.Arch
-                    "MessagePack",                        // transitive of shared CrosscutFoundation.Persistence.Contracts:
-                    "MessagePack.Annotations",            //   its CanonicalMessagePackOptions API exposes MessagePack types,
-                                                          //   so a bundle-local MessagePack.dll splits type identity (MissingMethodException)
-                    // --- Rendering contracts shared closure (2026-07-03 ALC pin diagnosis, Fix 2) ---
-                    // The resident host (PlanetPresentationBinder) and the collectible world bundle both
-                    // consume GlobePlateSurfaces + the RampColor mappers. Extracting these types into a
-                    // shared contract assembly (FantaSim.App.World.Rendering) eliminates the dual-copy
-                    // type-identity split. The cartography assemblies are the transitive closure of the
-                    // rendering contracts (GlobeSurfaceBuilder, NoiseRelief, NoiseParams, CartesianPoint3);
-                    // they MUST be shared too or the rendering types split across the ALC boundary.
-                    "FantaSim.App.World.Rendering",       // contracts/App.World.Rendering (resident host + collectible world bundle)
-                    "Cartography.Globe.Core",             // GlobeSurfaceBuilder, NoiseRelief (resident via App.World.Rendering)
-                    "Cartography.Globe.Contracts",        // NoiseParams, GlobeSurface, IGlobeSurfaceBuilder (transitive of Cartography.Globe.Core)
-                    "Cartography.Shared.Contracts",      // CartesianPoint3 (transitive of Cartography.Globe.Contracts)
-                },
-                prefixes: new[]
-                {
-                    "System.",
-                    "Microsoft.",
-                    "Godot",
-                    "GodotSharp",
-                    "netstandard",
-                    "PluginArchi.",
-                    "ServiceArchi.",
-                    "RegistryArchi.",
-                    "DependencyArchi.",
-                    "CrosscutFoundation.",
-                    "MessagePipe",
-                    "BoomHud",
-                    "R3",
-                    "ReactiveUI",
-                    "DynamicData",
-                    "FantaSim.App.",
-                    "FantaSim.App.World.",
-                    "FantaSim.App.Command.",
-                    "Akka",
-                    "Newtonsoft.Json",
-                    "UnifyEcs.",   // App.Ecs
-                    "TimeDete.",   // transitive via Timeline/Ecs
-                },
+                exactMatches: sharedPolicy.ExactMatches.ToArray(),
+                prefixes: sharedPolicy.Prefixes.ToArray(),
                 excludedExactMatches: collectibleBundles.AssemblyNames.ToArray()))
             .Build();
 
