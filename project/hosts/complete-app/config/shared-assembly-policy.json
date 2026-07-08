@@ -47,5 +47,14 @@
     "Newtonsoft.Json",
     "UnifyEcs.",
     "TimeDete."
-  ]
+  ],
+  "common": {
+    "comment": "Assemblies packed into common.pck (resident layer, Default ALC, packaging granularity only). Stripped from the exported exe by tools/bundles/strip_common_from_export.py. S1 scope = Arch; S2 expands to the first-cut list.",
+    "exactMatches": [
+      "Arch"
+    ],
+    "prefixes": [],
+    "suffixRules": [],
+    "detectorGated": []
+  }
 }

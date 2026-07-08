@@ -43,6 +43,8 @@ public partial class Host : Node
 
     public override void _Ready()
     {
+        FantaSim.App.Resource.Bundle.CommonResidentLayer.CommonResidentLayerBootstrap.EnsureLoaded();
+
         GD.Print("[Host] composition root starting...");
 
         _composition = AppComposition.Activate();
