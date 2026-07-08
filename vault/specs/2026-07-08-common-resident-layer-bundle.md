@@ -111,10 +111,26 @@ subordinate to this list where they conflict.
 Two gating experiments before implementation starts (both small, windowed):
 - **E1 (script registration):** tiny Godot.NET.Sdk assembly with one Node script class → strip from
   publish output → deliver via common.pck → Default-load before scene instantiation → verify
-  `.tscn` script binding + `GetScript()` in the EXPORTED app.
-- **E2 (strip viability):** export normally, strip `Arch.dll` from the app data dirs, preload it
-  from a temp path before `EcsComposition.ComposeEcs`, confirm boot + binding to the preloaded
-  instance.
+  `.tscn` script binding + `GetScript()` in the EXPORTED app. **STILL OPEN.**
+- **E2 (strip viability): RAN 2026-07-08 — lazy loading CONFIRMED.** `Arch.dll` stripped from a
+  copy of the exported app: the app booted COMPLETELY (`Host._Ready` ran, plugin host built, all
+  compositions, `composition activated.` logged) and failed only at FIRST USE —
+  `UnifyECS.ArchWorld..ctor` inside `EcsWorldActor` creation threw `FileNotFoundException` when
+  the first Arch-executing method ran. Consequences:
+  - Assembly demand is at first-executed-use on .NET 8/macOS, NOT at `Host` type-load or
+    `AppComposition.Activate()`. Amendment 1 RELAXES: an `AssemblyLoadContext.Default.Resolving`
+    hook installed as the first statement of `Host._Ready` (before Activate) suffices for
+    everything the entry path does not execute earlier. The signature-free micro-bootstrap is
+    only needed for the absolute-maximal variant (moving App.Common/kernel out too).
+  - The remaining unproven half of E2 is the positive binding (preloaded/hook-resolved copy gets
+    used) — standard documented ALC behavior + confirmed mechanism in the codex review; it is
+    proven implicitly by implementation step 1 (the loader) at its first windowed run.
+
+**Measured payload (2026-07-08, v0.1.2 export):** 295 managed DLLs in
+`data_complete-app_macos_arm64` (93 MB) = 174 .NET runtime-pack (stays, self-contained export) +
+2 Godot glue (stays) + **119 user/foundation assemblies — the maximal candidate set for pck
+delivery**. End-state exe: runtime pack + GodotSharp + `complete-app.dll` (Host entry + resolver
+bootstrap). Iteration economics: full desktop export ≈ minutes; pck restage ≈ seconds.
 
 ## Acceptance
 
