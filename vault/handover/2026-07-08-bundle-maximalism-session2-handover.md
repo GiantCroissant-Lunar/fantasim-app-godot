@@ -8,35 +8,41 @@
 [handover/2026-07-08-bundle-maximalism-phase0-1-handover.md](2026-07-08-bundle-maximalism-phase0-1-handover.md)
 (the morning session: phases 0–1, reload lessons, boot-pin fix).
 
-## ⚡ IN FLIGHT — resume this FIRST
+## ⚡ RESUME HERE — phase 2 implemented, gates NOT yet run
 
-**Codex (gpt-5.5 high) is implementing phase 2 in a local clone:**
-`yokan-projects/fantasim-phase2-clone`, branch `feat/bundle-max-phase2`, base = WIP `f918824`
-(round-1 salvage, does not build). Log: `<clone>/.agent/logs/codex/phase2-round2-20260708.log`.
-At handover time it was ALIVE and progressing (log 5.3 MB and growing; iterating tests toward
-its first gated commit). Its contract: three green-gated commits — (1) `refactor(timeline):
-registry-mediated face context replaces seam statics`, (2) `feat(bundles): host sheds timeline
-T3 (phase 2)`, (3) `chore(bundles): timeline sheds the last --check-dual allowlist entry` —
-each gated by sln build + full tests + explicit complete-app build.
+**Round 2 COMPLETED before session end.** The full Decision-5 implementation sits at
+`yokan-projects/fantasim-phase2-clone` branch `feat/bundle-max-phase2`, commit **`cb7adcb`**
+(lead-committed; codex cannot commit — its workspace-write sandbox mounts `.git` read-only by
+design). What it contains: `ITimelineFaceContext`/`ITimelineFaceProxy` contracts;
+`DeferredTimelineFace` moved into the plugin; `TimelinePlugin` owns service/context/proxy
+registrations, the three `timeline.*` commands, shutdown severing, and world rebind;
+`TimelineFace` resolves context via ONE `ResidentRegistry` fallback static; resident
+`TimelineComposition` DELETED; host timeline machinery + `App.Timeline` csproj ref removed;
+`--check-dual` allowlist EMPTY; timeline restages as `FantaSim.App.Timeline.dll` only.
 
-Next session:
-1. `cd yokan-projects/fantasim-phase2-clone && git log --oneline main..HEAD && git status --short`
-   — finished = 3 new commits + clean tree. If codex died mid-run, the log tail says where;
-   either re-dispatch (prompt at `<clone>/.agent/run/dispatch/codex-phase2-round2.txt`) or
-   finish inline.
-2. REVIEW the diff against the plan's Pin map + Decision 5. Non-negotiables: NO T3→Seam
-   ProjectReference (round 1's inverted-dependency mistake); every plugin registration/
-   subscription severed in ShutdownAsync; world-rebind pending flag consumed only when the new
-   `ITimelineController` registration exists; resident TimelineComposition + Host timeline
-   machinery + BundleReloadHook deleted; `--check-dual` allowlist EMPTY.
+**Verified under codex's sandbox:** targeted builds (App.Timeline, Seam, Tests projects) +
+`stage_bundle.py timeline` + `--check-dual`. **NOT yet run (sandbox couldn't):** full sln test
+suite (VSTest needs a TCP listener — sandbox-denied), explicit `complete-app.csproj` build,
+windowed gate.
+
+Next session, in order:
+1. In the clone: `dotnet build project/FantaSim.sln && dotnet test project/FantaSim.sln &&
+   dotnet build project/hosts/complete-app/complete-app.csproj` — fix forward anything red.
+2. REVIEW the `cb7adcb` diff against the plan's Pin map + Decision 5. Non-negotiables: NO
+   T3→Seam ProjectReference; every plugin registration/subscription severed in ShutdownAsync;
+   world-rebind pending flag consumed only when the new `ITimelineController` registration
+   exists. Scrutinize the reported deviations: (a) the one `TimelineFace.ResidentRegistry`
+   static (permitted fallback — verify it holds only the resident registry, never bundle
+   objects); (b) `stage_bundle.py` now disables dotnet build servers (workaround for the hang);
+   (c) timeline tests use local minimal schedules instead of App.World.Composition.
 3. Fetch into the main repo: `git -C yokan-projects/fantasim-app-godot fetch
-   ../fantasim-phase2-clone feat/bundle-max-phase2:feat/bundle-max-phase2` (do NOT let the clone
-   push — its origin IS the main repo).
-4. WINDOWED GATE (lead session, per verify-windowed): full export → boot sanity → timeline
-   hot-reload ×2 (`old ALC collected for bundle timeline`; seek/select/toggle work after) →
-   world reload (timeline stays usable via the plugin's self-rebind; `old ALC collected for
-   bundle world`) → remote-commanded `resource.reload_bundle` for world (proves the
-   BundleReloadHook deletion safe) → merge to main, delete clone + branch.
+   ../fantasim-phase2-clone feat/bundle-max-phase2:feat/bundle-max-phase2` (never push FROM the
+   clone — its origin IS the main repo).
+4. WINDOWED GATE (per verify-windowed): full export → boot sanity → timeline hot-reload ×2
+   (`old ALC collected for bundle timeline`; seek/select/toggle work after) → world reload
+   (timeline stays usable via the plugin's self-rebind; `old ALC collected for bundle world`) →
+   remote-commanded `resource.reload_bundle` for world (proves the BundleReloadHook deletion
+   safe) → merge to main, delete clone + branch, reword/squash the two wip commits at merge.
 
 ## What landed on main this session (all pushed)
 
@@ -64,11 +70,15 @@ handover.
 
 ## Delegation lessons (hard-won today; also in memory)
 
-- codex + git worktree = broken (worktree metadata lives under the main repo's .git, outside
-  the sandbox): use a full LOCAL CLONE; forbid `git push` explicitly (clone's origin is the
-  real repo).
+- **codex can NEVER commit**: workspace-write mounts `.git` read-only by design (clone or
+  worktree, doesn't matter). Pattern: codex implements, the LEAD commits after review.
+- **codex can NEVER run `dotnet test`**: VSTest opens a local TCP listener, sandbox-denied.
+  Budget targeted `dotnet build` gates in prompts; the lead runs the suite.
+- codex + git worktree is doubly broken (worktree metadata lives under the main repo's .git):
+  use a full LOCAL CLONE; forbid `git push` explicitly (clone's origin is the real repo).
 - codex needs `sandbox_workspace_write.writable_roots` for `~/.nuget` + NuGet caches or every
-  dotnet restore dies.
+  dotnet restore dies; sibling-repo ProjectReferences ($(YokanProjectsRoot)) can still hit
+  denied restore writes — keep clones inside yokan-projects/ and expect test rewrites.
 - codex `dotnet build` calls can hang silently; it recovers, but budget wall-clock for it.
 - Background Bash resets cwd between calls — bake absolute paths/`cd` into every dispatch.
 - The lead diff review is not optional: round 1 inverted a tier dependency to satisfy an
