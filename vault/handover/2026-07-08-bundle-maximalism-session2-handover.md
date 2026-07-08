@@ -8,41 +8,46 @@
 [handover/2026-07-08-bundle-maximalism-phase0-1-handover.md](2026-07-08-bundle-maximalism-phase0-1-handover.md)
 (the morning session: phases 0–1, reload lessons, boot-pin fix).
 
-## ⚡ RESUME HERE — phase 2 implemented, gates NOT yet run
+## ✅ PHASE 2 COMPLETE — merged to main `e793b53`, windowed-gated (2026-07-08 evening)
 
-**Round 2 COMPLETED before session end.** The full Decision-5 implementation sits at
-`yokan-projects/fantasim-phase2-clone` branch `feat/bundle-max-phase2`, commit **`cb7adcb`**
-(lead-committed; codex cannot commit — its workspace-write sandbox mounts `.git` read-only by
-design). What it contains: `ITimelineFaceContext`/`ITimelineFaceProxy` contracts;
-`DeferredTimelineFace` moved into the plugin; `TimelinePlugin` owns service/context/proxy
-registrations, the three `timeline.*` commands, shutdown severing, and world rebind;
-`TimelineFace` resolves context via ONE `ResidentRegistry` fallback static; resident
-`TimelineComposition` DELETED; host timeline machinery + `App.Timeline` csproj ref removed;
-`--check-dual` allowlist EMPTY; timeline restages as `FantaSim.App.Timeline.dll` only.
+The lead review of `cb7adcb` found **three real defects** codex's sandbox could not surface
+(it can run neither `dotnet test` nor the windowed app), each fixed as its own commit on the
+branch before merge:
 
-**Verified under codex's sandbox:** targeted builds (App.Timeline, Seam, Tests projects) +
-`stage_bundle.py timeline` + `--check-dual`. **NOT yet run (sandbox couldn't):** full sln test
-suite (VSTest needs a TCP listener — sandbox-denied), explicit `complete-app.csproj` build,
-windowed gate.
+1. **`679ce6d`** — 3 failing `TimelinePluginTests`: `ComposeTimeline` created the proxy
+   before its internal sever (spurious `RebindResidentContext` on first compose), and
+   `SeverTimelineService` disposed only the registration handle, never the
+   `TimelineFaceContext` instance — `UnregisterPlayback()` never ran (the plan's playback pin).
+2. **`33a7db4`** — windowed-gate finding: the world-rebind ran on the resource watcher's
+   thread-pool thread → `UpdateLayout`/`AddChild` off-main (Godot hard error ×9). The deleted
+   host machinery had `Callable.From(...).CallDeferred()`; the marshal now lives in
+   `TimelineFace.RebindResidentContext` itself (seam owns the Godot constraint; T3 stays pure).
+   The plugin's blocking post-rebind `SeekAsync` push was deleted — the face's bind tail
+   (`SeekTo(_ctl.Tick)`) already delivers the tick on the main thread after the bind.
+3. **`b6f93fb`** — **NEW ALC-PIN CLASS (third instance): anonymous types × shared
+   System.Text.Json.** The `timeline.*` handlers serialized `new { ... }` (types compiled into
+   the collectible assembly) via the resident default `JsonSerializerOptions`, whose per-Type
+   `CachingContext` rooted the bundle's LoaderAllocator forever. ClrMD gcroot on the live app
+   named the chain (StrongHandle → JsonSerializerOptions → CachingContext →
+   ConcurrentDictionary<Type,CacheEntry> → RuntimeType → LoaderAllocator). Only generations
+   that had SERVED a command pinned — untouched ones collected, which made run 1 look flaky.
+   Fix: responses built from resident `JsonObject`/`JsonArray`. **Rule: no bundle-compiled
+   type may ever reach a shared serializer/cache — grep `JsonSerializer.Serialize(new` in any
+   new bundle-tier code.**
 
-Next session, in order:
-1. In the clone: `dotnet build project/FantaSim.sln && dotnet test project/FantaSim.sln &&
-   dotnet build project/hosts/complete-app/complete-app.csproj` — fix forward anything red.
-2. REVIEW the `cb7adcb` diff against the plan's Pin map + Decision 5. Non-negotiables: NO
-   T3→Seam ProjectReference; every plugin registration/subscription severed in ShutdownAsync;
-   world-rebind pending flag consumed only when the new `ITimelineController` registration
-   exists. Scrutinize the reported deviations: (a) the one `TimelineFace.ResidentRegistry`
-   static (permitted fallback — verify it holds only the resident registry, never bundle
-   objects); (b) `stage_bundle.py` now disables dotnet build servers (workaround for the hang);
-   (c) timeline tests use local minimal schedules instead of App.World.Composition.
-3. Fetch into the main repo: `git -C yokan-projects/fantasim-app-godot fetch
-   ../fantasim-phase2-clone feat/bundle-max-phase2:feat/bundle-max-phase2` (never push FROM the
-   clone — its origin IS the main repo).
-4. WINDOWED GATE (per verify-windowed): full export → boot sanity → timeline hot-reload ×2
-   (`old ALC collected for bundle timeline`; seek/select/toggle work after) → world reload
-   (timeline stays usable via the plugin's self-rebind; `old ALC collected for bundle world`) →
-   remote-commanded `resource.reload_bundle` for world (proves the BundleReloadHook deletion
-   safe) → merge to main, delete clone + branch, reword/squash the two wip commits at merge.
+**Windowed gate (run 3, all PASS):** boot sanity (plugin composes T3 at boot, 0 errors) →
+baseline seek/select/toggle (arming the cache trap) → timeline hot-reload ×2 (`old ALC
+collected for bundle timeline` ×2, commands live after each) → world reload via watcher
+(plugin severed + recomposed, `old ALC collected for bundle world`) → remote
+`resource.reload_bundle` world (hook deletion safe, collected again) → commands still live.
+Zero `still pinned`, zero `Adding children` across the run.
+
+Headless gates: sln build, full suite 18 assemblies 0 failures (timeline 72/72), explicit
+complete-app build, `stage_bundle.py timeline` (1 assembly), `--check-dual` EMPTY allowlist.
+
+Clone `fantasim-phase2-clone` deleted after merge (codex dispatch + log tail preserved in
+`.agent/logs/codex/`); branch deleted. Diagnostic tool: the ClrMD pin-hunter recipe was
+rebuilt this session (~60 lines; see the phase-0/1 handover's diagnosis notes).
 
 ## What landed on main this session (all pushed)
 
