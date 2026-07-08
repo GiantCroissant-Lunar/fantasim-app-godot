@@ -9,7 +9,7 @@ namespace App.Timeline.Tests;
 public class TimelineModelTests
 {
     private static SphereRegimeSchedule Geo() =>
-        SphereRegimeScheduleDefaults.GeosphereFor(SphereRegimeScheduleDefaults.PlateOnsetTick); // onset = 1e8
+        TimelineTestSchedules.Geosphere(); // onset = 1e8
 
     [Fact]
     public void Bands_AreProportional_AndCoverZeroToOne()

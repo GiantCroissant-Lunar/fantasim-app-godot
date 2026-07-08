@@ -22,6 +22,7 @@ public class TimelinePlaybackFlowTests
         public long LastSeekTick;
         public TimelineViewSnapshot? LastSnapshot;
 
+        public void RebindResidentContext() { }
         public void Play() => PlayCalls++;
         public void Pause() => PauseCalls++;
         public void SeekTo(long tick) { SeekCalls++; LastSeekTick = tick; }
@@ -31,8 +32,8 @@ public class TimelinePlaybackFlowTests
     private static (Service svc, FakeFace face) Build(long maxTick = 120_000_000)
     {
         var face = new FakeFace();
-        var geo = SphereRegimeScheduleDefaults.GeosphereFor(SphereRegimeScheduleDefaults.PlateOnsetTick);
-        var atmo = SphereRegimeScheduleDefaults.AtmosphereFor(SphereRegimeScheduleDefaults.PlateOnsetTick);
+        var geo = TimelineTestSchedules.Geosphere();
+        var atmo = TimelineTestSchedules.Atmosphere();
         var svc = new Service(face, geo, atmo, maxTick, NullLoggerFactory.Instance);
         return (svc, face);
     }

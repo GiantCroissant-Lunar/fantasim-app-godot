@@ -11,6 +11,7 @@ using FantaSim.App.Timeline;
 using FantaSim.App.Command;
 using FantaSim.App.Ui.Seam;
 using Microsoft.Extensions.Logging;
+using ServiceArchi.Contracts;
 
 namespace FantaSim.App.Timeline.Seam;
 
@@ -128,6 +129,9 @@ public partial class TimelineFace : Control, ITimelineFace
     private readonly HashSet<string> _expandedTracks = new(StringComparer.Ordinal);
     private WorldGenerationGraphFamilyDocument? _cachedGraphFamily;
     private long? _cachedGraphFamilyTick;
+    private IClient? _commandClient;
+    private Func<long, WorldGenerationGraphFamilyDocument?>? _generationGraphFamilyProvider;
+    private Func<LayerFilmstripPreviewRequest, LayerFilmstripPreviewMap?>? _filmstripPreviewProvider;
 
     private double _internalTick;
     private long _lastPushedTick = -1;
@@ -159,42 +163,21 @@ public partial class TimelineFace : Control, ITimelineFace
     private int _viewRebuildVersion;
     private bool _viewRebuildQueued;
 
-    private readonly ILogger _log;
+    private ILogger _log;
 
     /// <summary>
-    /// Set by Host.cs ComposeTimeline BEFORE the timeline bundle scene instantiates this face.
-    /// The resident seam owns the reference; the collectible bundle's TimelinePlugin no longer
-    /// holds a static. This is the same pattern as IiiBridge (Node-backed seam exception:
-    /// the face needs _Ready/_ExitTree lifecycle, so it is a Node, but it exposes only
-    /// ITimelineFace upward to T3).
+    /// Resident registry bridge set by the resident host before timeline scene entry. The
+    /// collectible bundle never writes this static; it only registers ITimelineFaceContext into
+    /// the registry.
     /// </summary>
-    public static ITimelineController? ResidentController { get; set; }
+    public static IRegistry? ResidentRegistry { get; private set; }
 
-    public static DeferredTimelineFace? ResidentProxy;
-
-    public static IClient? ResidentCommandClient { get; set; }
-
-    public static Func<long, WorldGenerationGraphFamilyDocument?>? ResidentGenerationGraphFamilyProvider { get; set; }
-
-    public static Func<LayerFilmstripPreviewRequest, LayerFilmstripPreviewMap?>? ResidentFilmstripPreviewProvider { get; set; }
-
-    /// <summary>
-    /// Shared factory set by TimelineComposition before the collectible bundle scene instantiates
-    /// this face. Required because Godot scene instantiation uses the parameterless constructor.
-    /// </summary>
-    public static ILoggerFactory? ResidentLoggerFactory { get; set; }
-
-    /// <summary>
-    /// Configurable ticks-per-second for the playhead animation. Set by TimelineComposition
-    /// before the face instantiates; read by BindResidentContext into the instance field. Default
-    /// 5M ticks/sec (the crust snapshot spacing). Mirrors the ResidentController/ResidentProxy
-    /// resident-statics pattern so the value can cross the ALC boundary without a scene edit.
-    /// </summary>
-    public static double ResidentTicksPerSecond { get; set; } = 5_000_000.0;
+    public static void SetResidentRegistry(IRegistry registry)
+        => ResidentRegistry = registry ?? throw new ArgumentNullException(nameof(registry));
 
     public TimelineFace()
     {
-        _log = ResidentLoggerFactory?.CreateLogger("Timeline.Face")
+        _log = ResidentRegistry?.TryGet<ILoggerFactory>()?.CreateLogger("Timeline.Face")
             ?? Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance.CreateLogger("Timeline.Face");
     }
 
@@ -223,23 +206,41 @@ public partial class TimelineFace : Control, ITimelineFace
     public override void _Process(double delta)
     {
         if (_ctl is null)
+        {
+            BindResidentContext(forceProxyBind: false);
             return;
+        }
 
         ApplyScrubAction(_scrubCoalescer.ConsumeFrame());
     }
 
     public void RebindResidentContext()
-        => BindResidentContext(forceProxyBind: true);
+    {
+        // TimelinePlugin raises this from the resource watcher's thread-pool thread; the bind
+        // walks into UpdateLayout/AddChild, which Godot only allows on the main thread. The
+        // deleted host machinery marshaled via CallDeferred — the face owns that marshal now.
+        if (OS.GetThreadCallerId() == OS.GetMainThreadId())
+        {
+            BindResidentContext(forceProxyBind: true);
+            return;
+        }
+
+        Callable.From(() => BindResidentContext(forceProxyBind: true)).CallDeferred();
+    }
 
     private void BindResidentContext(bool forceProxyBind)
     {
-        var controller = ResidentController;
-        if (controller is null)
+        var context = ResidentRegistry?.TryGet<ITimelineFaceContext>();
+        if (context is null)
         {
-            _log.LogWarning("No active ITimelineController found.");
-            SetProcess(false);
+            ClearResidentContext();
+            _log.LogWarning("No active timeline face context found.");
+            SetProcess(true);
             return;
         }
+
+        var controller = context.Controller;
+        _log = context.LoggerFactory.CreateLogger("Timeline.Face");
 
         // A controller swap (world hot-reload) must re-register playback on the NEW controller:
         // clear the flag after unregistering from the old one, or the RegisterPlayback below is
@@ -253,7 +254,10 @@ public partial class TimelineFace : Control, ITimelineFace
         _ctl = controller;
         SetProcess(true);
 
-        _ticksPerSecond = ResidentTicksPerSecond > 0.0 ? ResidentTicksPerSecond : 5_000_000.0;
+        _commandClient = context.CommandClient as IClient;
+        _generationGraphFamilyProvider = context.GenerationGraphFamilyProvider;
+        _filmstripPreviewProvider = context.FilmstripPreviewProvider;
+        _ticksPerSecond = context.TicksPerSecond > 0.0 ? context.TicksPerSecond : 5_000_000.0;
 
         if (!_nodesInitialized)
         {
@@ -297,12 +301,25 @@ public partial class TimelineFace : Control, ITimelineFace
 
         if (forceProxyBind || !_proxyBound)
         {
-            ResidentProxy?.BindCrossTarget(this);
-            _proxyBound = ResidentProxy is not null;
+            context.Proxy.BindCrossTarget(this);
+            _proxyBound = true;
         }
 
         SeekTo(_ctl.Tick);
         UpdateLayout();
+    }
+
+    private void ClearResidentContext()
+    {
+        if (_ctl is not null && _playbackRegistered)
+            _ctl.UnregisterPlayback();
+        _playbackRegistered = false;
+        _proxyBound = false;
+        _ctl = null;
+        _commandClient = null;
+        _generationGraphFamilyProvider = null;
+        _filmstripPreviewProvider = null;
+        SetProcess(false);
     }
 
     public override void _ExitTree()
@@ -310,16 +327,7 @@ public partial class TimelineFace : Control, ITimelineFace
         _filmstripGeneration++;
         _scrubDragging = false;
         _scrubCoalescer.Cancel();
-        if (_ctl is not null && _playbackRegistered)
-        {
-            _ctl.UnregisterPlayback();
-        }
-        _playbackRegistered = false;
-        _proxyBound = false;
-        _ctl = null;
-        ResidentController = null;
-        ResidentGenerationGraphFamilyProvider = null;
-        ResidentFilmstripPreviewProvider = null;
+        ClearResidentContext();
         DisposeTrackBindings();
         DisposeFilmstripTextureCache();
         DisconnectIfConnected(_playPauseButton, BaseButton.SignalName.Pressed, Callable.From(OnPlayPausePressed));
@@ -330,15 +338,8 @@ public partial class TimelineFace : Control, ITimelineFace
         DisconnectIfConnected(this, Control.SignalName.GuiInput, Callable.From<InputEvent>(OnFaceGuiInput));
         DisconnectIfConnected(this, Control.SignalName.Resized, Callable.From(OnLanesResized));
 
-        // Sever the resident-to-collectible-ALC bind so the old timeline bundle's ALC can
-        // collect on hot-reload. ResidentProxy holds a generated __crossTarget typed as
-        // ITimelineFace (defined in the collectible App.Timeline assembly); without unbinding,
-        // the static keeps the old ALC pinned. ResidentLoggerFactory is nulled for symmetry
-        // so every resident-set static is cleared on exit (it is repopulated before re-entry).
-        ResidentProxy?.UnbindCrossTarget();
-        ResidentProxy = null;
-        ResidentLoggerFactory = null;
-        ResidentCommandClient = null;
+        // The collectible plugin owns the proxy and unbinds it during shutdown. This resident face
+        // clears only its local references here.
     }
 
     private void SetupAnimationSystem()
@@ -1063,7 +1064,7 @@ public partial class TimelineFace : Control, ITimelineFace
         long tick,
         string rung)
     {
-        var provider = ResidentFilmstripPreviewProvider;
+        var provider = _filmstripPreviewProvider;
         if (provider is null)
             return;
 
@@ -1103,7 +1104,7 @@ public partial class TimelineFace : Control, ITimelineFace
 
     private void PumpFilmstripQueue()
     {
-        var provider = ResidentFilmstripPreviewProvider;
+        var provider = _filmstripPreviewProvider;
         if (provider is null)
             return;
 
@@ -1284,7 +1285,7 @@ public partial class TimelineFace : Control, ITimelineFace
         _cachedGraphFamilyTick = _ctl.Tick;
         try
         {
-            _cachedGraphFamily = ResidentGenerationGraphFamilyProvider?.Invoke(_ctl.Tick);
+            _cachedGraphFamily = _generationGraphFamilyProvider?.Invoke(_ctl.Tick);
         }
         catch (Exception ex)
         {
@@ -1321,7 +1322,7 @@ public partial class TimelineFace : Control, ITimelineFace
         if (_ctl is null || !IsLayerActive(sphere, layerId))
             return;
 
-        var commandClient = ResidentCommandClient;
+        var commandClient = _commandClient;
         if (commandClient is null)
         {
             _ctl.ToggleLayer(sphere, layerId);

@@ -5,9 +5,10 @@
     <RootNamespace>FantaSim.App.Timeline</RootNamespace>
     <AssemblyName>FantaSim.App.Timeline</AssemblyName>
     <!-- ServiceArchi Tier 3: engine-agnostic timeline orchestrator. Owns the playback state
-         machine, the pure-C# TimelineModel (bands/tracks/ruler), and the ITimelineFace seam
-         interface (Providers/). The T4 Godot seam (App.Timeline.Seam) implements ITimelineFace.
-         Pure C# (Microsoft.NET.Sdk, not Godot.NET.Sdk); T3 never references T4. Mirrors App.Camera. -->
+         machine and registers the timeline scene plugin. The pure UI model helpers and
+         ITimelineFace live in contracts/App.Timeline so the resident T4 seam can compile without
+         referencing this collectible T3 implementation. Pure C# (Microsoft.NET.Sdk, not
+         Godot.NET.Sdk); T3 never references T4. Mirrors App.Camera. -->
     <ServiceArchiTier>T3</ServiceArchiTier>
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
   </PropertyGroup>
@@ -19,13 +20,15 @@
   <ItemGroup>
     <!-- T1 contracts (IService, DTOs, T2 proxy). -->
     <ProjectReference Include="..\..\contracts\App.Timeline\App.Timeline.csproj" />
+    <ProjectReference Include="..\..\contracts\App.Command\App.Command.csproj" />
+    <ProjectReference Include="..\..\contracts\App.Resource\App.Resource.csproj" />
     <!-- App.World contracts hold ITimelineController + SphereRegimeSchedule the model consumes. -->
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
     <!-- SceneFlow contracts for the scene-tier activator. -->
     <ProjectReference Include="..\..\contracts\App.SceneFlow\App.SceneFlow.csproj" />
-    <!-- World shared contracts: UnitConverter + CanonicalDisplayFormatter used by the model. -->
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Shared\World.Shared.csproj" />
     <ProjectReference Include="..\..\contracts\Cross.Abstractions\Cross.Abstractions.csproj" />
+    <ProjectReference Include="..\..\generators\Cross.SourceGenerators\Cross.SourceGenerators.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
