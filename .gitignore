@@ -77,3 +77,6 @@ CLAUDE.md
 # Plate-rate calibration: downloaded Cao et al. 2024 dataset (Zenodo, CC-BY-4.0).
 # Re-fetch with tools/rates/fetch-cao2024.sh — do not commit third-party data.
 tools/rates/data/
+
+# claude-design exports (read-only reference material, user-managed)
+ref-projects/
