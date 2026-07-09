@@ -41,18 +41,48 @@ public sealed class BoundaryProfileLodTests
     [Fact]
     public void Frequency3_pipeline_completes_quickly()
     {
-        double secs = MeasurePipeline(frequency: 3);
         // 1280 cells: the current default. The full pipeline (crust evolution + topology + profile) must
         // stay well under a second so the crust-surface-data path is not a frame-alignment bottleneck.
-        Assert.True(secs < 3.0, $"frequency 3 pipeline took {secs:F2}s (budget 3.0s)");
+        //
+        // Wall-clock under the parallel test runner measures machine load as much as the algorithm:
+        // a single-shot timing flakes whenever sibling collections or external work contend for cores.
+        // The minimum over independent batches estimates the uncontended cost — noise inflates some
+        // batches, a real regression inflates all. Three batches keep total runtime reasonable while
+        // suppressing a one-off contention spike.
+        const double budgetSecs = 3.0;
+        const int batches = 3;
+        double bestBatchSecs = double.MaxValue;
+        for (int b = 0; b < batches; b++)
+        {
+            double secs = MeasurePipeline(frequency: 3);
+            bestBatchSecs = Math.Min(bestBatchSecs, secs);
+        }
+
+        Assert.True(bestBatchSecs < budgetSecs,
+            $"frequency 3 pipeline took {bestBatchSecs:F2}s in its fastest of {batches} batches " +
+            $"(budget {budgetSecs:F1}s)");
     }
 
     [Fact]
     public void Frequency4_pipeline_completes_within_budget()
     {
-        double secs = MeasurePipeline(frequency: 4);
         // 5120 cells: one step up. If this explodes (> ~4× frequency-3 or > ~5s), the default stays at 3
         // (the parameter remains overridable per world). The measured number is reported via the assert message.
-        Assert.True(secs < 5.0, $"frequency 4 pipeline took {secs:F2}s (budget 5.0s)");
+        //
+        // Same best-of-batches minimum as the frequency-3 test: a single-shot wall-clock reading flakes
+        // under sibling-collection core contention in the parallel runner. The minimum over three
+        // batches estimates the uncontended cost; a real regression inflates every batch.
+        const double budgetSecs = 5.0;
+        const int batches = 3;
+        double bestBatchSecs = double.MaxValue;
+        for (int b = 0; b < batches; b++)
+        {
+            double secs = MeasurePipeline(frequency: 4);
+            bestBatchSecs = Math.Min(bestBatchSecs, secs);
+        }
+
+        Assert.True(bestBatchSecs < budgetSecs,
+            $"frequency 4 pipeline took {bestBatchSecs:F2}s in its fastest of {batches} batches " +
+            $"(budget {budgetSecs:F1}s)");
     }
 }

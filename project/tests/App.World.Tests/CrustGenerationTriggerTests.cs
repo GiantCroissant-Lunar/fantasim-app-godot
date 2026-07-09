@@ -91,31 +91,6 @@ public sealed class CrustGenerationTriggerTests
     }
 
     [Fact]
-    public void LeavingMobilePlate_CancelsInFlight()
-    {
-        var controller = Controller(PlateOnsetTick);
-        var cts = new CancellationTokenSource();
-        var started = new TaskCompletionSource();
-        using var trigger = new CrustGenerationTrigger(
-            controller,
-            Policy(),
-            Revision,
-            async (_, ct) =>
-            {
-                started.SetResult();
-                await Task.Delay(Timeout.Infinite, ct);
-            });
-
-        trigger.Start();
-        started.Task.GetAwaiter().GetResult();
-
-        controller.PushTick(0L);
-
-        Assert.True(cts.Token.IsCancellationRequested || true); // cts is private; cancellation is exercised by the next test indirectly
-        // The above line is intentional: we verify cancellation by observing the delegate threw OCE.
-    }
-
-    [Fact]
     public void LeavingMobilePlate_ThrowsOperationCanceledExceptionInDelegate()
     {
         var controller = Controller(PlateOnsetTick);
@@ -144,7 +119,7 @@ public sealed class CrustGenerationTriggerTests
 
         controller.PushTick(0L);
 
-        var ex = observed.Task.GetAwaiter().GetResult();
+        var ex = observed.Task.WaitAsync(TimeSpan.FromSeconds(30)).GetAwaiter().GetResult();
         Assert.NotNull(ex);
     }
 
@@ -200,7 +175,7 @@ public sealed class CrustGenerationTriggerTests
         started.Task.GetAwaiter().GetResult();
 
         trigger.Dispose();
-        var cancelled = observed.Task.GetAwaiter().GetResult();
+        var cancelled = observed.Task.WaitAsync(TimeSpan.FromSeconds(30)).GetAwaiter().GetResult();
 
         Assert.True(cancelled);
         // After disposal, further tick changes must not call the delegate again.
