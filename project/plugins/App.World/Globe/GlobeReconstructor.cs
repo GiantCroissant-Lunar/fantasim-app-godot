@@ -560,7 +560,8 @@ public sealed class GlobeReconstructor
         }
         return dict;
     }
-    /// snapshot, the per-cell feature kind (0 None, 1 Mountain, 2 VolcanicArc, 3 Trench, 4 Ridge,
+    /// <summary>
+    /// For each requested snapshot tick, the per-cell feature kind (0 None, 1 Mountain, 2 VolcanicArc, 3 Trench, 4 Ridge,
     /// 5 Fault). Fields accumulate from genesis, so a feature emerges at the tick its magnitude crosses
     /// threshold (a mountain "grows in" as orogenic-pressure passes τ).
     /// </summary>

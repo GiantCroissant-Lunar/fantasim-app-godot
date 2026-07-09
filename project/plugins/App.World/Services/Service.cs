@@ -241,18 +241,18 @@ public sealed class Service : IService, IDisposable
     }
 
     /// <summary>
-    /// Per-tick continental fraction (P3 light path): re-samples the cached crust snapshot's onset
-    /// material through the <see cref="PlateFrameSampler"/> at the seek tick. The snapshot's state is
-    /// keyed at <paramref name="tick"/> so the sampler's Lagrangian transport carries onset material
-    /// to the query tick, producing smoothly drifting fractions between 5 M-tick snapshots.
-    /// </summary>
-    /// <summary>
     /// Mobile-plate presentation window after onset. Widened from the original 20 Ma proving
     /// window to 1 Gy (1M ticks/Ma) so long-arc plate motion is scrubbable; snapshot products
     /// materialize lazily per governing snapshot, so the wider window costs nothing until seeked.
     /// </summary>
     internal const long MobilePlateWindowTicks = 1_000_000_000L;
 
+    /// <summary>
+    /// Per-tick continental fraction (P3 light path): re-samples the cached crust snapshot's onset
+    /// material through the <see cref="PlateFrameSampler"/> at the seek tick. The snapshot's state is
+    /// keyed at <paramref name="tick"/> so the sampler's Lagrangian transport carries onset material
+    /// to the query tick, producing smoothly drifting fractions between 5 M-tick snapshots.
+    /// </summary>
     public IReadOnlyDictionary<int, double> GetContinentalFractionByCellAt(long tick)
     {
         if (tick < 0) throw new ArgumentOutOfRangeException(nameof(tick));
@@ -659,8 +659,6 @@ public sealed class Service : IService, IDisposable
             parameters,
             "canonicalTick",
             ReadLong(parameters, "tick", 0L));
-        // TODO(cache): repopulate when a cache-tick source exists
-        // var cachedTicks = ReadLongArray(parameters, "cachedTicks");
 
         return new WorldGenerationProductsView(graphRevision, products, referenceTick);
     }
@@ -1168,56 +1166,6 @@ public sealed class Service : IService, IDisposable
             ? ReadStringArray(value.GetString() ?? string.Empty)
             : Array.Empty<string>();
     }
-
-    private static long[] ReadLongArray(IReadOnlyDictionary<string, object> parameters, string key)
-    {
-        if (!parameters.TryGetValue(key, out var value) || value is null)
-            return Array.Empty<long>();
-
-        return value switch
-        {
-            long[] values => values,
-            int[] values => values.Select(item => (long)item).ToArray(),
-            IEnumerable<long> values => values.ToArray(),
-            IEnumerable<int> values => values.Select(item => (long)item).ToArray(),
-            JsonElement json => ReadLongArray(json),
-            string text => ReadLongArray(text),
-            _ => Array.Empty<long>(),
-        };
-    }
-
-    private static long[] ReadLongArray(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-            return Array.Empty<long>();
-
-        if (TryDeserializeArray<long>(text, out var values))
-            return values;
-
-        return long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
-            ? new[] { parsed }
-            : Array.Empty<long>();
-    }
-
-    private static long[] ReadLongArray(JsonElement value)
-    {
-        if (value.ValueKind == JsonValueKind.Array)
-        {
-            return value.EnumerateArray()
-                .Select(item => TryReadLong(item, out var parsed) ? parsed : (long?)null)
-                .Where(item => item.HasValue)
-                .Select(item => item!.Value)
-                .ToArray();
-        }
-
-        if (TryReadLong(value, out var single))
-            return new[] { single };
-
-        return Array.Empty<long>();
-    }
-
-    private static bool TryReadLong(JsonElement value, out long result)
-        => TryReadLong((object)value, out result);
 
     private static bool TryDeserializeArray<T>(string text, out T[] values)
     {
