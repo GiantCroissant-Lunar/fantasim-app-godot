@@ -743,11 +743,12 @@ public partial class Host : Node
 
     private CollectibleBundles LoadCollectibleBundles()
     {
+        // Fail hard: without the bundle registry, plugin assemblies would load into the
+        // shared parent ALC and hot-reload would silently break. No silent fallback.
         const string configPath = "res://config/collectible-bundles.json";
         if (!Godot.FileAccess.FileExists(configPath))
-            return CollectibleBundles.Empty;
-        var json = Godot.FileAccess.GetFileAsString(configPath);
-        return CollectibleBundles.ParseJson(json);
+            throw new InvalidOperationException($"Missing required config: {configPath}");
+        return CollectibleBundles.ParseJson(Godot.FileAccess.GetFileAsString(configPath));
     }
 
     private static SharedAssemblyPolicyConfig LoadSharedAssemblyPolicy()
@@ -764,6 +765,16 @@ public partial class Host : Node
     {
         if (what == NotificationWMCloseRequest || what == NotificationExitTree)
         {
+            // Sever the cutaway/exploded/mantle targets while the render composition is
+            // still live — these are references INTO the composition that must be detached
+            // before disposal, not after.
+            if (_renderComposition is not null)
+            {
+                _renderComposition.SetCutawayTarget(null);
+                _renderComposition.SetExplodedTarget(null);
+                _renderComposition.SetMantleTarget(null);
+            }
+
             // Unregister the render.screenshot handler so it does not pin a collectible ALC
             // (mirrors WorldPlugin.ShutdownAsync unregister discipline).
             if (_renderComposition is not null && _composition is not null)
@@ -786,9 +797,6 @@ public partial class Host : Node
             // The world bundle's PresentationPlugin owns binder disposal (runs in the plugin-host
             // teardown inside _composition.Dispose()); the host only drops its handle.
             _planetPresentation = null;
-            _renderComposition?.SetCutawayTarget(null);
-            _renderComposition?.SetExplodedTarget(null);
-            _renderComposition?.SetMantleTarget(null);
             _composition?.Dispose();
         }
         base._Notification(what);

@@ -219,7 +219,7 @@ tasks:
       - '{{.GODOT}} --headless --path {{.CONTENT_PROJECT}} --export-pack "world PCK" {{.ROOT_DIR}}/{{.BUILD_DIR}}/_artifacts/{{.ARTIFACTS_VERSION}}/godot/bundles/world.pck'
 
   bundles:
-    desc: Export all collectible bundle PCKs (stage + assist + timeline + activity + world + iii + common)
+    desc: 'Export all bundle PCKs (collectible: stage + assist + timeline + activity + world + iii; resident: common)'
     deps: [bundle:stage, bundle:assist, bundle:timeline, bundle:activity, bundle:world, bundle:iii, bundle:common]
 
   bundle:install:
