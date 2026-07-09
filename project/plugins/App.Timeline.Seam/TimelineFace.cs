@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using Godot;
 using FantaSim.App.World;
@@ -121,6 +122,7 @@ public partial class TimelineFace : Control, ITimelineFace
     private readonly List<(Button Button, double Start, double Width)> _atmosphereBands = new();
     private readonly List<TrackRowBinding> _tracks = new();
     private readonly Dictionary<TimelineFilmstripCacheKey, ImageTexture> _filmstripTextureCache = new();
+    private readonly Queue<TimelineFilmstripCacheKey> _filmstripCacheInsertionOrder = new();
     private readonly Dictionary<string, TimelineFilmstripCacheKey> _filmstripRequestTextureKeys = new(StringComparer.Ordinal);
     private readonly Queue<QueuedFilmstripFrame> _filmstripQueue = new();
     private readonly HashSet<string> _filmstripQueuedKeys = new(StringComparer.Ordinal);
@@ -155,6 +157,7 @@ public partial class TimelineFace : Control, ITimelineFace
     private const float PlayheadHandleWidth = 22f;
     private const float PlayheadHandleHeight = 20f;
     private const int MaxConcurrentFilmstripRequests = 3;
+    private const int MaxFilmstripTextureCacheEntries = 512;
     private const double ViewRebuildCoalesceSeconds = 0.08;
 
     private TimelineLadderRung SelectedRung => TimelineModel.SelectRungForSpan(_viewEndTick - _viewStartTick);
@@ -1174,12 +1177,19 @@ public partial class TimelineFace : Control, ITimelineFace
             map.ViewRung,
             map.Width,
             map.Height);
+        var isNewKey = !_filmstripTextureCache.ContainsKey(key);
         if (!_filmstripTextureCache.TryGetValue(key, out var texture)
             || !GodotObject.IsInstanceValid(texture))
         {
             var image = Image.CreateFromData(map.Width, map.Height, false, Image.Format.Rgba8, map.Rgba32);
             texture = ImageTexture.CreateFromImage(image);
             _filmstripTextureCache[key] = texture;
+        }
+
+        if (isNewKey)
+        {
+            _filmstripCacheInsertionOrder.Enqueue(key);
+            EvictFilmstripCacheIfOverCap();
         }
 
         _filmstripRequestTextureKeys[requestKey] = key;
@@ -1235,15 +1245,6 @@ public partial class TimelineFace : Control, ITimelineFace
             _log);
     }
 
-    private static Label CompactChip(string text)
-    {
-        var chip = CompactStripLabel(text, muted: false);
-        chip.CustomMinimumSize = new Vector2(82f, TrackHeight);
-        chip.HorizontalAlignment = HorizontalAlignment.Center;
-        chip.AddThemeStyleboxOverride("normal", CompactChipStyle());
-        return chip;
-    }
-
     private static Label CompactStripLabel(string text, bool muted)
     {
         var label = new Label
@@ -1258,20 +1259,6 @@ public partial class TimelineFace : Control, ITimelineFace
             ? new Color(0.64f, 0.70f, 0.76f, 0.72f)
             : new Color(0.90f, 0.94f, 0.98f, 0.95f));
         return label;
-    }
-
-    private static StyleBoxFlat CompactChipStyle()
-    {
-        var style = new StyleBoxFlat
-        {
-            BgColor = new Color(0.08f, 0.12f, 0.14f, 0.78f),
-            BorderColor = new Color(0.24f, 0.36f, 0.42f, 0.72f),
-        };
-        style.SetBorderWidthAll(1);
-        style.SetCornerRadiusAll(3);
-        style.ContentMarginLeft = 5f;
-        style.ContentMarginRight = 5f;
-        return style;
     }
 
     private WorldGenerationGraphFamilyDocument? ResolveGenerationGraphFamily()
@@ -1335,12 +1322,12 @@ public partial class TimelineFace : Control, ITimelineFace
             var schedule = string.Equals(sphere, "atmosphere", StringComparison.Ordinal)
                 ? _ctl.AtmosphereSchedule
                 : _ctl.GeosphereSchedule;
-            var payload = JsonSerializer.Serialize(new
+            var payload = new JsonObject
             {
-                sphereId = sphere,
-                layerId,
-                regimeId = schedule.RegimeAt(_ctl.Tick)?.RegimeId
-            });
+                ["sphereId"] = sphere,
+                ["layerId"] = layerId,
+                ["regimeId"] = schedule.RegimeAt(_ctl.Tick)?.RegimeId,
+            }.ToJsonString();
             var result = await commandClient.CommandAsync(new CommandRequest(
                 Command: "timeline.toggle_layer",
                 PayloadJson: payload,
@@ -1664,12 +1651,26 @@ public partial class TimelineFace : Control, ITimelineFace
         }
 
         _filmstripTextureCache.Clear();
+        _filmstripCacheInsertionOrder.Clear();
         _filmstripRequestTextureKeys.Clear();
         _filmstripQueue.Clear();
         _filmstripQueuedKeys.Clear();
         _filmstripActiveKeys.Clear();
         _filmstripWaiters.Clear();
         _filmstripActiveRequests = 0;
+    }
+
+    private void EvictFilmstripCacheIfOverCap()
+    {
+        while (_filmstripTextureCache.Count > MaxFilmstripTextureCacheEntries
+               && _filmstripCacheInsertionOrder.Count > 0)
+        {
+            var evictedKey = _filmstripCacheInsertionOrder.Dequeue();
+            if (_filmstripTextureCache.TryGetValue(evictedKey, out var evicted)
+                && GodotObject.IsInstanceValid(evicted))
+                evicted.Dispose();
+            _filmstripTextureCache.Remove(evictedKey);
+        }
     }
 
     private static string TrackKey(string sphere, string layerId)
