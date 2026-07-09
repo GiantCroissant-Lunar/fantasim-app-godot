@@ -439,7 +439,8 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
         // refresh the globe snapshot at every playhead move through the light path (no crust
         // materialization). Keying off SurfaceColoring keeps stacked layer views (e.g.
         // Mantle+Plate slabs) moving even when the derived view mode is MantleInterior.
-        if (decision.SurfaceColoring == SurfaceColoringKind.Continents)
+        if (decision.SurfaceColoring == SurfaceColoringKind.Continents
+            && origin != TimelineTickOrigin.ScrubPreview)
             RefreshContinentsMembership(tick);
         bool showBoundaries = viewMode == GlobeViewMode.PlateIdentity;
         ApplyLightingForView(viewMode);
@@ -940,23 +941,6 @@ internal sealed class PlanetPresentationBinder : IPlanetPresentation
             slabRoot.GetChildCount());
     }
 
-    // M-A: ghost/unghost every plate-surface GeometryInstance3D. Transparency (0=opaque, 1=gone) is
-    // per-instance and leaves the material untouched — no permanent transparent-pipeline switch.
-    private void ApplyCrustGhost(float transparency)
-    {
-        if (_plateSurfaceRoot is null || !GodotObject.IsInstanceValid(_plateSurfaceRoot))
-            return;
-        ApplyTransparencyRecursive(_plateSurfaceRoot, transparency);
-    }
-
-    private static void ApplyTransparencyRecursive(Node node, float transparency)
-    {
-        if (node is GeometryInstance3D geometry)
-            geometry.Transparency = transparency;
-        foreach (var child in node.GetChildren())
-            ApplyTransparencyRecursive(child, transparency);
-    }
-
     // The four method-lock surfaces plus stage dressing (spec ingredient 6): opaque INNER cores
     // (deep blue slab hearts / red-orange plume hearts, drawn in the opaque pass), translucent
     // OUTER halos (drawn in the transparent pass with explicit render priority AFTER opaques),
@@ -1378,13 +1362,13 @@ void fragment() {
         // run distinguish "never called" (the viewMode gate / seek wiring) from "called but guard
         // fired" (document null / already bound / world service unresolved). Debug level so Play does
         // not spam at info.
-        _log.LogInformation(
+        _log.LogDebug(
             "RefreshContinentsMembership(tick={Tick}) entered: hasDocument={HasDocument}, boundContinentsTick={BoundTick}.",
             tick, _currentDocument is not null, _boundContinentsTick);
 
         if (_currentDocument is null || _boundContinentsTick == tick)
         {
-            _log.LogInformation(
+            _log.LogDebug(
                 "RefreshContinentsMembership(tick={Tick}) early-return: document null or tick already bound (hasDocument={HasDocument}, boundContinentsTick={BoundTick}).",
                 tick, _currentDocument is not null, _boundContinentsTick);
             return;
@@ -1393,7 +1377,7 @@ void fragment() {
         var world = _registry.TryGet<WorldService>();
         if (world is null)
         {
-            _log.LogInformation(
+            _log.LogDebug(
                 "RefreshContinentsMembership(tick={Tick}) early-return: WorldService not registered (cross-ALC type-identity split or bundle not yet loaded).",
                 tick);
             return;
@@ -1420,7 +1404,7 @@ void fragment() {
         };
         _boundContinentsTick = tick;
         RebuildPlateSurface();
-        _log.LogInformation(
+        _log.LogDebug(
             "RefreshContinentsMembership(tick={Tick}) refreshed: snapshotCells={SnapshotCells}, fractionCells={FractionCells}.",
             tick, snapshot.CellCount, fractions.Count);
     }
@@ -2593,8 +2577,11 @@ internal sealed class PlanetTimelineController : ITimelineController
 
     public void Pause() => _onPause?.Invoke();
 
-    public void SeekTo(long tick) => _onSeek?.Invoke(Math.Clamp(tick, 0L, _maxTick));
-    public void SeekTo(long tick, TimelineTickOrigin origin) => SeekTo(tick);
+    public void SeekTo(long tick)
+        => SeekTo(tick, TimelineTickOrigin.Standard);
+
+    public void SeekTo(long tick, TimelineTickOrigin origin)
+        => _onSeek?.Invoke(Math.Clamp(tick, 0L, _maxTick));
 
     // D5 back-compat: SelectLayer makes the active set EXACTLY {layer}.
     public void SelectLayer(string sphereId, string layerId)

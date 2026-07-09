@@ -213,14 +213,16 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             new FantaSim.App.Command.CommandDescriptor(
                 Id: SeekCommandId,
                 Title: "Seek timeline",
-                Description: "Moves the timeline playhead to a tick through the active timeline service. Payload: {\"tick\":123}.",
+                Description: "Moves the timeline playhead to a tick through the active timeline service. Payload: {\"tick\":123,\"origin\":\"standard|scrubPreview|scrubCommit\"}. 'origin' is optional (case-insensitive, default \"standard\").",
                 Category: "timeline"),
             async (payloadJson, cancellationToken) =>
             {
-                var tick = ParseSeekTick(payloadJson, controller.MaxTick);
+                var payload = ParseSeekPayload(payloadJson);
+                var tick = ParseSeekTick(payload, controller.MaxTick);
+                var origin = ParseSeekOrigin(payload);
                 await timelineService.SeekAsync(tick, cancellationToken).ConfigureAwait(false);
                 if (controller.Tick != tick)
-                    controller.PushTick(tick);
+                    controller.PushTick(tick, origin);
                 // JsonObject, NOT JsonSerializer.Serialize(anonymous): anonymous types compile
                 // into this collectible assembly, and the resident serializer's per-Type cache
                 // roots their LoaderAllocator — the ALC never collects (gcroot-proven 2026-07-08).
@@ -341,16 +343,30 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
         _resource.RuntimeChanged -= OnResourceRuntimeChanged;
     }
 
-    private static long ParseSeekTick(string? payloadJson, long maxTick)
+    private static JsonObject ParseSeekPayload(string? payloadJson)
     {
         if (string.IsNullOrWhiteSpace(payloadJson))
             throw new ArgumentException("timeline.seek payload is required.");
 
-        var payload = JsonNode.Parse(payloadJson) as JsonObject
+        return JsonNode.Parse(payloadJson) as JsonObject
             ?? throw new ArgumentException("timeline.seek payload must be a JSON object.");
+    }
+
+    private static long ParseSeekTick(JsonObject payload, long maxTick)
+    {
         if (!TryReadLong(payload["tick"], out var tick))
             throw new ArgumentException("timeline.seek requires numeric 'tick'.");
         return Math.Clamp(tick, 0L, Math.Max(0L, maxTick));
+    }
+
+    internal static TimelineTickOrigin ParseSeekOrigin(JsonObject payload)
+    {
+        var node = payload["origin"];
+        if (node is JsonValue value
+            && value.TryGetValue<string>(out var text)
+            && Enum.TryParse(text, true, out TimelineTickOrigin origin))
+            return origin;
+        return TimelineTickOrigin.Standard;
     }
 
     private static (string SphereId, string LayerId) ParseLayerSelection(string? payloadJson)
