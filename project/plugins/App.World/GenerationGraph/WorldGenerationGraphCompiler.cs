@@ -200,7 +200,7 @@ public static class WorldGenerationGraphCompiler
             "long" or "tick" or "ticks" => JsonValue.Create(long.Parse(value, CultureInfo.InvariantCulture)),
             "float" or "double" or "number" => JsonValue.Create(double.Parse(value, CultureInfo.InvariantCulture)),
             "bool" or "boolean" => JsonValue.Create(bool.Parse(value)),
-            "json" => JsonNode.Parse(value),
+            "json" or "object" => JsonNode.Parse(value),
             _ => JsonValue.Create(value),
         };
     }

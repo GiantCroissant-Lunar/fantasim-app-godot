@@ -38,6 +38,45 @@ public sealed class WorldCrustMaterializerTests
     }
 
     [Fact]
+    public async Task MaterializeAsync_forwards_authored_patch_recipe_to_crust_init()
+    {
+        // Zero patches ⇒ patch-based init seeds every cell fully oceanic. Under the
+        // recipe-based default (Continental(0,1)) the plate-0/1 cells would start at 1.0,
+        // so any continental cell here means the authored recipe was NOT forwarded.
+        var payload = ExplicitPlatesPayload();
+        payload["options"] = new JsonObject
+        {
+            ["continentalPatches"] = new JsonObject { ["count"] = 0 },
+        };
+
+        var materialization = await WorldCrustMaterializer.MaterializeAsync(
+            WorldCrustRunSpec.FromExecutionPayload(payload));
+
+        var state = materialization.Result.StateByTick[10L];
+        Assert.All(state.Values, cell => Assert.True(cell.ContinentalFraction < 0.5));
+    }
+
+    [Fact]
+    public async Task MaterializeAsync_without_authored_patches_keeps_recipe_based_init()
+    {
+        var materialization = await WorldCrustMaterializer.MaterializeAsync(
+            WorldCrustRunSpec.FromExecutionPayload(ExplicitPlatesPayload()));
+
+        var state = materialization.Result.StateByTick[10L];
+        Assert.Contains(state.Values, cell => cell.ContinentalFraction > 0.5);
+    }
+
+    private static JsonObject ExplicitPlatesPayload() => new()
+    {
+        ["canonicalTick"] = 10L,
+        ["frequency"] = 2,
+        ["plates"] = new JsonArray(
+            new JsonObject { ["id"] = 0, ["lat"] = 0.0, ["lon"] = 0.0 },
+            new JsonObject { ["id"] = 1, ["lat"] = 0.0, ["lon"] = 120.0 },
+            new JsonObject { ["id"] = 2, ["lat"] = 0.0, ["lon"] = -120.0 }),
+    };
+
+    [Fact]
     public async Task BuildSurfaceData_returns_globe_sized_elevations_and_features_at_reference_tick()
     {
         var options = WorldGenerationRenderOptions.Default;

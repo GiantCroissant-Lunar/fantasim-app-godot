@@ -716,7 +716,8 @@ public sealed class GlobeReconstructor
             endTick: spec.EndTick,
             snapshotTicks: spec.SnapshotTicks,
             rates: spec.Rates,
-            rotationReferenceTick: spec.RotationReferenceTick).GetAwaiter().GetResult();
+            rotationReferenceTick: spec.RotationReferenceTick,
+            patchRecipe: spec.PatchRecipe).GetAwaiter().GetResult();
     }
 
     /// <summary>

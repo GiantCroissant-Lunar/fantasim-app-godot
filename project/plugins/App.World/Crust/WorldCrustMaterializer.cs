@@ -203,6 +203,7 @@ internal static class WorldCrustMaterializer
             snapshotTicks: spec.SnapshotTicks,
             rates: spec.Rates,
             rotationReferenceTick: spec.RotationReferenceTick,
+            patchRecipe: spec.PatchRecipe,
             ct: cancellationToken).ConfigureAwait(false);
 
         return new WorldCrustMaterialization(spec, tessellation, topology, result);

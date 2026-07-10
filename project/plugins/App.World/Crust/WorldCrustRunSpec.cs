@@ -131,8 +131,7 @@ internal sealed record WorldCrustRunSpec(
             Rates: CreateDefaultRates(),
             BoundaryProfiles: renderOptions.BoundaryProfiles,
             VerticalExaggeration: renderOptions.VerticalExaggeration,
-            HydrosphereMode: renderOptions.HydrosphereMode,
-            PatchRecipe: ReadPatchRecipe(renderOptions));
+            HydrosphereMode: renderOptions.HydrosphereMode);
     }
 
     public static WorldCrustRunSpec ForReconstructor(
@@ -161,8 +160,7 @@ internal sealed record WorldCrustRunSpec(
             Rates: CreateDefaultRates(),
             BoundaryProfiles: BoundaryProfileParameters.Default,
             VerticalExaggeration: WorldGenerationRenderOptions.DefaultVerticalExaggeration,
-            HydrosphereMode: WorldGenerationRenderOptions.Default.HydrosphereMode,
-            PatchRecipe: DefaultPatchRecipe with { Seed = 0 });
+            HydrosphereMode: WorldGenerationRenderOptions.Default.HydrosphereMode);
     }
 
     private static JsonObject MergeNestedOptions(JsonObject payload)
@@ -243,7 +241,12 @@ internal sealed record WorldCrustRunSpec(
         return DefaultContinentalRecipe;
     }
 
-    public static CrustPatchRecipe ReadPatchRecipe(JsonObject payload, int worldSeed)
+    /// <summary>
+    /// Null when <c>continentalPatches</c> is not authored: the spec's PatchRecipe gates which
+    /// init the crust pipeline runs (null &rarr; recipe-based, non-null &rarr; patch-based), so
+    /// only an explicitly authored object may switch the default path off recipe seeding.
+    /// </summary>
+    public static CrustPatchRecipe? ReadPatchRecipe(JsonObject payload, int worldSeed)
     {
         ArgumentNullException.ThrowIfNull(payload);
 
@@ -263,13 +266,7 @@ internal sealed record WorldCrustRunSpec(
                 edgeNoise);
         }
 
-        return DefaultPatchRecipe with { Seed = worldSeed };
-    }
-
-    public static CrustPatchRecipe ReadPatchRecipe(WorldGenerationRenderOptions renderOptions)
-    {
-        ArgumentNullException.ThrowIfNull(renderOptions);
-        return DefaultPatchRecipe with { Seed = renderOptions.Seed };
+        return null;
     }
 
     /// <summary>

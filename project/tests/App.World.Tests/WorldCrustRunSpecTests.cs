@@ -26,9 +26,9 @@ public sealed class WorldCrustRunSpecTests
         Assert.Equal(1.0 / UnitConverter.TicksPerMegaAnnum, spec.Rates.OrogenicPerTick, 12);
         Assert.Equal(0.6 / UnitConverter.TicksPerMegaAnnum, spec.Rates.ArcVolcanismPerTick, 12);
         Assert.Equal(CellElevationHydrosphereMode.Absent, spec.HydrosphereMode);
-        Assert.NotNull(spec.PatchRecipe);
-        Assert.Equal(WorldGenerationRenderOptions.Default.Seed, spec.PatchRecipe!.Seed);
-        Assert.Equal(5, spec.PatchRecipe.PatchCount);
+        // Null keeps the default path on recipe-based init; only an authored
+        // continentalPatches object may activate patch seeding.
+        Assert.Null(spec.PatchRecipe);
     }
 
     [Fact]
@@ -102,9 +102,23 @@ public sealed class WorldCrustRunSpecTests
     }
 
     [Fact]
-    public void FromExecutionPayload_defaults_patch_recipe_to_world_seed_and_count_5()
+    public void FromExecutionPayload_leaves_patch_recipe_null_when_not_authored()
     {
         var payload = new JsonObject { ["seed"] = 99 };
+
+        var spec = WorldCrustRunSpec.FromExecutionPayload(payload);
+
+        Assert.Null(spec.PatchRecipe);
+    }
+
+    [Fact]
+    public void FromExecutionPayload_authored_empty_patches_object_defaults_to_world_seed_and_count_5()
+    {
+        var payload = new JsonObject
+        {
+            ["seed"] = 99,
+            ["options"] = new JsonObject { ["continentalPatches"] = new JsonObject() },
+        };
 
         var spec = WorldCrustRunSpec.FromExecutionPayload(payload);
 
@@ -133,6 +147,7 @@ public sealed class WorldCrustRunSpecTests
         Assert.Equal(options.BoundaryProfiles, spec.BoundaryProfiles);
         Assert.Equal(options.VerticalExaggeration, spec.VerticalExaggeration);
         Assert.Equal(options.HydrosphereMode, spec.HydrosphereMode);
+        Assert.Null(spec.PatchRecipe);
     }
 
     [Fact]
@@ -162,6 +177,7 @@ public sealed class WorldCrustRunSpecTests
         Assert.Equal(0.5 / UnitConverter.TicksPerMegaAnnum, spec.Rates.RidgeVolcanismPerTick, 12);
         Assert.Equal(WorldGenerationRenderOptions.DefaultVerticalExaggeration, spec.VerticalExaggeration);
         Assert.Equal(CellElevationHydrosphereMode.Absent, spec.HydrosphereMode);
+        Assert.Null(spec.PatchRecipe);
     }
 
     private static void AssertSetEqual(IEnumerable<int> expected, IReadOnlySet<int> actual)
