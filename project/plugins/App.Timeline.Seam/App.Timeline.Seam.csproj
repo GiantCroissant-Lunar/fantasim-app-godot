@@ -9,7 +9,7 @@
          AnimationPlayer/AnimationTree + Control UI. Godot.NET.Sdk for GodotSharp. Stays
          resident (shared via "FantaSim.App." prefix) - it is the only Godot-aware piece;
          the timeline bundle itself ships no Godot types and its collectible ALC unloads
-         cleanly. Mirrors App.Camera.Seam / App.World.Seam. -->
+         cleanly. Mirrors App.Camera.Seam / App.World.Presentation.Seam. -->
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
   </PropertyGroup>
 

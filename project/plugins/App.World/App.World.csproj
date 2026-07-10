@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <!--
-    T3 world orchestrator (zero Godot usings; the Godot work lives in the future App.World.Seam T4).
+    T3 world orchestrator (zero Godot usings; the Godot presentation work lives in App.World.Presentation.Seam T4).
     App-side T1 contracts are always referenced. The engine refs below switch package<->project by
     UseProjectReferences (see project/Directory.Build.props): when false the StubWorldRuntime compiles
     against published packages; when true the full composition path (USE_PROJECT_REFERENCES) compiles
