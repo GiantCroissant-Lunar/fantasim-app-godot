@@ -1,8 +1,12 @@
 # Layer→Track Registry — design (2026-07-10)
 
-**Status:** DIRECTION LOCKED for slice 1; compose-json section is PROTOTYPE-VALIDATED-PENDING
-(user explicitly unsure — revisit after slice 1 evidence). Companion arcs: D5/D7b (directives
-spec ADDENDA), tunnel timeline (separate future spec), SurrealDB persistence (separate slice).
+**Status:** DIRECTION LOCKED for slice 1; compose-json **DIRECTION LOCKED 2026-07-10** (user
+decision with slice-1 evidence in hand): own json per sphere, domain vocabulary
+(`geometry-stack`, `coloring-priority`, `exaggeration-ratio`, `visibility-weight`) —
+**implementation deferred until a real consumer arrives** (the D5/D7b compose-node arc or the
+tunnel skin); no schema work before then, nothing in slice 2 needs it. Companion arcs: D5/D7b
+(directives spec ADDENDA), tunnel timeline (separate future spec), SurrealDB persistence
+(separate slice).
 
 ## Problem
 
@@ -111,8 +115,9 @@ Contract additions are T1 → full re-export before the gate (verify-windowed de
 
 ## Open questions (carried forward, not blockers)
 
-- Compose json node vocabulary + whether its evaluation output fully subsumes GlobeViewMode
-  (user unsure — decide with slice-1 evidence in hand).
+- ~~Compose json direction~~ **RESOLVED 2026-07-10** (see Status): per-sphere json with the
+  domain node vocabulary, implemented only when D5/D7b or the tunnel skin consumes it. Still
+  open at implementation time: whether its evaluation output fully subsumes GlobeViewMode.
 - Ring control (vs bar) for huge time scaling in the tunnel view — implementation-time detail.
 - Where archive state persists before SurrealDB lands (slice 1: app-local json sidecar).
 - Parameter-surface audit: **COMPLETE** — see
