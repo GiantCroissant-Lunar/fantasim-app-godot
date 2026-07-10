@@ -93,7 +93,27 @@ param preserves alphabetical; layer order within a sphere unaffected.
 - Leave `AGENT-SUMMARY.md` at repo root: files added/changed per task, test counts, deviations
   with reasons, anything discovered mid-implementation the lead should know before gating.
 
-## Slice-2 acceptance gate (lead-run, windowed, falsifiable)
+## Slice-2 acceptance gate — **RESULT: 4/5 PASS, point 5 FAILS on a PRE-EXISTING defect (2026-07-10)**
+
+Evidence: `../specs/evidence/2026-07-10-track-registry-slice2-gate/`. (1) PASS — lanes render
+geosphere→atmosphere (screenshot; was alphabetical). (2) PASS — clean boot baseline 7; one
+`timeline.seek` fires the crust trigger → real generation appends a truth event → `IsDirty`
+→ `registry.reload` reports 8; World lane renders LAST with the Truth Events track through the
+generic presenter (screenshot; degradation guarantee held). (3) PASS — archive removed the
+discovered track live, restore brought it back (revisions 3→5; trackCount stayed 8 while
+archived — data never destroyed); restore-to-`discovered` semantics pinned by unit tests.
+(4) PASS — suite 1091/1091 (lead-run); grep gate holds (only the allowed sphereId→schedule
+lookup remains, TimelineFace.cs:837-838). (5) **FAIL — pre-existing**: `old ALC still pinned
+for bundle world after unload (reload degraded)`. NOT a slice-2 regression: the first pinned
+unload was tearing down the slice-1-era world ALC before any slice-2 binary had loaded, and it
+reproduces new→new. TimelinePlugin's sever-on-RuntimeChanging and WorldPlugin's shutdown
+(command unregister → registration dispose → instance dispose) are both correct by reading —
+the pin is elsewhere; needs the ClrMD pin-hunter recipe
+([[fantasim-alc-shared-type-identity]] memory). Slice 1's gate only ever hot-reloaded the
+TIMELINE bundle; the world-bundle reload path was likely never exercised clean. Behaviors were
+re-verified on a clean single-ALC boot after the degraded-reload session.
+
+Original gate definition (for reference):
 
 1. Fresh registry.reload baseline: lanes ordered geosphere → atmosphere (laneOrder proof —
    was alphabetical).

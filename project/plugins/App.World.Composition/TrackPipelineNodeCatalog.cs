@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Nodes;
 using FantaSim.App.World;
 
 namespace FantaSim.App.World.Composition;
@@ -13,6 +14,12 @@ public sealed class TrackPipelineBuildContext
     public WorldGenerationGraphFamilyDocument? FamilyDocument { get; init; }
 
     public DeclaredLayersDocument? DeclaredLayers { get; init; }
+
+    /// <summary>Truth-stream-discovered records from the injected discovery provider seam
+    /// (empty when no provider is wired or it currently has nothing to report). See
+    /// <see cref="StreamDiscoveryNodeHandler"/> and
+    /// vault/plans/2026-07-10-layer-track-registry-slice2-plan.md Task 2.</summary>
+    public IReadOnlyList<DiscoveredTrackRecord> DiscoveredTracks { get; init; } = Array.Empty<DiscoveredTrackRecord>();
 
     public IReadOnlySet<string> ArchivedKeys { get; init; } = EmptySet;
 
@@ -44,6 +51,7 @@ public static class TrackPipelineNodeCatalog
         {
             [TrackPipelineNodeKinds.FamilyLayers] = FamilyLayersNodeHandler.Execute,
             [TrackPipelineNodeKinds.DeclaredLayers] = DeclaredLayersNodeHandler.Execute,
+            [TrackPipelineNodeKinds.StreamDiscovery] = StreamDiscoveryNodeHandler.Execute,
             [TrackPipelineNodeKinds.TrackSet] = TrackSetNodeHandler.Execute,
         };
 
@@ -135,8 +143,49 @@ internal static class DeclaredLayersNodeHandler
     }
 }
 
+/// <summary>Source handler: one discovered descriptor per <see cref="DiscoveredTrackRecord"/> the
+/// injected discovery provider seam returns. The truth-stream-discovery half of the hybrid model
+/// (vault/specs/2026-07-10-layer-track-registry-design.md decision 1): a record's own
+/// <see cref="DiscoveredTrackRecord.SphereId"/>/<see cref="DiscoveredTrackRecord.LayerId"/> drive
+/// placement (unlike <see cref="FamilyLayersNodeHandler"/>, nothing is derived from a naming
+/// convention here -- the provider already knows both).</summary>
+internal static class StreamDiscoveryNodeHandler
+{
+    private static readonly IReadOnlyList<string> DefaultCapabilities = new[] { "scrub", "toggle" };
+    private const string DefaultSourceRef = "stream-discovery";
+
+    public static IReadOnlyList<LayerTrackDescriptor> Execute(TrackPipelineNode node, TrackPipelineBuildContext context)
+    {
+        var records = context.DiscoveredTracks;
+        if (records is null || records.Count == 0)
+            return Array.Empty<LayerTrackDescriptor>();
+
+        return records
+            .Select(record => new LayerTrackDescriptor(
+                SphereId: record.SphereId,
+                LayerId: record.LayerId,
+                StreamId: record.StreamId,
+                DisplayName: record.DisplayName,
+                State: LayerTrackStates.Discovered,
+                // Slice 1's compose-json arc governs precise time-domain derivation (deferred);
+                // a discovered track exists for its whole known lifetime until then, same as the
+                // declared sources.
+                TimeDomain: new LayerTrackTimeDomain(StartTick: 0L, EndTick: null, Rung: "ka"),
+                Content: new LayerTrackContent(
+                    record.ContentType,
+                    Source: record.ContentSource,
+                    CadenceTicks: record.CadenceTicks),
+                Capabilities: record.Capabilities ?? DefaultCapabilities,
+                SourceRef: record.SourceRef ?? record.ContentSource ?? DefaultSourceRef))
+            .ToList();
+    }
+}
+
 /// <summary>Sink handler: merges every source wired into this node, applies the archive overlay,
-/// and stable-sorts by SphereId then LayerId (the deterministic order every view renders lanes in).</summary>
+/// and stable-sorts by SphereId then LayerId (the deterministic order every view renders lanes in).
+/// An optional <c>laneOrder</c> param (JSON array of sphereId strings) overrides sphere precedence
+/// -- see <see cref="ParseLaneOrder"/> -- restoring a shipped-asset choice like geosphere-first
+/// (vault/plans/2026-07-10-layer-track-registry-slice2-plan.md Task 3).</summary>
 internal static class TrackSetNodeHandler
 {
     public static IReadOnlyList<LayerTrackDescriptor> Execute(TrackPipelineNode node, TrackPipelineBuildContext context)
@@ -150,25 +199,70 @@ internal static class TrackSetNodeHandler
                 merged.AddRange(upstream);
         }
 
+        var laneOrder = ParseLaneOrder(node.Params);
         var withOverlay = merged.Select(track => ApplyArchiveOverlay(track, context.ArchivedKeys)).ToList();
         withOverlay.Sort((left, right) =>
         {
+            var laneCompare = LaneRank(left.SphereId, laneOrder).CompareTo(LaneRank(right.SphereId, laneOrder));
+            if (laneCompare != 0)
+                return laneCompare;
+
             var sphereCompare = string.CompareOrdinal(left.SphereId, right.SphereId);
             return sphereCompare != 0 ? sphereCompare : string.CompareOrdinal(left.LayerId, right.LayerId);
         });
         return withOverlay;
     }
 
+    /// <summary>Reads the optional <c>laneOrder</c> param: a JSON array of sphereId strings naming
+    /// sphere precedence. Read via JsonNode/JsonObject (never anonymous-type serialization -- the
+    /// ALC-pin house rule) since <see cref="TrackPipelineNode.Params"/> is already a JsonObject.
+    /// Missing param, missing key, non-array value, or an empty array all fall back to an empty
+    /// list, which <see cref="LaneRank"/> treats as "no sphere is listed" -- exactly today's
+    /// alphabetical-by-sphereId behavior. Non-string / null entries are skipped rather than
+    /// throwing, so one malformed entry does not break the whole param.</summary>
+    private static IReadOnlyList<string> ParseLaneOrder(JsonObject? nodeParams)
+    {
+        if (nodeParams is null)
+            return Array.Empty<string>();
+        if (!nodeParams.TryGetPropertyValue("laneOrder", out var laneOrderNode) || laneOrderNode is not JsonArray laneOrderArray)
+            return Array.Empty<string>();
+
+        var order = new List<string>();
+        foreach (var entry in laneOrderArray)
+        {
+            if (entry is JsonValue value && value.TryGetValue<string>(out var sphereId) && !string.IsNullOrEmpty(sphereId))
+                order.Add(sphereId);
+        }
+        return order;
+    }
+
+    /// <summary>A listed sphereId's rank is its index in <paramref name="laneOrder"/>; an unlisted
+    /// sphereId ranks after every listed one (so it sorts last among ranks, then falls back to
+    /// ordinal sphereId comparison against its unlisted peers).</summary>
+    private static int LaneRank(string sphereId, IReadOnlyList<string> laneOrder)
+    {
+        for (var i = 0; i < laneOrder.Count; i++)
+        {
+            if (string.Equals(laneOrder[i], sphereId, StringComparison.Ordinal))
+                return i;
+        }
+        return int.MaxValue;
+    }
+
     private static LayerTrackDescriptor ApplyArchiveOverlay(LayerTrackDescriptor track, IReadOnlySet<string> archivedKeys)
     {
         var isArchived = archivedKeys.Contains(LayerTrackRegistryBuilder.ArchiveKey(track.SphereId, track.LayerId));
-        var isCurrentlyArchived = string.Equals(track.State, LayerTrackStates.Archived, StringComparison.Ordinal);
-        if (isArchived == isCurrentlyArchived)
+        if (!isArchived)
+            // Not overlaid: leave the descriptor exactly as its source produced it -- "declared"
+            // from family-layers/declared-layers, "discovered" from stream-discovery, whatever a
+            // future source contributes. Restoring from archive never hardcodes a state (Task 1,
+            // vault/plans/2026-07-10-layer-track-registry-slice2-plan.md): every rebuild re-runs
+            // the source fresh (LayerTrackRegistryService.BuildSnapshotLocked), so this is exactly
+            // what a track looks like post-restore.
             return track;
 
-        // Slice 1 only ever produces "declared" tracks from either source, so restoring from
-        // archive always lands back on "declared" -- a "discovered" restore is slice-2 scope
-        // (stream-discovery source), tracked in the design doc's open questions.
-        return track with { State = isArchived ? LayerTrackStates.Archived : LayerTrackStates.Declared };
+        return string.Equals(track.State, LayerTrackStates.Archived, StringComparison.Ordinal)
+            ? track
+            : track with { State = LayerTrackStates.Archived };
     }
 }

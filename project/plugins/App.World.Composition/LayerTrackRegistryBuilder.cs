@@ -18,7 +18,8 @@ public static class LayerTrackRegistryBuilder
         WorldGenerationGraphFamilyDocument? familyDocument,
         DeclaredLayersDocument? declaredLayers,
         IReadOnlySet<string> archivedKeys,
-        int revision)
+        int revision,
+        IReadOnlyList<DiscoveredTrackRecord>? discoveredTracks = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(archivedKeys);
@@ -29,6 +30,7 @@ public static class LayerTrackRegistryBuilder
             FamilyDocument = familyDocument,
             DeclaredLayers = declaredLayers,
             ArchivedKeys = archivedKeys,
+            DiscoveredTracks = discoveredTracks ?? Array.Empty<DiscoveredTrackRecord>(),
         };
 
         IReadOnlyList<LayerTrackDescriptor> trackSetResult = Array.Empty<LayerTrackDescriptor>();

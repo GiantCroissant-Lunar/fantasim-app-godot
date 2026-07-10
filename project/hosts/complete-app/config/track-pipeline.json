@@ -1,15 +1,17 @@
 {
   "documentId": "track-pipeline",
   "schemaVersion": 1,
-  "revision": 1,
-  "comment": "Layer->track registry pipeline (slice 1, vault/specs/2026-07-10-layer-track-registry-design.md). Reproduces today's two lanes: geosphere layers come from the generation family json (family-layers), the layers that have no generation graph yet (today: geosphere.mantle, atmosphere.bulk, atmosphere.coupled) are declared via declared-layers.json beside this file. Both feed track-set, which merges, applies the archive overlay, and stable-sorts by sphereId then layerId.",
+  "revision": 2,
+  "comment": "Layer->track registry pipeline (vault/specs/2026-07-10-layer-track-registry-design.md; vault/plans/2026-07-10-layer-track-registry-slice2-plan.md). Three sources feed track-set: geosphere layers come from the generation family json (family-layers); layers with no generation graph yet (geosphere.mantle, atmosphere.bulk, atmosphere.coupled) come from declared-layers.json beside this file; non-generation truth-stream tracks (today: the world truth-events stream) come from stream-discovery via the injected discovery provider seam. track-set merges all three, applies the archive overlay, and sorts by laneOrder (geosphere before atmosphere -- 'world' intentionally unlisted, so a discovered lane lands last) then by layerId ordinal within a sphere.",
   "nodes": [
     { "nodeId": "family", "kind": "family-layers", "params": {} },
     { "nodeId": "declared", "kind": "declared-layers", "params": {} },
-    { "nodeId": "trackSet", "kind": "track-set", "params": {} }
+    { "nodeId": "discovery", "kind": "stream-discovery", "params": {} },
+    { "nodeId": "trackSet", "kind": "track-set", "params": { "laneOrder": ["geosphere", "atmosphere"] } }
   ],
   "wires": [
     { "fromNodeId": "family", "toNodeId": "trackSet" },
-    { "fromNodeId": "declared", "toNodeId": "trackSet" }
+    { "fromNodeId": "declared", "toNodeId": "trackSet" },
+    { "fromNodeId": "discovery", "toNodeId": "trackSet" }
   ]
 }

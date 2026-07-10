@@ -37,6 +37,12 @@ public static class TrackPipelineNodeKinds
     /// <summary>Sink: merges every wired-in source, applies the archive overlay, and stable-sorts
     /// by SphereId then LayerId.</summary>
     public const string TrackSet = "track-set";
+
+    /// <summary>Source: one descriptor per <see cref="DiscoveredTrackRecord"/> the injected
+    /// discovery provider seam returns (the hybrid model's non-generation half -- observations,
+    /// events, saved views -- see vault/plans/2026-07-10-layer-track-registry-slice2-plan.md
+    /// Task 2). Empty when no provider is wired or the provider currently has nothing to report.</summary>
+    public const string StreamDiscovery = "stream-discovery";
 }
 
 /// <summary>One entry in the declared-layers json asset.</summary>

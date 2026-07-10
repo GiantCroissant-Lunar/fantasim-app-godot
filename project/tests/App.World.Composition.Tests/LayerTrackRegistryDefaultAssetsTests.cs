@@ -53,7 +53,7 @@ public sealed class LayerTrackRegistryDefaultAssetsTests
         });
 
     [Fact]
-    public void ShippedAssets_ReproduceTodaysSevenTracks_AcrossTwoSpheres()
+    public void ShippedAssets_ReproduceTodaysSevenTracks_AcrossTwoSpheres_GeosphereFirst()
     {
         var configDir = Path.Combine(RepoRoot(), "project", "hosts", "complete-app", "config");
         var pipelineJson = File.ReadAllText(Path.Combine(configDir, "track-pipeline.json"));
@@ -77,16 +77,53 @@ public sealed class LayerTrackRegistryDefaultAssetsTests
         Assert.Equal(2, snapshot.Tracks.Select(t => t.SphereId).Distinct().Count());
         Assert.DoesNotContain(snapshot.Tracks, t => t.SphereId == "hydrosphere" || t.LayerId == "hydrosphere.ocean");
 
+        // Revision 2 (vault/plans/2026-07-10-layer-track-registry-slice2-plan.md Task 3) ships a
+        // laneOrder param restoring the pre-slice-1 geosphere-first lane order -- this was
+        // alphabetical (atmosphere before geosphere) before Task 3.
         var expectedLayerIds = new[]
         {
-            "atmosphere.bulk",
-            "atmosphere.coupled",
             "geosphere.crust",
             "geosphere.magma-ocean",
             "geosphere.mantle",
             "geosphere.plate",
             "geosphere.stagnant-lid",
+            "atmosphere.bulk",
+            "atmosphere.coupled",
         };
         Assert.Equal(expectedLayerIds, snapshot.Tracks.Select(t => t.LayerId));
+    }
+
+    [Fact]
+    public void ShippedAssets_StreamDiscoverySource_ContributesDiscoveredTrack_WhenProvided()
+    {
+        var configDir = Path.Combine(RepoRoot(), "project", "hosts", "complete-app", "config");
+        var pipelineJson = File.ReadAllText(Path.Combine(configDir, "track-pipeline.json"));
+        var declaredJson = File.ReadAllText(Path.Combine(configDir, "declared-layers.json"));
+
+        var options = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)
+        {
+            PropertyNameCaseInsensitive = true,
+        };
+        var pipeline = System.Text.Json.JsonSerializer.Deserialize<TrackPipelineDocument>(pipelineJson, options)!;
+        var declared = System.Text.Json.JsonSerializer.Deserialize<DeclaredLayersDocument>(declaredJson, options)!;
+        var record = new DiscoveredTrackRecord(
+            SphereId: "world",
+            LayerId: "world.truth-events",
+            StreamId: new LayerTrackStreamId("app", "main", "L0", "world", "default"),
+            DisplayName: "Truth Events",
+            ContentType: LayerTrackContentTypes.Events);
+
+        var snapshot = LayerTrackRegistryBuilder.Build(
+            pipeline,
+            FakeFamilyDocumentMirroringDefaults(),
+            declared,
+            archivedKeys: new System.Collections.Generic.HashSet<string>(),
+            revision: 1,
+            discoveredTracks: new[] { record });
+
+        Assert.Equal(8, snapshot.Tracks.Count);
+        // "world" is unlisted in the shipped laneOrder, so it lands last.
+        Assert.Equal("world.truth-events", snapshot.Tracks[^1].LayerId);
+        Assert.Equal(LayerTrackStates.Discovered, snapshot.Tracks[^1].State);
     }
 }

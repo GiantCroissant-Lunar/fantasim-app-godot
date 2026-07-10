@@ -30,6 +30,7 @@ public sealed class LayerTrackRegistryService : ILayerTrackRegistry, IDisposable
 
     private readonly object _gate = new();
     private readonly Func<WorldGenerationGraphFamilyDocument?> _familyDocumentProvider;
+    private readonly Func<IReadOnlyList<DiscoveredTrackRecord>>? _discoveredTracksProvider;
     private readonly string _pipelineJsonPath;
     private readonly string _declaredLayersJsonPath;
     private readonly string _archiveOverlayPath;
@@ -45,12 +46,14 @@ public sealed class LayerTrackRegistryService : ILayerTrackRegistry, IDisposable
         string pipelineJsonPath,
         string declaredLayersJsonPath,
         string archiveOverlayPath,
-        ILoggerFactory? loggerFactory = null)
+        ILoggerFactory? loggerFactory = null,
+        Func<IReadOnlyList<DiscoveredTrackRecord>>? discoveredTracksProvider = null)
     {
         _familyDocumentProvider = familyDocumentProvider ?? throw new ArgumentNullException(nameof(familyDocumentProvider));
         _pipelineJsonPath = pipelineJsonPath ?? throw new ArgumentNullException(nameof(pipelineJsonPath));
         _declaredLayersJsonPath = declaredLayersJsonPath ?? throw new ArgumentNullException(nameof(declaredLayersJsonPath));
         _archiveOverlayPath = archiveOverlayPath ?? throw new ArgumentNullException(nameof(archiveOverlayPath));
+        _discoveredTracksProvider = discoveredTracksProvider;
         _log = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger("LayerTrackRegistry");
 
         LoadArchiveOverlay();
@@ -128,8 +131,19 @@ public sealed class LayerTrackRegistryService : ILayerTrackRegistry, IDisposable
             _log.LogWarning(ex, "LayerTrackRegistry: family-document provider threw; family-layers source will be empty.");
         }
 
+        IReadOnlyList<DiscoveredTrackRecord> discoveredTracks = Array.Empty<DiscoveredTrackRecord>();
+        try
+        {
+            if (_discoveredTracksProvider is not null)
+                discoveredTracks = _discoveredTracksProvider() ?? Array.Empty<DiscoveredTrackRecord>();
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "LayerTrackRegistry: discovered-tracks provider threw; stream-discovery source will be empty.");
+        }
+
         _revision++;
-        return LayerTrackRegistryBuilder.Build(pipeline, family, declaredLayers, _archivedKeys, _revision);
+        return LayerTrackRegistryBuilder.Build(pipeline, family, declaredLayers, _archivedKeys, _revision, discoveredTracks);
     }
 
     private TrackPipelineDocument ReadPipelineDocument()

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -137,7 +138,41 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
             Path.Combine(configDir, "track-pipeline.json"),
             Path.Combine(configDir, "declared-layers.json"),
             Path.Combine(dataDir, "layer-track-archive.json"),
-            _loggerFactory);
+            _loggerFactory,
+            DiscoverTruthStreamTracks);
+    }
+
+    /// <summary>
+    /// The stream-discovery provider seam (vault/plans/2026-07-10-layer-track-registry-slice2-
+    /// plan.md Task 2): the engine's <c>ITruthEventStore</c> has no stream-enumeration API, so
+    /// discovery is app code that already knows which streams exist, not an engine query. The one
+    /// real discoverable today is the world truth stream <c>WorldRuntime</c> writes, surfaced via
+    /// <see cref="FantaSim.App.World.IService.GetOverviewAsync"/>: <see cref="WorldOverview.IsDirty"/>
+    /// is true once the stream has a head (i.e. at least one event has been appended), and
+    /// <see cref="WorldOverview.WorldId"/> is that stream's key. This is real data (the append-only
+    /// truth stream itself), not a demo asset -- no other record is ever invented here.
+    /// </summary>
+    private IReadOnlyList<DiscoveredTrackRecord> DiscoverTruthStreamTracks()
+    {
+        var world = _registry?.TryGet<FantaSim.App.World.IService>();
+        if (world is null)
+            return Array.Empty<DiscoveredTrackRecord>();
+
+        var overview = world.GetOverviewAsync();
+        if (!overview.IsDirty)
+            return Array.Empty<DiscoveredTrackRecord>();
+
+        return new[]
+        {
+            new DiscoveredTrackRecord(
+                SphereId: "world",
+                LayerId: "world.truth-events",
+                StreamId: new LayerTrackStreamId("app", "main", "L0", "world", "default"),
+                DisplayName: "Truth Events",
+                ContentType: LayerTrackContentTypes.Events,
+                ContentSource: overview.WorldId,
+                CadenceTicks: null),
+        };
     }
 
     private static string ResolveTrackAssetRoot()

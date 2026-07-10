@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using FantaSim.App.World;
@@ -38,11 +39,13 @@ public sealed class LayerTrackRegistryServiceTests : IDisposable
       "nodes": [
         { "nodeId": "family", "kind": "family-layers", "params": {} },
         { "nodeId": "declared", "kind": "declared-layers", "params": {} },
+        { "nodeId": "discovery", "kind": "stream-discovery", "params": {} },
         { "nodeId": "trackSet", "kind": "track-set", "params": {} }
       ],
       "wires": [
         { "fromNodeId": "family", "toNodeId": "trackSet" },
-        { "fromNodeId": "declared", "toNodeId": "trackSet" }
+        { "fromNodeId": "declared", "toNodeId": "trackSet" },
+        { "fromNodeId": "discovery", "toNodeId": "trackSet" }
       ]
     }
     """;
@@ -56,7 +59,9 @@ public sealed class LayerTrackRegistryServiceTests : IDisposable
     }
     """;
 
-    private LayerTrackRegistryService CreateService(WorldGenerationGraphFamilyDocument? family = null)
+    private LayerTrackRegistryService CreateService(
+        WorldGenerationGraphFamilyDocument? family = null,
+        Func<IReadOnlyList<DiscoveredTrackRecord>>? discoveredTracksProvider = null)
     {
         File.WriteAllText(PipelinePath, PipelineJson);
         File.WriteAllText(DeclaredLayersPath, DeclaredLayersJson);
@@ -64,7 +69,9 @@ public sealed class LayerTrackRegistryServiceTests : IDisposable
             () => family,
             PipelinePath,
             DeclaredLayersPath,
-            ArchiveOverlayPath);
+            ArchiveOverlayPath,
+            loggerFactory: null,
+            discoveredTracksProvider: discoveredTracksProvider);
     }
 
     [Fact]
@@ -156,5 +163,42 @@ public sealed class LayerTrackRegistryServiceTests : IDisposable
         var afterArchive = service.Current.Revision;
         service.Reload();
         Assert.True(service.Current.Revision > afterArchive);
+    }
+
+    [Fact]
+    public void Current_NoDiscoveredTracksProvider_YieldsNoDiscoveredTracks()
+    {
+        using var service = CreateService();
+
+        Assert.DoesNotContain(service.Current.Tracks, t => t.State == LayerTrackStates.Discovered);
+    }
+
+    [Fact]
+    public void Current_DiscoveredTracksProvider_ContributesDiscoveredTracks()
+    {
+        var record = new DiscoveredTrackRecord(
+            SphereId: "world",
+            LayerId: "world.truth-events",
+            StreamId: new LayerTrackStreamId("app", "main", "L0", "world", "default"),
+            DisplayName: "Truth Events",
+            ContentType: LayerTrackContentTypes.Events,
+            ContentSource: "app:main:0:world:default");
+        using var service = CreateService(discoveredTracksProvider: () => new[] { record });
+
+        var track = Assert.Single(service.Current.Tracks, t => t.SphereId == "world");
+        Assert.Equal(LayerTrackStates.Discovered, track.State);
+        Assert.Equal("world.truth-events", track.LayerId);
+    }
+
+    [Fact]
+    public void Current_DiscoveredTracksProviderThrows_LogsWarningAndBuildsWithoutDiscoveredTracks()
+    {
+        using var service = CreateService(discoveredTracksProvider: () => throw new InvalidOperationException("boom"));
+
+        Assert.DoesNotContain(service.Current.Tracks, t => t.State == LayerTrackStates.Discovered);
+        // The rest of the pipeline (family + declared) still builds successfully despite the
+        // throwing provider -- matches the family-document provider's try/log-warn/empty-fallback
+        // discipline (LayerTrackRegistryService.BuildSnapshotLocked).
+        Assert.Single(service.Current.Tracks);
     }
 }
