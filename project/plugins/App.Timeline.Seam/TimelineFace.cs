@@ -337,6 +337,10 @@ public partial class TimelineFace : Control, ITimelineFace
         _commandClient = null;
         _generationGraphFamilyProvider = null;
         _filmstripPreviewProvider = null;
+        // Drop queued filmstrip work with the severed provider: entries carry no provider
+        // reference anymore (execution-time resolution), but launching them after a sever is
+        // useless Task churn, and the generation bump makes any in-flight completion a no-op.
+        SupersedeFilmstripGeneration();
         UnsubscribeLayerTrackRegistry();
         SetProcess(false);
     }
@@ -1261,8 +1265,7 @@ public partial class TimelineFace : Control, ITimelineFace
 
     private void PumpFilmstripQueue()
     {
-        var provider = _filmstripPreviewProvider;
-        if (provider is null)
+        if (_filmstripPreviewProvider is null)
             return;
 
         while (_filmstripActiveRequests < MaxConcurrentFilmstripRequests && _filmstripQueue.Count > 0)
@@ -1277,20 +1280,29 @@ public partial class TimelineFace : Control, ITimelineFace
 
             _filmstripActiveRequests++;
             _filmstripActiveKeys.Add(queued.RequestKey);
-            StartFilmstripRequest(provider, queued);
+            StartFilmstripRequest(queued);
         }
     }
 
-    private void StartFilmstripRequest(
-        Func<LayerFilmstripPreviewRequest, LayerFilmstripPreviewMap?> provider,
-        QueuedFilmstripFrame queued)
+    private void StartFilmstripRequest(QueuedFilmstripFrame queued)
     {
         _ = Task.Run(() =>
         {
             LayerFilmstripPreviewMap? map = null;
             try
             {
-                map = provider(queued.Request);
+                // Resolve the provider at EXECUTION time, never at capture time: the Func is
+                // compiled into the timeline bundle, so a captured copy sitting in this Task (or
+                // the completion callable below, GCHandle-held in Godot's deferred queue) roots
+                // the outgoing generation's ALC for as long as the closure lives. Under load the
+                // filmstrip renders outlive the 32-frame collection probe and the gate reports
+                // "old ALC still pinned for bundle timeline" (dump-proven 2026-07-10:
+                // TimelineFace+<>c__DisplayClass140_0 -> provider Func -> old LoaderAllocator).
+                // Reading the field means ClearResidentContext's sever instantly drops the old
+                // generation; only a provider call already on this threadpool stack can extend
+                // its lifetime, and only for the duration of that single render.
+                var provider = _filmstripPreviewProvider;
+                map = provider?.Invoke(queued.Request);
             }
             catch (Exception ex)
             {
