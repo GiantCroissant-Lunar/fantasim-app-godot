@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -25,6 +26,7 @@ namespace FantaSim.App.World;
 public sealed partial class WorldPlugin : ILifecyclePlugin
 {
     private const string RunWorldGenerationGraphCommand = "world.run_generation_graph";
+    internal const string ReloadRegistryCommandId = "registry.reload";
     // Single source of truth for crust-snapshot spacing: the trigger window, the service's snapshot
     // tick states, and product selection must all agree or playheads select never-generated ticks.
     private const long CrustGenerationWindowTicks = CrustSnapshotTickSeries.DefaultSpacingTicks;
@@ -36,6 +38,8 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
     private ILogger? _log;
     private IDisposable? _lateArmSubscription;
     private Services.Service? _presentationArmSource;
+    private LayerTrackRegistryService? _layerTrackRegistry;
+    private IDisposable? _layerTrackRegistryRegistration;
     private bool _crustArmed;
 
     public ValueTask InitializeAsync(IPluginContext context, CancellationToken ct = default)
@@ -49,6 +53,14 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
         var ctx = new HostCompositionContext(registry, loggerFactory);
         _worldCompositionHandle = WorldComposition.ComposeWorld(ctx);
 
+        // Layer-track registry ownership lives HERE, not in the timeline bundle: the concrete
+        // LayerTrackRegistryService is an App.World.Composition type, and that assembly already
+        // ships in the world bundle's collectible ALC (collectible-bundles.json assemblyNames).
+        // Referencing it from the timeline bundle dual-copied 8 Unify assemblies across the two
+        // ALCs (stage_bundle --check-dual, 2026-07-10) -- the type-identity-split incident class.
+        // Timeline consumes the shared ILayerTrackRegistry contract via registry lookup only.
+        ComposeLayerTrackRegistry(registry);
+
         RegisterWorldCommand(registry);
         InstallCrustTrigger();
 
@@ -59,13 +71,16 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
     {
         _log?.LogInformation("WorldPlugin: shutdown started.");
 
-        // Unregister the world command so the resident command service drops the handler
-        // delegate. The handler closes over the registry and resolves bundle-typed
-        // INodeFunctionProvider instances; keeping it registered pins the old bundle's ALC.
+        // Unregister the world commands so the resident command service drops the handler
+        // delegates. The handlers close over the registry and resolve bundle-typed instances
+        // (INodeFunctionProvider, LayerTrackRegistryService); keeping either registered pins the
+        // old bundle's ALC.
         if (_registry is not null)
         {
-            _registry.TryGet<FantaSim.App.Command.IService>()?.Unregister(RunWorldGenerationGraphCommand);
-            _log?.LogInformation("WorldPlugin: unregistered {Command}", RunWorldGenerationGraphCommand);
+            var commandService = _registry.TryGet<FantaSim.App.Command.IService>();
+            commandService?.Unregister(RunWorldGenerationGraphCommand);
+            commandService?.Unregister(ReloadRegistryCommandId);
+            _log?.LogInformation("WorldPlugin: unregistered {Command} and {ReloadCommand}", RunWorldGenerationGraphCommand, ReloadRegistryCommandId);
         }
 
         _lateArmSubscription?.Dispose();
@@ -76,6 +91,15 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
         _crustTrigger = null;
         _crustArmed = false;
 
+        _layerTrackRegistryRegistration?.Dispose();
+        _layerTrackRegistryRegistration = null;
+
+        // The registration dispose above only removes it from the registry; disposing the
+        // instance clears its Changed delegate, dropping any subscriber (the resident timeline
+        // face) that would otherwise pin this bundle's ALC across a hot-reload.
+        _layerTrackRegistry?.Dispose();
+        _layerTrackRegistry = null;
+
         _worldCompositionHandle?.Dispose();
         _worldCompositionHandle = null;
         _registry = null;
@@ -83,6 +107,54 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
         _log?.LogInformation("WorldPlugin: shutdown completed.");
         _log = null;
         return ValueTask.CompletedTask;
+    }
+
+    private void ComposeLayerTrackRegistry(IRegistry registry)
+    {
+        var layerTrackRegistry = CreateLayerTrackRegistry();
+        _layerTrackRegistry = layerTrackRegistry;
+        _layerTrackRegistryRegistration = registry.RegisterOwned<ILayerTrackRegistry>(
+            layerTrackRegistry,
+            new ServiceRegistration
+            {
+                OwnerId = "app.world",
+                Tags = new[] { "world", "layer-track-registry" },
+                Description = "Layer-track registry (world bundle, slice 1)"
+            });
+        _log?.LogInformation("WorldPlugin: layer-track registry registered.");
+    }
+
+    private LayerTrackRegistryService CreateLayerTrackRegistry()
+    {
+        var assetRoot = ResolveTrackAssetRoot();
+        var configDir = Path.Combine(assetRoot, "config");
+        var dataDir = Path.Combine(assetRoot, "data");
+        return new LayerTrackRegistryService(
+            // LayerGraphBindings are tick-invariant declared structure (which layers exist), not
+            // per-tick generation state, so a fixed reference tick is correct here -- the compose-
+            // json arc (deferred past slice 1) is what will vary per-tick presentation, not this.
+            () => _registry?.TryGet<FantaSim.App.World.IService>()?.GetPlanetPresentationAsync(0L).GenerationGraphFamily,
+            Path.Combine(configDir, "track-pipeline.json"),
+            Path.Combine(configDir, "declared-layers.json"),
+            Path.Combine(dataDir, "layer-track-archive.json"),
+            _loggerFactory);
+    }
+
+    private static string ResolveTrackAssetRoot()
+    {
+        // In a Godot macOS export AppContext.BaseDirectory is the per-arch data dir
+        // (Contents/Resources/data_*), which carries no config/; the provisioned config/
+        // lives next to the executable (Contents/MacOS, where the export also installs
+        // the common-resident catalog). Probe both so tests/dev and exports resolve the
+        // same shipped assets.
+        var exeDir = Path.GetDirectoryName(Environment.ProcessPath);
+        foreach (var root in new[] { AppContext.BaseDirectory, exeDir })
+        {
+            if (!string.IsNullOrEmpty(root)
+                && File.Exists(Path.Combine(root, "config", "track-pipeline.json")))
+                return root;
+        }
+        return string.IsNullOrEmpty(exeDir) ? AppContext.BaseDirectory : exeDir;
     }
 
     private void RegisterWorldCommand(IRegistry registry)
@@ -117,7 +189,31 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
                     result["generation"] = JsonSerializer.SerializeToNode(generation);
                 return result.ToJsonString();
             });
-        _log?.LogInformation("WorldPlugin: registered {Command}", RunWorldGenerationGraphCommand);
+
+        commandService.Register(
+            new FantaSim.App.Command.CommandDescriptor(
+                Id: ReloadRegistryCommandId,
+                Title: "Reload layer-track registry",
+                Description: "Re-reads the track-pipeline and declared-layers json assets and rebuilds the layer-track registry, preserving the archive overlay.",
+                Category: "world"),
+            (_, _) =>
+            {
+                var layerTrackRegistry = _layerTrackRegistry
+                    ?? throw new InvalidOperationException("Layer-track registry not composed.");
+                layerTrackRegistry.Reload();
+                var snapshot = layerTrackRegistry.Current;
+                // JsonObject, NOT JsonSerializer.Serialize(anonymous): anonymous types compile
+                // into this collectible assembly, and the resident serializer's per-Type cache
+                // roots their LoaderAllocator -- the ALC never collects (gcroot-proven 2026-07-08).
+                return Task.FromResult<string?>(new JsonObject
+                {
+                    ["ok"] = true,
+                    ["revision"] = snapshot.Revision,
+                    ["trackCount"] = snapshot.Tracks.Count,
+                }.ToJsonString());
+            });
+
+        _log?.LogInformation("WorldPlugin: registered {Command} and {ReloadCommand}", RunWorldGenerationGraphCommand, ReloadRegistryCommandId);
     }
 
     private static FantaSim.App.World.Dto.WorldGenerationResult? PublishWorldGenerationGraphRun(

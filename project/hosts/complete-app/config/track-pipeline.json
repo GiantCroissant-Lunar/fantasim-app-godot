@@ -1,0 +1,15 @@
+{
+  "documentId": "track-pipeline",
+  "schemaVersion": 1,
+  "revision": 1,
+  "comment": "Layer->track registry pipeline (slice 1, vault/specs/2026-07-10-layer-track-registry-design.md). Reproduces today's two lanes: geosphere layers come from the generation family json (family-layers), the layers that have no generation graph yet (today: geosphere.mantle, atmosphere.bulk, atmosphere.coupled) are declared via declared-layers.json beside this file. Both feed track-set, which merges, applies the archive overlay, and stable-sorts by sphereId then layerId.",
+  "nodes": [
+    { "nodeId": "family", "kind": "family-layers", "params": {} },
+    { "nodeId": "declared", "kind": "declared-layers", "params": {} },
+    { "nodeId": "trackSet", "kind": "track-set", "params": {} }
+  ],
+  "wires": [
+    { "fromNodeId": "family", "toNodeId": "trackSet" },
+    { "fromNodeId": "declared", "toNodeId": "trackSet" }
+  ]
+}

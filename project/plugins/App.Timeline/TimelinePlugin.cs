@@ -26,6 +26,8 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
     internal const string SelectLayerCommandId = "timeline.select_layer";
     internal const string ToggleLayerCommandId = "timeline.toggle_layer";
 
+    internal const string SetTrackArchivedCommandId = "timeline.set_track_archived";
+
     private readonly Func<ITimelineFaceProxy> _faceProxyFactory;
     private IDisposable? _activatorRegistration;
     private IDisposable? _timelineRegistration;
@@ -132,6 +134,13 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             _registry.TryGet<IClient>(),
             tick => _registry.TryGet<FantaSim.App.World.IService>()?.GetPlanetPresentationAsync(tick).GenerationGraphFamily,
             request => _registry.TryGet<FantaSim.App.World.IService>()?.GetLayerFilmstripPreview(request),
+            // Owned and registered by the WORLD bundle (WorldPlugin), consumed here through the
+            // shared T1 contract only -- a plugin-assembly reference from timeline to
+            // App.World.Composition dual-copies 8 Unify assemblies across the two collectible
+            // ALCs (stage_bundle --check-dual, 2026-07-10), the codebase's type-identity-split
+            // incident class. Null when world composes later; the face context property is
+            // nullable and ComposeTimeline reruns on world rebind.
+            _registry.TryGet<ILayerTrackRegistry>(),
             _loggerFactory,
             ticksPerSecond: 5_000_000.0);
         _faceContext = faceContext;
@@ -292,6 +301,44 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
                     ["activeLayers"] = activeLayers,
                 }.ToJsonString());
             });
+
+        commandService.Register(
+            new FantaSim.App.Command.CommandDescriptor(
+                Id: SetTrackArchivedCommandId,
+                Title: "Archive/restore a layer track",
+                Description: "Archives or restores one layer track in the layer-track registry. The underlying declared/discovered data is never deleted. Payload: {\"sphereId\":\"geosphere\",\"layerId\":\"geosphere.crust\",\"archived\":true}.",
+                Category: "timeline"),
+            (payloadJson, _) =>
+            {
+                var payload = ParseTrackArchivedRequestPayload(payloadJson);
+                var (sphereId, layerId, archived) = ParseSetTrackArchivedPayload(payload);
+
+                // Resolved lazily on every invocation, never captured at registration: the WORLD
+                // bundle owns the registry and may compose (or hot-reload to a new instance)
+                // after this timeline bundle registered its commands.
+                var layerTrackRegistry = _registry?.TryGet<ILayerTrackRegistry>();
+                if (layerTrackRegistry is null)
+                {
+                    return Task.FromResult<string?>(new JsonObject
+                    {
+                        ["ok"] = false,
+                        ["message"] = "layer-track registry not available",
+                    }.ToJsonString());
+                }
+
+                layerTrackRegistry.SetArchived(sphereId, layerId, archived);
+                // JsonObject, NOT JsonSerializer.Serialize(anonymous): see the ALC-pin note on
+                // timeline.seek above -- the same collectible-assembly LoaderAllocator pin applies
+                // to every command handler in this bundle.
+                return Task.FromResult<string?>(new JsonObject
+                {
+                    ["ok"] = true,
+                    ["sphereId"] = sphereId,
+                    ["layerId"] = layerId,
+                    ["archived"] = archived,
+                    ["revision"] = layerTrackRegistry.Current.Revision,
+                }.ToJsonString());
+            });
     }
 
     private void UnregisterTimelineCommands()
@@ -300,6 +347,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
         commandService?.Unregister(SeekCommandId);
         commandService?.Unregister(SelectLayerCommandId);
         commandService?.Unregister(ToggleLayerCommandId);
+        commandService?.Unregister(SetTrackArchivedCommandId);
     }
 
     private void OnResourceRuntimeChanging(object? sender, ResourceRuntimeChangingEventArgs args)
@@ -398,6 +446,46 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
         return false;
     }
 
+    private static JsonObject ParseTrackArchivedRequestPayload(string? payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+            throw new ArgumentException("timeline.set_track_archived payload is required.");
+
+        return JsonNode.Parse(payloadJson) as JsonObject
+            ?? throw new ArgumentException("timeline.set_track_archived payload must be a JSON object.");
+    }
+
+    internal static (string SphereId, string LayerId, bool Archived) ParseSetTrackArchivedPayload(JsonObject payload)
+    {
+        var sphereId = payload["sphereId"]?.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(sphereId))
+            throw new ArgumentException("timeline.set_track_archived requires 'sphereId'.");
+
+        var layerId = payload["layerId"]?.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(layerId))
+            throw new ArgumentException("timeline.set_track_archived requires 'layerId'.");
+
+        if (!TryReadBool(payload["archived"], out var archived))
+            throw new ArgumentException("timeline.set_track_archived requires boolean 'archived'.");
+
+        return (sphereId, layerId, archived);
+    }
+
+    private static bool TryReadBool(JsonNode? node, out bool value)
+    {
+        value = false;
+        if (node is not JsonValue jsonValue)
+            return false;
+        if (jsonValue.TryGetValue<bool>(out value))
+            return true;
+        if (jsonValue.TryGetValue<string>(out var text)
+            && bool.TryParse(text, out value))
+        {
+            return true;
+        }
+        return false;
+    }
+
     private static bool IsLayerActive(ITimelineController controller, string sphereId, string layerId)
     {
         var schedule = string.Equals(sphereId, "atmosphere", StringComparison.Ordinal)
@@ -419,6 +507,7 @@ internal sealed class TimelineFaceContext : ITimelineFaceContext, IDisposable
         object? commandClient,
         Func<long, WorldGenerationGraphFamilyDocument?> generationGraphFamilyProvider,
         Func<LayerFilmstripPreviewRequest, LayerFilmstripPreviewMap?> filmstripPreviewProvider,
+        ILayerTrackRegistry? layerTrackRegistry,
         ILoggerFactory loggerFactory,
         double ticksPerSecond)
     {
@@ -427,6 +516,7 @@ internal sealed class TimelineFaceContext : ITimelineFaceContext, IDisposable
         CommandClient = commandClient;
         GenerationGraphFamilyProvider = generationGraphFamilyProvider ?? throw new ArgumentNullException(nameof(generationGraphFamilyProvider));
         FilmstripPreviewProvider = filmstripPreviewProvider ?? throw new ArgumentNullException(nameof(filmstripPreviewProvider));
+        LayerTrackRegistry = layerTrackRegistry;
         LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         TicksPerSecond = ticksPerSecond;
     }
@@ -436,6 +526,7 @@ internal sealed class TimelineFaceContext : ITimelineFaceContext, IDisposable
     public object? CommandClient { get; }
     public Func<long, WorldGenerationGraphFamilyDocument?> GenerationGraphFamilyProvider { get; }
     public Func<LayerFilmstripPreviewRequest, LayerFilmstripPreviewMap?> FilmstripPreviewProvider { get; }
+    public ILayerTrackRegistry? LayerTrackRegistry { get; }
     public ILoggerFactory LoggerFactory { get; }
     public double TicksPerSecond { get; }
 

@@ -22,7 +22,12 @@
     <ProjectReference Include="..\..\contracts\App.Timeline\App.Timeline.csproj" />
     <ProjectReference Include="..\..\contracts\App.Command\App.Command.csproj" />
     <ProjectReference Include="..\..\contracts\App.Resource\App.Resource.csproj" />
-    <!-- App.World contracts hold ITimelineController + SphereRegimeSchedule the model consumes. -->
+    <!-- App.World contracts hold ITimelineController + SphereRegimeSchedule the model consumes,
+         plus ILayerTrackRegistry. The registry INSTANCE is owned by the world bundle's
+         WorldPlugin; a plugin-assembly reference to App.World.Composition from here dual-copies
+         8 Unify assemblies across the timeline and world collectible ALCs (verified via the
+         stager's dual-copy check, 2026-07-10), the type-identity-split incident class. This
+         project therefore consumes the shared T1 contract ONLY. -->
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />
     <!-- SceneFlow contracts for the scene-tier activator. -->
     <ProjectReference Include="..\..\contracts\App.SceneFlow\App.SceneFlow.csproj" />

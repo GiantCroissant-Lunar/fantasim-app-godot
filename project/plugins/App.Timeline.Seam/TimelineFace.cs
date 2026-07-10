@@ -118,9 +118,11 @@ public partial class TimelineFace : Control, ITimelineFace
     private TimelinePlayheadHandle? _playheadHandle;
     private readonly TimelineScrubCoalescer _scrubCoalescer = new();
 
-    private readonly List<(Button Button, double Start, double Width)> _geosphereBands = new();
-    private readonly List<(Button Button, double Start, double Width)> _atmosphereBands = new();
+    // Band lists keyed by SphereId (populated fresh in BuildLanes from the registry-driven lane
+    // list -- never a fixed geosphere/atmosphere pair).
+    private readonly Dictionary<string, List<(Button Button, double Start, double Width)>> _bandsBySphere = new(StringComparer.Ordinal);
     private readonly List<TrackRowBinding> _tracks = new();
+    private readonly Dictionary<TrackContentPresenterKind, Action<TrackContentRenderContext>> _trackContentPresenters;
     private readonly Dictionary<TimelineFilmstripCacheKey, ImageTexture> _filmstripTextureCache = new();
     private readonly Queue<TimelineFilmstripCacheKey> _filmstripCacheInsertionOrder = new();
     private readonly Dictionary<string, TimelineFilmstripCacheKey> _filmstripRequestTextureKeys = new(StringComparer.Ordinal);
@@ -134,6 +136,7 @@ public partial class TimelineFace : Control, ITimelineFace
     private IClient? _commandClient;
     private Func<long, WorldGenerationGraphFamilyDocument?>? _generationGraphFamilyProvider;
     private Func<LayerFilmstripPreviewRequest, LayerFilmstripPreviewMap?>? _filmstripPreviewProvider;
+    private ILayerTrackRegistry? _layerTrackRegistry;
 
     private double _internalTick;
     private long _lastPushedTick = -1;
@@ -182,6 +185,17 @@ public partial class TimelineFace : Control, ITimelineFace
     {
         _log = ResidentRegistry?.TryGet<ILoggerFactory>()?.CreateLogger("Timeline.Face")
             ?? Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance.CreateLogger("Timeline.Face");
+
+        // Content-strip presenter lookup, keyed by the presenter kind TrackLaneViewModelBuilder
+        // resolves from content.Type (single source of truth for which types are known --
+        // vault/specs/2026-07-10-layer-track-registry-design.md). Data-keyed, never a switch on
+        // layer/sphere ids.
+        _trackContentPresenters = new Dictionary<TrackContentPresenterKind, Action<TrackContentRenderContext>>
+        {
+            [TrackContentPresenterKind.Filmstrip] = RenderFilmstripTrackContent,
+            [TrackContentPresenterKind.Graph] = RenderGraphTrackContent,
+            [TrackContentPresenterKind.Generic] = RenderGenericTrackContent,
+        };
     }
 
     [Export]
@@ -261,6 +275,7 @@ public partial class TimelineFace : Control, ITimelineFace
         _generationGraphFamilyProvider = context.GenerationGraphFamilyProvider;
         _filmstripPreviewProvider = context.FilmstripPreviewProvider;
         _ticksPerSecond = context.TicksPerSecond > 0.0 ? context.TicksPerSecond : 5_000_000.0;
+        BindLayerTrackRegistry(context.LayerTrackRegistry);
 
         if (!_nodesInitialized)
         {
@@ -322,7 +337,46 @@ public partial class TimelineFace : Control, ITimelineFace
         _commandClient = null;
         _generationGraphFamilyProvider = null;
         _filmstripPreviewProvider = null;
+        UnsubscribeLayerTrackRegistry();
         SetProcess(false);
+    }
+
+    // Rebind-safe, mirroring _generationGraphFamilyProvider's provider-field pattern: swaps the
+    // registry reference only when it actually changed (a recompose may hand back the SAME
+    // instance), and always unsubscribes the OLD instance's Changed event first so a bundle
+    // recompose never leaves two live subscriptions pinning the previous registry.
+    private void BindLayerTrackRegistry(ILayerTrackRegistry? registry)
+    {
+        if (ReferenceEquals(_layerTrackRegistry, registry))
+            return;
+
+        UnsubscribeLayerTrackRegistry();
+        _layerTrackRegistry = registry;
+        if (_layerTrackRegistry is not null)
+            _layerTrackRegistry.Changed += OnLayerTrackRegistryChanged;
+    }
+
+    // ALC discipline: called from ClearResidentContext AND _ExitTree so the face never holds a
+    // live subscription into the timeline bundle's registry after either path.
+    private void UnsubscribeLayerTrackRegistry()
+    {
+        if (_layerTrackRegistry is not null)
+            _layerTrackRegistry.Changed -= OnLayerTrackRegistryChanged;
+        _layerTrackRegistry = null;
+    }
+
+    private void OnLayerTrackRegistryChanged(LayerTrackRegistrySnapshot snapshot)
+    {
+        // SetArchived/Reload may be invoked from a command handler off the main thread; the
+        // rebuild walks into AddChild/UpdateLayout, which Godot only allows on the main thread --
+        // the same CallDeferred discipline RebindResidentContext already uses.
+        if (OS.GetThreadCallerId() == OS.GetMainThreadId())
+        {
+            ScheduleViewRebuild();
+            return;
+        }
+
+        Callable.From(ScheduleViewRebuild).CallDeferred();
     }
 
     public override void _ExitTree()
@@ -331,6 +385,10 @@ public partial class TimelineFace : Control, ITimelineFace
         _scrubDragging = false;
         _scrubCoalescer.Cancel();
         ClearResidentContext();
+        // Belt-and-suspenders with ClearResidentContext's call above (ALC discipline hard rule):
+        // UnsubscribeLayerTrackRegistry is idempotent, so calling it again here costs nothing and
+        // guarantees the subscription is gone even if ClearResidentContext's contract changes.
+        UnsubscribeLayerTrackRegistry();
         DisposeTrackBindings();
         DisposeFilmstripTextureCache();
         DisconnectIfConnected(_playPauseButton, BaseButton.SignalName.Pressed, Callable.From(OnPlayPausePressed));
@@ -735,16 +793,13 @@ public partial class TimelineFace : Control, ITimelineFace
         if (_lanesContainer is null) return;
         var width = _lanesContainer.Size.X;
 
-        foreach (var band in _geosphereBands)
+        foreach (var bandList in _bandsBySphere.Values)
         {
-            band.Button.Position = new Vector2((float)(band.Start * width), 0);
-            band.Button.Size = new Vector2((float)(band.Width * width), RegimeBandHeight);
-        }
-
-        foreach (var band in _atmosphereBands)
-        {
-            band.Button.Position = new Vector2((float)(band.Start * width), 0);
-            band.Button.Size = new Vector2((float)(band.Width * width), RegimeBandHeight);
+            foreach (var band in bandList)
+            {
+                band.Button.Position = new Vector2((float)(band.Start * width), 0);
+                band.Button.Size = new Vector2((float)(band.Width * width), RegimeBandHeight);
+            }
         }
 
         UpdateTrackContentLayout(width);
@@ -768,38 +823,75 @@ public partial class TimelineFace : Control, ITimelineFace
         }
     }
 
+    private static readonly LayerTrackRegistrySnapshot EmptyLayerTrackRegistrySnapshot =
+        new(Revision: 0, Tracks: Array.Empty<LayerTrackDescriptor>());
+
+    // Known sphereId -> regime-schedule bindings. Slice 1 has exactly these two schedules on
+    // ITimelineController; a sphereId absent from this table renders its lane with tracks but no
+    // regime band, per the declared-always contract
+    // (vault/specs/2026-07-10-layer-track-registry-design.md). This lookup table is the one place
+    // sphere-id literals may still appear -- the LANE LIST ITSELF is registry-driven (BuildLanes
+    // below iterates TrackLaneViewModelBuilder's grouping, never a fixed geosphere/atmosphere pair).
+    private SphereRegimeSchedule? ResolveScheduleForSphere(string sphereId) => sphereId switch
+    {
+        "geosphere" => _ctl?.GeosphereSchedule,
+        "atmosphere" => _ctl?.AtmosphereSchedule,
+        _ => null,
+    };
+
     private void BuildLanes()
     {
         if (_ctl is null || _lanesContainer is null) return;
         SupersedeFilmstripGeneration();
 
-        var geosphereRegimesRoot = GetNode<Control>("VBoxContainer/LanesContainer/LanesList/GeosphereLane/GeosphereRegimes");
-        var geosphereTracksRoot = GetNode<Control>("VBoxContainer/LanesContainer/LanesList/GeosphereLane/GeosphereTracks");
-        var atmosphereRegimesRoot = GetNode<Control>("VBoxContainer/LanesContainer/LanesList/AtmosphereLane/AtmosphereRegimes");
-        var atmosphereTracksRoot = GetNode<Control>("VBoxContainer/LanesContainer/LanesList/AtmosphereLane/AtmosphereTracks");
-
+        var lanesList = GetNode<Control>("VBoxContainer/LanesContainer/LanesList");
         DisposeTrackBindings();
-        ClearChildren(geosphereRegimesRoot);
-        ClearChildren(geosphereTracksRoot);
-        ClearChildren(atmosphereRegimesRoot);
-        ClearChildren(atmosphereTracksRoot);
-
-        _geosphereBands.Clear();
-        _atmosphereBands.Clear();
+        ClearChildren(lanesList);
+        _bandsBySphere.Clear();
 
         if (_ctl.MaxTick <= 0L) return;
 
-        PopulateLane(_ctl.GeosphereSchedule, geosphereRegimesRoot, geosphereTracksRoot, _geosphereBands, "geosphere");
-        PopulateLane(_ctl.AtmosphereSchedule, atmosphereRegimesRoot, atmosphereTracksRoot, _atmosphereBands, "atmosphere");
+        var snapshot = _layerTrackRegistry?.Current ?? EmptyLayerTrackRegistrySnapshot;
+        var lanes = TrackLaneViewModelBuilder.BuildLanes(snapshot);
+        var generationFamily = ResolveGenerationGraphFamily();
+
+        foreach (var lane in lanes)
+            BuildLane(lane, lanesList, generationFamily);
+
         UpdateLanesMinimumHeight();
     }
 
-    private void PopulateLane(
+    private void BuildLane(
+        TrackLaneViewModel lane,
+        Control lanesList,
+        WorldGenerationGraphFamilyDocument? generationFamily)
+    {
+        var laneRoot = new VBoxContainer { Name = $"Lane_{SafeNodeName(lane.SphereId)}" };
+        lanesList.AddChild(laneRoot);
+
+        var title = new Label { Text = FriendlyLayerLabel(lane.SphereId) };
+        laneRoot.AddChild(title);
+
+        var regimesRoot = new Control { CustomMinimumSize = new Vector2(0, RegimeBandHeight) };
+        laneRoot.AddChild(regimesRoot);
+
+        var tracksRoot = new VBoxContainer();
+        laneRoot.AddChild(tracksRoot);
+
+        var bandList = new List<(Button Button, double Start, double Width)>();
+        _bandsBySphere[lane.SphereId] = bandList;
+
+        var schedule = ResolveScheduleForSphere(lane.SphereId);
+        if (schedule is not null)
+            BuildLaneBands(schedule, regimesRoot, bandList);
+
+        BuildLaneTracks(lane, tracksRoot, schedule, generationFamily);
+    }
+
+    private void BuildLaneBands(
         SphereRegimeSchedule schedule,
         Control regimesRoot,
-        Control tracksRoot,
-        List<(Button Button, double Start, double Width)> bandList,
-        string sphere)
+        List<(Button Button, double Start, double Width)> bandList)
     {
         var bands = TimelineModel.Bands(schedule, _ctl!.MaxTick, _ctl.Tick, _viewStartTick, _viewEndTick);
         foreach (var b in bands)
@@ -826,29 +918,30 @@ public partial class TimelineFace : Control, ITimelineFace
             regimesRoot.AddChild(btn);
             bandList.Add((btn, b.StartFraction, b.WidthFraction));
         }
+    }
 
-        var tracks = TimelineModel.Tracks(schedule, _ctl.Tick);
+    private void BuildLaneTracks(
+        TrackLaneViewModel lane,
+        Control tracksRoot,
+        SphereRegimeSchedule? schedule,
+        WorldGenerationGraphFamilyDocument? generationFamily)
+    {
         var trackLayouts = TimelineTrackLayout.ToRowMap(TimelineTrackLayout.Plan(
-            tracks.Select(track => new TimelineTrackLayoutInput(
-                TrackKey(sphere, track.LayerId),
-                IsExpanded: _expandedTracks.Contains(TrackKey(sphere, track.LayerId)))),
+            lane.Tracks.Select(track => new TimelineTrackLayoutInput(
+                TrackKey(lane.SphereId, track.Descriptor.LayerId),
+                IsExpanded: _expandedTracks.Contains(TrackKey(lane.SphereId, track.Descriptor.LayerId)))),
             TrackHeight,
             ExpandedTrackHeight));
-        var generationFamily = string.Equals(sphere, "geosphere", StringComparison.Ordinal)
-            ? ResolveGenerationGraphFamily()
-            : null;
 
-        foreach (var t in tracks)
+        foreach (var t in lane.Tracks)
         {
-            var trackSphere = sphere;
-            var trackLayerId = t.LayerId;
+            var trackSphere = lane.SphereId;
+            var trackLayerId = t.Descriptor.LayerId;
             var trackKey = TrackKey(trackSphere, trackLayerId);
             var rowLayout = trackLayouts[trackKey];
             var expanded = _expandedTracks.Contains(trackKey);
-            var regimeId = ResolveTrackRegime(schedule, trackLayerId, _ctl.Tick);
-            var graph = string.Equals(trackSphere, "geosphere", StringComparison.Ordinal)
-                ? LayerTrackGraphProjection.Resolve(generationFamily, trackSphere, trackLayerId, regimeId)
-                : LayerTrackGraphView.Empty(trackSphere, trackLayerId, regimeId, "deferred");
+            var regimeId = schedule is not null ? ResolveTrackRegime(schedule, trackLayerId, _ctl!.Tick) : null;
+            var graph = LayerTrackGraphProjection.Resolve(generationFamily, trackSphere, trackLayerId, regimeId);
 
             var row = new Control
             {
@@ -872,8 +965,8 @@ public partial class TimelineFace : Control, ITimelineFace
 
             var btn = new Button
             {
-                Text = $" {FriendlyLayerLabel(t.LayerId)}",
-                TooltipText = $"{sphere}:{t.LayerId}",
+                Text = $" {FriendlyLayerLabel(trackLayerId)}",
+                TooltipText = $"{trackSphere}:{trackLayerId}",
                 Alignment = HorizontalAlignment.Left,
                 FocusMode = FocusModeEnum.None,
                 ClipText = true,
@@ -909,6 +1002,7 @@ public partial class TimelineFace : Control, ITimelineFace
                 Name = "GraphContent",
                 MouseFilter = expanded ? MouseFilterEnum.Stop : MouseFilterEnum.Ignore,
                 ClipContents = true,
+                Modulate = t.IsDimmed ? DimmedTrackModulate : Colors.White,
             };
             ConfigureTrackContent(content, ResolveTrackContentWidth(_lanesContainer?.Size.X ?? 0f), rowLayout.Height);
             row.AddChild(content);
@@ -917,7 +1011,7 @@ public partial class TimelineFace : Control, ITimelineFace
             if (expanded)
                 graphBinding = BuildExpandedGraph(content, graph);
             else
-                BuildCompactFilmstrip(content, schedule, trackSphere, trackLayerId);
+                RenderTrackContent(t, content, trackSphere, trackLayerId, schedule, graph);
 
             var toggleCallable = Callable.From(() => OnTrackPressed(trackSphere, trackLayerId));
             var chevronCallable = Callable.From(() => OnTrackExpandPressed(trackSphere, trackLayerId));
@@ -931,8 +1025,8 @@ public partial class TimelineFace : Control, ITimelineFace
                 ToggleButton = btn,
                 ChevronButton = chevron,
                 ContentRoot = content,
-                LayerId = t.LayerId,
-                Sphere = sphere,
+                LayerId = trackLayerId,
+                Sphere = trackSphere,
                 NormalStyle = normalStyle,
                 InactiveStyle = inactiveStyle,
                 SelectedStyle = selectedStyle,
@@ -941,6 +1035,66 @@ public partial class TimelineFace : Control, ITimelineFace
                 GraphBinding = graphBinding,
             });
         }
+    }
+
+    private const float DimmedTrackModulateAlpha = 0.55f;
+    private static readonly Color DimmedTrackModulate = new(1f, 1f, 1f, DimmedTrackModulateAlpha);
+
+    private sealed record TrackContentRenderContext(
+        Control Content,
+        string SphereId,
+        string LayerId,
+        SphereRegimeSchedule? Schedule,
+        LayerTrackGraphView Graph,
+        LayerTrackDescriptor Descriptor);
+
+    // Content strip rendering dispatch, keyed by TrackLaneViewModelBuilder's presenter-kind
+    // resolution (itself keyed by descriptor.Content.Type -- Task 4's presenter lookup). A
+    // presenter kind with no registered entry falls back to the generic strip, never throws.
+    private void RenderTrackContent(
+        TrackRowViewModel track,
+        Control content,
+        string sphereId,
+        string layerId,
+        SphereRegimeSchedule? schedule,
+        LayerTrackGraphView graph)
+    {
+        var context = new TrackContentRenderContext(content, sphereId, layerId, schedule, graph, track.Descriptor);
+        if (_trackContentPresenters.TryGetValue(track.PresenterKind, out var presenter))
+            presenter(context);
+        else
+            RenderGenericTrackContent(context);
+    }
+
+    private void RenderFilmstripTrackContent(TrackContentRenderContext context)
+        => BuildCompactFilmstrip(context.Content, context.Schedule, context.SphereId, context.LayerId);
+
+    // Existing D7c chip/graph path: a small label summarizing the resolved layer graph. The
+    // chevron expand-to-full-GraphEdit affordance (BuildExpandedGraph) is separate and works for
+    // every track regardless of presenter kind, so this stays a compact chip, not a live editor.
+    private void RenderGraphTrackContent(TrackContentRenderContext context)
+    {
+        context.Content.MouseFilter = MouseFilterEnum.Ignore;
+        var hasNodes = context.Graph.Nodes.Count > 0;
+        var summary = hasNodes
+            ? $"{context.Graph.Label} ({context.Graph.Nodes.Count} node{(context.Graph.Nodes.Count == 1 ? "" : "s")})"
+            : "graph unavailable";
+        var label = CompactStripLabel(summary, muted: !hasNodes);
+        label.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        label.VerticalAlignment = VerticalAlignment.Center;
+        context.Content.AddChild(label);
+    }
+
+    // Generic fallback for any content.Type with no dedicated presenter (including
+    // LayerTrackContentTypes.DeclaredEmpty) -- the Unity round-trip degradation guarantee: never
+    // invisible, never a crash, richer only when a presenter exists.
+    private void RenderGenericTrackContent(TrackContentRenderContext context)
+    {
+        context.Content.MouseFilter = MouseFilterEnum.Ignore;
+        var label = CompactStripLabel(context.Descriptor.DisplayName, muted: true);
+        label.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        label.VerticalAlignment = VerticalAlignment.Center;
+        context.Content.AddChild(label);
     }
 
     private void UpdateLanesMinimumHeight()
@@ -977,7 +1131,7 @@ public partial class TimelineFace : Control, ITimelineFace
 
     private void BuildCompactFilmstrip(
         Control content,
-        SphereRegimeSchedule schedule,
+        SphereRegimeSchedule? schedule,
         string sphere,
         string layerId)
     {
@@ -1011,7 +1165,7 @@ public partial class TimelineFace : Control, ITimelineFace
         var orderedSlots = TimelineFilmstrip.OrderSlotsNearestToTick(slots, _ctl?.Tick ?? _viewStartTick);
         foreach (var slot in slots)
         {
-            bool activeAtSlot = schedule.RegimeAt(slot.Tick)?.ActiveLayers.Any(layer =>
+            bool activeAtSlot = schedule?.RegimeAt(slot.Tick)?.ActiveLayers.Any(layer =>
                 string.Equals(layer.Value, layerId, StringComparison.Ordinal)) == true;
             var frame = BuildFilmstripFramePlaceholder(slot, activeAtSlot);
             strip.AddChild(frame);
@@ -1319,14 +1473,12 @@ public partial class TimelineFace : Control, ITimelineFace
 
         try
         {
-            var schedule = string.Equals(sphere, "atmosphere", StringComparison.Ordinal)
-                ? _ctl.AtmosphereSchedule
-                : _ctl.GeosphereSchedule;
+            var schedule = ResolveScheduleForSphere(sphere);
             var payload = new JsonObject
             {
                 ["sphereId"] = sphere,
                 ["layerId"] = layerId,
-                ["regimeId"] = schedule.RegimeAt(_ctl.Tick)?.RegimeId,
+                ["regimeId"] = schedule?.RegimeAt(_ctl.Tick)?.RegimeId,
             }.ToJsonString();
             var result = await commandClient.CommandAsync(new CommandRequest(
                 Command: "timeline.toggle_layer",
@@ -1355,11 +1507,7 @@ public partial class TimelineFace : Control, ITimelineFace
         if (_ctl is null)
             return false;
 
-        var schedule = string.Equals(sphere, "atmosphere", StringComparison.Ordinal)
-            ? _ctl.AtmosphereSchedule
-            : _ctl.GeosphereSchedule;
-
-        return schedule.RegimeAt(_ctl.Tick)?.ActiveLayers.Any(layer =>
+        return ResolveScheduleForSphere(sphere)?.RegimeAt(_ctl.Tick)?.ActiveLayers.Any(layer =>
             string.Equals(layer.Value, layerId, StringComparison.Ordinal)) == true;
     }
 
@@ -1400,38 +1548,39 @@ public partial class TimelineFace : Control, ITimelineFace
         _playheadLine.Size = new Vector2(2, _lanesContainer.Size.Y);
         UpdatePlayheadHandle(tick);
 
-        foreach (var band in _geosphereBands)
+        foreach (var (sphereId, bandList) in _bandsBySphere)
         {
-            var isCurrent = _ctl.GeosphereSchedule.RegimeAt(tick)?.RegimeId == band.Button.Text;
-            band.Button.Modulate = isCurrent ? new Color(1, 1, 1, 1f) : new Color(1, 1, 1, 0.58f);
+            var currentRegimeId = ResolveScheduleForSphere(sphereId)?.RegimeAt(tick)?.RegimeId;
+            foreach (var band in bandList)
+            {
+                var isCurrent = currentRegimeId == band.Button.Text;
+                band.Button.Modulate = isCurrent ? new Color(1, 1, 1, 1f) : new Color(1, 1, 1, 0.58f);
+            }
         }
 
-        foreach (var band in _atmosphereBands)
+        var selectedLayersBySphere = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        foreach (var selection in _ctl.ActiveLayers)
         {
-            var isCurrent = _ctl.AtmosphereSchedule.RegimeAt(tick)?.RegimeId == band.Button.Text;
-            band.Button.Modulate = isCurrent ? new Color(1, 1, 1, 1f) : new Color(1, 1, 1, 0.58f);
+            if (!selectedLayersBySphere.TryGetValue(selection.SphereId, out var selectedSet))
+                selectedLayersBySphere[selection.SphereId] = selectedSet = new HashSet<string>(StringComparer.Ordinal);
+            selectedSet.Add(selection.LayerId);
         }
 
-        var activeGeoLayers = _ctl.GeosphereSchedule.RegimeAt(tick)?.ActiveLayers.Select(l => l.Value).ToHashSet() ?? new HashSet<string>();
-        var activeAtmoLayers = _ctl.AtmosphereSchedule.RegimeAt(tick)?.ActiveLayers.Select(l => l.Value).ToHashSet() ?? new HashSet<string>();
-
-        var selectedGeo = _ctl.ActiveLayers
-            .Where(l => string.Equals(l.SphereId, "geosphere", StringComparison.Ordinal))
-            .Select(l => l.LayerId).ToHashSet();
-        var selectedAtmo = _ctl.ActiveLayers
-            .Where(l => string.Equals(l.SphereId, "atmosphere", StringComparison.Ordinal))
-            .Select(l => l.LayerId).ToHashSet();
-
+        var activeLayersBySphere = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         foreach (var track in _tracks)
         {
-            bool isActive = track.Sphere == "geosphere"
-                ? activeGeoLayers.Contains(track.LayerId)
-                : activeAtmoLayers.Contains(track.LayerId);
+            if (!activeLayersBySphere.TryGetValue(track.Sphere, out var activeLayers))
+            {
+                activeLayers = ResolveScheduleForSphere(track.Sphere)?.RegimeAt(tick)?.ActiveLayers
+                    .Select(l => l.Value).ToHashSet(StringComparer.Ordinal)
+                    ?? new HashSet<string>(StringComparer.Ordinal);
+                activeLayersBySphere[track.Sphere] = activeLayers;
+            }
 
+            bool isActive = activeLayers.Contains(track.LayerId);
             bool isSelected = isActive
-                && (track.Sphere == "geosphere"
-                    ? selectedGeo.Contains(track.LayerId)
-                    : selectedAtmo.Contains(track.LayerId));
+                && selectedLayersBySphere.TryGetValue(track.Sphere, out var selectedLayers)
+                && selectedLayers.Contains(track.LayerId);
 
             track.ToggleButton.Disabled = false;
             track.ToggleButton.Modulate = isActive ? new Color(1, 1, 1, 1f) : new Color(1, 1, 1, 0.68f);

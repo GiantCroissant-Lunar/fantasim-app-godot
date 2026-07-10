@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "comment": "Declared-but-not-yet-generating layers (vault/specs/2026-07-10-layer-track-registry-design.md): layers with a real regime-schedule track today but no generation-family graph yet. geosphere.mantle and the two atmosphere layers reproduce today's view exactly. Do NOT add smoke/demo layers here (e.g. hydrosphere.ocean) -- that fixture is the lead's windowed-gate-only addition, never shipped.",
+  "layers": [
+    {
+      "sphereId": "geosphere",
+      "layerId": "geosphere.mantle",
+      "displayName": "Mantle",
+      "contentType": "filmstrip",
+      "capabilities": ["scrub", "toggle", "expand-graph"]
+    },
+    {
+      "sphereId": "atmosphere",
+      "layerId": "atmosphere.bulk",
+      "displayName": "Bulk Atmosphere",
+      "contentType": "filmstrip",
+      "capabilities": ["scrub", "toggle", "expand-graph"]
+    },
+    {
+      "sphereId": "atmosphere",
+      "layerId": "atmosphere.coupled",
+      "displayName": "Coupled Climate",
+      "contentType": "filmstrip",
+      "capabilities": ["scrub", "toggle", "expand-graph"]
+    }
+  ]
+}

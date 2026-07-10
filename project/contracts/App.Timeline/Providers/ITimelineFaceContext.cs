@@ -20,6 +20,13 @@ public interface ITimelineFaceContext
 
     Func<LayerFilmstripPreviewRequest, LayerFilmstripPreviewMap?> FilmstripPreviewProvider { get; }
 
+    /// <summary>
+    /// The layer-&gt;track registry (slice 1). Reaches the face through this resident-context
+    /// proxy property, same as <see cref="Controller"/> -- never a static. Null only if the
+    /// timeline bundle failed to compose it (degrade to no tracks, never throw).
+    /// </summary>
+    ILayerTrackRegistry? LayerTrackRegistry { get; }
+
     ILoggerFactory LoggerFactory { get; }
 
     double TicksPerSecond { get; }

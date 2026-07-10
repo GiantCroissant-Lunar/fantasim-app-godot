@@ -19,6 +19,12 @@
     <ProjectReference Include="..\..\contracts\App.World.Rendering\App.World.Rendering.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- LayerTrackRegistryService logs load/parse warnings through the shared logging
+         abstraction, same as every other T3 Service class in this repo. -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
   <!--
     Atmosphere layer files use FantaSim.Atmosphere.Genesis.Core / FantaSim.Atmosphere.Contracts.
     SphereRegimeScheduleDefaults also uses them. These engine refs mirror the hybrid dev/package
