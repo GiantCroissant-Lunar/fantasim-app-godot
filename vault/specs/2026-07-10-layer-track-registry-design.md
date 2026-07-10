@@ -105,6 +105,9 @@ Contract additions are T1 → full re-export before the gate (verify-windowed de
   (user unsure — decide with slice-1 evidence in hand).
 - Ring control (vs bar) for huge time scaling in the tunnel view — implementation-time detail.
 - Where archive state persists before SurrealDB lands (slice 1: app-local json sidecar).
-- Parameter-surface audit addendum: **PENDING** — running audit of declared-but-unread /
-  read-but-undeclared / Ma-named fields; its findings gate what enters v1 schemas. To be
-  appended to this spec when complete.
+- Parameter-surface audit: **COMPLETE** — see
+  [2026-07-10-parameter-surface-audit.md](2026-07-10-parameter-surface-audit.md) (25 findings).
+  Its drop/rename/declare gates govern v1 schemas. Headlines: `continentalPatches` and
+  `spinRateRadiansPerMegaAnnum` are placebo knobs (must be wired or dropped, never frozen);
+  `rotationSource` has two competing undeclared wire shapes; crust.generate's ~20 real inputs
+  are invisible to the catalog; 7 Ma-named wire keys have already-winning `*PerTick` alternates.
