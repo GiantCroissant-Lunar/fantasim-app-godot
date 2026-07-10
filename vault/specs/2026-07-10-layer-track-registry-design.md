@@ -90,7 +90,17 @@ At rest: slice 1 = JSON assets loaded beside the app; later = unify-storage/Surr
 - ✘ Compose json + evaluators (deferred; `LayerCompositionDecision` stays behind the registry).
 - ✘ Stream-discovery source, SurrealDB shelf, tunnel view, family-defaults-to-JSON migration.
 
-## Slice-1 acceptance gate (falsifiable, windowed)
+## Slice-1 acceptance gate (falsifiable, windowed) — **RESULT: ALL 5 PASS (2026-07-10)**
+
+Evidence: `evidence/2026-07-10-track-registry-gate/` (screenshots). (1) hydrosphere.ocean added
+to the export's declared-layers.json + `registry.reload` → trackCount 7→8, Hydrosphere lane
+appears live (visible after freeing viewport space by archiving the atmosphere tracks — which
+also demonstrated whole-lane disappearance); (2) `timeline.set_track_archived` on geosphere.plate
+removed the track live and restore brought it back (screenshots); (3) grep gate: lane literals
+gone, only the sphereId→schedule lookup table remains; (4) suite 1071/1071 across 18 projects;
+(5) `old ALC collected for bundle timeline` after hot-install; post-reload registry healthy.
+Noted cosmetic delta: lanes now sort alphabetically by sphereId (atmosphere above geosphere,
+was hardcoded geosphere-first) — candidate pipeline-json ordering param, slice 2.
 
 In the exported windowed app: (1) adding a REAL declared layer (e.g. `hydrosphere.ocean`) to
 the `declared-layers` json asset + `registry.reload` ingress makes a new lane+track appear
