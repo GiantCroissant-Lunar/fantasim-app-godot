@@ -11,8 +11,10 @@ before declaring timeline DTO fields dead.
 
 - **Placebo knobs**: `continentalPatches` is triple-broken (compiles to a JSON string instead of
   object; parser then rejects it; and even parsed, no RunAsync call site forwards it) — authoring
-  it has NEVER done anything. `spinRateRadiansPerMegaAnnum` only acts as a fallback when the
-  OnsetRoster yields zero plates — i.e. never on the product path.
+  it has NEVER done anything. **RESOLVED 2026-07-10 @4ad9827: wired end-to-end** (compiler parses
+  "object" kind-hints; ReadPatchRecipe is null-unless-authored so the default path stays on
+  recipe init; both RunAsync call sites forward spec.PatchRecipe). `spinRateRadiansPerMegaAnnum`
+  only acts as a fallback when the OnsetRoster yields zero plates — i.e. never on the product path.
 - **Two competing undeclared wire shapes for `rotationSource`** (nested object vs flat keys); the
   nested one is parsed-and-validated but has zero consumers; the flat one is consumed but never
   produced by the graph path.
@@ -26,7 +28,8 @@ before declaring timeline DTO fields dead.
 **DROP from v1 (dead or unreachable):** `DurationMegaAnnum` property; `durationMegaAnnum`/
 `durationMa`/`targetTick`/`ticks` alias chain (unreachable on the default path — `canonicalTick`
 always injected via sharedParams); spec fields `VerticalExaggeration`/`Seed`(post-ctor)/
-`RotationSource`(nested)/`PatchRecipe` (until wired); `ContinentalPlateIds` (obsolete-marked,
+`RotationSource`(nested) (`PatchRecipe` was on this list until wired 2026-07-10 @4ad9827 —
+now live, keep it); `ContinentalPlateIds` (obsolete-marked,
 zero readers); `CrustSnapshotTickState.Available` (permanently false — producer never set);
 timeline DTO fields `TimelineBand.Variant`/`.IsActive`/`.EndTick`, `TimelineTrack.IsActive`,
 `TimelineRulerMark.Tick` (face recomputes or ignores all five); filmstrip DTO
@@ -54,7 +57,7 @@ resolution path both executors share.
 
 | # | Surface | Field/Param | Status | Recommendation |
 |---|---------|-------------|--------|----------------|
-| 1 | world.options | `continentalPatches` | set-but-ignored, triple-broken (Compiler kind-hint "object" unhandled → string; ReadPatchRecipe rejects; PatchRecipe never forwarded to CrustPipeline.RunAsync at either call site) | wire it or drop; do NOT freeze |
+| 1 | world.options | `continentalPatches` | ~~set-but-ignored, triple-broken~~ RESOLVED 2026-07-10 @4ad9827: wired end-to-end, null-unless-authored keeps default path on recipe init | keep in v1 schema (now live) |
 | 2 | crust.generate | `rotationSource` nested vs flat keys | nested parsed-never-consumed; flat consumed-never-produced; neither declared | one canonical shape, delete the other |
 | 3 | world.options | `spinRateRadiansPerMegaAnnum` (+`spinRate`) | misnamed-Ma + placebo (fallback only when roster yields 0 plates) | rename per-tick + plumb into roster, or drop |
 | 4 | SPEC wire keys | `durationMegaAnnum, durationMa, orogenicPerMegaAnnum, arcVolcanismPerMegaAnnum, islandArcVolcanismPerMegaAnnum, ridgeVolcanismPerMegaAnnum, plates[].rate` | misnamed-Ma (full set) | keep only `*PerTick` forms |
