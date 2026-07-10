@@ -62,7 +62,10 @@ namespace FantaSim.App.World.Globe;
 
 public sealed class GlobeReconstructor
 {
-    // Authored spin in rad/Ma; converted to the engine's rad/tick AngularRate at the boundary.
+    // Legacy non-graph (DefaultPlates) path value — intentionally NOT recalibrated.
+    // The node-graph path (WorldCrustRunSpec) is the product path and uses the calibrated
+    // 0.0035 rad/Ma from OnsetRoster.DefaultAngularDriftPerMegaAnnum; see OnsetRoster and
+    // tools/rates/2026-07-07-rate-calibration-report.md.
     private const double SpinRatePerMegaAnnum = 0.02;
 
     private readonly int _frequency;

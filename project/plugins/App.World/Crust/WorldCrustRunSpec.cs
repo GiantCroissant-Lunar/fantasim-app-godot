@@ -38,7 +38,10 @@ internal sealed record WorldCrustRunSpec(
     private static readonly CrustPatchRecipe DefaultPatchRecipe = new(Seed: 0, PatchCount: 5);
 
     private const double DefaultDurationMegaAnnum = 8.0;
-    private const double DefaultSpinRateRadiansPerMegaAnnum = 0.02;
+    // Calibrated 2026-07-07 against real plate-stage rates from Cao et al. 2024 (1.8 Ga GPlates
+    // model): 0.0035 rad/Ma is the Phanerozoic movers MEDIAN, matching OnsetRoster's
+    // DefaultAngularDriftPerMegaAnnum. See tools/rates/2026-07-07-rate-calibration-report.md.
+    private const double DefaultSpinRateRadiansPerMegaAnnum = 0.0035;
     private const double DefaultOrogenicPerMegaAnnum = 1.0;
     private const double DefaultArcVolcanismPerMegaAnnum = 0.6;
     private const double DefaultIslandArcVolcanismPerMegaAnnum = 0.4;
