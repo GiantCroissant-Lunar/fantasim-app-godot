@@ -101,10 +101,11 @@ tasks:
       # the strip contract is proven; upstreaming is queued.
       - task: bundle:common
       - python3 tools/bundles/strip_common_from_export.py --app {{.BUILD_DIR}}/_artifacts/{{.ARTIFACTS_VERSION}}/godot/osx/{{.ASSEMBLY}}.app --manifest project/bundles/common/manifest.json --assembly {{.ASSEMBLY}} --common-pck {{.BUILD_DIR}}/_artifacts/{{.ARTIFACTS_VERSION}}/godot/bundles/common.pck
-      # Layer-track registry assets (slice 1): the Godot-free T3 registry reads these from the
-      # exe-adjacent config/ (AppContext.BaseDirectory is the per-arch data dir in exports and
-      # carries no config/) — provision them next to the common-resident catalog.
-      - cp project/hosts/complete-app/config/track-pipeline.json project/hosts/complete-app/config/declared-layers.json {{.BUILD_DIR}}/_artifacts/{{.ARTIFACTS_VERSION}}/godot/osx/{{.ASSEMBLY}}.app/Contents/MacOS/config/
+      # Exe-adjacent config/ provisioning (AppContext.BaseDirectory is the per-arch data dir in
+      # exports and carries no config/ — G26): layer-track registry assets (slice 1) + app.json
+      # (Bootstrap's layered config base; never provisioned before 2026-07-10, so env vars
+      # silently carried everything) — all next to the common-resident catalog.
+      - cp project/hosts/complete-app/config/track-pipeline.json project/hosts/complete-app/config/declared-layers.json project/hosts/complete-app/config/app.json {{.BUILD_DIR}}/_artifacts/{{.ARTIFACTS_VERSION}}/godot/osx/{{.ASSEMBLY}}.app/Contents/MacOS/config/
     env:
       GITVERSION_MAJORMINORPATCH: '{{.GITVERSION_MAJORMINORPATCH}}'
 

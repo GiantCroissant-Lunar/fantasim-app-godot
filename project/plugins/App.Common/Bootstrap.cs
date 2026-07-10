@@ -47,8 +47,11 @@ public sealed class Bootstrap
         // Layered app config: JSON base (priority 50) + environment variable override (priority 90),
         // surfaced as CrosscutFoundation.Config.IService and re-registered under that interface with
         // the "config" tag so the rest of the app resolves it from the registry.
+        var appJsonPath = AppConfigLocator.ResolveAppJsonPath(
+            AppContext.BaseDirectory,
+            Path.GetDirectoryName(Environment.ProcessPath));
         _registry.RegisterJsonConfig(
-            Path.Combine(AppContext.BaseDirectory, "config", "app.json"),
+            appJsonPath,
             optional: true,
             reloadOnChange: true,
             priority: 50);
@@ -78,6 +81,10 @@ public sealed class Bootstrap
             RuntimeHelpers.GetHashCode(_registry),
             _registry.Get<IMessageBus>().GetType().Name,
             _actorSystem.Name);
+        _log.LogInformation(
+            "App config json {Path} ({State}); env vars override at higher priority.",
+            appJsonPath,
+            File.Exists(appJsonPath) ? "loaded" : "absent, optional");
     }
 
     public IRegistry Registry => _registry;
