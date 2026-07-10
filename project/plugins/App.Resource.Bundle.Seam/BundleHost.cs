@@ -279,6 +279,11 @@ public sealed class BundleHost
         // world-bundle pin).
         SharedMessagePackCachePurge.EvictCollectibleEntries(bundleId, _logger);
 
+        // Same class of pin, System.Text.Json edition: STJ pools CachingContexts across value-equal
+        // options, so the NEXT generation's bundle-local static options would re-adopt a pooled
+        // context that still roots this generation's types (dump-verified 2026-07-10, world bundle).
+        FantaSim.App.Resource.SharedStjCachePurge.ClearReflectionCaches(bundleId, _logger);
+
         _sceneHost.RemoveScene(bundleId, detachScene);
         _loaded.Remove(bundleId);
         _logger.LogInformation("Bundle unloaded: {BundleId}", bundleId);
