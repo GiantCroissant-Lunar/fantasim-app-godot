@@ -29,6 +29,23 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
     internal const string SetTrackArchivedCommandId = "timeline.set_track_archived";
 
     private readonly Func<ITimelineFaceProxy> _faceProxyFactory;
+
+    // Serializes compose/sever/shutdown across threads: world reloads raise RuntimeChanging/
+    // RuntimeChanged from the resource watcher's threadpool thread while this bundle's own
+    // scene-tier reload shuts the plugin down on the Godot main thread. Without the gate an
+    // in-flight RuntimeChanged recompose can finish registering AFTER ShutdownAsync cleaned up,
+    // leaving this dying generation rooted by the resident registry/command service forever —
+    // the "old ALC still pinned for bundle timeline" 1-in-~6 multi-pck-install pin (2026-07-10).
+    private readonly object _lifecycleGate = new();
+    private bool _shutdown;
+
+    // Outgoing world controller severed at RuntimeChanging. TryConsumePendingWorldRebind must
+    // not consume the flag against this instance: IsLoaded("world") stays true and the OLD
+    // registration is only disposed mid-unload, so an interleaved Changed event from another
+    // bundle's reload would otherwise rebind the timeline to the dying world ALC (same guard
+    // the Host grew for pin class 5 in 511bffe). WeakReference so the stash itself never pins.
+    private WeakReference? _outgoingController;
+
     private IDisposable? _activatorRegistration;
     private IDisposable? _timelineRegistration;
     private IDisposable? _faceContextRegistration;
@@ -55,54 +72,65 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
 
     public ValueTask InitializeAsync(IPluginContext context, CancellationToken ct = default)
     {
-        var registry = context.Services.GetRequiredService<IRegistry>();
-        var loggerFactory = context.Services.GetRequiredService<ILoggerFactory>();
-        _registry = registry;
-        _loggerFactory = loggerFactory;
-        _log = loggerFactory.CreateLogger("TimelinePlugin");
-
-        _activatorRegistration = registry.RegisterOwned<ISceneActivator>(
-            new TimelineActivator(),
-            new ServiceRegistration { Tags = new[] { "scene-activator" }, Description = "timeline activator (bundle)" });
-
-        _resource = registry.TryGet<ResourceService>();
-        if (_resource is not null)
+        lock (_lifecycleGate)
         {
-            _resource.RuntimeChanging += OnResourceRuntimeChanging;
-            _resource.RuntimeChanged += OnResourceRuntimeChanged;
-        }
-        else
-        {
-            _log.LogWarning("TimelinePlugin: resource service not registered; world reload rebind events unavailable.");
-        }
+            var registry = context.Services.GetRequiredService<IRegistry>();
+            var loggerFactory = context.Services.GetRequiredService<ILoggerFactory>();
+            _registry = registry;
+            _loggerFactory = loggerFactory;
+            _log = loggerFactory.CreateLogger("TimelinePlugin");
 
-        ComposeTimeline(markPendingWhenMissing: true);
+            _activatorRegistration = registry.RegisterOwned<ISceneActivator>(
+                new TimelineActivator(),
+                new ServiceRegistration { Tags = new[] { "scene-activator" }, Description = "timeline activator (bundle)" });
 
-        return ValueTask.CompletedTask;
+            _resource = registry.TryGet<ResourceService>();
+            if (_resource is not null)
+            {
+                _resource.RuntimeChanging += OnResourceRuntimeChanging;
+                _resource.RuntimeChanged += OnResourceRuntimeChanged;
+            }
+            else
+            {
+                _log.LogWarning("TimelinePlugin: resource service not registered; world reload rebind events unavailable.");
+            }
+
+            ComposeTimeline(markPendingWhenMissing: true);
+
+            return ValueTask.CompletedTask;
+        }
     }
 
     public ValueTask ShutdownAsync(CancellationToken ct = default)
     {
-        _log?.LogInformation("TimelinePlugin: shutdown started.");
+        // Taking the gate first means an in-flight recompose (RuntimeChanged on the threadpool)
+        // either completed before this cleanup — and gets cleaned up here — or observes
+        // _shutdown afterward and no-ops. Nothing can register past this point.
+        lock (_lifecycleGate)
+        {
+            _shutdown = true;
+            _log?.LogInformation("TimelinePlugin: shutdown started.");
 
-        UnsubscribeResourceEvents();
-        UnregisterTimelineCommands();
-        SeverTimelineService(unbindProxy: true);
+            UnsubscribeResourceEvents();
+            UnregisterTimelineCommands();
+            SeverTimelineService(unbindProxy: true);
 
-        _activatorRegistration?.Dispose();
-        _activatorRegistration = null;
-        _registry = null;
-        _loggerFactory = null;
-        _resource = null;
-        _worldRebindPending = false;
-        _log?.LogInformation("TimelinePlugin: shutdown completed.");
-        _log = null;
-        return ValueTask.CompletedTask;
+            _activatorRegistration?.Dispose();
+            _activatorRegistration = null;
+            _registry = null;
+            _loggerFactory = null;
+            _resource = null;
+            _worldRebindPending = false;
+            _outgoingController = null;
+            _log?.LogInformation("TimelinePlugin: shutdown completed.");
+            _log = null;
+            return ValueTask.CompletedTask;
+        }
     }
 
     private bool ComposeTimeline(bool markPendingWhenMissing)
     {
-        if (_registry is null || _loggerFactory is null)
+        if (_shutdown || _registry is null || _loggerFactory is null)
             return false;
 
         var controller = _registry.TryGet<ITimelineController>();
@@ -355,9 +383,21 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
         if (!string.Equals(args.BundleId, "world", StringComparison.Ordinal))
             return;
 
-        SeverTimelineService(unbindProxy: false);
-        _worldRebindPending = true;
-        _log?.LogInformation("TimelinePlugin: world runtime changing; timeline binding severed.");
+        lock (_lifecycleGate)
+        {
+            if (_shutdown)
+                return;
+
+            // Stash the OUTGOING generation's controller before severing: the bound controller
+            // when composed, else whatever is still registered (both belong to the dying world
+            // ALC). TryConsumePendingWorldRebind refuses to rebind to this exact instance.
+            var outgoing = _subscribedController ?? _registry?.TryGet<ITimelineController>();
+            _outgoingController = outgoing is not null ? new WeakReference(outgoing) : null;
+
+            SeverTimelineService(unbindProxy: false);
+            _worldRebindPending = true;
+            _log?.LogInformation("TimelinePlugin: world runtime changing; timeline binding severed.");
+        }
     }
 
     private void OnResourceRuntimeChanged(object? sender, EventArgs args)
@@ -365,21 +405,35 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
 
     internal bool TryConsumePendingWorldRebind()
     {
-        if (!_worldRebindPending || _registry is null || _resource is null)
-            return false;
-        if (!_resource.IsLoaded("world"))
-            return false;
-        if (_registry.TryGet<ITimelineController>() is null)
-            return false;
-        if (!ComposeTimeline(markPendingWhenMissing: false))
-            return false;
+        lock (_lifecycleGate)
+        {
+            if (_shutdown || !_worldRebindPending || _registry is null || _resource is null)
+                return false;
+            if (!_resource.IsLoaded("world"))
+                return false;
+            if (_registry.TryGet<ITimelineController>() is not { } controller)
+                return false;
 
-        // No manual tick push here: the face's BindResidentContext ends with SeekTo(_ctl.Tick),
-        // so the rebind itself delivers the current controller tick — on the main thread, after
-        // the cross target is actually bound (a seek pushed before the bind lands is a no-op).
-        _faceProxy?.RebindResidentContext();
+            // Leave the flag armed while only the OUTGOING registration resolves: IsLoaded("world")
+            // is still true for the old copy during its own unload and the old registration is only
+            // disposed mid-unload, so "some controller registered" is not enough (pin class 5's
+            // guard rule). The world reload's own Changed event completes the rebind against the
+            // NEW generation's instance.
+            if (ReferenceEquals(controller, _outgoingController?.Target))
+                return false;
 
-        return true;
+            if (!ComposeTimeline(markPendingWhenMissing: false))
+                return false;
+
+            _outgoingController = null;
+
+            // No manual tick push here: the face's BindResidentContext ends with SeekTo(_ctl.Tick),
+            // so the rebind itself delivers the current controller tick — on the main thread, after
+            // the cross target is actually bound (a seek pushed before the bind lands is a no-op).
+            _faceProxy?.RebindResidentContext();
+
+            return true;
+        }
     }
 
     private void UnsubscribeResourceEvents()
