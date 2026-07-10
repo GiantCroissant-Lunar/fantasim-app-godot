@@ -40,6 +40,12 @@ public partial class Host : Node
     private IDisposable? _worldBundleWatch;
     private bool _ecsWorldReady;
     private bool _worldReloadPending;
+    // Weak: identifies the OUTGOING generation's presentation during a world reload without
+    // pinning it. The rebind guard must not consume _worldReloadPending while TryGet still
+    // returns this instance (its registration is only disposed mid-unload, so interleaved
+    // Changed events from other bundles would otherwise rebind the host to the dying ALC —
+    // dump-verified 2026-07-10, second world reload).
+    private WeakReference? _outgoingPresentation;
 
     public override void _Ready()
     {
@@ -151,6 +157,7 @@ public partial class Host : Node
             // delegates, the camera orbit target, and the host's contract handle all point at
             // objects typed in the outgoing world ALC.
             _worldReloadPending = true;
+            _outgoingPresentation = _planetPresentation is { } outgoing ? new WeakReference(outgoing) : null;
             _renderComposition?.SetCutawayTarget(null);
             _renderComposition?.SetExplodedTarget(null);
             _renderComposition?.SetMantleTarget(null);
@@ -171,13 +178,18 @@ public partial class Host : Node
         {
             // Consume the flag only once the NEW bundle's plugin has registered its presentation
             // — Changed events from OTHER bundles' reloads interleave with the world reload, and
-            // IsLoaded("world") is still true for the OLD copy during its own unload phase. If the
-            // registration is absent, leave the flag armed; the world reload's own Changed event
-            // completes the rebind.
+            // IsLoaded("world") is still true for the OLD copy during its own unload phase. The
+            // OUTGOING registration is only disposed mid-unload, so "some presentation registered"
+            // is not enough: it must be a DIFFERENT instance than the one severed at
+            // RuntimeChanging, or an interleaved event rebinds the host to the dying ALC and pins
+            // it. If the new registration is absent, leave the flag armed; the world reload's own
+            // Changed event completes the rebind.
             if (resource?.IsLoaded("world") == true
-                && registry.TryGet<IPlanetPresentation>() is not null)
+                && registry.TryGet<IPlanetPresentation>() is { } presentation
+                && !ReferenceEquals(presentation, _outgoingPresentation?.Target))
             {
                 _worldReloadPending = false;
+                _outgoingPresentation = null;
                 HandleWorldBundleReloaded();
             }
         }
