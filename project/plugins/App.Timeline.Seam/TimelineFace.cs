@@ -135,7 +135,10 @@ public partial class TimelineFace : Control, ITimelineFace
     private long? _cachedGraphFamilyTick;
     private IClient? _commandClient;
     private Func<long, WorldGenerationGraphFamilyDocument?>? _generationGraphFamilyProvider;
-    private Func<LayerFilmstripPreviewRequest, LayerFilmstripPreviewMap?>? _filmstripPreviewProvider;
+    private Func<LayerFilmstripPreviewRequest, CancellationToken, LayerFilmstripPreviewMap?>? _filmstripPreviewProvider;
+    // Cancelled at every sever/unbind so in-flight filmstrip renders (bundle code on threadpool
+    // stacks) unwind before the hot-reload collection probe expires; renewed at bind.
+    private CancellationTokenSource _filmstripCts = new();
     private ILayerTrackRegistry? _layerTrackRegistry;
 
     private double _internalTick;
@@ -341,6 +344,12 @@ public partial class TimelineFace : Control, ITimelineFace
         // reference anymore (execution-time resolution), but launching them after a sever is
         // useless Task churn, and the generation bump makes any in-flight completion a no-op.
         SupersedeFilmstripGeneration();
+        // Unwind IN-FLIGHT renders too: their threadpool stacks execute bundle code and would
+        // root the outgoing timeline+world ALCs past the collection probe (mechanism C,
+        // clrstack-proven 2026-07-10). The world render honors the token per pixel row.
+        _filmstripCts.Cancel();
+        _filmstripCts.Dispose();
+        _filmstripCts = new CancellationTokenSource();
         UnsubscribeLayerTrackRegistry();
         SetProcess(false);
     }
@@ -1286,6 +1295,7 @@ public partial class TimelineFace : Control, ITimelineFace
 
     private void StartFilmstripRequest(QueuedFilmstripFrame queued)
     {
+        var cancellationToken = _filmstripCts.Token;
         _ = Task.Run(() =>
         {
             LayerFilmstripPreviewMap? map = null;
@@ -1299,10 +1309,16 @@ public partial class TimelineFace : Control, ITimelineFace
                 // "old ALC still pinned for bundle timeline" (dump-proven 2026-07-10:
                 // TimelineFace+<>c__DisplayClass140_0 -> provider Func -> old LoaderAllocator).
                 // Reading the field means ClearResidentContext's sever instantly drops the old
-                // generation; only a provider call already on this threadpool stack can extend
-                // its lifetime, and only for the duration of that single render.
+                // generation. The token (cancelled at sever) unwinds a render already on this
+                // stack, so even the in-flight window ends within a pixel row.
                 var provider = _filmstripPreviewProvider;
-                map = provider?.Invoke(queued.Request);
+                if (provider is not null && !cancellationToken.IsCancellationRequested)
+                    map = provider(queued.Request, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                // Severed mid-render (bundle reload): drop the frame quietly — the next bind's
+                // BuildLanes re-requests every visible slot.
             }
             catch (Exception ex)
             {

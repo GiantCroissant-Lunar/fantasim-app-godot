@@ -1,3 +1,4 @@
+using System.Threading;
 using ServiceArchi.Contracts;
 using ServiceArchi.Contracts.Attributes;
 using FantaSim.App.World.Dto;
@@ -53,8 +54,11 @@ public interface IService
     /// Cheap CPU thumbnail source for timeline compact track filmstrips. Implementations must use
     /// low-resolution world data (frequency 2/3 class) and must not fetch the full presentation
     /// document or trigger full-frequency crust generation just to paint a preview.
+    /// Implementations MUST honor <paramref name="cancellationToken"/> promptly (per pixel row at
+    /// worst): callers cancel it when a bundle severs, because a render still on a threadpool
+    /// stack roots the timeline AND world ALCs past the hot-reload collection probe.
     /// </summary>
-    LayerFilmstripPreviewMap GetLayerFilmstripPreview(LayerFilmstripPreviewRequest request);
+    LayerFilmstripPreviewMap GetLayerFilmstripPreview(LayerFilmstripPreviewRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Mantle x-ray view (M-A): the four isosurface meshes (translucent outer + opaque inner per

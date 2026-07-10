@@ -161,7 +161,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             proxy,
             _registry.TryGet<IClient>(),
             tick => _registry.TryGet<FantaSim.App.World.IService>()?.GetPlanetPresentationAsync(tick).GenerationGraphFamily,
-            request => _registry.TryGet<FantaSim.App.World.IService>()?.GetLayerFilmstripPreview(request),
+            (request, cancellationToken) => _registry.TryGet<FantaSim.App.World.IService>()?.GetLayerFilmstripPreview(request, cancellationToken),
             // Owned and registered by the WORLD bundle (WorldPlugin), consumed here through the
             // shared T1 contract only -- a plugin-assembly reference from timeline to
             // App.World.Composition dual-copies 8 Unify assemblies across the two collectible
@@ -560,7 +560,7 @@ internal sealed class TimelineFaceContext : ITimelineFaceContext, IDisposable
         ITimelineFaceProxy proxy,
         object? commandClient,
         Func<long, WorldGenerationGraphFamilyDocument?> generationGraphFamilyProvider,
-        Func<LayerFilmstripPreviewRequest, LayerFilmstripPreviewMap?> filmstripPreviewProvider,
+        Func<LayerFilmstripPreviewRequest, CancellationToken, LayerFilmstripPreviewMap?> filmstripPreviewProvider,
         ILayerTrackRegistry? layerTrackRegistry,
         ILoggerFactory loggerFactory,
         double ticksPerSecond)
@@ -579,7 +579,7 @@ internal sealed class TimelineFaceContext : ITimelineFaceContext, IDisposable
     public ITimelineFaceProxy Proxy { get; }
     public object? CommandClient { get; }
     public Func<long, WorldGenerationGraphFamilyDocument?> GenerationGraphFamilyProvider { get; }
-    public Func<LayerFilmstripPreviewRequest, LayerFilmstripPreviewMap?> FilmstripPreviewProvider { get; }
+    public Func<LayerFilmstripPreviewRequest, CancellationToken, LayerFilmstripPreviewMap?> FilmstripPreviewProvider { get; }
     public ILayerTrackRegistry? LayerTrackRegistry { get; }
     public ILoggerFactory LoggerFactory { get; }
     public double TicksPerSecond { get; }

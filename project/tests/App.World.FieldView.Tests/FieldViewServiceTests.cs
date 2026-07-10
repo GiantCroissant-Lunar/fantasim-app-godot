@@ -17,7 +17,7 @@ namespace FantaSim.App.World.FieldView.Tests;
 /// </summary>
 internal sealed class FakeWorldService : IService
 {
-    public FantaSim.App.World.LayerFilmstripPreviewMap? GetLayerFilmstripPreview(FantaSim.App.World.LayerFilmstripPreviewRequest request) => null;
+    public FantaSim.App.World.LayerFilmstripPreviewMap? GetLayerFilmstripPreview(FantaSim.App.World.LayerFilmstripPreviewRequest request, System.Threading.CancellationToken cancellationToken = default) => null;
 
     private Action<WorldGenerationChangedEvent>? _callback;
     private Dictionary<string, object> _fieldValues = new(0);

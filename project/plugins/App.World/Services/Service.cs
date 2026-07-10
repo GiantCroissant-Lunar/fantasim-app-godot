@@ -1,5 +1,6 @@
 #if USE_PROJECT_REFERENCES
 using Akka.Actor;
+using System.Threading;
 #endif
 using System.Globalization;
 using System.Text.Json;
@@ -284,12 +285,17 @@ public sealed class Service : IService, IDisposable
         return ContinentalFractionsFromState(sampledState);
     }
 
-    public LayerFilmstripPreviewMap GetLayerFilmstripPreview(LayerFilmstripPreviewRequest request)
+    public LayerFilmstripPreviewMap GetLayerFilmstripPreview(LayerFilmstripPreviewRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (request.Tick < 0) throw new ArgumentOutOfRangeException(nameof(request.Tick));
         if (request.Width <= 0) throw new ArgumentOutOfRangeException(nameof(request.Width));
         if (request.Height <= 0) throw new ArgumentOutOfRangeException(nameof(request.Height));
+
+        // Honored per pixel row below (contract requirement): this render runs bundle code on a
+        // threadpool thread, so an uncancelled call left on the stack roots the timeline AND world
+        // ALCs past the hot-reload collection probe.
+        cancellationToken.ThrowIfCancellationRequested();
 
         var family = WorldGenerationGraphDefaults.BuildFamily();
         var renderOptions = ResolvePlanetRenderOptions(family);
@@ -303,28 +309,31 @@ public sealed class Service : IService, IDisposable
 
         return request.LayerId switch
         {
-            "geosphere.crust" => BuildCrustFilmstripPreview(request, previewOptions),
-            "geosphere.plate" => BuildPlateFilmstripPreview(request, previewOptions),
-            "geosphere.magma-ocean" => BuildProceduralFilmstripPreview(request, previewFrequency, "magma-ocean", new(225, 74, 38), new(255, 190, 72)),
-            "geosphere.stagnant-lid" => BuildProceduralFilmstripPreview(request, previewFrequency, "stagnant-lid", new(54, 68, 74), new(125, 101, 82)),
-            "geosphere.mantle" => BuildMantleFilmstripPreview(request, previewOptions),
+            "geosphere.crust" => BuildCrustFilmstripPreview(request, previewOptions, cancellationToken),
+            "geosphere.plate" => BuildPlateFilmstripPreview(request, previewOptions, cancellationToken),
+            "geosphere.magma-ocean" => BuildProceduralFilmstripPreview(request, previewFrequency, "magma-ocean", new(225, 74, 38), new(255, 190, 72), cancellationToken),
+            "geosphere.stagnant-lid" => BuildProceduralFilmstripPreview(request, previewFrequency, "stagnant-lid", new(54, 68, 74), new(125, 101, 82), cancellationToken),
+            "geosphere.mantle" => BuildMantleFilmstripPreview(request, previewOptions, cancellationToken),
             _ when string.Equals(request.SphereId, "atmosphere", StringComparison.Ordinal)
-                => BuildProceduralFilmstripPreview(request, previewFrequency, "atmosphere-placeholder", new(39, 93, 143), new(145, 203, 224)),
-            _ => BuildProceduralFilmstripPreview(request, previewFrequency, "layer-placeholder", new(70, 82, 92), new(128, 146, 156)),
+                => BuildProceduralFilmstripPreview(request, previewFrequency, "atmosphere-placeholder", new(39, 93, 143), new(145, 203, 224), cancellationToken),
+            _ => BuildProceduralFilmstripPreview(request, previewFrequency, "layer-placeholder", new(70, 82, 92), new(128, 146, 156), cancellationToken),
         };
     }
 
     private LayerFilmstripPreviewMap BuildCrustFilmstripPreview(
         LayerFilmstripPreviewRequest request,
-        WorldGenerationRenderOptions previewOptions)
+        WorldGenerationRenderOptions previewOptions,
+        CancellationToken cancellationToken)
     {
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
         if (request.Tick < onsetTick)
-            return BuildProceduralFilmstripPreview(request, previewOptions.TessellationFrequency, "pre-crust", new(45, 49, 54), new(100, 85, 68));
+            return BuildProceduralFilmstripPreview(request, previewOptions.TessellationFrequency, "pre-crust", new(45, 49, 54), new(100, 85, 68), cancellationToken);
 
         var products = GetOrBuildCrustTickProducts(previewOptions, onsetTick, request.Tick);
+        cancellationToken.ThrowIfCancellationRequested();
         var reconstructor = GetCachedGlobeReconstructor(previewOptions, onsetTick);
         var currentGlobe = reconstructor.BuildGlobeAt(request.Tick);
+        cancellationToken.ThrowIfCancellationRequested();
         var currentArcs = reconstructor.BuildBoundaryArcsAt(request.Tick);
         var rotationProvider = BuildRotationProvider(products.Materialization.Result.Plates, onsetTick);
         var sampler = new PlateFrameSampler(
@@ -350,7 +359,7 @@ public sealed class Service : IService, IDisposable
             double elevation = cell.CellId >= 0 && cell.CellId < elevations.Length ? elevations[cell.CellId] : 0.0;
             return (fraction, elevation);
         });
-        var rgba = RasterizeCells(request.Width, request.Height, cells, ColorCrustCell);
+        var rgba = RasterizeCells(request.Width, request.Height, cells, ColorCrustCell, cancellationToken);
         return new LayerFilmstripPreviewMap(
             request.SphereId,
             request.LayerId,
@@ -366,13 +375,15 @@ public sealed class Service : IService, IDisposable
 
     private LayerFilmstripPreviewMap BuildPlateFilmstripPreview(
         LayerFilmstripPreviewRequest request,
-        WorldGenerationRenderOptions previewOptions)
+        WorldGenerationRenderOptions previewOptions,
+        CancellationToken cancellationToken)
     {
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
         var reconstructor = GetCachedGlobeReconstructor(previewOptions, onsetTick);
         var globe = reconstructor.BuildGlobeAt(request.Tick);
+        cancellationToken.ThrowIfCancellationRequested();
         var cells = BuildFilmstripCells(globe, cell => (cell.PlateId, 0.0));
-        var rgba = RasterizeCells(request.Width, request.Height, cells, ColorPlateCell);
+        var rgba = RasterizeCells(request.Width, request.Height, cells, ColorPlateCell, cancellationToken);
         return new LayerFilmstripPreviewMap(
             request.SphereId,
             request.LayerId,
@@ -388,11 +399,13 @@ public sealed class Service : IService, IDisposable
 
     private LayerFilmstripPreviewMap BuildMantleFilmstripPreview(
         LayerFilmstripPreviewRequest request,
-        WorldGenerationRenderOptions previewOptions)
+        WorldGenerationRenderOptions previewOptions,
+        CancellationToken cancellationToken)
     {
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
         var reconstructor = GetCachedGlobeReconstructor(previewOptions, onsetTick);
         var arcs = reconstructor.BuildBoundaryArcsAt(request.Tick);
+        cancellationToken.ThrowIfCancellationRequested();
         var history = MantleHistoryAdapter.Build(arcs, onsetTick);
         var mantleConfig = MantleViewConfig.Default;
         var fieldConfig = new MantleFieldConfig
@@ -408,6 +421,9 @@ public sealed class Service : IService, IDisposable
         var rgba = new byte[request.Width * request.Height * 4];
         for (int y = 0; y < request.Height; y++)
         {
+            // Per-row cancellation: EvaluateAt is the expensive inner call (clrstack-proven to
+            // outlive the ALC collection probe when uncancelled).
+            cancellationToken.ThrowIfCancellationRequested();
             for (int x = 0; x < request.Width; x++)
             {
                 var direction = LayerFilmstripEquirect.PixelToDirection(x, y, request.Width, request.Height);
@@ -437,11 +453,13 @@ public sealed class Service : IService, IDisposable
         int sourceFrequency,
         string sourceKind,
         Rgb low,
-        Rgb high)
+        Rgb high,
+        CancellationToken cancellationToken)
     {
         var rgba = new byte[request.Width * request.Height * 4];
         for (int y = 0; y < request.Height; y++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             double v = request.Height <= 1 ? 0.0 : y / (double)(request.Height - 1);
             for (int x = 0; x < request.Width; x++)
             {
@@ -925,7 +943,8 @@ public sealed class Service : IService, IDisposable
         int width,
         int height,
         IReadOnlyList<LayerFilmstripCellSample> cells,
-        Func<LayerFilmstripCellSample, Rgb> colorForCell)
+        Func<LayerFilmstripCellSample, Rgb> colorForCell,
+        CancellationToken cancellationToken)
     {
         var rgba = new byte[width * height * 4];
         if (cells.Count == 0)
@@ -933,6 +952,7 @@ public sealed class Service : IService, IDisposable
 
         for (int y = 0; y < height; y++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             for (int x = 0; x < width; x++)
             {
                 var direction = LayerFilmstripEquirect.PixelToDirection(x, y, width, height);
