@@ -113,6 +113,17 @@ the pin is elsewhere; needs the ClrMD pin-hunter recipe
 TIMELINE bundle; the world-bundle reload path was likely never exercised clean. Behaviors were
 re-verified on a clean single-ALC boot after the degraded-reload session.
 
+**RESOLVED 2026-07-10 (same day, follow-up session): point 5 now PASSES ×3.** Two roots,
+both dump-verified and fixed — (a) STJ pools CachingContexts across value-equal
+JsonSerializerOptions, so each generation's `LayerTrackRegistryService.AssetReadOptions`
+adopted the pooled context still caching the prior generation's types (fix:
+`SharedStjCachePurge` in App.Resource, invoked from `BundleHost.UnloadCoreAsync`; unit test
+`SharedStjCachePurgeTests`); (b) Host's world-rebind guard could consume the reload flag on
+an interleaved Changed event while the OUTGOING registration was still live, rebinding the
+host to the dying ALC (fix: `_outgoingPresentation` WeakReference identity check in Host).
+Windowed proof: `old ALC collected for bundle world` on 3/3 consecutive reload rounds.
+Full diagnosis: `../handover/2026-07-10-world-alc-pin-diagnosis-and-fix.md`.
+
 Original gate definition (for reference):
 
 1. Fresh registry.reload baseline: lanes ordered geosphere → atmosphere (laneOrder proof —
