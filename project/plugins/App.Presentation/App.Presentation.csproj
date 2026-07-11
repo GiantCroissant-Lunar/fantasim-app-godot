@@ -26,6 +26,11 @@
     <ProjectReference Include="..\App.Ui.NodeGraph\App.Ui.NodeGraph.csproj" />
     <ProjectReference Include="..\App.NodeGraph\App.NodeGraph.csproj" />
     <ProjectReference Include="..\App.Resource.Bundle.Seam\App.Resource.Bundle.Seam.csproj" />
+    <!-- Tunnel slice-1 (Task 6): timeline contracts + the seam's tunnel pure-math/sink classes.
+         App.Timeline.Seam is resident-shared (shared-assembly-policy exactMatches) so the world
+         bundle resolves the SAME resident copy — never a bundled duplicate. -->
+    <ProjectReference Include="..\..\contracts\App.Timeline\App.Timeline.csproj" />
+    <ProjectReference Include="..\App.Timeline.Seam\App.Timeline.Seam.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions">

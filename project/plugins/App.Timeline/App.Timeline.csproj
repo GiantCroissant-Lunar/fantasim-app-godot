@@ -22,6 +22,9 @@
     <ProjectReference Include="..\..\contracts\App.Timeline\App.Timeline.csproj" />
     <ProjectReference Include="..\..\contracts\App.Command\App.Command.csproj" />
     <ProjectReference Include="..\..\contracts\App.Resource\App.Resource.csproj" />
+    <!-- Tunnel slice-1 (Task 6): timeline.tunnel_view command resolves ITunnelPresentation
+         (FantaSim.App.Presentation.Contracts — already resident-shared via exactMatches). -->
+    <ProjectReference Include="..\..\contracts\App.Presentation\App.Presentation.csproj" />
     <!-- App.World contracts hold ITimelineController + SphereRegimeSchedule the model consumes,
          plus ILayerTrackRegistry. The registry INSTANCE is owned by the world bundle's
          WorldPlugin; a plugin-assembly reference to App.World.Composition from here dual-copies

@@ -38,4 +38,11 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Tunnel slice-1 (vault/plans/2026-07-11-tunnel-slice1-plan.md Task 6): App.Presentation
+         (world bundle) consumes the tunnel pure-math modules + IFilmstripFrameSink. Assembly
+         name, not folder name — App.Presentation overrides <AssemblyName>. -->
+    <InternalsVisibleTo Include="FantaSim.App.Presentation" />
+  </ItemGroup>
+
 </Project>
