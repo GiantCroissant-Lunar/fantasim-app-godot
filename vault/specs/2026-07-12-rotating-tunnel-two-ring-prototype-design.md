@@ -1,7 +1,7 @@
 # Rotating tunnel two-ring prototype design
 
-**Status:** READY FOR USER REVIEW — three internal adversarial cycles reconciled; cross-model review
-skipped during automatic goal continuation  
+**Status:** APPROVED — user approval received 2026-07-12 after three internal adversarial cycles;
+cross-model review skipped during automatic goal continuation  
 **Date:** 2026-07-12  
 **Supersedes for this prototype:** the flat-annulus rendering and single current-ring interaction in
 `2026-07-11-tunnel-timeline-design.md` / `2026-07-11-tunnel-slice1-plan.md`
