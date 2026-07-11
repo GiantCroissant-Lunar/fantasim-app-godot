@@ -104,17 +104,25 @@ public static class TunnelFinePreviewMapper
             AccumulatedDegrees: 0.0,
             RungUnits: 0.0,
             RawTickQuantity: 0.0,
-            IntegralTickDelta: null,
+            IntegralTickDelta: binding.CanAdjust ? 0L : null,
             CursorZ: railCenterZ);
 
     private static long? TryIntegralTickDelta(double rawTickQuantity)
     {
+        if (!double.IsFinite(rawTickQuantity))
+            return null;
+
         var rounded = Math.Round(rawTickQuantity, MidpointRounding.AwayFromZero);
+        // double cannot represent Int64.MaxValue distinctly from 2^63. Treat that positive bound
+        // as exclusive while retaining the exactly representable Int64.MinValue lower bound.
+        if (rounded < -9_223_372_036_854_775_808d || rounded >= 9_223_372_036_854_775_808d)
+            return null;
+
         var distance = Math.Abs(rawTickQuantity - rounded);
-        // Relative tolerance: a nonzero sub-tick quantity (e.g. a rung with UnitTicks near 1e-9
-        // at ±360°) must stay fractional. An absolute 1e-6 floor would collapse it to integral 0.
-        // Exactly zero is always integral (distance 0 <= 0).
-        if (distance <= WholeTickTolerance * Math.Abs(rawTickQuantity))
+        // Scale the tolerance only below one tick. This preserves tiny floating noise at exact
+        // whole coarse quantities without letting magnitude make arbitrary coarse fractions whole.
+        var tolerance = WholeTickTolerance * Math.Min(1d, Math.Abs(rawTickQuantity));
+        if (distance <= tolerance)
             return (long)rounded;
 
         return null;

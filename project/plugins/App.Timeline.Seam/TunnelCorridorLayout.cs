@@ -118,7 +118,10 @@ public static class TunnelCorridorLayout
             return new TunnelCarouselSnap(StepDelta: 0, FocusIndex: focusIndex, SnappedAngleDegrees: 0d);
 
         var stepDelta = (long)Math.Round(accumulatedDegrees / TrackSlotPitchDegrees, MidpointRounding.AwayFromZero);
-        var nextFocus = NormalizeFocusIndex(focusIndex + (int)(stepDelta % trackCount), trackCount);
+        var normalizedLong = ((long)focusIndex + (stepDelta % trackCount)) % trackCount;
+        if (normalizedLong < 0)
+            normalizedLong += trackCount;
+        var nextFocus = (int)normalizedLong;
         var snappedAngle = stepDelta * TrackSlotPitchDegrees;
         return new TunnelCarouselSnap(StepDelta: stepDelta, FocusIndex: nextFocus, SnappedAngleDegrees: snappedAngle);
     }

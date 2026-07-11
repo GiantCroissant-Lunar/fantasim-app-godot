@@ -61,6 +61,19 @@ public sealed class TunnelRayHitMapperTests
         Assert.False(hit);
     }
 
+    [Fact]
+    public void TryIntersectMouthPlane_FiniteInputsWhoseIntersectionOverflows_ReturnsFalse()
+    {
+        var ray = new TunnelRay3(
+            new TunnelPoint3(0, 0, 1e308),
+            new TunnelPoint3(0, 0, -1));
+
+        var hit = TunnelRayHitMapper.TryIntersectMouthPlane(ray, mouthZ: -1e308, out var point);
+
+        Assert.False(hit);
+        Assert.Equal(default, point);
+    }
+
     // ---- TryIntersectCylinder ----
 
     [Fact]

@@ -118,22 +118,41 @@ public sealed class TunnelFinePreviewMapperTests
     // ---- Map: integral vs fractional ----
 
     [Fact]
-    public void Map_WholeTickDelta_RecordsIntegralTickDelta()
+    public void Map_KbFullRevolution_RecordsExactIntegralTickDelta()
     {
-        // Find a rung whose UnitTicks is itself near-whole so that one ±360° revolution
-        // (which is all the inner ring can represent after clamping) produces an integral quantity.
-        var rung = TimelineModel.GetLadderRungs()
-            .FirstOrDefault(r => r.UnitTicks >= 1.0 && IsRelativelyWhole(r.UnitTicks));
-        if (rung is null)
-            return; // No rung with whole UnitTicks in the current ladder; skip gracefully.
-
-        var binding = TunnelFinePreviewMapper.Bind(Descriptor(rung: rung.Symbol), true, GlobalFallback);
+        var rung = TimelineModel.GetLadderRungs().Single(r => r.Symbol == "kb");
+        var binding = TunnelFinePreviewMapper.Bind(Descriptor(rung: "kb"), true, GlobalFallback);
 
         var preview = TunnelFinePreviewMapper.Map(binding, 360.0, RailCenterZ, RailHalfLength);
 
-        Assert.NotNull(preview.IntegralTickDelta);
-        Assert.Equal((long)Math.Round(rung.UnitTicks, MidpointRounding.AwayFromZero), preview.IntegralTickDelta);
+        Assert.Equal(100_000_000d, rung.UnitTicks, precision: 6);
+        Assert.Equal(100_000_000L, preview.IntegralTickDelta);
         Assert.False(preview.IsFractionalPresentation);
+    }
+
+    [Fact]
+    public void Map_KbOneDegree_RemainsFractional_NotRoundedByMagnitudeScaledTolerance()
+    {
+        var binding = ActiveBinding("kb");
+
+        var preview = TunnelFinePreviewMapper.Map(binding, 1.0, RailCenterZ, RailHalfLength);
+
+        Assert.Equal(100_000_000d / 360d, preview.RawTickQuantity, precision: 6);
+        Assert.Null(preview.IntegralTickDelta);
+        Assert.True(preview.IsFractionalPresentation);
+    }
+
+    [Fact]
+    public void Map_KfFullRevolution_OutsideLongRange_RemainsPresentationOnly()
+    {
+        var rung = TimelineModel.GetLadderRungs().Single(r => r.Symbol == "kf");
+        var binding = ActiveBinding("kf");
+
+        var preview = TunnelFinePreviewMapper.Map(binding, 360.0, RailCenterZ, RailHalfLength);
+
+        Assert.True(rung.UnitTicks >= 1e20);
+        Assert.Null(preview.IntegralTickDelta);
+        Assert.True(preview.IsFractionalPresentation);
     }
 
     [Fact]
@@ -173,7 +192,19 @@ public sealed class TunnelFinePreviewMapperTests
         Assert.Equal(0.0, reset.AccumulatedDegrees, precision: 6);
         Assert.Equal(0.0, reset.RungUnits, precision: 6);
         Assert.Equal(RailCenterZ, reset.CursorZ, precision: 6);
+        Assert.Equal(0L, reset.IntegralTickDelta);
+        Assert.False(reset.IsFractionalPresentation);
+    }
+
+    [Fact]
+    public void Reset_InactiveBinding_RemainsNonAdjustableWithoutIntegralAuthority()
+    {
+        var binding = TunnelFinePreviewMapper.Bind(Descriptor(), isActive: false, GlobalFallback);
+
+        var reset = TunnelFinePreviewMapper.Reset(binding, RailCenterZ, RailHalfLength);
+
         Assert.Null(reset.IntegralTickDelta);
+        Assert.False(reset.IsFractionalPresentation);
     }
 
     [Fact]
@@ -188,18 +219,13 @@ public sealed class TunnelFinePreviewMapperTests
         Assert.False(preview.IsFractionalPresentation);
     }
 
-    [Fact]
-    public void Map_SubTickRungAtFullRevolution_RemainsFractional_NotIntegralZero()
+    [Theory]
+    [InlineData("jw")]
+    [InlineData("jv")]
+    public void Map_SubTickRungAtFullRevolution_RemainsFractional_NotIntegralZero(string symbol)
     {
-        // Real sub-tick ladder rungs (e.g. jw/jv with UnitTicks far below 1) must not be collapsed
-        // to integral 0 by an absolute tolerance. The relative test keeps them fractional.
-        var subTickRung = TimelineModel.GetLadderRungs()
-            .FirstOrDefault(r => r.UnitTicks > 0 && r.UnitTicks < 1e-3);
-
-        if (subTickRung is null)
-            return; // No sub-tick rung exists in the current ladder; skip gracefully.
-
-        var binding = TunnelFinePreviewMapper.Bind(Descriptor(rung: subTickRung.Symbol), isActive: true, GlobalFallback);
+        var subTickRung = TimelineModel.GetLadderRungs().Single(r => r.Symbol == symbol);
+        var binding = TunnelFinePreviewMapper.Bind(Descriptor(rung: symbol), isActive: true, GlobalFallback);
 
         var preview = TunnelFinePreviewMapper.Map(binding, 360.0, RailCenterZ, RailHalfLength);
 
@@ -210,12 +236,5 @@ public sealed class TunnelFinePreviewMapperTests
         var negPreview = TunnelFinePreviewMapper.Map(binding, -360.0, RailCenterZ, RailHalfLength);
         Assert.True(negPreview.RawTickQuantity < 0, "Sub-tick quantity at -360 must be nonzero");
         Assert.Null(negPreview.IntegralTickDelta);
-    }
-
-    // Finds the smallest positive integer K such that K * unitTicks is within 1e-6 of a whole number.
-    private static bool IsRelativelyWhole(double value)
-    {
-        var rounded = Math.Round(value, MidpointRounding.AwayFromZero);
-        return Math.Abs(value - rounded) <= 1e-6 * Math.Abs(value);
     }
 }

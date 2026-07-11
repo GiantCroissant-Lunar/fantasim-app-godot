@@ -38,13 +38,15 @@ public static class TunnelRayHitMapper
             return false;
 
         var t = (mouthZ - ray.Origin.Z) / ray.Direction.Z;
-        if (t < 0.0)
+        if (!double.IsFinite(t) || t < 0.0)
             return false;
 
-        point = new TunnelPoint3(
-            ray.Origin.X + t * ray.Direction.X,
-            ray.Origin.Y + t * ray.Direction.Y,
-            mouthZ);
+        var x = ray.Origin.X + t * ray.Direction.X;
+        var y = ray.Origin.Y + t * ray.Direction.Y;
+        if (!double.IsFinite(x) || !double.IsFinite(y))
+            return false;
+
+        point = new TunnelPoint3(x, y, mouthZ);
         return true;
     }
 
