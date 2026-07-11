@@ -278,7 +278,7 @@ public sealed class Service : IService, IDisposable
         var renderOptions = ResolvePlanetRenderOptions(family);
         var onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
 
-        var products = GetOrBuildCrustTickProducts(renderOptions, onsetTick, tick);
+        var products = GetOrBuildCrustTickProducts(renderOptions, onsetTick, tick, family.Revision);
         if (!products.Materialization.Result.StateByTick.TryGetValue(products.SnapshotTick, out var snapshotState)
             || snapshotState.Count == 0)
         {
@@ -325,7 +325,7 @@ public sealed class Service : IService, IDisposable
 
         return request.LayerId switch
         {
-            "geosphere.crust" => BuildCrustFilmstripPreview(request, previewOptions, cancellationToken),
+            "geosphere.crust" => BuildCrustFilmstripPreview(request, previewOptions, family.Revision, cancellationToken),
             "geosphere.plate" => BuildPlateFilmstripPreview(request, previewOptions, cancellationToken),
             "geosphere.magma-ocean" => BuildProceduralFilmstripPreview(request, previewFrequency, "magma-ocean", new(225, 74, 38), new(255, 190, 72), cancellationToken),
             "geosphere.stagnant-lid" => BuildProceduralFilmstripPreview(request, previewFrequency, "stagnant-lid", new(54, 68, 74), new(125, 101, 82), cancellationToken),
@@ -339,13 +339,14 @@ public sealed class Service : IService, IDisposable
     private LayerFilmstripPreviewMap BuildCrustFilmstripPreview(
         LayerFilmstripPreviewRequest request,
         WorldGenerationRenderOptions previewOptions,
+        int graphRevision,
         CancellationToken cancellationToken)
     {
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
         if (request.Tick < onsetTick)
             return BuildProceduralFilmstripPreview(request, previewOptions.TessellationFrequency, "pre-crust", new(45, 49, 54), new(100, 85, 68), cancellationToken);
 
-        var products = GetOrBuildCrustTickProducts(previewOptions, onsetTick, request.Tick);
+        var products = GetOrBuildCrustTickProducts(previewOptions, onsetTick, request.Tick, graphRevision);
         cancellationToken.ThrowIfCancellationRequested();
         var reconstructor = GetCachedGlobeReconstructor(previewOptions, onsetTick);
         var currentGlobe = reconstructor.BuildGlobeAt(request.Tick);
@@ -795,7 +796,7 @@ public sealed class Service : IService, IDisposable
                 renderOptions.AdaptiveSubdivisionFeatureWeightDelta);
         }
 
-        var products = GetOrBuildCrustTickProducts(renderOptions, onsetTick, arcTick);
+        var products = GetOrBuildCrustTickProducts(renderOptions, onsetTick, arcTick, family.Revision);
         var rotationProvider = BuildRotationProvider(products.Materialization.Result.Plates, onsetTick);
         var sampler = new PlateFrameSampler(
             products.Materialization.Tessellation,
@@ -869,7 +870,8 @@ public sealed class Service : IService, IDisposable
     private CrustTickProducts GetOrBuildCrustTickProducts(
         WorldGenerationRenderOptions renderOptions,
         long onsetTick,
-        long arcTick)
+        long arcTick,
+        int graphRevision)
     {
         var mobilePlateRegime = GeosphereScheduleFor(onsetTick).Regimes
             .FirstOrDefault(r => string.Equals(r.RegimeId, "mobile-plate", StringComparison.Ordinal));
@@ -882,7 +884,16 @@ public sealed class Service : IService, IDisposable
             onsetTick + MobilePlateWindowTicks);
         var snapshotTick = series.SelectSnapshotForPlayhead(arcTick) ?? arcTick;
 
-        var key = new CrustProductCacheKey(renderOptions.TessellationFrequency, snapshotTick);
+        // Seed + SpinRate mirror the sibling globe-reconstructor cache key (_globeReconstructorKey
+        // below); GraphRevision mirrors CrustGenerationTriggerKey (CrustGenerationTriggerPolicy.cs)
+        // -- a generation-graph edit must not serve a stale crust product (2026-07-11 cache-key
+        // completion, vault/specs/2026-07-11-surrealdb-persistence-slice1-design.md §1.2).
+        var key = new CrustProductCacheKey(
+            renderOptions.Seed,
+            renderOptions.TessellationFrequency,
+            renderOptions.SpinRateRadiansPerMegaAnnum,
+            graphRevision,
+            snapshotTick);
         lock (_crustProductCacheGate)
         {
             if (_crustProductCache.TryGetValue(key, out var cached))
@@ -1086,7 +1097,22 @@ public sealed class Service : IService, IDisposable
         WorldGlobeSnapshot GlobeAtSnapshot,
         IReadOnlyList<PlateBoundaryArc> ArcsAtSnapshot);
 
-    private readonly record struct CrustProductCacheKey(int Frequency, long SnapshotTick);
+    /// <summary>
+    /// Crust-product cache key. Extended 2026-07-11 (vault/specs/2026-07-11-surrealdb-persistence-
+    /// slice1-design.md §1.2) to carry every world-identity dimension the render options and
+    /// generation graph expose: Seed + SpinRateRadiansPerMegaAnnum mirror the sibling
+    /// <see cref="_globeReconstructorKey"/> (Seed, Frequency, SpinRate) below; GraphRevision mirrors
+    /// <c>CrustGenerationTriggerKey</c> (CrustGenerationTriggerPolicy.cs). Before this fix the key
+    /// carried only (Frequency, SnapshotTick), so two worlds differing only by Seed/SpinRate/
+    /// GraphRevision aliased onto the same cache slot. <c>internal</c> (not <c>private</c>) so
+    /// App.World.Tests (InternalsVisibleTo, App.World.csproj) can assert on key equality directly.
+    /// </summary>
+    internal readonly record struct CrustProductCacheKey(
+        int Seed,
+        int Frequency,
+        double SpinRateRadiansPerMegaAnnum,
+        int GraphRevision,
+        long SnapshotTick);
 
     private readonly record struct Rgb(byte R, byte G, byte B);
 

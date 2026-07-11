@@ -31,10 +31,10 @@ internal sealed class FilmstripPreviewController : IDisposable
     // in-flight Task reads null and skips). Set by the face at bind/clear time.
     private Func<LayerFilmstripPreviewRequest, CancellationToken, LayerFilmstripPreviewMap?>? _filmstripPreviewProvider;
 
-    private readonly Dictionary<TimelineFilmstripCacheKey, ImageTexture> _filmstripTextureCache = new();
+    private readonly Dictionary<FilmstripTextureCacheKey, ImageTexture> _filmstripTextureCache = new();
     private readonly FilmstripCacheLedger _cacheLedger;
-    private readonly Dictionary<string, TimelineFilmstripCacheKey> _ledgerKeyToCacheKey = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, TimelineFilmstripCacheKey> _filmstripRequestTextureKeys = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, FilmstripTextureCacheKey> _ledgerKeyToCacheKey = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, FilmstripTextureCacheKey> _filmstripRequestTextureKeys = new(StringComparer.Ordinal);
     private readonly Queue<QueuedFilmstripFrame> _filmstripQueue = new();
     private readonly HashSet<string> _filmstripQueuedKeys = new(StringComparer.Ordinal);
     private readonly HashSet<string> _filmstripActiveKeys = new(StringComparer.Ordinal);
@@ -51,7 +51,8 @@ internal sealed class FilmstripPreviewController : IDisposable
 
     internal sealed record QueuedFilmstripFrame(
         LayerFilmstripPreviewRequest Request,
-        string RequestKey);
+        string RequestKey,
+        int GraphRevision);
 
     public FilmstripPreviewController(
         Func<bool> isFaceAlive,
@@ -115,7 +116,8 @@ internal sealed class FilmstripPreviewController : IDisposable
         string sphere,
         string layerId,
         long tick,
-        string rung)
+        string rung,
+        int graphRevision)
     {
         var provider = _filmstripPreviewProvider;
         if (provider is null)
@@ -151,7 +153,7 @@ internal sealed class FilmstripPreviewController : IDisposable
         if (_filmstripActiveKeys.Contains(requestKey) || !_filmstripQueuedKeys.Add(requestKey))
             return;
 
-        _filmstripQueue.Enqueue(new QueuedFilmstripFrame(request, requestKey));
+        _filmstripQueue.Enqueue(new QueuedFilmstripFrame(request, requestKey, graphRevision));
         PumpFilmstripQueue();
     }
 
@@ -225,7 +227,7 @@ internal sealed class FilmstripPreviewController : IDisposable
                 _filmstripActiveRequests = Math.Max(0, _filmstripActiveRequests - 1);
                 _filmstripActiveKeys.Remove(queued.RequestKey);
                 if (map is not null)
-                    ApplyFilmstripPreview(queued.RequestKey, map);
+                    ApplyFilmstripPreview(queued.RequestKey, map, queued.GraphRevision);
                 _filmstripWaiters.Remove(queued.RequestKey);
                 PumpFilmstripQueue();
             });
@@ -235,7 +237,7 @@ internal sealed class FilmstripPreviewController : IDisposable
     private static string FilmstripRequestKey(LayerFilmstripPreviewRequest request)
         => $"{request.SphereId}:{request.LayerId}:{request.Tick}:{request.ViewRung}:{request.Width}x{request.Height}";
 
-    private void ApplyFilmstripPreview(string requestKey, LayerFilmstripPreviewMap map)
+    private void ApplyFilmstripPreview(string requestKey, LayerFilmstripPreviewMap map, int graphRevision)
     {
         // IsInstanceValid first: IsInsideTree is a native call and throws on a disposed face.
         if (!_isFaceAlive())
@@ -244,13 +246,18 @@ internal sealed class FilmstripPreviewController : IDisposable
         if (!_filmstripWaiters.TryGetValue(requestKey, out var waiters))
             return;
 
-        var key = new TimelineFilmstripCacheKey(
+        // GraphRevision completes the world-identity gap (2026-07-11 cache-key completion,
+        // vault/specs/2026-07-11-surrealdb-persistence-slice1-design.md §1.3): see
+        // FilmstripTextureCacheKey's doc comment for what IS/is-not reachable here and why (Seed
+        // is residue -- not reachable without a T1 contract change).
+        var key = new FilmstripTextureCacheKey(
             map.SphereId,
             map.LayerId,
             map.SnapshotTick,
             map.ViewRung,
             map.Width,
-            map.Height);
+            map.Height,
+            graphRevision);
         var isNewKey = !_filmstripTextureCache.ContainsKey(key);
         if (!_filmstripTextureCache.TryGetValue(key, out var texture)
             || !GodotObject.IsInstanceValid(texture))

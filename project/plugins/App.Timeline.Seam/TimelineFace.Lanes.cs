@@ -251,6 +251,11 @@ public partial class TimelineFace
             var expanded = _expandedTracks.Contains(trackKey);
             var regimeId = schedule is not null ? ResolveTrackRegime(schedule, trackLayerId, _ctl!.Tick) : null;
             var graph = LayerTrackGraphProjection.Resolve(generationFamily, trackSphere, trackLayerId, regimeId);
+            // GraphRevision reuses the family document ALREADY resolved above for the graph
+            // projection -- no new call into the (expensive) generation-graph-family provider.
+            // Threaded through so the filmstrip cache key can include it (2026-07-11 cache-key
+            // completion, vault/specs/2026-07-11-surrealdb-persistence-slice1-design.md §1.3).
+            var graphRevision = generationFamily?.Revision ?? 0;
 
             var row = new Control
             {
@@ -320,7 +325,7 @@ public partial class TimelineFace
             if (expanded)
                 graphBinding = BuildExpandedGraph(content, graph);
             else
-                RenderTrackContent(t, content, trackSphere, trackLayerId, schedule, graph);
+                RenderTrackContent(t, content, trackSphere, trackLayerId, schedule, graph, graphRevision);
 
             var toggleCallable = Callable.From(() => OnTrackPressed(trackSphere, trackLayerId));
             var chevronCallable = Callable.From(() => OnTrackExpandPressed(trackSphere, trackLayerId));
@@ -355,7 +360,8 @@ public partial class TimelineFace
         string LayerId,
         SphereRegimeSchedule? Schedule,
         LayerTrackGraphView Graph,
-        LayerTrackDescriptor Descriptor);
+        LayerTrackDescriptor Descriptor,
+        int GraphRevision);
 
     // Content strip rendering dispatch, keyed by TrackLaneViewModelBuilder's presenter-kind
     // resolution (itself keyed by descriptor.Content.Type -- Task 4's presenter lookup). A
@@ -366,9 +372,10 @@ public partial class TimelineFace
         string sphereId,
         string layerId,
         SphereRegimeSchedule? schedule,
-        LayerTrackGraphView graph)
+        LayerTrackGraphView graph,
+        int graphRevision)
     {
-        var context = new TrackContentRenderContext(content, sphereId, layerId, schedule, graph, track.Descriptor);
+        var context = new TrackContentRenderContext(content, sphereId, layerId, schedule, graph, track.Descriptor, graphRevision);
         if (_trackContentPresenters.TryGetValue(track.PresenterKind, out var presenter))
             presenter(context);
         else
@@ -376,7 +383,7 @@ public partial class TimelineFace
     }
 
     private void RenderFilmstripTrackContent(TrackContentRenderContext context)
-        => BuildCompactFilmstrip(context.Content, context.Schedule, context.SphereId, context.LayerId);
+        => BuildCompactFilmstrip(context.Content, context.Schedule, context.SphereId, context.LayerId, context.GraphRevision);
 
     // Existing D7c chip/graph path: a small label summarizing the resolved layer graph. The
     // chevron expand-to-full-GraphEdit affordance (BuildExpandedGraph) is separate and works for
@@ -442,7 +449,8 @@ public partial class TimelineFace
         Control content,
         SphereRegimeSchedule? schedule,
         string sphere,
-        string layerId)
+        string layerId,
+        int graphRevision)
     {
         content.MouseFilter = MouseFilterEnum.Ignore;
         var contentWidth = ResolveTrackContentWidth(_lanesContainer?.Size.X ?? content.Size.X);
@@ -486,7 +494,7 @@ public partial class TimelineFace
             if (frame is null)
                 continue;
             var textureRect = frame.GetNode<TextureRect>("Texture");
-            _filmstrip.RequestTexture(textureRect, sphere, layerId, slot.Tick, rung);
+            _filmstrip.RequestTexture(textureRect, sphere, layerId, slot.Tick, rung, graphRevision);
         }
     }
 

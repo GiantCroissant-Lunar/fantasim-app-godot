@@ -23,5 +23,6 @@
     <Compile Include="..\..\plugins\App.Timeline.Seam\TimelineScrubMapper.cs" Link="TimelineScrubMapper.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\TrackLaneViewModelBuilder.cs" Link="TrackLaneViewModelBuilder.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\FilmstripCacheLedger.cs" Link="FilmstripCacheLedger.cs" />
+    <Compile Include="..\..\plugins\App.Timeline.Seam\FilmstripTextureCacheKey.cs" Link="FilmstripTextureCacheKey.cs" />
   </ItemGroup>
 </Project>
