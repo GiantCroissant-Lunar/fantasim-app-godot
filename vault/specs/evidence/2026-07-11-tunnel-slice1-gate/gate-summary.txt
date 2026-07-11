@@ -1,0 +1,6 @@
+Task-12 windowed gate 2026-07-11 late-eve (fresh boot post-rebuild, ingress-driven):
+- boot: 0 errors; 'ITunnelPresentation registered.' + 'Tunnel presentation mounted under stage Environment (visible=False).'
+- timeline.tunnel_view enabled:true -> {ok:true,enabled:true}; geometry visible (tunnel-first-render.png: ring arcs + corridor wedges; stage camera sits at throat => framing is the placeholder state, eye-tune pass pending)
+- toggle off -> ok; set_track_archived round-trip -> ok (registry Changed -> corridor rebuild mechanism, same wiring as gated 2D path)
+- reload round (bundle:install): old ALC collected x7 across all 5 bundles, still-pinned=0 — tunnel binder severs cleanly
+- REAL-MOUSE scrub on the current-tick ring + F9 toggle: USER's eye-judgment sitting (D2 doctrine — ingress cannot claim it)
