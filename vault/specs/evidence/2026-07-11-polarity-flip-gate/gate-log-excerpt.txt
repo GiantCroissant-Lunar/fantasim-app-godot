@@ -1,0 +1,40 @@
+25 matches in 25F:
+
+[file] 111 (1):
+     0: world from /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-g...
+
+[file] 119 (1):
+     0: assist from /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-...
+
+[file] 138 (1):
+     0: timeline from /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-ap...
+
+[file] 152 (1):
+     0: activity from /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-ap...
+
+[file] 162 (1):
+     0: view=World, subdivision=adaptive, plates=1, triangles=25718, meshVertices=771...
+
+[file] 208 (1):
+     0: view=World, subdivision=adaptive, plates=10, triangles=11078, meshVertices=33...
+
+[file] 212 (1):
+     0: content stamp unchanged (generation-completion echo).
+
+[file] 238 (1):
+     0: activity from /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-ap...
+
+[file] 258 (1):
+     0: old ALC collected for bundle activity
+
+[file] 280 (1):
+     0: world from /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-g...
+
+[file] 296 (1):
+     0: iii from /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-god...
+
+[file] 324 (1):
+     0: stage from /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-g...
+
+[file] 334 (1):
+     0: assist from /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-...

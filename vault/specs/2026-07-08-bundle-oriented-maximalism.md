@@ -78,7 +78,7 @@ bundles/
 
 | Phase | Move | Note |
 |---|---|---|
-| 0 | ✅ SHIPPED 2026-07-08 (`ff9a872`, `5d78a2c`) — policy externalized to `shared-assembly-policy.json` + generic stager `tools/bundles/stage_bundle.py` | polarity FLIP still pending (post-phase-2 gated edit to the json) |
+| 0 | ✅ SHIPPED 2026-07-08 (`ff9a872`, `5d78a2c`) — policy externalized to `shared-assembly-policy.json` + generic stager `tools/bundles/stage_bundle.py` | ✅ **polarity FLIPPED 2026-07-11** — `FantaSim.App.` prefix removed; shared = 14 enumerated `*.Contracts` exactMatches (runtime `SharedAssemblyPolicy` has no suffix-rule support — enumeration, not code change) + floor (Common/Resource/Resource.Bundle.Seam permanent; Ecs until ph-7; NodeGraph + Ui.NodeGraph until ph-3 — structurally required while the host `ProjectReference`s exist, else cross-ALC dual-copy). Staging diff = exactly +`world/DynamicData.dll`; `--check-dual` clean; fresh-boot gate: 0 errors, all 5 bundles reload with `old ALC collected`, 0 pinned. Evidence: `vault/specs/evidence/2026-07-11-polarity-flip-gate/` |
 | 1 | ✅ SHIPPED 2026-07-08 (`f633d84`…`9714ed7`, windowed-gated: `old ALC collected for bundle world`) — Presentation ships inside world.pck | closure shrink still pending (post-flip); residual: first-reload-after-boot ALC pin (chip filed); see handover/2026-07-08-bundle-maximalism-phase0-1-handover.md |
 | 2 | Timeline T3 → timeline bundle | deletes Host.cs:121–205 rebind machinery + the dual-copy smell (host ProjectReference AND bundle-excluded assembly) |
 | 2.5 | **Common resident-layer bundle (`common.pck`)** — DECIDED 2026-07-08, spec: [2026-07-08-common-resident-layer-bundle.md](2026-07-08-common-resident-layer-bundle.md) | plate-projects foundation libs load once at boot into the DEFAULT context (packaging granularity, not reload); exe shrinks to the loading floor; kills the bundle∩bundle duplication class; prerequisite shaping for the polarity flip (post-flip shared = contracts + common layer) |
@@ -99,7 +99,10 @@ Full findings: `.agent/logs/codex/policy-audit-20260708.log`. Before the flip:
   App.Resource.Bundle.Seam, App.Ui.NodeGraph, App.World.Rendering — each needs an explicit
   resident-allowlist / common-layer / bundle-local decision (27-item broader audit list in the log).
 - **Policy noise to clean AT flip time** (behavior-neutral now, smaller flip diff): dead prefixes
-  `ReactiveUI`/`DynamicData` (match nothing loaded), redundant `GodotSharp` (covered by `Godot`),
+  `ReactiveUI`/`DynamicData` (match nothing loaded — **CORRECTED at flip time 2026-07-11:
+  DynamicData was NOT dead**; App.World.FieldView references it bundle-locally and no resident
+  copy ever existed — a latent resolution gap. Prefix removed deliberately; DynamicData now
+  stages into world.pck), redundant `GodotSharp` (covered by `Godot`),
   `FantaSim.App.World.`/`FantaSim.App.Command.` (covered by `FantaSim.App.`). Keep `netstandard`
   with a comment — facade-name resolution requests from netstandard-targeted shared assemblies
   (UnifyMaths et al.) may still hit it at runtime even though no file matches on disk.
