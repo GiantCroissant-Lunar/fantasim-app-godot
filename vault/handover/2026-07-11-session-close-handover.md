@@ -20,6 +20,7 @@ user rules — all still binding).
 | TimelineFace split | `65a1fc4` `048b9cc` | Core 1,882→774; FilmstripPreviewController + FilmstripCacheLedger + Input/Lanes partials; **tunnel precondition DONE**; 0 disposed-throws through reload |
 | D4.2 unit sweep | `4db2c44` `42974db` `8f5f4d3` | Ma wire keys retired loudly; per-tick defaults; **values re-derived: MaxTick ~11 kb → 2 kb** (isolated commit `8f5f4d3`, one-constant revert if the eye rejects it) |
 | Session close | `cce5100` + this doc | Handovers + vendored evidence |
+| **Evening session (after this doc's first commit)** | `c7530e4`..`0b17dc9` | **Cleanup pile DONE**: double-full-bind FIXED @`8f28cdd` (`PlanetSurfaceBindStamp` content-identity dedupe of the generation-completion chase; gated: fresh-window seeks = 1 bind + "re-bind skipped", ALC 7→14, suite 1146/1146); dead-code orphans removed @`9509e53`; vault README delta @`7f4c4be`; CHANGELOG regenerated @`c7530e4` (cliff.toml footer + limit_commits bugs fixed); 22 worktrees pruned (dirty diffs archived `~/Work/lunar-horse/.agent/run/worktree-prune-archive-20260711/`); artifacts 6.2 G→621 M. **Ollama Cloud WEEKLY QUOTA exhausted mid-arc** — both GLM dispatches stalled silently ~75 min (frozen logs); lead implemented in-session. |
 
 Suite: 1091 → **1132-ish combined** (verify with one run; last full re-run green post-merge).
 Every arc windowed-gated; evidence under `vault/specs/evidence/2026-07-11-*/`.
@@ -47,10 +48,16 @@ An exported app may still be running (ingress :19292); if not:
    direction (locked: per-sphere json, domain vocabulary, build at first consumer), and the
    NEW asymmetric per-layer time directive (plates ~ka, rivers ~jw — dual time base is core).
 2. Polarity flip — 6 of 7 assembly decisions are the USER's; then policy-json + gate.
-3. Cleanup pile: double-full-bind (G34 note), dead-code orphans
-   (PlanetShaderLibrary.HypsoPlateMaterial, PlateSurfaceMeshFactory.ToColor/.ToV3),
-   vault README index (frozen 07-06), CHANGELOG, worktree/artifact pruning.
+3. ~~Cleanup pile~~ DONE by the evening session (see ledger) — small residuals only:
+   `LayerCompositionDecision.TerrainRelief` computed-never-consumed (fold into D5/D7b),
+   `RegisterPlayback` onSeek still `Action<long>` (widen only when a consumer needs origin),
+   pre-commit dotnet-format covers host only.
 4. SurrealDB first slice (crust+filmstrip persistence; crust cache still Seed-mis-keyed).
+
+**Routing note for dispatches:** Ollama Cloud weekly quota is EXHAUSTED as of 07-11 evening —
+`ollama/*:cloud` dispatches stall silently with frozen logs (~75 min observed). Until reset,
+route external work to `zai-coding-plan/glm-5.2` or the in-house Agent tool, per the user's
+call; watch the first 10 minutes of any Ollama dispatch for log growth before trusting it.
 
 ## 4. Process notes that worked today (reuse)
 
