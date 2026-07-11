@@ -1,0 +1,193 @@
+using System.Linq;
+using FantaSim.App.World.Storage.Generated.SurrealDb;
+using Microsoft.Extensions.DependencyInjection;
+using SurrealDb.Net;
+using UnifyStorage.Runtime.SurrealDb;
+using Xunit;
+
+namespace FantaSim.App.World.Tests;
+
+/// <summary>
+/// SPIKE ONLY — 2026-07-11 SurrealDB persistence slice-1 verification
+/// (vault/specs/2026-07-11-surrealdb-persistence-slice1-design.md, DECISION POINT 1 option D).
+///
+/// Endpoint plumbing (PASSES): <c>UnifyStorage.Runtime.SurrealDb</c>'s <c>AddSurrealDbStorage(...)</c>
+/// is a thin pass-through to <c>SurrealDb.Net</c>'s own <c>AddSurreal(...)</c> — it does not parse
+/// or restrict the endpoint scheme at all. Adding <c>SurrealDb.Embedded.RocksDb</c> and chaining
+/// <c>.AddRocksDbProvider()</c> on the returned <see cref="SurrealDbBuilder"/> is enough to make a
+/// <c>rocksdb://&lt;path&gt;</c> endpoint work end to end (Connect/Use/Upsert all succeed against
+/// real on-disk RocksDB files) — no unify-storage source change needed.
+///
+/// Runtime durability — PROCESS-INTERNAL REOPEN (FAILS, reproducibly): the primary test below
+/// writes through one client, fully disposes that client/provider, then opens a brand-new
+/// client/provider on the SAME on-disk path and tries to read the data back. This fails: SurrealDb.Net
+/// 0.10.2's embedded RocksDb engine does not release its native RocksDB directory lock when the
+/// DI-registered <see cref="ISurrealDbSession"/> is disposed — confirmed two ways (see the
+/// diagnostic fact below): (a) disposal itself can throw from inside
+/// <c>SurrealDbEmbeddedEngine.Detach</c>/<c>CloseSession</c> (an internal reconnect attempt that
+/// self-conflicts with the still-held lock), and (b) even when that exception doesn't surface, the
+/// lock is STILL held after <c>DisposeAsync()</c> returns, forced GC + finalizers, and a 3s delay —
+/// a second client's <c>Connect()</c> on the same path still throws
+/// <c>SurrealDbEmbeddedException: ... IO error: lock hold by current process ... LOCK: No locks
+/// available</c>. Real on-disk RocksDB artifacts (WAL <c>.log</c>, <c>MANIFEST</c>, <c>CURRENT</c>,
+/// <c>IDENTITY</c>, <c>LOCK</c>) are confirmed written to the temp directory regardless — the write
+/// path is real; only same-process reopen is blocked.
+///
+/// This is consistent with (does not contradict) the design doc's own §3.2 intended usage: exactly
+/// ONE resident, process-lifetime session, opened once at boot, disposed only at final app
+/// shutdown, never reopened mid-process. A real app restart (a new OS process) would not hit this
+/// specific failure, because the OS releases the process's file lock unconditionally on exit —
+/// that is the lead's separate windowed-app gate (§6.3), not this xunit spike. What this spike does
+/// prove is that the resident storage layer must NEVER attempt to close-and-reopen the RocksDb
+/// engine within a running process (e.g. as part of a bundle hot-reload or a "reconnect" retry) —
+/// this SDK version cannot do that cleanly.
+///
+/// SPIKE ONLY: <c>SurrealDb.Embedded.RocksDb</c> is a test-project-only <c>PackageReference</c>
+/// (App.World.Tests.csproj) with a test-project-only version pin (Directory.Packages.props). No
+/// shipping plugin or host project references it. This reuses the SAME generated
+/// <c>SurrealDbDocumentStore</c> (public, `FantaSim.App.World.Storage.Generated.SurrealDb`) that
+/// <c>App.World</c> already compiles today for the <c>mem://</c> truth-store path — the spike only
+/// swaps the endpoint scheme and the provider registration call.
+/// </summary>
+public sealed class SurrealRocksDbSpikeTests
+{
+    private sealed class SpikeRecord
+    {
+        public string Label { get; set; } = string.Empty;
+        public long Tick { get; set; }
+    }
+
+    [Fact]
+    public async Task Document_written_by_one_client_survives_full_dispose_and_reopen_on_same_rocksdb_path()
+    {
+        var dataDir = Path.Combine(Path.GetTempPath(), $"surreal-rocksdb-spike-{Guid.NewGuid():N}");
+        var ns = $"spike_{Guid.NewGuid():N}";
+        const string db = "spike";
+        var connectionString = $"Endpoint=rocksdb://{dataDir};Namespace={ns};Database={db}";
+
+        var written = new Dictionary<string, SpikeRecord>
+        {
+            ["alpha"] = new SpikeRecord { Label = "first", Tick = 100 },
+            ["beta"] = new SpikeRecord { Label = "second", Tick = 200 },
+            ["gamma"] = new SpikeRecord { Label = "third", Tick = 300 },
+        };
+
+        try
+        {
+            // --- Client/provider #1: connect, write, then dispose EVERYTHING (provider = root scope). ---
+            await using (var provider1 = BuildRocksDbProvider(connectionString))
+            {
+                var session1 = provider1.GetRequiredService<ISurrealDbSession>();
+                await session1.Connect();
+                await session1.Use(ns, db);
+
+                using var store1 = new SurrealDbDocumentStore(session1);
+                foreach (var (id, record) in written)
+                    await store1.UpsertAsync("spikeRecords", id, record);
+            }
+            // provider1 is now fully disposed: session, engine, and the RocksDb file handle it
+            // opened should all be released before we ever construct client/provider #2.
+
+            // --- Client/provider #2: brand-new instance, same on-disk rocksdb:// path. ---
+            await using var provider2 = BuildRocksDbProvider(connectionString);
+            var session2 = provider2.GetRequiredService<ISurrealDbSession>();
+            await session2.Connect();
+            await session2.Use(ns, db);
+
+            using var store2 = new SurrealDbDocumentStore(session2);
+            foreach (var (id, expected) in written)
+            {
+                var reread = await store2.GetAsync<SpikeRecord>("spikeRecords", id);
+                Assert.NotNull(reread);
+                Assert.Equal(expected.Label, reread!.Label);
+                Assert.Equal(expected.Tick, reread.Tick);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(dataDir))
+                Directory.Delete(dataDir, recursive: true);
+        }
+    }
+
+    private static ServiceProvider BuildRocksDbProvider(string connectionString)
+    {
+        var services = new ServiceCollection();
+        services.AddSurrealDbStorage(connectionString).AddRocksDbProvider();
+        return services.BuildServiceProvider();
+    }
+
+    // Supporting diagnostic: characterizes the dispose-time failure above precisely. Swallows any
+    // exception from provider1.DisposeAsync() itself, forces GC + finalization + a 3s delay (in
+    // case native cleanup is finalizer-driven rather than Dispose-driven), then attempts a second
+    // open and lists the real on-disk RocksDB files. Answers "is the lock genuinely stuck, or was
+    // the first test's failure just a noisy/cosmetic exception during an otherwise-successful
+    // teardown?" — the assertion always fails (by design, via the trailing throw) so the evidence
+    // shows up in the test-run output; this is intentional, not a bug.
+    [Fact]
+    public async Task Diagnostic_second_open_after_swallowed_dispose_exception()
+    {
+        var dataDir = Path.Combine(Path.GetTempPath(), $"surreal-rocksdb-diag-{Guid.NewGuid():N}");
+        var ns = $"diag_{Guid.NewGuid():N}";
+        const string db = "diag";
+        var connectionString = $"Endpoint=rocksdb://{dataDir};Namespace={ns};Database={db}";
+
+        try
+        {
+            Exception? disposeException = null;
+            var provider1 = BuildRocksDbProvider(connectionString);
+            var session1 = provider1.GetRequiredService<ISurrealDbSession>();
+            await session1.Connect();
+            await session1.Use(ns, db);
+            using (var store1 = new SurrealDbDocumentStore(session1))
+                await store1.UpsertAsync("diagRecords", "alpha", new SpikeRecord { Label = "first", Tick = 1 });
+
+            try
+            {
+                await provider1.DisposeAsync();
+            }
+            catch (Exception ex)
+            {
+                disposeException = ex;
+            }
+
+            // Give any async native-side teardown a moment, in case the failed reconnect above
+            // still eventually released the lock out-of-band. Force finalization too, in case
+            // the native RocksDB handle is only released via a finalizer, not Dispose itself.
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            await Task.Delay(3000);
+
+            Exception? secondOpenException = null;
+            try
+            {
+                await using var provider2 = BuildRocksDbProvider(connectionString);
+                var session2 = provider2.GetRequiredService<ISurrealDbSession>();
+                await session2.Connect();
+                await session2.Use(ns, db);
+                using var store2 = new SurrealDbDocumentStore(session2);
+                var reread = await store2.GetAsync<SpikeRecord>("diagRecords", "alpha");
+                Assert.NotNull(reread);
+            }
+            catch (Exception ex)
+            {
+                secondOpenException = ex;
+            }
+
+            var onDiskFiles = Directory.Exists(dataDir)
+                ? string.Join(", ", Directory.GetFiles(dataDir).Select(f => $"{Path.GetFileName(f)}={new FileInfo(f).Length}b"))
+                : "(dataDir missing)";
+
+            throw new Exception(
+                $"disposeException={disposeException?.GetType().FullName}: {disposeException?.Message}\n" +
+                $"secondOpenException={secondOpenException?.GetType().FullName}: {secondOpenException?.Message}\n" +
+                $"onDiskFiles=[{onDiskFiles}]");
+        }
+        finally
+        {
+            if (Directory.Exists(dataDir))
+                Directory.Delete(dataDir, recursive: true);
+        }
+    }
+}

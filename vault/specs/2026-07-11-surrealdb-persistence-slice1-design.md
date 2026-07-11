@@ -696,7 +696,16 @@ bundles reload with old ALC collected, 0 pinned"):
    a verification spike. **Lead lean: (D) if its two verification items pass a short spike —
    it is the literal reading of the standing "storage=SurrealDB via unify-storage" direction and
    its resident-native constraint coincides with the already-locked resident-client rule; (A) is
-   the fallback if the spike sours.** Not chosen unilaterally — the user decides.
+   the fallback if the spike sours.**
+   **RESOLVED 2026-07-11 (same session, user delegated to lead + spike):** the spike ran and
+   returned **D-NOT-VIABLE as spiked** — plumbing passes (zero unify-storage changes; rocksdb://
+   + AddRocksDbProvider reachable through AddSurrealDbStorage), but the SDK's embedded RocksDB
+   engine holds its native lock for the life of the process (intra-process reopen reproducibly
+   fails), and the export pipeline has NO native-dylib packaging for NuGet assets at all.
+   **Slice 1 proceeds on (A): LiteDB behind the swappable resident IDocumentStore contract.**
+   (D) is not dead — three revisit conditions recorded in
+   `vault/specs/evidence/2026-07-11-rocksdb-spike/README.md` (OS-process-restart durability
+   proof, native-asset export packaging engineered + gated, upstream lock fix).
 2. **Resident storage contract home**: extend `App.Common` directly (§3.1 option 1, lower
    ceremony) vs. a new dedicated resident project (§3.1 option 2, cleaner separation but a new
    project — house rule requires explicit approval before creating it).
