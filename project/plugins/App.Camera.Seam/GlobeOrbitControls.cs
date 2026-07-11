@@ -52,6 +52,11 @@ public sealed partial class GlobeOrbitControls : Node
     internal bool DiagDraggingNow => _dragging;
     internal bool DiagHostBound => _host is not null;
 
+    // The atomic orbit pose at the instant of the debug snapshot (read-only, never re-applied):
+    // yaw/pitch/distance the mouse controls + remote ingress share, sampled without invoking
+    // camera.orbit (which reapplies state and is not an observation).
+    internal CameraOrbitSnapshot DiagOrbitSnapshot => _orbit.Current;
+
     public GlobeOrbitControls()
     {
         _lazyBind = new LazyBindOnce<PhantomCameraHost>(BindHost);

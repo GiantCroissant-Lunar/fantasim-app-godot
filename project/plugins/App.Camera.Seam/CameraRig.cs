@@ -423,6 +423,24 @@ public sealed class CameraRig : ICameraRig
         var activePcam = rig.HostWrapper.GetActivePhantomCamera();
         snapshot["hostActivePcam"] = activePcam is PhantomCamera3D active ? active.Node3D.Name.ToString() : "(none)";
 
+        snapshot["cameraPath"] = rig.Camera.GetPath().ToString();
+        snapshot["cameraTransform"] = BuildTransformDictionary(rig.Camera.GlobalTransform);
+
+        if (activePcam is PhantomCamera3D activePcamNode)
+        {
+            snapshot["activePcamPath"] = activePcamNode.Node3D.GetPath().ToString();
+            snapshot["activePcamTransform"] = BuildTransformDictionary(activePcamNode.Node3D.GlobalTransform);
+            snapshot["followTargetPath"] = activePcamNode.Node3D.Get("follow_target").Obj is Node ft ? ft.GetPath().ToString() : "(null)";
+            snapshot["springLength"] = (float)activePcamNode.Node3D.Get("spring_length");
+        }
+        else
+        {
+            snapshot["activePcamPath"] = "(none)";
+            snapshot["activePcamTransform"] = "(none)";
+            snapshot["followTargetPath"] = "(none)";
+            snapshot["springLength"] = 0f;
+        }
+
         if (GlobeOrbitControls.ActiveInstance is { } controls)
         {
             var input = new Godot.Collections.Dictionary();
@@ -434,6 +452,11 @@ public sealed class CameraRig : ICameraRig
             input["motionsSeen"] = controls.DiagMotionsSeen;
             input["dragMotionsApplied"] = controls.DiagDragMotionsApplied;
             snapshot["orbitInput"] = input;
+
+            var orbit = controls.DiagOrbitSnapshot;
+            snapshot["orbitYawDeg"] = orbit.YawDeg;
+            snapshot["orbitPitchDeg"] = orbit.PitchDeg;
+            snapshot["orbitDistance"] = orbit.Distance;
         }
         else
         {
@@ -459,6 +482,19 @@ public sealed class CameraRig : ICameraRig
         snapshot["pcams"] = pcams;
 
         return Json.Stringify(snapshot, "  ");
+    }
+
+    private static Godot.Collections.Dictionary BuildTransformDictionary(Transform3D t)
+    {
+        var b = t.Basis;
+        var o = t.Origin;
+        return new Godot.Collections.Dictionary
+        {
+            ["basisXX"] = b.Xx, ["basisXY"] = b.Xy, ["basisXZ"] = b.Xz,
+            ["basisYX"] = b.Yx, ["basisYY"] = b.Yy, ["basisYZ"] = b.Yz,
+            ["basisZX"] = b.Zx, ["basisZY"] = b.Zy, ["basisZZ"] = b.Zz,
+            ["originX"] = o.X, ["originY"] = o.Y, ["originZ"] = o.Z,
+        };
     }
 
     private void EnsureViewportRig(string viewportId)
