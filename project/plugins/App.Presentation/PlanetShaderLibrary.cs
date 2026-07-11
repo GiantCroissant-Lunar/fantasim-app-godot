@@ -301,7 +301,6 @@ void fragment() {
     private static Shader? _stagnantShader;
     private static Shader? _hypsoPlateShader;
     private static Shader? _atmosphereRimShader;
-    private static Material? _hypsoPlateMaterial;
 
     // M-B: darker unlit material for the solid-crust BOTTOM + SIDE WALLS — distinct from the
     // attributed surface so the slab silhouette reads as thickness, not as more surface. Unlit +
@@ -317,8 +316,6 @@ void fragment() {
     public static Shader StagnantShader => _stagnantShader ??= new Shader { Code = StagnantShaderCode };
     public static Shader HypsoPlateShader => _hypsoPlateShader ??= new Shader { Code = HypsoPlateShaderCode };
     public static Shader AtmosphereRimShader => _atmosphereRimShader ??= new Shader { Code = AtmosphereRimShaderCode };
-
-    public static Material HypsoPlateMaterial => _hypsoPlateMaterial ??= new ShaderMaterial { Shader = HypsoPlateShader };
 
     public static ShaderMaterial BuildIsosurfaceMaterial(Color tint, float emission, float alpha, int priority)
     {

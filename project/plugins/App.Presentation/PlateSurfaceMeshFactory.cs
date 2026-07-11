@@ -86,8 +86,6 @@ internal static class PlateSurfaceMeshFactory
         return centers;
     }
 
-    internal static Color ToColor(RampColor c) => new((float)c.R, (float)c.G, (float)c.B);
-
     // Converts the host-side per-cell Godot.Color ramp output back to the Godot-free RampColor the
     // App.World plugin envelope consumes, runs the global per-vertex colour gather, and indexes the
     // result by plate id so BuildPlateMesh can look up each cap's per-vertex colours in one read.
@@ -101,8 +99,6 @@ internal static class PlateSurfaceMeshFactory
             byId[p.PlateId] = p.Colors;
         return byId;
     }
-
-    internal static Vector3 ToV3(CartesianPoint3 p) => new((float)p.X, (float)p.Y, (float)p.Z);
 
     internal static RampColor[] BuildContinentsCellColors(
         int cellCount,
