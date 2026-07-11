@@ -171,7 +171,7 @@ public sealed record CrustSnapshotTickSeries(IReadOnlyList<long> SnapshotTicks)
     /// <summary>
     /// The one crust-snapshot spacing every consumer must share: the generation trigger's window,
     /// the service's snapshot-tick states, and the presentation's product selection. 5,000,000
-    /// canonical ticks (50 Ma at 100k ticks/Ma). Two spacings in play caused the 2026-07-03
+    /// canonical ticks (50 ka = 50 Ma at 100k ticks/Ma). Two spacings in play caused the 2026-07-03
     /// identical-terrain bug: the service built series at 500k ticks ("5" read as mega-annum, not
     /// window ticks), so playheads selected snapshot ticks no product was ever generated for.
     /// </summary>

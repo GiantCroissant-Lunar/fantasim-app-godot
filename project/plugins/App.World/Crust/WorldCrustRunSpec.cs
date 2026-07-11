@@ -9,7 +9,6 @@ using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Topography;
 using FantaSim.Geosphere.Crust;
 using FantaSim.Geosphere.Plate.Topology;
-using FantaSim.World.Contracts.Time;
 using FantaSim.World.Contracts.Units;
 using UnifyCell;
 using UnifyGeometry.Spherical;
@@ -37,17 +36,15 @@ internal sealed record WorldCrustRunSpec(
     private static readonly CrustInitRecipe DefaultContinentalRecipe = CrustInitRecipe.Continental(0, 1);
     private static readonly CrustPatchRecipe DefaultPatchRecipe = new(Seed: 0, PatchCount: 5);
 
-    private const double DefaultDurationMegaAnnum = 8.0;
+    private const double DefaultDurationTicks = 8.0 * UnitConverter.TicksPerMegaAnnum; // 800,000 ticks = 8 ka = 8 Ma
     // ONE spin-rate property end-to-end (user decision 2026-07-11): the default is the calibrated
     // OnsetRoster source of truth, not a local copy. Provenance:
     // tools/rates/2026-07-07-rate-calibration-report.md.
     private const double DefaultSpinRateRadiansPerMegaAnnum = OnsetRoster.DefaultAngularDriftPerMegaAnnum;
-    private const double DefaultOrogenicPerMegaAnnum = 1.0;
-    private const double DefaultArcVolcanismPerMegaAnnum = 0.6;
-    private const double DefaultIslandArcVolcanismPerMegaAnnum = 0.4;
-    private const double DefaultRidgeVolcanismPerMegaAnnum = 0.5;
-
-    public double DurationMegaAnnum => UnitConverter.TickDeltaToMegaAnnum(EndTick);
+    private const double DefaultOrogenicPerTick = 1.0 / UnitConverter.TicksPerMegaAnnum;
+    private const double DefaultArcVolcanismPerTick = 0.6 / UnitConverter.TicksPerMegaAnnum;
+    private const double DefaultIslandArcVolcanismPerTick = 0.4 / UnitConverter.TicksPerMegaAnnum;
+    private const double DefaultRidgeVolcanismPerTick = 0.5 / UnitConverter.TicksPerMegaAnnum;
 
     public GeodesicSphereTessellation CreateTessellation()
         => new(TessellationFrequency);
@@ -202,8 +199,7 @@ internal sealed record WorldCrustRunSpec(
                 double lat = ReadDouble(po, "lat", 0.0);
                 double lon = ReadDouble(po, "lon", 0.0);
                 var axis = ReadAxis(po, "axis", new Vector3D(0, 0, 1));
-                double ratePerMegaAnnum = ReadDouble(po, "rate", 0.0);
-                double ratePerTick = UnitConverter.RadiansPerMegaAnnumToRadiansPerTick(ratePerMegaAnnum);
+                double ratePerTick = ReadPlateRatePerTick(po);
                 plates.Add(new TopoPlate(id, SphericalPoint.FromDegrees(lat, lon), new EulerPole(axis, ratePerTick)));
             }
 
@@ -211,6 +207,18 @@ internal sealed record WorldCrustRunSpec(
         }
 
         return DefaultOnsetPlates(seed, frequency, defaultRate);
+    }
+
+    private static double ReadPlateRatePerTick(JsonObject plateObj)
+    {
+        if (plateObj.TryGetPropertyValue("ratePerTick", out var rtNode))
+            return ToDouble(rtNode, 0.0);
+
+        if (plateObj.ContainsKey("rate"))
+            throw new ArgumentException(
+                "Wire key 'rate' in plates[] is retired (was rad/Ma). Use 'ratePerTick' (radians per canonical tick) instead.");
+
+        return 0.0;
     }
 
     private static IReadOnlyList<TopoPlate> DefaultOnsetPlates(
@@ -316,42 +324,50 @@ internal sealed record WorldCrustRunSpec(
     {
         if (TryReadLong(payload, "canonicalTick", out var canonicalTick))
             return NonNegativeTick(canonicalTick, "canonicalTick");
-        if (TryReadLong(payload, "targetTick", out var targetTick))
-            return NonNegativeTick(targetTick, "targetTick");
-        if (TryReadDouble(payload, "durationMegaAnnum", out var durationMegaAnnum))
-            return NonNegativeTick(GeologicTimeScale.FromMegaAnnumDelta(durationMegaAnnum), "durationMegaAnnum");
-        if (TryReadDouble(payload, "durationMa", out var durationMa))
-            return NonNegativeTick(GeologicTimeScale.FromMegaAnnumDelta(durationMa), "durationMa");
-        if (TryReadLong(payload, "ticks", out var legacyTicks))
-            return NonNegativeTick(legacyTicks, "ticks");
 
-        return GeologicTimeScale.FromMegaAnnumDelta(DefaultDurationMegaAnnum);
+        // Reject retired aliases loudly — silent ignore is forbidden.
+        if (payload.ContainsKey("durationMegaAnnum"))
+            throw new ArgumentException(
+                "Wire key 'durationMegaAnnum' is retired (misnamed-Ma). Use 'canonicalTick' (canonical ticks) instead.");
+        if (payload.ContainsKey("durationMa"))
+            throw new ArgumentException(
+                "Wire key 'durationMa' is retired (misnamed-Ma). Use 'canonicalTick' (canonical ticks) instead.");
+        if (payload.ContainsKey("targetTick"))
+            throw new ArgumentException(
+                "Wire key 'targetTick' is retired. Use 'canonicalTick' instead.");
+        if (payload.ContainsKey("ticks"))
+            throw new ArgumentException(
+                "Wire key 'ticks' is retired. Use 'canonicalTick' instead.");
+
+        return (long)Math.Round(DefaultDurationTicks);
     }
 
-    private static CrustEvolutionRates ReadRates(JsonObject payload) => new(
-        OrogenicPerTick: ReadRatePerTick(payload, "orogenicPerMegaAnnum", "orogenicPerTick", DefaultOrogenicPerMegaAnnum),
-        ArcVolcanismPerTick: ReadRatePerTick(payload, "arcVolcanismPerMegaAnnum", "arcVolcanismPerTick", DefaultArcVolcanismPerMegaAnnum),
-        IslandArcVolcanismPerTick: ReadRatePerTick(payload, "islandArcVolcanismPerMegaAnnum", "islandArcVolcanismPerTick", DefaultIslandArcVolcanismPerMegaAnnum),
-        RidgeVolcanismPerTick: ReadRatePerTick(payload, "ridgeVolcanismPerMegaAnnum", "ridgeVolcanismPerTick", DefaultRidgeVolcanismPerMegaAnnum));
+    private static CrustEvolutionRates ReadRates(JsonObject payload)
+    {
+        RejectRateAlias(payload, "orogenicPerMegaAnnum", "orogenicPerTick");
+        RejectRateAlias(payload, "arcVolcanismPerMegaAnnum", "arcVolcanismPerTick");
+        RejectRateAlias(payload, "islandArcVolcanismPerMegaAnnum", "islandArcVolcanismPerTick");
+        RejectRateAlias(payload, "ridgeVolcanismPerMegaAnnum", "ridgeVolcanismPerTick");
+
+        return new(
+            OrogenicPerTick: ReadDouble(payload, "orogenicPerTick", DefaultOrogenicPerTick),
+            ArcVolcanismPerTick: ReadDouble(payload, "arcVolcanismPerTick", DefaultArcVolcanismPerTick),
+            IslandArcVolcanismPerTick: ReadDouble(payload, "islandArcVolcanismPerTick", DefaultIslandArcVolcanismPerTick),
+            RidgeVolcanismPerTick: ReadDouble(payload, "ridgeVolcanismPerTick", DefaultRidgeVolcanismPerTick));
+    }
 
     private static CrustEvolutionRates CreateDefaultRates()
         => new(
-            OrogenicPerTick: DefaultOrogenicPerMegaAnnum / UnitConverter.TicksPerMegaAnnum,
-            ArcVolcanismPerTick: DefaultArcVolcanismPerMegaAnnum / UnitConverter.TicksPerMegaAnnum,
-            IslandArcVolcanismPerTick: DefaultIslandArcVolcanismPerMegaAnnum / UnitConverter.TicksPerMegaAnnum,
-            RidgeVolcanismPerTick: DefaultRidgeVolcanismPerMegaAnnum / UnitConverter.TicksPerMegaAnnum);
+            OrogenicPerTick: DefaultOrogenicPerTick,
+            ArcVolcanismPerTick: DefaultArcVolcanismPerTick,
+            IslandArcVolcanismPerTick: DefaultIslandArcVolcanismPerTick,
+            RidgeVolcanismPerTick: DefaultRidgeVolcanismPerTick);
 
-    private static double ReadRatePerTick(
-        JsonObject payload,
-        string perMegaAnnumKey,
-        string perTickKey,
-        double defaultPerMegaAnnum)
+    private static void RejectRateAlias(JsonObject payload, string retiredKey, string canonicalKey)
     {
-        if (TryReadDouble(payload, perTickKey, out var perTick))
-            return perTick;
-
-        var perMegaAnnum = ReadDouble(payload, perMegaAnnumKey, defaultPerMegaAnnum);
-        return perMegaAnnum / UnitConverter.TicksPerMegaAnnum;
+        if (payload.ContainsKey(retiredKey))
+            throw new ArgumentException(
+                $"Wire key '{retiredKey}' is retired (misnamed-Ma). Use '{canonicalKey}' (per-tick) instead.");
     }
 
     private static CellElevationHydrosphereMode ReadHydrosphereMode(
@@ -456,18 +472,6 @@ internal sealed record WorldCrustRunSpec(
 
     private static double ReadDouble(JsonObject o, string key, double fallback)
         => o.TryGetPropertyValue(key, out var n) ? ToDouble(n, fallback) : fallback;
-
-    private static bool TryReadDouble(JsonObject o, string key, out double value)
-    {
-        if (o.TryGetPropertyValue(key, out var n) && n is JsonValue)
-        {
-            value = ToDouble(n, double.NaN);
-            return !double.IsNaN(value);
-        }
-
-        value = default;
-        return false;
-    }
 
     private static double ToDouble(JsonNode? node, double fallback)
     {

@@ -54,7 +54,7 @@ public sealed class WorldCrustRunSpecTests
             ["options"] = new JsonObject
             {
                 ["frequency"] = 2,
-                ["durationMegaAnnum"] = 3.0,
+                ["canonicalTick"] = 300_000L,
                 ["rotationReferenceTick"] = 11L,
                 ["continentalPlates"] = new JsonArray(2, 4),
             },
@@ -70,6 +70,101 @@ public sealed class WorldCrustRunSpecTests
         Assert.Equal(new[] { 100L, 200L }, spec.SnapshotTicks);
         Assert.Equal(99L, spec.RotationReferenceTick);
         AssertSetEqual(new[] { 2, 4 }, spec.Recipe.ContinentalPlateIds);
+    }
+
+    [Fact]
+    public void FromExecutionPayload_rejects_durationMegaAnnum_alias_loudly()
+    {
+        var payload = new JsonObject { ["durationMegaAnnum"] = 3.0 };
+        var ex = Assert.Throws<ArgumentException>(() => WorldCrustRunSpec.FromExecutionPayload(payload));
+        Assert.Contains("durationMegaAnnum", ex.Message);
+        Assert.Contains("canonicalTick", ex.Message);
+    }
+
+    [Fact]
+    public void FromExecutionPayload_rejects_durationMa_alias_loudly()
+    {
+        var payload = new JsonObject { ["durationMa"] = 3.0 };
+        var ex = Assert.Throws<ArgumentException>(() => WorldCrustRunSpec.FromExecutionPayload(payload));
+        Assert.Contains("durationMa", ex.Message);
+        Assert.Contains("canonicalTick", ex.Message);
+    }
+
+    [Fact]
+    public void FromExecutionPayload_rejects_targetTick_alias_loudly()
+    {
+        var payload = new JsonObject { ["targetTick"] = 300_000L };
+        var ex = Assert.Throws<ArgumentException>(() => WorldCrustRunSpec.FromExecutionPayload(payload));
+        Assert.Contains("targetTick", ex.Message);
+        Assert.Contains("canonicalTick", ex.Message);
+    }
+
+    [Fact]
+    public void FromExecutionPayload_rejects_ticks_alias_loudly()
+    {
+        var payload = new JsonObject { ["ticks"] = 300_000L };
+        var ex = Assert.Throws<ArgumentException>(() => WorldCrustRunSpec.FromExecutionPayload(payload));
+        Assert.Contains("ticks", ex.Message);
+        Assert.Contains("canonicalTick", ex.Message);
+    }
+
+    [Fact]
+    public void FromExecutionPayload_parses_PerTick_rate_keys()
+    {
+        var payload = new JsonObject
+        {
+            ["orogenicPerTick"] = 2.0e-5,
+            ["arcVolcanismPerTick"] = 6.0e-6,
+            ["islandArcVolcanismPerTick"] = 4.0e-6,
+            ["ridgeVolcanismPerTick"] = 5.0e-6,
+        };
+
+        var spec = WorldCrustRunSpec.FromExecutionPayload(payload);
+
+        Assert.Equal(2.0e-5, spec.Rates.OrogenicPerTick, 12);
+        Assert.Equal(6.0e-6, spec.Rates.ArcVolcanismPerTick, 12);
+        Assert.Equal(4.0e-6, spec.Rates.IslandArcVolcanismPerTick, 12);
+        Assert.Equal(5.0e-6, spec.Rates.RidgeVolcanismPerTick, 12);
+    }
+
+    [Fact]
+    public void FromExecutionPayload_rejects_orogenicPerMegaAnnum_alias_loudly()
+    {
+        var payload = new JsonObject { ["orogenicPerMegaAnnum"] = 1.0 };
+        var ex = Assert.Throws<ArgumentException>(() => WorldCrustRunSpec.FromExecutionPayload(payload));
+        Assert.Contains("orogenicPerMegaAnnum", ex.Message);
+        Assert.Contains("orogenicPerTick", ex.Message);
+    }
+
+    [Fact]
+    public void FromExecutionPayload_parses_plates_ratePerTick()
+    {
+        var payload = new JsonObject
+        {
+            ["plates"] = new JsonArray(
+                new JsonObject { ["id"] = 0, ["lat"] = 10.0, ["lon"] = 20.0, ["ratePerTick"] = 1.0e-7 },
+                new JsonObject { ["id"] = 1, ["lat"] = -10.0, ["lon"] = -20.0, ["ratePerTick"] = 0.0 }),
+        };
+
+        var spec = WorldCrustRunSpec.FromExecutionPayload(payload);
+
+        Assert.Equal(2, spec.Plates.Count);
+        Assert.Equal(1.0e-7, spec.Plates[0].Pole.AngularRate, 15);
+        Assert.Equal(0.0, spec.Plates[1].Pole.AngularRate, 15);
+    }
+
+    [Fact]
+    public void FromExecutionPayload_rejects_plates_rate_alias_loudly()
+    {
+        var payload = new JsonObject
+        {
+            ["plates"] = new JsonArray(
+                new JsonObject { ["id"] = 0, ["lat"] = 10.0, ["lon"] = 20.0, ["rate"] = 0.1 }),
+        };
+
+        var ex = Assert.Throws<ArgumentException>(() => WorldCrustRunSpec.FromExecutionPayload(payload));
+        Assert.Contains("rate", ex.Message);
+        Assert.Contains("ratePerTick", ex.Message);
     }
 
     [Fact]

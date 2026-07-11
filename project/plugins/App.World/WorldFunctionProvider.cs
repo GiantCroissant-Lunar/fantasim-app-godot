@@ -410,8 +410,8 @@ public sealed class WorldFunctionProvider : INodeFunctionProvider
             ["ticks"] = canonicalTick,
             ["canonicalTick"] = canonicalTick,
             // D4.1: canonical vocabulary only (ticks + odometer label + anchor rung), never Ma/MegaAnnum.
-            // The anchor rung "ka" is numerically 100_000 ticks == the legacy Ma anchor, so consumers
-            // dividing by ticksPerRung keep the same scale factor.
+            // The anchor rung "ka" is 100,000 canonical ticks (numerically equal to the former 1 Ma anchor
+            // at 100k ticks/Ma), so consumers dividing by ticksPerRung keep the same scale factor.
             ["durationTicks"] = durationTicks,
             ["durationLabel"] = CanonicalTimeLabel.ForTick(durationTicks, UnitConverter.TicksPerMegaAnnum),
             ["timeScale"] = new JsonObject

@@ -85,13 +85,13 @@ public sealed class WorldFunctionProviderTests
     }
 
     [Fact]
-    public async Task InvokeAsync_crust_generate_accepts_duration_mega_annum_and_reports_canonical_tick()
+    public async Task InvokeAsync_crust_generate_accepts_canonical_tick_and_reports_it()
     {
         var provider = new WorldFunctionProvider();
 
         var summary = await provider.InvokeAsync("crust.generate", new JsonObject
         {
-            ["durationMegaAnnum"] = 1.25,
+            ["canonicalTick"] = UnitConverter.MegaAnnumToTickDelta(1.25),
         });
 
         Assert.Equal(UnitConverter.MegaAnnumToTickDelta(1.25), (long)summary["canonicalTick"]!);
@@ -124,8 +124,8 @@ public sealed class WorldFunctionProviderTests
         {
             ["frequency"] = 2,
             ["plates"] = new JsonArray(
-                new JsonObject { ["id"] = 0, ["lat"] = 10.0, ["lon"] = 20.0, ["rate"] = 0.1 },
-                new JsonObject { ["id"] = 1, ["lat"] = -10.0, ["lon"] = -20.0, ["rate"] = 0.05 }),
+                new JsonObject { ["id"] = 0, ["lat"] = 10.0, ["lon"] = 20.0, ["ratePerTick"] = 1.0e-7 },
+                new JsonObject { ["id"] = 1, ["lat"] = -10.0, ["lon"] = -20.0, ["ratePerTick"] = 0.0 }),
         });
 
         Assert.Equal(2, (int)summary["frequency"]!);
