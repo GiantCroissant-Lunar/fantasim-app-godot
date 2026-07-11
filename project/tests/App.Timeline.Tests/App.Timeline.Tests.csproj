@@ -24,5 +24,8 @@
     <Compile Include="..\..\plugins\App.Timeline.Seam\TrackLaneViewModelBuilder.cs" Link="TrackLaneViewModelBuilder.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\FilmstripCacheLedger.cs" Link="FilmstripCacheLedger.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\FilmstripTextureCacheKey.cs" Link="FilmstripTextureCacheKey.cs" />
+    <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelDepthMapper.cs" Link="TunnelDepthMapper.cs" />
+    <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelCorridorLayout.cs" Link="TunnelCorridorLayout.cs" />
+    <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelScrubMapper.cs" Link="TunnelScrubMapper.cs" />
   </ItemGroup>
 </Project>

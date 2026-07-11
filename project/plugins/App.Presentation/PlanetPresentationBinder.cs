@@ -46,6 +46,15 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
     private IDisposable? _generationSubscription;
     private Node3D? _activeRoot;
     private Node3D? _plateSurfaceRoot;
+
+    /// <summary>
+    /// Tunnel slice-1 shared-globe spike seam (vault/plans/2026-07-11-tunnel-slice1-plan.md
+    /// Task 2): read-only access to the SAME planet node tree Stage's own camera already renders,
+    /// so a second Camera3D/SubViewport can view it from a different angle without standing up an
+    /// independent second binder. No other member of this class is exposed this way -- this is
+    /// the ONE new seam the spike adds.
+    /// </summary>
+    internal Node3D? ActiveRoot => _activeRoot;
     private PlateBoundaryFocusRenderer? _boundaryRenderer;
     private BoundarySectionRenderer? _boundarySectionRenderer;
     private PlanetGenerationGraphSource? _graphSource;

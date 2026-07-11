@@ -494,7 +494,7 @@ public partial class TimelineFace
             if (frame is null)
                 continue;
             var textureRect = frame.GetNode<TextureRect>("Texture");
-            _filmstrip.RequestTexture(textureRect, sphere, layerId, slot.Tick, rung, graphRevision);
+            _filmstrip.RequestTexture(new TextureRectFilmstripSink(textureRect), sphere, layerId, slot.Tick, rung, graphRevision);
         }
     }
 

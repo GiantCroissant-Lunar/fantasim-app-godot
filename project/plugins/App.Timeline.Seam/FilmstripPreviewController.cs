@@ -47,7 +47,7 @@ internal sealed class FilmstripPreviewController : IDisposable
     private const int MaxFilmstripTextureCacheEntries = 512;
     private const float TrackHeight = TimelineFilmstrip.CompactTrackHeight;
 
-    internal sealed record PendingFilmstripFrame(int Generation, TextureRect TextureRect);
+    internal sealed record PendingFilmstripFrame(int Generation, IFilmstripFrameSink Sink);
 
     internal sealed record QueuedFilmstripFrame(
         LayerFilmstripPreviewRequest Request,
@@ -112,7 +112,7 @@ internal sealed class FilmstripPreviewController : IDisposable
     }
 
     public void RequestTexture(
-        TextureRect textureRect,
+        IFilmstripFrameSink sink,
         string sphere,
         string layerId,
         long tick,
@@ -135,13 +135,13 @@ internal sealed class FilmstripPreviewController : IDisposable
             && _filmstripTextureCache.TryGetValue(cachedKey, out var cachedTexture)
             && GodotObject.IsInstanceValid(cachedTexture))
         {
-            textureRect.Texture = cachedTexture;
+            sink.SetTexture(cachedTexture);
             return;
         }
 
-        // Hold the TextureRect reference directly: the frame is built BEFORE the track row
+        // Hold the sink reference directly: the frame is built BEFORE the track row
         // enters the tree, so GetPath() errors and NodePath resolution would be impossible here
-        // (windowed gate 2026-07-08). IsInstanceValid + IsInsideTree at apply time is the guard.
+        // (windowed gate 2026-07-08). Sink.IsAlive at apply time is the guard.
         var generation = _filmstripGeneration;
         if (!_filmstripWaiters.TryGetValue(requestKey, out var waiters))
         {
@@ -149,7 +149,7 @@ internal sealed class FilmstripPreviewController : IDisposable
             _filmstripWaiters[requestKey] = waiters;
         }
 
-        waiters.Add(new PendingFilmstripFrame(generation, textureRect));
+        waiters.Add(new PendingFilmstripFrame(generation, sink));
         if (_filmstripActiveKeys.Contains(requestKey) || !_filmstripQueuedKeys.Add(requestKey))
             return;
 
@@ -291,11 +291,10 @@ internal sealed class FilmstripPreviewController : IDisposable
             if (pending.Generation != _filmstripGeneration)
                 continue;
 
-            var textureRect = pending.TextureRect;
-            if (!GodotObject.IsInstanceValid(textureRect) || !textureRect.IsInsideTree())
+            if (!pending.Sink.IsAlive)
                 continue;
 
-            textureRect.Texture = texture;
+            pending.Sink.SetTexture(texture);
         }
     }
 
