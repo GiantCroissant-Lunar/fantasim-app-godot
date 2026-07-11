@@ -109,7 +109,9 @@ public sealed class ScrubRefreshCoordinatorTests
         Assert.Null(log[0]);
     }
 
-    // (e) standard with heavy -> exactly one requestRefresh(null) (unchanged semantics).
+    // (e) standard with heavy -> exactly one requestRefresh(null); standard WITHOUT heavy is a
+    // scrub-state no-op (it fires nothing here; its no-op-ness is pinned by the dedicated tests
+    // below — every refresh apply echoes such a tick, see the lead-fix comment in HandleTick).
     [Fact]
     public void StandardWithHeavyRequestsFullOnly()
     {
@@ -121,6 +123,66 @@ public sealed class ScrubRefreshCoordinatorTests
         sut.HandleTick(160, TimelineTickOrigin.Standard, heavyRefreshRequested: true);
         Assert.Single(log);
         Assert.Null(log[0]);
+    }
+
+    // Standard/no-heavy ticks must NOT wipe scrub state: the pending rest survives and the climb
+    // still runs. In production every refresh's document apply echoes exactly such a tick
+    // (face SeekTo echo, PlanetTimelineController.UpdateFrom -> PushTick) — the 2026-07-11 D8b
+    // gate proved the old cancel-on-standard wiped the rest after each preview's low-rung
+    // refresh, stranding the planet below full resolution.
+    [Fact]
+    public void StandardNoHeavyPreservesPendingRestAndClimb()
+    {
+        var events = new List<int?>();
+        var deferred = new List<Action>();
+        long clock = 0;
+        var sut = new ScrubRefreshCoordinator(
+            new ScrubApplyScheduler(restDelayMs: 300L),
+            requestRefresh: freq => events.Add(freq),
+            deferToMainThread: deferred.Add,
+            nowMs: () => clock,
+            delayAsync: (_, ct) => Task.CompletedTask);
+
+        sut.HandleTick(100, TimelineTickOrigin.ScrubPreview, heavyRefreshRequested: true);
+        Assert.Equal(new int?[] { 2 }, events);
+        events.Clear();
+
+        sut.HandleTick(100, TimelineTickOrigin.Standard, heavyRefreshRequested: false);
+
+        clock = 1000;
+        DrainDeferred(deferred);
+        Assert.Equal(new int?[] { 3, null }, events);
+    }
+
+    // IsScrubActive gates the binder's generation-changed subscription: true from first pending
+    // preview through the end of the climb; false once the climb completes or a heavy standard
+    // tick supersedes the scrub.
+    [Fact]
+    public void IsScrubActiveTracksRestAndClimbLifecycle()
+    {
+        var events = new List<int?>();
+        var deferred = new List<Action>();
+        long clock = 0;
+        var sut = new ScrubRefreshCoordinator(
+            new ScrubApplyScheduler(restDelayMs: 300L),
+            requestRefresh: freq => events.Add(freq),
+            deferToMainThread: deferred.Add,
+            nowMs: () => clock,
+            delayAsync: (_, ct) => Task.CompletedTask);
+
+        Assert.False(sut.IsScrubActive);
+
+        sut.HandleTick(100, TimelineTickOrigin.ScrubPreview, heavyRefreshRequested: true);
+        Assert.True(sut.IsScrubActive);
+
+        clock = 1000;
+        DrainDeferred(deferred);
+        Assert.False(sut.IsScrubActive); // climb completed naturally
+
+        sut.HandleTick(200, TimelineTickOrigin.ScrubPreview, heavyRefreshRequested: true);
+        Assert.True(sut.IsScrubActive);
+        sut.HandleTick(210, TimelineTickOrigin.Standard, heavyRefreshRequested: true);
+        Assert.False(sut.IsScrubActive); // heavy standard supersedes the scrub
     }
 
     // (f) dispose mid-climb -> no further callbacks.
@@ -147,13 +209,13 @@ public sealed class ScrubRefreshCoordinatorTests
 
     // Regression pin for the refresh-echo feedback loop (lead review 2026-07-11): in production,
     // every refresh's document apply echoes a Standard/no-heavy tick at the same playhead
-    // (RefreshPresentationForRegime -> UpdateFrom -> PushTick). The binder SUPPRESSES that echo
-    // before it reaches HandleTick (_applyingRefreshedDocument gate) — if it ever leaked through,
-    // the echo's Cancel() would wipe the pending rest after each preview's low-rung refresh and
-    // the climb would never start. This test documents the failure shape the gate prevents: an
-    // echo-shaped re-entrant callback DOES strand the ladder at the low rung.
+    // (face SeekTo echo, RefreshPresentationForRegime -> UpdateFrom -> PushTick). With the
+    // no-op-on-benign-standard policy the echo is harmless AT the coordinator: the ladder runs
+    // to completion even when every refresh re-enters HandleTick. (Also pins that re-entrant
+    // calls inside a rung callback must not crash — the climb token is captured before the
+    // callback runs; an earlier draft threw ObjectDisposedException here.)
     [Fact]
-    public void UnsuppressedRefreshEchoWouldStrandLadderAtLowRung()
+    public void RefreshEchoDoesNotStrandLadder()
     {
         var events = new List<int?>();
         var deferred = new List<Action>();
@@ -173,15 +235,12 @@ public sealed class ScrubRefreshCoordinatorTests
 
         sut.HandleTick(100, TimelineTickOrigin.ScrubPreview, heavyRefreshRequested: true);
         Assert.Equal(new int?[] { 2 }, events);
+        events.Clear();
 
         clock = 1000;
         DrainDeferred(deferred);
-        // Each step's echo kills what follows it: the Mid step's echo cancels the climb, so the
-        // FULL refresh (null) never arrives — the ladder strands below full resolution. The
-        // binder's _applyingRefreshedDocument gate is load-bearing. (Also pins that re-entrant
-        // cancellation inside the Mid callback must not crash — the climb token is captured
-        // before the callback runs.)
-        Assert.DoesNotContain(null, events);
+        // The climb completes despite every step's echo: Mid then FULL both arrive.
+        Assert.Equal(new int?[] { 3, null }, events);
     }
 
     // Drains the deferred-action queue, handling new actions enqueued during drain (the climb

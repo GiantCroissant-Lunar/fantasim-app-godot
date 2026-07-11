@@ -22,6 +22,7 @@ internal sealed class ScrubRefreshCoordinator : IDisposable
     private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
     private CancellationTokenSource? _restCts;
     private CancellationTokenSource? _climbCts;
+    private bool _climbRunning;
     private bool _disposed;
 
     public ScrubRefreshCoordinator(
@@ -40,26 +41,42 @@ internal sealed class ScrubRefreshCoordinator : IDisposable
 
     public void HandleTick(long tick, TimelineTickOrigin origin, bool heavyRefreshRequested)
     {
-        // Any new tick cancels an in-progress climb (D8b: cancel the climb when a new scrub starts).
-        CancelClimb();
-
         switch (origin)
         {
             case TimelineTickOrigin.ScrubPreview:
+                // A new scrub supersedes an in-progress climb (D8b directive 2).
+                CancelClimb();
                 ScheduleScrubRestRefresh(tick, heavyRefreshRequested);
                 break;
             case TimelineTickOrigin.ScrubCommit:
+                CancelClimb();
                 var hadPending = FlushScrubRestRefresh(tick);
                 if (hadPending || heavyRefreshRequested)
                     _requestRefresh(null);
                 break;
             default:
-                Cancel();
+                // Standard + heavy = genuinely new content: supersede all scrub state and go
+                // straight to full. Standard + NO heavy is a scrub-state NO-OP: every refresh's
+                // document apply echoes such a tick at the same playhead (face SeekTo echo,
+                // PlanetTimelineController.UpdateFrom -> PushTick), and cancelling here wiped
+                // the pending rest after each preview's low-rung refresh — the climb never ran
+                // and the planet stranded below full resolution (D8b gate, 2026-07-11).
                 if (heavyRefreshRequested)
+                {
+                    Cancel();
                     _requestRefresh(null);
+                }
                 break;
         }
     }
+
+    /// <summary>
+    /// True while a scrub interaction owns the refresh pipeline: a rest flush is pending or the
+    /// rung climb is running. The binder's generation-changed subscription checks this so that
+    /// generation completions CAUSED BY a scrub's own low-rung fetch do not chase a
+    /// full-frequency refresh mid-scrub — the climb re-binds at full when the hand rests.
+    /// </summary>
+    internal bool IsScrubActive => _scrubApplyScheduler.HasPending || _climbRunning;
 
     private void ScheduleScrubRestRefresh(long tick, bool heavyRefreshRequested)
     {
@@ -107,6 +124,7 @@ internal sealed class ScrubRefreshCoordinator : IDisposable
         _climbCts?.Dispose();
         var climbCts = new CancellationTokenSource();
         _climbCts = climbCts;
+        _climbRunning = true;
         // Capture the token BEFORE invoking the callback: a re-entrant HandleTick inside
         // _requestRefresh (any consumer feedback) can CancelClimb() and dispose climbCts, after
         // which climbCts.Token throws ObjectDisposedException. A captured token stays readable.
@@ -145,6 +163,15 @@ internal sealed class ScrubRefreshCoordinator : IDisposable
                 _requestRefresh(capturedRung);
             });
         }
+
+        // Natural completion: drop the scrub-active claim AFTER the final (full) refresh request
+        // has been queued — deferred FIFO keeps IsScrubActive true until full is in flight. A
+        // cancelled climb clears the flag in CancelClimb instead (this action self-gates).
+        _deferToMainThread(() =>
+        {
+            if (!cancellationToken.IsCancellationRequested)
+                _climbRunning = false;
+        });
     }
 
     private bool FlushScrubRestRefresh(long tick)
@@ -163,6 +190,7 @@ internal sealed class ScrubRefreshCoordinator : IDisposable
         _climbCts?.Cancel();
         _climbCts?.Dispose();
         _climbCts = null;
+        _climbRunning = false;
     }
 
     public void Cancel()

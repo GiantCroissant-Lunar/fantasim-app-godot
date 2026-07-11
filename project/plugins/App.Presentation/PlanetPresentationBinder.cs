@@ -234,8 +234,15 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
             // completion — overwriting the playhead's terrain and (because Rebind also resets
             // snapshot tracking) leaving the crossing detector unable to recover: the
             // 105M-vs-119M identical-terrain bug. Rebind stays for the initial mount only.
+            // D8b: while a scrub owns the pipeline, generation completions are the scrub's OWN
+            // low-rung fetches — chasing them with a no-override (full-frequency) refresh both
+            // wastes a full generation mid-drag and overwrites the pending rung stamp. The rest
+            // climb re-binds at full when the hand rests.
             if (_currentDocument is not null)
-                Callable.From(() => ScheduleRegimeRefresh()).CallDeferred();
+            {
+                if (!_scrubRefresh.IsScrubActive)
+                    Callable.From(() => ScheduleRegimeRefresh()).CallDeferred();
+            }
             else
                 Callable.From(Rebind).CallDeferred();
         });

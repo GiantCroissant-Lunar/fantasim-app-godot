@@ -257,9 +257,13 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
                 var payload = ParseSeekPayload(payloadJson);
                 var tick = ParseSeekTick(payload, controller.MaxTick);
                 var origin = ParseSeekOrigin(payload);
+                // D8b: the origin-carrying push goes FIRST and UNCONDITIONALLY. SeekAsync's face
+                // echo re-applies the tick as a Standard/no-heavy tick (a scrub-policy no-op),
+                // but when it ran first it consumed the content transition as Standard and the
+                // old `controller.Tick != tick` guard skipped the origin push entirely — remote
+                // scrub origins never reached the presentation (D8b gate, 2026-07-11).
+                controller.PushTick(tick, origin);
                 await timelineService.SeekAsync(tick, cancellationToken).ConfigureAwait(false);
-                if (controller.Tick != tick)
-                    controller.PushTick(tick, origin);
                 // JsonObject, NOT JsonSerializer.Serialize(anonymous): anonymous types compile
                 // into this collectible assembly, and the resident serializer's per-Type cache
                 // roots their LoaderAllocator — the ALC never collects (gcroot-proven 2026-07-08).
