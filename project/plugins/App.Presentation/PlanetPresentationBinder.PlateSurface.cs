@@ -136,6 +136,9 @@ internal sealed partial class PlanetPresentationBinder
         };
         _boundContinentsTick = tick;
         RebuildPlateSurface();
+        // In-place content mutation: the bound stamp no longer describes the scene, so the next
+        // regime refresh must re-bind rather than dedupe against a stale identity.
+        _boundSurfaceStamp = null;
         _log.LogDebug(
             "RefreshContinentsMembership(tick={Tick}) refreshed: snapshotCells={SnapshotCells}, fractionCells={FractionCells}.",
             tick, snapshot.CellCount, fractions.Count);

@@ -57,6 +57,7 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
     private int? _subscribedWorldHash;
     private readonly PlanetPresentationReloadGate _worldRuntimeReload = new();
     private string? _boundRegimeId;
+    private PlanetSurfaceBindStamp? _boundSurfaceStamp;
     private bool _regimeRefreshPending;
     private int? _pendingFrequencyOverride;
     private bool _applyingRefreshedDocument;
@@ -295,6 +296,8 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
         body.AddChild(_atmosphereRim);
 
         _currentDocument = document;
+        _boundSurfaceStamp = PlanetSurfaceBindStamp.From(
+            document, _boundRegimeId, _timeline.ActiveLayers, _plateViewOverride);
 
         if (document.GlobeSnapshot is not null)
         {
@@ -548,7 +551,26 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
         {
             _timeline.UpdateFrom(document);
             EnsureNodeGraphView(document);
-            BindDocument(document);
+            // G34 double-full-bind dedupe: a generation-completion chase re-fetches at the same
+            // playhead and used to re-bind an identical surface. Timeline metadata (UpdateFrom,
+            // snapshot-lane states) is applied above either way; the expensive mesh re-bind is
+            // skipped only when the surface content stamp is provably unchanged, so new-content
+            // completions (the 105M identical-terrain class) still bind.
+            var regimeId = _timeline.GeosphereSchedule.RegimeAt(_timeline.Tick)?.RegimeId;
+            var candidate = PlanetSurfaceBindStamp.From(
+                document, regimeId, _timeline.ActiveLayers, _plateViewOverride);
+            if (candidate == _boundSurfaceStamp
+                && _activeRoot is not null
+                && GodotObject.IsInstanceValid(_activeRoot))
+            {
+                _log.LogInformation(
+                    "Planet surface re-bind skipped at t={Tick}: content stamp unchanged (generation-completion echo).",
+                    _timeline.Tick);
+            }
+            else
+            {
+                BindDocument(document);
+            }
         }
         finally
         {
@@ -698,6 +720,7 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
         }
 
         _activeRoot = null;
+        _boundSurfaceStamp = null;
         _plateSurfaceRoot = null;
         _plateSurfaces = null;
         if (_boundaryRenderer is not null && GodotObject.IsInstanceValid(_boundaryRenderer))
