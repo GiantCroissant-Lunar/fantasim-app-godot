@@ -1,0 +1,32 @@
+      Planet regime transition magma-ocean -> mobile-plate at t=100000000: refreshing presentation.
+      Crust generation triggered: tick=100,000,000, canonicalTick=100,000,000, window=20, revision=1, snapshots=5
+      Crust snapshot transition <none> -> 100,000,000 at t=100000000: refreshing presentation.
+      Planet plate surface bound: view=World, subdivision=adaptive, plates=10, triangles=9864, meshVertices=29592, scale=3.72677996249965E-05, trueScale=1.5696123057604772E-07, amplification=237.4331514108527x, frequency=4.
+      Planet plate surface bound: view=World, subdivision=adaptive, plates=10, triangles=9864, meshVertices=29592, scale=3.72677996249965E-05, trueScale=1.5696123057604772E-07, amplification=237.4331514108527x, frequency=4.
+      Crust snapshot transition 100,000,000 -> 200,000,000 at t=200000000: refreshing presentation.
+      Crust generation triggered: tick=200,000,000, canonicalTick=200,000,000, window=40, revision=1, snapshots=5
+      Planet plate surface bound: view=World, subdivision=adaptive, plates=10, triangles=1474, meshVertices=4422, scale=3.72677996249965E-05, trueScale=1.5696123057604772E-07, amplification=237.4331514108527x, frequency=2.
+      Crust snapshot transition 200,000,000 -> 300,000,000 at t=300000000: refreshing presentation.
+      Crust generation triggered: tick=300,000,000, canonicalTick=300,000,000, window=60, revision=1, snapshots=5
+      Planet plate surface bound: view=World, subdivision=adaptive, plates=10, triangles=1422, meshVertices=4266, scale=3.72677996249965E-05, trueScale=1.5696123057604772E-07, amplification=237.4331514108527x, frequency=2.
+      Crust snapshot transition 300,000,000 -> 400,000,000 at t=400000000: refreshing presentation.
+      Crust generation triggered: tick=400,000,000, canonicalTick=400,000,000, window=80, revision=1, snapshots=5
+      Planet plate surface bound: view=World, subdivision=adaptive, plates=10, triangles=1394, meshVertices=4182, scale=3.72677996249965E-05, trueScale=1.5696123057604772E-07, amplification=237.4331514108527x, frequency=2.
+      Crust snapshot transition 400,000,000 -> 500,000,000 at t=500000000: refreshing presentation.
+      Crust generation triggered: tick=500,000,000, canonicalTick=500,000,000, window=100, revision=1, snapshots=5
+      Planet plate surface bound: view=World, subdivision=adaptive, plates=10, triangles=1514, meshVertices=4542, scale=3.72677996249965E-05, trueScale=1.5696123057604772E-07, amplification=237.4331514108527x, frequency=2.
+      Crust snapshot transition 500,000,000 -> 600,000,000 at t=600000000: refreshing presentation.
+      Crust generation triggered: tick=600,000,000, canonicalTick=600,000,000, window=120, revision=1, snapshots=5
+      Planet plate surface bound: view=World, subdivision=adaptive, plates=10, triangles=1320, meshVertices=3960, scale=3.72677996249965E-05, trueScale=1.5696123057604772E-07, amplification=237.4331514108527x, frequency=2.
+      Planet plate surface bound: view=World, subdivision=adaptive, plates=10, triangles=4590, meshVertices=13770, scale=3.72677996249965E-05, trueScale=1.5696123057604772E-07, amplification=237.4331514108527x, frequency=3.
+      Planet plate surface bound: view=World, subdivision=adaptive, plates=10, triangles=12290, meshVertices=36870, scale=3.72677996249965E-05, trueScale=1.5696123057604772E-07, amplification=237.4331514108527x, frequency=4.
+      Crust snapshot transition 600,000,000 -> 300,000,000 at t=300000000: refreshing presentation.
+      Planet plate surface bound: view=World, subdivision=adaptive, plates=10, triangles=1422, meshVertices=4266, scale=3.72677996249965E-05, trueScale=1.5696123057604772E-07, amplification=237.4331514108527x, frequency=2.
+      Crust snapshot transition 300,000,000 -> 400,000,000 at t=400000000: refreshing presentation.
+      Planet plate surface bound: view=World, subdivision=adaptive, plates=10, triangles=1394, meshVertices=4182, scale=3.72677996249965E-05, trueScale=1.5696123057604772E-07, amplification=237.4331514108527x, frequency=2.
+      Crust snapshot transition 400,000,000 -> 500,000,000 at t=500000000: refreshing presentation.
+      Planet plate surface bound: view=World, subdivision=adaptive, plates=10, triangles=1514, meshVertices=4542, scale=3.72677996249965E-05, trueScale=1.5696123057604772E-07, amplification=237.4331514108527x, frequency=2.
+      Crust snapshot transition 500,000,000 -> 650,000,000 at t=650000000: refreshing presentation.
+      Crust generation triggered: tick=650,000,000, canonicalTick=650,000,000, window=130, revision=1, snapshots=5
+      Planet plate surface bound: view=World, subdivision=adaptive, plates=10, triangles=12206, meshVertices=36618, scale=3.72677996249965E-05, trueScale=1.5696123057604772E-07, amplification=237.4331514108527x, frequency=4.
+      Planet plate surface bound: view=World, subdivision=adaptive, plates=10, triangles=12206, meshVertices=36618, scale=3.72677996249965E-05, trueScale=1.5696123057604772E-07, amplification=237.4331514108527x, frequency=4.
