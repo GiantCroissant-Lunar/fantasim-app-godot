@@ -31,10 +31,16 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
     private const int FilmstripFramesPerCorridor = 4;
     private const float FineRailCenterZ = -TunnelDepth / 2.0f;
     private const float FineRailHalfLength = 2.5f;
-    private const float TunnelCameraFovDeg = 55.0f;
+    private const float TunnelCameraFovDeg = TunnelCameraFraming.FieldOfViewDegrees;
 
-    private static readonly Vector3 TunnelCameraLocalPosition = new(3.5f, 2.0f, 22.0f);
-    private static readonly Vector3 TunnelCameraLocalTarget = new(0.0f, -1.0f, -7.0f);
+    private static readonly Vector3 TunnelCameraLocalPosition = new(
+        TunnelCameraFraming.LocalPosition.X,
+        TunnelCameraFraming.LocalPosition.Y,
+        TunnelCameraFraming.LocalPosition.Z);
+    private static readonly Vector3 TunnelCameraLocalTarget = new(
+        TunnelCameraFraming.LocalTarget.X,
+        TunnelCameraFraming.LocalTarget.Y,
+        TunnelCameraFraming.LocalTarget.Z);
 
     private readonly IRegistry _registry;
     private readonly IBundleSceneRegistry _sceneRegistry;
