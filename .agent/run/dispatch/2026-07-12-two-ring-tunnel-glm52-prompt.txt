@@ -1,0 +1,77 @@
+TASK: Implement the approved rotating 3D tunnel/two-ring prototype through the deterministic code and test gates.
+
+REPOSITORY
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot
+
+MODEL/ROLE
+You are the implementing agent. The lead session will independently review your commits/diff and owns real OS-mouse operation, exported screenshot judgment, and the live old-ALC gate.
+
+READ FIRST — DO NOT SKIP
+1. AGENTS.md and every rule/skill it routes you to for this work, especially commit-often, source-driven-development, test-driven-development, bundle-runtime-verification, and no fake production code.
+2. vault/specs/2026-07-12-rotating-tunnel-two-ring-prototype-design.md (APPROVED product contract).
+3. vault/plans/2026-07-12-rotating-tunnel-two-ring-prototype-plan.md (exact executable plan; Tasks 1–6 are your implementation scope).
+4. Current files named in the plan. A .codegraph directory exists: use `codegraph explore`/`codegraph node` before rg or direct reading when locating/understanding code.
+
+MANDATORY COLD AUDIT BEFORE EDITING
+Challenge the plan against current source for:
+- clockwise visual polarity versus focus-index polarity;
+- one AwayFromZero round before final outer clamp, including overflow;
+- inactive inner-ring ownership without globe orbit;
+- replaceable PlanetPresentation root versus persistent TunnelMount lifetime;
+- oblique ray/plane/cylinder hit selection;
+- old-ALC pins from delegates/providers/deferred callbacks;
+- fixed one-kb axial scale near MaxTick (valid content clips; it must not stretch to the throat);
+- real filmstrip frame ticks and bounded request lifetime.
+
+If you find a blocking contradiction, STOP without production edits and report it in your final output. If no blocker remains, state the audit conclusion in your output and continue immediately.
+
+IMPLEMENTATION SCOPE
+Execute plan Tasks 1, 1B, 2, 2B, 3, 4, 5, and 6 in order, strict RED -> GREEN:
+- write each named behavioral test first;
+- run the focused test and observe the intended failure;
+- implement the minimum production code;
+- rerun to green;
+- make the task's Conventional Commit before moving on.
+
+The approved/plan-pinned architecture is not optional:
+- exactly two physical mouth rings: outer coarse `kb` ring and one focused-track inner ring;
+- five unique real registry tracks around bottom-center focus; never fabricate tracks/rungs/frames;
+- wall drag rotates a persistent corridor root during transient motion, then rebuilds once after snap;
+- corridors are genuine depth-tested cylindrical sectors with non-zero Z extent;
+- TunnelMount stays under Stage Environment and aligns its local throat to the current real PlanetBody through an execution-time provider; do not parent it under the replaceable planet root and do not create a second globe;
+- outer motion uses TimelineScrubCoalescer and ConsumeFrame; release commits the latest angle exactly once;
+- inner motion is presentation-only and has no PushTick path;
+- ray and branch-cut math use the new tested pure seam helpers;
+- tick changes reposition axial content, recompute activity/inner binding, and reset fine preview without per-motion request storms;
+- managed callbacks/providers are severed synchronously before deferred Godot cleanup;
+- structured logs include the exact evidence fields named in the plan;
+- current production descriptors are honestly all `ka` unless real source data says otherwise.
+
+BOUNDARIES
+- Do not change the approved spec or implementation plan.
+- Do not edit AGENT-SUMMARY.md or create final evidence; the lead does that after the real runtime gate.
+- Do not launch/control the windowed app, do not perform screenshot QA, and do not kill any existing exported process.
+- Do not add demo/smoke/fake production assets or services.
+- Do not push. Local task commits are required.
+- Preserve unrelated user changes if any appear.
+
+DETERMINISTIC VERIFICATION IN YOUR SCOPE
+Run focused commands at each RED/GREEN checkpoint exactly as the plan states. At the end run:
+
+task restore
+dotnet test project/tests/App.Timeline.Tests/App.Timeline.Tests.csproj --filter 'FullyQualifiedName~Tunnel|FullyQualifiedName~TimelineScrubCoalescer'
+dotnet test project/tests/App.Presentation.Tests/App.Presentation.Tests.csproj
+dotnet test project/tests/App.Camera.Tests/App.Camera.Tests.csproj
+task test
+task bundle:stagetool:test
+
+Do not substitute raw export/build commands. Do not run the full exported/windowed gate; the lead will run the UnifyBuild-backed export after reviewing your diff.
+
+FINAL OUTPUT
+Report:
+- cold-audit verdict and any non-blocking plan correction;
+- commits created;
+- exact tests/commands and pass/fail totals;
+- files changed/deleted/created;
+- remaining compile/runtime uncertainty for the lead;
+- `git status --short` and whether the worktree is clean.
