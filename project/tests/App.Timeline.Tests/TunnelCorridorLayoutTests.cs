@@ -8,138 +8,266 @@ using Xunit;
 namespace App.Timeline.Tests;
 
 /// <summary>
-/// Headless coverage for <see cref="TunnelCorridorLayout"/> (tunnel slice-1 Task 3): the pure
-/// angular-wedge layout over <see cref="TrackLaneViewModelBuilder"/>'s existing output, plus the
-/// FIRST real consumer of <see cref="LayerTrackTimeDomain.Rung"/> (verified unconsumed elsewhere
-/// in the codebase -- see vault/plans/2026-07-11-tunnel-slice1-plan.md Grounding facts). No
-/// Godot types involved.
+/// Headless coverage for the two-ring prototype's five-slot carousel and bottom-center focus
+/// (vault/plans/2026-07-12-rotating-tunnel-two-ring-prototype-plan.md Task 2). Pure Godot-free:
+/// registry-source selection (drop archived), cyclic focus normalization, the focus-0/-1/+1/-2/+2
+/// window with (SphereId, LayerId) dedup, 30deg slot pitch, 15deg symmetric snap, and the retained
+/// rung-resolution path.
 /// </summary>
 public sealed class TunnelCorridorLayoutTests
 {
     private static LayerTrackDescriptor Descriptor(
         string sphereId,
         string layerId,
-        string contentType = "filmstrip") => new(
+        string state = LayerTrackStates.Declared) => new(
         SphereId: sphereId,
         LayerId: layerId,
         StreamId: new LayerTrackStreamId("main", "default", "L0", "world", "default"),
         DisplayName: layerId,
-        State: LayerTrackStates.Declared,
+        State: state,
         TimeDomain: new LayerTrackTimeDomain(0L, null, "ka"),
-        Content: new LayerTrackContent(contentType),
+        Content: new LayerTrackContent("filmstrip"),
         Capabilities: new[] { "scrub", "toggle" },
         SourceRef: layerId);
 
-    private static TrackRowViewModel Row(
-        string sphereId,
-        string layerId,
-        TrackContentPresenterKind presenterKind = TrackContentPresenterKind.Filmstrip,
-        bool isDimmed = false) => new(
-        Descriptor(sphereId, layerId, presenterKind == TrackContentPresenterKind.Graph ? "graph" : "filmstrip"),
-        presenterKind,
-        isDimmed);
+    private static IReadOnlyList<LayerTrackDescriptor> Tracks(params string[] layerIds)
+        => layerIds.Select((id, i) => Descriptor("geosphere", id)).ToList();
 
-    // ---- BuildWedges ----
+    private static LayerTrackRegistrySnapshot Snapshot(params LayerTrackDescriptor[] tracks)
+        => new(Revision: 1, Tracks: tracks);
+
+    // ---- SelectSourceTracks ----
 
     [Fact]
-    public void BuildWedges_OneLaneOneTrack_SpansFull360StartingAtZero()
+    public void SelectSourceTracks_DropsOnlyArchived_PreservesOrder()
     {
-        var lanes = new[]
+        var a = Descriptor("geosphere", "a", LayerTrackStates.Declared);
+        var b = Descriptor("geosphere", "b", LayerTrackStates.Archived);
+        var c = Descriptor("atmosphere", "c", LayerTrackStates.Discovered);
+
+        var source = TunnelCorridorLayout.SelectSourceTracks(Snapshot(a, b, c));
+
+        Assert.Equal(new[] { "a", "c" }, source.Select(t => t.LayerId));
+    }
+
+    [Fact]
+    public void SelectSourceTracks_EmptySnapshot_ReturnsEmpty()
+    {
+        Assert.Empty(TunnelCorridorLayout.SelectSourceTracks(Snapshot()));
+    }
+
+    // ---- InitialFocusIndex / NormalizeFocusIndex ----
+
+    [Theory]
+    [InlineData(0, -1)]
+    [InlineData(1, 0)]
+    [InlineData(5, 0)]
+    public void InitialFocusIndex_EmptyIsMinusOne_NonEmptyIsZero(int count, int expected)
+    {
+        Assert.Equal(expected, TunnelCorridorLayout.InitialFocusIndex(count));
+    }
+
+    [Fact]
+    public void NormalizeFocusIndex_WrapsCyclically()
+    {
+        Assert.Equal(0, TunnelCorridorLayout.NormalizeFocusIndex(0, 3));
+        Assert.Equal(0, TunnelCorridorLayout.NormalizeFocusIndex(3, 3));
+        Assert.Equal(2, TunnelCorridorLayout.NormalizeFocusIndex(-1, 3));
+        Assert.Equal(1, TunnelCorridorLayout.NormalizeFocusIndex(7, 3));
+        Assert.Equal(0, TunnelCorridorLayout.NormalizeFocusIndex(-3, 3));
+    }
+
+    [Fact]
+    public void NormalizeFocusIndex_ZeroOrNegativeCount_ReturnsMinusOne()
+    {
+        Assert.Equal(-1, TunnelCorridorLayout.NormalizeFocusIndex(5, 0));
+        Assert.Equal(-1, TunnelCorridorLayout.NormalizeFocusIndex(5, -1));
+    }
+
+    // ---- ResolveFocusedTrack ----
+
+    [Fact]
+    public void ResolveFocusedTrack_ReturnsDescriptor_OrNullOrEmpty()
+    {
+        var tracks = Tracks("a", "b", "c");
+
+        Assert.Equal("b", TunnelCorridorLayout.ResolveFocusedTrack(tracks, 1)?.LayerId);
+        Assert.Null(TunnelCorridorLayout.ResolveFocusedTrack(tracks, -1));
+        Assert.Null(TunnelCorridorLayout.ResolveFocusedTrack(System.Array.Empty<LayerTrackDescriptor>(), 0));
+    }
+
+    // ---- BuildFocusedWindow: N = 0..6 slot sets ----
+
+    [Fact]
+    public void BuildFocusedWindow_N0_ReturnsEmpty()
+    {
+        Assert.Empty(TunnelCorridorLayout.BuildFocusedWindow(System.Array.Empty<LayerTrackDescriptor>(), -1));
+    }
+
+    [Fact]
+    public void BuildFocusedWindow_N1_SingleFocusedSlot()
+    {
+        var slots = TunnelCorridorLayout.BuildFocusedWindow(Tracks("a"), 0);
+
+        var slot = Assert.Single(slots);
+        Assert.Equal(0, slot.RelativeSlot);
+        Assert.True(slot.IsFocused);
+        Assert.Equal("a", slot.Descriptor.LayerId);
+    }
+
+    [Fact]
+    public void BuildFocusedWindow_N2_OccupiesMinusOneAndZero()
+    {
+        var slots = TunnelCorridorLayout.BuildFocusedWindow(Tracks("a", "b"), 0);
+
+        Assert.Equal(new[] { -1, 0 }, slots.Select(s => s.RelativeSlot));
+        Assert.Equal("b", slots.Single(s => s.RelativeSlot == -1).Descriptor.LayerId);
+        Assert.Equal("a", slots.Single(s => s.RelativeSlot == 0).Descriptor.LayerId);
+    }
+
+    [Fact]
+    public void BuildFocusedWindow_N3_OccupiesMinusOneZeroPlusOne()
+    {
+        var slots = TunnelCorridorLayout.BuildFocusedWindow(Tracks("a", "b", "c"), 0);
+
+        Assert.Equal(new[] { -1, 0, 1 }, slots.Select(s => s.RelativeSlot));
+        Assert.Equal("c", slots.Single(s => s.RelativeSlot == -1).Descriptor.LayerId);
+        Assert.Equal("a", slots.Single(s => s.RelativeSlot == 0).Descriptor.LayerId);
+        Assert.Equal("b", slots.Single(s => s.RelativeSlot == 1).Descriptor.LayerId);
+    }
+
+    [Fact]
+    public void BuildFocusedWindow_N4_OccupiesMinusTwoMinusOneZeroPlusOne()
+    {
+        var slots = TunnelCorridorLayout.BuildFocusedWindow(Tracks("a", "b", "c", "d"), 0);
+
+        Assert.Equal(new[] { -2, -1, 0, 1 }, slots.Select(s => s.RelativeSlot));
+    }
+
+    [Fact]
+    public void BuildFocusedWindow_N5_OccupiesAllFiveSlots()
+    {
+        var slots = TunnelCorridorLayout.BuildFocusedWindow(Tracks("a", "b", "c", "d", "e"), 0);
+
+        Assert.Equal(new[] { -2, -1, 0, 1, 2 }, slots.Select(s => s.RelativeSlot));
+        Assert.Equal("a", slots.Single(s => s.RelativeSlot == 0).Descriptor.LayerId);
+    }
+
+    [Fact]
+    public void BuildFocusedWindow_N6_StillFiveUniqueSlotsAroundFocus()
+    {
+        var slots = TunnelCorridorLayout.BuildFocusedWindow(Tracks("a", "b", "c", "d", "e", "f"), 0);
+
+        Assert.Equal(5, slots.Count);
+        Assert.Equal(new[] { -2, -1, 0, 1, 2 }, slots.Select(s => s.RelativeSlot));
+        var identities = slots.Select(s => (s.Descriptor.SphereId, s.Descriptor.LayerId)).ToList();
+        Assert.Equal(identities.Distinct().Count(), identities.Count);
+    }
+
+    // ---- uniqueness / stable identities ----
+
+    [Fact]
+    public void BuildFocusedWindow_DeduplicatesBySphereIdLayerId()
+    {
+        // Two tracks share (geosphere, dup) in different slots -> only the first occurrence mounts.
+        var tracks = new[]
         {
-            new TrackLaneViewModel("geosphere", new[] { Row("geosphere", "geosphere.crust") }),
+            Descriptor("geosphere", "dup"),
+            Descriptor("atmosphere", "x"),
+            Descriptor("geosphere", "dup"),
         };
 
-        var wedges = TunnelCorridorLayout.BuildWedges(lanes);
+        var slots = TunnelCorridorLayout.BuildFocusedWindow(tracks, 0);
 
-        var wedge = Assert.Single(wedges);
-        Assert.Equal("geosphere", wedge.SphereId);
-        Assert.Equal("geosphere.crust", wedge.LayerId);
-        Assert.Equal(0.0, wedge.StartAngleDeg, precision: 6);
-        Assert.Equal(360.0, wedge.SpanAngleDeg, precision: 6);
+        var identities = slots.Select(s => (s.Descriptor.SphereId, s.Descriptor.LayerId)).ToList();
+        Assert.Equal(identities.Distinct().Count(), identities.Count);
+    }
+
+    // ---- 30deg slot pitch and +30deg visual polarity ----
+
+    [Fact]
+    public void BuildFocusedWindow_SlotCentersAreThirtyDegreesApart_AtBottomFocus()
+    {
+        var slots = TunnelCorridorLayout.BuildFocusedWindow(Tracks("a", "b", "c", "d", "e"), 0);
+
+        // accumulated = 0: CenterAngle = -90 + relativeSlot*30.
+        Assert.Equal(-90.0 - 60.0, slots.Single(s => s.RelativeSlot == -2).CenterAngleDegrees, precision: 6);
+        Assert.Equal(-90.0, slots.Single(s => s.RelativeSlot == 0).CenterAngleDegrees, precision: 6);
+        Assert.Equal(-90.0 + 60.0, slots.Single(s => s.RelativeSlot == 2).CenterAngleDegrees, precision: 6);
     }
 
     [Fact]
-    public void BuildWedges_TwoLanesOneTrackEach_SplitsIntoTwo180DegSectorsInBuildLanesOrder()
+    public void BuildFocusedWindow_PositiveAccumulatedShiftsNextTrackTowardBottomFocus()
     {
-        var lanes = new[]
-        {
-            new TrackLaneViewModel("atmosphere", new[] { Row("atmosphere", "atmosphere.bulk") }),
-            new TrackLaneViewModel("geosphere", new[] { Row("geosphere", "geosphere.crust") }),
-        };
+        // accumulated = +30: the +1 track's center moves to -90 (bottom), proving clockwise advances
+        // focus visually before the index advances on snap.
+        var slots = TunnelCorridorLayout.BuildFocusedWindow(Tracks("a", "b", "c", "d", "e"), 0, accumulatedDegrees: 30.0);
 
-        var wedges = TunnelCorridorLayout.BuildWedges(lanes);
+        Assert.Equal(-90.0, slots.Single(s => s.RelativeSlot == 1).CenterAngleDegrees, precision: 6);
+    }
 
-        Assert.Equal(2, wedges.Count);
-        Assert.Equal("atmosphere", wedges[0].SphereId);
-        Assert.Equal(0.0, wedges[0].StartAngleDeg, precision: 6);
-        Assert.Equal(180.0, wedges[0].SpanAngleDeg, precision: 6);
-        Assert.Equal("geosphere", wedges[1].SphereId);
-        Assert.Equal(180.0, wedges[1].StartAngleDeg, precision: 6);
-        Assert.Equal(180.0, wedges[1].SpanAngleDeg, precision: 6);
+    // ---- SnapFocus: 15deg threshold and multi-step drags ----
+
+    [Fact]
+    public void SnapFocus_BelowThreshold_StaysPut()
+    {
+        var snap = TunnelCorridorLayout.SnapFocus(0, 5, accumulatedDegrees: 14.9);
+
+        Assert.Equal(0L, snap.StepDelta);
+        Assert.Equal(0, snap.FocusIndex);
+        Assert.Equal(0.0, snap.SnappedAngleDegrees, precision: 6);
     }
 
     [Fact]
-    public void BuildWedges_OneLaneThreeTracks_SplitsFullSectorIntoThreeContiguous120DegWedges()
+    public void SnapFocus_AtThreshold_AdvancesByOne()
     {
-        var lanes = new[]
-        {
-            new TrackLaneViewModel("geosphere", new[]
-            {
-                Row("geosphere", "geosphere.crust"),
-                Row("geosphere", "geosphere.plate"),
-                Row("geosphere", "geosphere.mantle"),
-            }),
-        };
+        var snap = TunnelCorridorLayout.SnapFocus(0, 5, accumulatedDegrees: 15.0);
 
-        var wedges = TunnelCorridorLayout.BuildWedges(lanes);
-
-        Assert.Equal(3, wedges.Count);
-        Assert.All(wedges, w => Assert.Equal(120.0, w.SpanAngleDeg, precision: 6));
-
-        // Contiguous, no gaps/overlap: cumulative start angles chain start-to-start.
-        Assert.Equal(0.0, wedges[0].StartAngleDeg, precision: 6);
-        Assert.Equal(120.0, wedges[1].StartAngleDeg, precision: 6);
-        Assert.Equal(240.0, wedges[2].StartAngleDeg, precision: 6);
-
-        var totalSectorSpan = wedges.Sum(w => w.SpanAngleDeg);
-        Assert.Equal(360.0, totalSectorSpan, precision: 6);
+        Assert.Equal(1L, snap.StepDelta);
+        Assert.Equal(1, snap.FocusIndex);
+        Assert.Equal(30.0, snap.SnappedAngleDegrees, precision: 6);
     }
 
     [Fact]
-    public void BuildWedges_PassesThroughIsDimmedAndPresenterKindUnchanged()
+    public void SnapFocus_NegativeThreshold_DecrementsSymmetrically()
     {
-        var lanes = new[]
-        {
-            new TrackLaneViewModel("hydrosphere", new[]
-            {
-                Row("hydrosphere", "hydrosphere.ocean", TrackContentPresenterKind.Generic, isDimmed: true),
-            }),
-        };
+        var snap = TunnelCorridorLayout.SnapFocus(3, 5, accumulatedDegrees: -15.0);
 
-        var wedges = TunnelCorridorLayout.BuildWedges(lanes);
-
-        var wedge = Assert.Single(wedges);
-        Assert.True(wedge.IsDimmed);
-        Assert.Equal(TrackContentPresenterKind.Generic, wedge.PresenterKind);
+        Assert.Equal(-1L, snap.StepDelta);
+        Assert.Equal(2, snap.FocusIndex);
+        Assert.Equal(-30.0, snap.SnappedAngleDegrees, precision: 6);
     }
 
     [Fact]
-    public void BuildWedges_EmptyLanes_ReturnsEmptyResult_NoThrow()
+    public void SnapFocus_MultiStepDrag_WrapsCyclically()
     {
-        var wedges = TunnelCorridorLayout.BuildWedges(System.Array.Empty<TrackLaneViewModel>());
+        // +75 deg = 2.5 steps -> rounds to 3 (AwayFromZero at .5); wraps 4+3=7 -> 7%5=2.
+        var snap = TunnelCorridorLayout.SnapFocus(4, 5, accumulatedDegrees: 75.0);
 
-        Assert.Empty(wedges);
+        Assert.Equal(3L, snap.StepDelta);
+        Assert.Equal(2, snap.FocusIndex);
+        Assert.Equal(90.0, snap.SnappedAngleDegrees, precision: 6);
     }
 
-    // ---- ResolveCorridorRung ----
+    [Fact]
+    public void SnapFocus_TrackCountOneOrLess_IsHardNoOp()
+    {
+        var snap1 = TunnelCorridorLayout.SnapFocus(0, 1, accumulatedDegrees: 100.0);
+        Assert.Equal(0L, snap1.StepDelta);
+        Assert.Equal(0, snap1.FocusIndex);
+
+        var snap0 = TunnelCorridorLayout.SnapFocus(-1, 0, accumulatedDegrees: 100.0);
+        Assert.Equal(0L, snap0.StepDelta);
+        Assert.Equal(-1, snap0.FocusIndex);
+    }
+
+    // ---- ResolveCorridorRung (retained from slice 1) ----
 
     [Fact]
     public void ResolveCorridorRung_KnownSymbol_ReturnsThatRungNotTheFallback()
     {
         var allRungs = TimelineModel.GetLadderRungs();
         var expected = allRungs.Single(r => r.Symbol == "ka");
-        // Picked independent of ladder ordering: any OTHER rung than "ka" makes a valid fallback
-        // to prove the resolved value is the matched rung, not the fallback.
         var fallback = allRungs.First(r => r.Symbol != "ka");
 
         var resolved = TunnelCorridorLayout.ResolveCorridorRung("ka", fallback);

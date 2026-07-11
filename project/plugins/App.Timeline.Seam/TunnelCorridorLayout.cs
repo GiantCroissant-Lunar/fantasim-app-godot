@@ -1,68 +1,131 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using FantaSim.App.Timeline;
+using FantaSim.App.World.Composition;
 
 namespace FantaSim.App.Timeline.Seam;
 
 /// <summary>
-/// Angular wedge layout for tunnel corridors: one sphere SECTOR per TrackLaneViewModel (equal
-/// angular share, first-seen order — generalizes Concept A's hardcoded 6x60deg wireframe to N
-/// spheres, spec §4.1/§1 point 4), subdivided into one corridor wedge per TrackRowViewModel within
-/// that sector. Godot-free by design (mirrors TimelineScrubMapper/TrackLaneViewModelBuilder) —
-/// linked directly into App.Timeline.Tests. vault/plans/2026-07-11-tunnel-slice1-plan.md.
+/// Five-slot carousel layout for the two-ring prototype's focused track window
+/// (vault/plans/2026-07-12-rotating-tunnel-two-ring-prototype-plan.md Task 2). Pure Godot-free:
+/// selects non-archived registry tracks in stable order, normalizes a cyclic focus index, builds
+/// the focus-0/-1/+1/-2/+2 window with (SphereId, LayerId) dedup, and snaps accumulated wall angle
+/// to 30deg steps. Also retains the rung-resolution path consumed by the focused-corridor rebinding.
 /// </summary>
 public static class TunnelCorridorLayout
 {
-    public readonly record struct CorridorWedge(
-        string SphereId,
-        string LayerId,
-        double StartAngleDeg,
-        double SpanAngleDeg,
-        bool IsDimmed,
-        TrackContentPresenterKind PresenterKind);
+    public const int VisibleTrackSlots = 5;
+    public const double TrackSlotPitchDegrees = 30d;
+    public const double BottomFocusAngleDegrees = -90d;
 
-    /// <summary>Divides the full 360deg among lanes equally, in BuildLanes' first-seen order,
-    /// then each lane's span equally among its tracks, in track order. Empty input -> empty
-    /// output (no lanes, no throw).</summary>
-    public static IReadOnlyList<CorridorWedge> BuildWedges(IReadOnlyList<TrackLaneViewModel> lanes)
+    private static readonly int[] WindowRelativeSlots = { 0, -1, 1, -2, 2 };
+
+    public readonly record struct TunnelTrackSlot(
+        LayerTrackDescriptor Descriptor,
+        int RelativeSlot,
+        double CenterAngleDegrees)
     {
-        if (lanes.Count == 0)
-            return System.Array.Empty<CorridorWedge>();
+        public bool IsFocused => RelativeSlot == 0;
+    }
 
-        var wedges = new List<CorridorWedge>();
-        var sectorSpan = 360.0 / lanes.Count;
+    public readonly record struct TunnelCarouselSnap(
+        long StepDelta,
+        int FocusIndex,
+        double SnappedAngleDegrees);
 
-        for (var laneIndex = 0; laneIndex < lanes.Count; laneIndex++)
-        {
-            var lane = lanes[laneIndex];
-            var sectorStart = sectorSpan * laneIndex;
-            var trackCount = lane.Tracks.Count;
-            if (trackCount == 0)
-                continue;
+    /// <summary>Source tracks in stable registry order with archived entries dropped.</summary>
+    public static IReadOnlyList<LayerTrackDescriptor> SelectSourceTracks(LayerTrackRegistrySnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        return snapshot.Tracks
+            .Where(t => !string.Equals(t.State, LayerTrackStates.Archived, StringComparison.Ordinal))
+            .ToList();
+    }
 
-            var trackSpan = sectorSpan / trackCount;
-            for (var trackIndex = 0; trackIndex < trackCount; trackIndex++)
-            {
-                var track = lane.Tracks[trackIndex];
-                wedges.Add(new CorridorWedge(
-                    lane.SphereId,
-                    track.Descriptor.LayerId,
-                    sectorStart + (trackSpan * trackIndex),
-                    trackSpan,
-                    track.IsDimmed,
-                    track.PresenterKind));
-            }
-        }
+    /// <summary>Empty focus is -1; any non-empty count focuses index 0.</summary>
+    public static int InitialFocusIndex(int trackCount)
+        => trackCount > 0 ? 0 : -1;
 
-        return wedges;
+    /// <summary>Cyclic normalization into [0, trackCount). Zero or negative count returns -1.</summary>
+    public static int NormalizeFocusIndex(int focusIndex, int trackCount)
+    {
+        if (trackCount <= 0)
+            return -1;
+
+        var norm = focusIndex % trackCount;
+        return norm < 0 ? norm + trackCount : norm;
+    }
+
+    /// <summary>The descriptor at the normalized focus, or null for an empty/invalid window.</summary>
+    public static LayerTrackDescriptor? ResolveFocusedTrack(IReadOnlyList<LayerTrackDescriptor> tracks, int focusIndex)
+    {
+        ArgumentNullException.ThrowIfNull(tracks);
+        if (tracks.Count == 0 || focusIndex < 0 || focusIndex >= tracks.Count)
+            return null;
+
+        return tracks[focusIndex];
     }
 
     /// <summary>
-    /// The first real consumer of LayerTrackDescriptor.TimeDomain.Rung (verified unconsumed
-    /// elsewhere in the codebase, see this plan's Grounding facts). Resolves the track's declared
-    /// native rung symbol against TimelineModel.GetLadderRungs(); an unrecognized or null symbol
-    /// falls back to the caller's globally-selected rung -- the Unity round-trip degradation
-    /// guarantee applied to a NEW field for the first time, never a throw.
+    /// Builds the five-or-fewer-slot focused window. Candidates are resolved in the order focus 0,
+    /// previous -1, next +1, second previous -2, second next +2; each is deduplicated by
+    /// (SphereId, LayerId) so one track mounts at most once. The returned slots are sorted by
+    /// relative slot (-2..+2). CenterAngleDegrees = BottomFocusAngleDegrees + relativeSlot *
+    /// 30deg - accumulatedDegrees, so a positive (clockwise) accumulated angle shifts the next
+    /// track toward bottom-center before the focus index advances on snap.
+    /// </summary>
+    public static IReadOnlyList<TunnelTrackSlot> BuildFocusedWindow(
+        IReadOnlyList<LayerTrackDescriptor> tracks,
+        int focusIndex,
+        double accumulatedDegrees = 0d)
+    {
+        ArgumentNullException.ThrowIfNull(tracks);
+        var count = tracks.Count;
+        if (count == 0)
+            return Array.Empty<TunnelTrackSlot>();
+
+        var normalized = NormalizeFocusIndex(focusIndex, count);
+        var mounted = new Dictionary<(string SphereId, string LayerId), int>();
+        var result = new List<TunnelTrackSlot>();
+
+        foreach (var relative in WindowRelativeSlots)
+        {
+            var absoluteIndex = NormalizeCyclic(normalized + relative, count);
+            var candidate = tracks[absoluteIndex];
+            var identity = (candidate.SphereId, candidate.LayerId);
+            if (mounted.ContainsKey(identity))
+                continue;
+
+            mounted[identity] = relative;
+            result.Add(new TunnelTrackSlot(
+                Descriptor: candidate,
+                RelativeSlot: relative,
+                CenterAngleDegrees: BottomFocusAngleDegrees + (relative * TrackSlotPitchDegrees) - accumulatedDegrees));
+        }
+
+        return result.OrderBy(s => s.RelativeSlot).ToList();
+    }
+
+    /// <summary>
+    /// Snaps accumulated wall angle to whole 30deg steps. StepDelta is
+    /// RoundAwayFromZero(accumulatedDegrees / 30) as a long; the focus index advances cyclically.
+    /// trackCount &lt;= 1 is a hard no-op (returns zero delta, unchanged focus).
+    /// </summary>
+    public static TunnelCarouselSnap SnapFocus(int focusIndex, int trackCount, double accumulatedDegrees)
+    {
+        if (trackCount <= 1)
+            return new TunnelCarouselSnap(StepDelta: 0, FocusIndex: focusIndex, SnappedAngleDegrees: 0d);
+
+        var stepDelta = (long)Math.Round(accumulatedDegrees / TrackSlotPitchDegrees, MidpointRounding.AwayFromZero);
+        var nextFocus = NormalizeFocusIndex((int)(focusIndex + stepDelta), trackCount);
+        var snappedAngle = stepDelta * TrackSlotPitchDegrees;
+        return new TunnelCarouselSnap(StepDelta: stepDelta, FocusIndex: nextFocus, SnappedAngleDegrees: snappedAngle);
+    }
+
+    /// <summary>
+    /// Resolves a track's declared rung symbol against the canonical ladder; a null or unrecognized
+    /// symbol degrades to globalFallback (the Unity round-trip guarantee), never a throw.
     /// </summary>
     public static TimelineLadderRung ResolveCorridorRung(string? trackRungSymbol, TimelineLadderRung globalFallback)
     {
@@ -70,5 +133,11 @@ public static class TunnelCorridorLayout
             return globalFallback;
 
         return TimelineModel.GetLadderRungs().FirstOrDefault(r => r.Symbol == trackRungSymbol) ?? globalFallback;
+    }
+
+    private static int NormalizeCyclic(int value, int modulus)
+    {
+        var norm = value % modulus;
+        return norm < 0 ? norm + modulus : norm;
     }
 }
