@@ -1331,6 +1331,14 @@ public partial class TimelineFace : Control, ITimelineFace
 
             Callable.From(() =>
             {
+                // The deferred queue outlives the face during multi-bundle reload waves: Godot
+                // frees the node before this callable fires, so the first native call
+                // (ApplyFilmstripPreview's IsInsideTree) throws ObjectDisposedException through
+                // the trampoline — teardown noise, not a pin (the ALC still collects). Bail
+                // before any Godot call; the bookkeeping below dies with the instance anyway.
+                if (!GodotObject.IsInstanceValid(this))
+                    return;
+
                 _filmstripActiveRequests = Math.Max(0, _filmstripActiveRequests - 1);
                 _filmstripActiveKeys.Remove(queued.RequestKey);
                 if (map is not null)
@@ -1346,7 +1354,8 @@ public partial class TimelineFace : Control, ITimelineFace
 
     private void ApplyFilmstripPreview(string requestKey, LayerFilmstripPreviewMap map)
     {
-        if (!IsInsideTree())
+        // IsInstanceValid first: IsInsideTree is a native call and throws on a disposed face.
+        if (!GodotObject.IsInstanceValid(this) || !IsInsideTree())
             return;
 
         if (!_filmstripWaiters.TryGetValue(requestKey, out var waiters))
