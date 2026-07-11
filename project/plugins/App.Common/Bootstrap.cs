@@ -5,12 +5,14 @@ using System.Runtime.Loader;
 using CrosscutFoundation.Config;
 using CrosscutFoundation.Logging;
 using CrosscutFoundation.Messaging;
+using FantaSim.App.Common.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PluginArchi.Extensibility.Abstractions;
 using PluginArchi.Extensibility.Hosting;
 using ServiceArchi.Contracts;
 using ServiceArchi.Core;
+using UnifyStorage.Abstractions;
 
 namespace FantaSim.App.Common;
 
@@ -20,6 +22,7 @@ public sealed class Bootstrap
     private readonly ILogger _log;
     private IPluginHost? _pluginHost;
     private ActorSystem? _actorSystem;
+    private IDisposable? _ownedDocumentStore;
 
     public Bootstrap(ILoggerFactory? loggerFactory = null)
     {
@@ -85,6 +88,22 @@ public sealed class Bootstrap
             "App config json {Path} ({State}); env vars override at higher priority.",
             appJsonPath,
             File.Exists(appJsonPath) ? "loaded" : "absent, optional");
+
+        // Resident crust-product cache store (2026-07-11 persistence slice 1): constructed here
+        // (never inside a collectible bundle) and registered as IDocumentStore so App.World resolves
+        // it via IRegistry at the point of use, never a captured/cached reference (pin-class 5 — a
+        // stale IDocumentStore reference across a bundle reload — cross-alc-rules.md). A construction
+        // failure logs and leaves IDocumentStore unregistered; every consumer degrades to
+        // in-memory-only rather than crashing boot (ResidentDocumentStoreFactory.Create never throws).
+        var persistenceOptions = ResidentPersistenceOptions.FromConfig(configService);
+        var (documentStore, ownedDocumentStore) = ResidentDocumentStoreFactory.Create(persistenceOptions, _log);
+        if (documentStore is not null)
+        {
+            _ownedDocumentStore = ownedDocumentStore;
+            _registry.Register<IDocumentStore>(
+                documentStore,
+                new ServiceRegistration { Tags = new[] { "storage", "persistence" }, Description = "Resident LiteDB document store (crust-product cache)" });
+        }
     }
 
     public IRegistry Registry => _registry;
@@ -169,5 +188,8 @@ public sealed class Bootstrap
             await _actorSystem.Terminate().ConfigureAwait(false);
             _actorSystem = null;
         }
+
+        _ownedDocumentStore?.Dispose();
+        _ownedDocumentStore = null;
     }
 }

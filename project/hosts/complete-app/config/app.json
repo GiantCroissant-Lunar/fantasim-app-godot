@@ -29,5 +29,11 @@
   "remote": {
     "enabled": false,
     "bind": "127.0.0.1:19292"
+  },
+  "persistence": {
+    "crustCache": {
+      "enabled": true,
+      "path": "user://crust-cache.litedb"
+    }
   }
 }

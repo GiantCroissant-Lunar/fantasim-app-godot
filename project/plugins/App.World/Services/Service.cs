@@ -2,13 +2,16 @@
 using Akka.Actor;
 using System.Threading;
 #endif
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using FantaSim.App.Common.Storage;
 using FantaSim.App.Ecs.Cells;
 using FantaSim.App.World.Dto;
 using FantaSim.App.World.Crust;
 using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Globe;
+using FantaSim.App.World.Persistence;
 using FantaSim.Geosphere.Crust;
 using FantaSim.Geosphere.Asthenosphere.Convection;
 using Microsoft.Extensions.Logging;
@@ -16,6 +19,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using ServiceArchi.Contracts;
 using FantaSim.World.Contracts.Units;
 using UnifyMaths;
+using UnifyStorage.Abstractions;
 using BoundarySectionDocument = FantaSim.App.World.Composition.BoundarySectionDocument;
 using MantleHistoryAdapter = FantaSim.App.World.Composition.MantleHistoryAdapter;
 using MantleIsosurfaceExtractor = FantaSim.App.World.Composition.MantleIsosurfaceExtractor;
@@ -57,6 +61,26 @@ public sealed class Service : IService, IDisposable
     private readonly object _crustProductCacheGate = new();
     private readonly Dictionary<CrustProductCacheKey, CrustTickProducts> _crustProductCache = new();
     private RotationSourceRecipe _rotationSourceRecipe = RotationSourceRecipe.Default;
+
+    // Cross-session crust-product cache (2026-07-11 persistence slice 1). Resolved once at
+    // construction time and reused via the instance field -- NOT re-resolved per call -- because
+    // Service itself is bundle-scoped and reconstructed fresh on every bundle reload, so this is
+    // already "resolve at the point where the bundle-side object is (re)built", not a stale
+    // reference held across a reload (pin-class 5, cross-alc-rules.md). Null when persistence is
+    // disabled by config or the resident store failed to construct; every persistence call below
+    // degrades to a no-op in that case (in-memory-only, same behavior as before this slice).
+    private readonly IDocumentStore? _documentStore;
+    private readonly object _pendingCrustPersistGate = new();
+    private readonly List<Task> _pendingCrustPersistTasks = new();
+
+    /// <summary>
+    /// Counts calls into <see cref="WorldCrustMaterializer.MaterializeAsync"/> from
+    /// <see cref="GetOrBuildCrustTickProducts"/> -- i.e. actual crust-pipeline runs, as opposed to
+    /// cache hits (in-memory or persisted-store restores). Test-only observability for the
+    /// probe-before-build contract (App.World.Tests, InternalsVisibleTo below); production code
+    /// never reads it.
+    /// </summary>
+    internal int CrustPipelineBuildCountForTests { get; private set; }
 
     private Exception? _lastSubscriberError;
     private bool _disposed;
@@ -102,6 +126,12 @@ public sealed class Service : IService, IDisposable
 #endif
         var loggerFactory = registry.TryGet<ILoggerFactory>();
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<Service>();
+
+        // Resolved through IRegistry, not constructed here: the resident store (App.Common,
+        // Bootstrap.cs) is a process-lifetime singleton every collectible consumer reaches the same
+        // way -- TryGet returns null (never throws) when persistence is disabled or the resident
+        // construction failed, and every crust-cache call below degrades to in-memory-only.
+        _documentStore = registry.TryGet<IDocumentStore>();
     }
 
     /// <summary>
@@ -901,11 +931,46 @@ public sealed class Service : IService, IDisposable
         }
 
         var spec = WorldCrustRunSpec.ForPresentation(renderOptions, onsetTick, snapshotTick);
-        var result = WorldCrustMaterializer.MaterializeAsync(spec).GetAwaiter().GetResult();
+
+        // Cross-session probe (2026-07-11 persistence slice 1): a hit here reconstructs the
+        // materialization from the persisted crust-evolution fold WITHOUT re-running
+        // WorldCrustMaterializer.MaterializeAsync's pipeline call -- see
+        // WorldCrustMaterializer.FromPersistedRecord for exactly what is/isn't recomputed. Never
+        // blocks longer than a local LiteDB read + MessagePack decode; a miss or any failure falls
+        // straight through to the normal build path below.
+        var stopwatch = Stopwatch.StartNew();
+        var materialization = TryRestoreCrustMaterializationFromStore(key, spec);
+        if (materialization is null)
+        {
+            materialization = WorldCrustMaterializer.MaterializeAsync(spec).GetAwaiter().GetResult();
+            CrustPipelineBuildCountForTests++;
+            stopwatch.Stop();
+            // Windowed warm-boot gate log line (lead-facing, vault/specs/2026-07-11-surrealdb-
+            // persistence-slice1-design.md §6.3): cold boot's first seek at a given key logs this.
+            _logger.LogInformation(
+                "Crust product ready in {ElapsedMs} ms via fresh pipeline build (key={Key}); persisting for next session.",
+                stopwatch.ElapsedMilliseconds, key);
+
+            // Persist AFTER the fetch has what it needs, off the fetch path: PersistCrustProductAsync
+            // is tracked (FlushPendingCrustPersistenceAsync) but never awaited here.
+            PersistCrustMaterializationAsync(key, materialization);
+        }
+        else
+        {
+            stopwatch.Stop();
+            // Windowed warm-boot gate log line: a SECOND boot's seek at the SAME key logs this
+            // instead, with an ElapsedMs the lead should observe as measurably smaller than the
+            // fresh-build line above (both lines share the "Crust product ready in {ms} ms" prefix
+            // and the same key= suffix so they diff cleanly).
+            _logger.LogInformation(
+                "Crust product ready in {ElapsedMs} ms via persisted-cache restore (key={Key}).",
+                stopwatch.ElapsedMilliseconds, key);
+        }
+
         var reconstructor = GetCachedGlobeReconstructor(renderOptions, onsetTick);
         var globeAtSnapshot = reconstructor.BuildGlobeAt(snapshotTick);
         var arcsAtSnapshot = reconstructor.BuildBoundaryArcsAt(snapshotTick);
-        var products = new CrustTickProducts(snapshotTick, result, globeAtSnapshot, arcsAtSnapshot);
+        var products = new CrustTickProducts(snapshotTick, materialization, globeAtSnapshot, arcsAtSnapshot);
 
         lock (_crustProductCacheGate)
         {
@@ -913,6 +978,99 @@ public sealed class Service : IService, IDisposable
         }
 
         return products;
+    }
+
+    /// <summary>
+    /// Reads the persisted crust-product cache for <paramref name="key"/>, returning null on a miss
+    /// (no store registered, no document under the current SchemaVersion/AppVersionStamp id, or any
+    /// decode failure -- all three are treated identically: rebuild, never crash). The document id
+    /// folds in both invalidation stamps (spec §5), so a SchemaVersion bump or app rebuild is a
+    /// structural cache miss, not a post-fetch version check.
+    /// </summary>
+    private WorldCrustMaterialization? TryRestoreCrustMaterializationFromStore(CrustProductCacheKey key, WorldCrustRunSpec spec)
+    {
+        if (_documentStore is null)
+            return null;
+
+        var id = CrustProductCacheSchema.ComposeDocumentId(
+            key.Seed,
+            key.Frequency,
+            key.SpinRateRadiansPerMegaAnnum,
+            key.GraphRevision,
+            key.SnapshotTick,
+            CrustProductCacheSchema.SchemaVersion,
+            CrustProductCacheSchema.CurrentAppVersionStamp);
+
+        try
+        {
+            var blob = _documentStore.GetAsync<DocumentBlob>(CrustProductCacheSchema.Collection, id).GetAwaiter().GetResult();
+            if (blob is null || blob.Data.Length == 0)
+                return null;
+
+            var record = CrustProductCacheSchema.Decode(blob.Data);
+            return WorldCrustMaterializer.FromPersistedRecord(spec, record);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to restore persisted crust product for key {Key}; rebuilding.", key);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Fire-and-forget (but tracked) write of a freshly-built materialization's crust-evolution fold
+    /// to the persisted store. The spawned task closes over only resident-or-primitive parameters
+    /// (<see cref="PersistBlobAsync"/> is <c>static</c>) -- never <c>this</c> -- so it carries no
+    /// bundle reference past this call (pin-class 7, cross-alc-rules.md / the seven-pin-class list).
+    /// </summary>
+    private void PersistCrustMaterializationAsync(CrustProductCacheKey key, WorldCrustMaterialization materialization)
+    {
+        if (_documentStore is null)
+            return;
+
+        var record = WorldCrustMaterializer.ToPersistedRecord(
+            materialization, key.Seed, key.Frequency, key.SpinRateRadiansPerMegaAnnum, key.GraphRevision, key.SnapshotTick);
+        var id = CrustProductCacheSchema.ComposeDocumentId(
+            key.Seed, key.Frequency, key.SpinRateRadiansPerMegaAnnum, key.GraphRevision, key.SnapshotTick,
+            record.SchemaVersion, record.AppVersionStamp);
+        var blob = new DocumentBlob(CrustProductCacheSchema.Encode(record));
+
+        var task = PersistBlobAsync(_documentStore, CrustProductCacheSchema.Collection, id, blob, _logger);
+
+        lock (_pendingCrustPersistGate)
+        {
+            _pendingCrustPersistTasks.RemoveAll(t => t.IsCompleted);
+            _pendingCrustPersistTasks.Add(task);
+        }
+    }
+
+    private static async Task PersistBlobAsync(IDocumentStore store, string collection, string id, DocumentBlob blob, ILogger logger)
+    {
+        try
+        {
+            await store.UpsertAsync(collection, id, blob).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to persist crust product {Id} in {Collection}; continuing in-memory-only.", id, collection);
+        }
+    }
+
+    /// <summary>
+    /// Awaits every in-flight crust-product persistence write. Test-only observability for
+    /// deterministic assertions after a build (App.World.Tests); also invoked best-effort (bounded)
+    /// from <see cref="Dispose"/> so a Service torn down immediately after a build doesn't silently
+    /// drop the write.
+    /// </summary>
+    internal Task FlushPendingCrustPersistenceAsync()
+    {
+        Task[] pending;
+        lock (_pendingCrustPersistGate)
+        {
+            pending = _pendingCrustPersistTasks.ToArray();
+        }
+
+        return Task.WhenAll(pending);
     }
 
     private static SphereRegimeSchedule GeosphereScheduleFor(long onsetTick)
@@ -1269,6 +1427,19 @@ public sealed class Service : IService, IDisposable
         _disposed = true;
         try
         {
+            // Best-effort, bounded: a Service disposed immediately after a build shouldn't silently
+            // drop the persist write, but disposal must never hang on a slow/stuck store either. The
+            // persisted store itself is resident (outlives this call either way), so a timeout here
+            // only affects whether THIS process observes the write before exiting, not correctness.
+            try
+            {
+                FlushPendingCrustPersistenceAsync().Wait(TimeSpan.FromSeconds(2));
+            }
+            catch
+            {
+                // Logged inside PersistBlobAsync already; Dispose must not throw.
+            }
+
             lock (_subscribersGate)
                 _subscribers.Clear();
             _runtime.Dispose();

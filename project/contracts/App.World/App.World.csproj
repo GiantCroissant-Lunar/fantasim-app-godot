@@ -13,6 +13,14 @@
     <PackageReference Include="GiantCroissant.ServiceArchi.Contracts" />
     <PackageReference Include="GiantCroissant.ServiceArchi.SourceGen" PrivateAssets="all" />
     <PackageReference Include="UnifyMaths" />
+    <!-- Crust-product cache persistence payload (Persistence/CrustProductCacheRecord.cs). MessagePack
+         only (Annotations + runtime serializer): this project stays resident-shared per
+         shared-assembly-policy.json, so the persisted payload's Type identity lives here rather than
+         in the collectible App.World plugin assembly (avoids pinning the bundle ALC in MessagePack's
+         resident formatter-resolver cache; see vault/specs/2026-07-11-surrealdb-persistence-slice1
+         design.md, section 3.3, pin-class 3/4). -->
+    <PackageReference Include="MessagePack" />
+    <PackageReference Include="MessagePack.Annotations" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\App.NodeGraph\App.NodeGraph.csproj" />

@@ -38,11 +38,19 @@
     <PackageVersion Include="BoomHud.Godot.Runtime" Version="0.1.18" />
     <PackageVersion Include="UnifyEcs.Core" Version="0.1.1" />
     <PackageVersion Include="UnifyEcs.Runtime.Arch" Version="0.1.1" />
-    <!-- Activity ledger persistence (LiteDB-backed document store). -->
+    <!-- Activity ledger persistence (LiteDB-backed document store). Also backs the resident
+         crust-product cache store (App.Common, 2026-07-11 persistence slice 1). -->
     <PackageVersion Include="UnifyStorage.Abstractions" Version="0.1.1" />
     <PackageVersion Include="UnifyStorage.Generators" Version="0.1.1" PrivateAssets="all" />
     <PackageVersion Include="UnifyStorage.Runtime.LiteDb" Version="0.1.0" />
     <PackageVersion Include="UnifyStorage.Runtime.SurrealDb" Version="0.1.1" />
+    <!-- MessagePack: pinned to the version already resolved transitively via fantasim-world's
+         World.TruthStream.Core (MessagePackTruthEventSerializer) so App.World.Contracts' explicit
+         reference doesn't introduce a second version to reconcile. Used to encode the crust-product
+         persistence payload (project/contracts/App.World/Persistence), matching the house's
+         "canonical event encoding: MessagePack" convention (unify-storage 04-persistence.md). -->
+    <PackageVersion Include="MessagePack" Version="3.1.7" />
+    <PackageVersion Include="MessagePack.Annotations" Version="3.1.7" />
     <PackageVersion Include="SurrealDb.Net" Version="0.10.2" />
     <PackageVersion Include="SurrealDb.Embedded.InMemory" Version="0.10.2" />
     <!-- FantaSim world-lib packages (local feed). 0.1.5 carries the relative boundary classifier

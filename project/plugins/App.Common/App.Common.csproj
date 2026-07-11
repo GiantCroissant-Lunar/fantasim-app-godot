@@ -32,5 +32,11 @@
     <PackageReference Include="Akka" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <!-- Resident crust-product cache store (2026-07-11 persistence slice 1): LiteDB-backed
+         IDocumentStore, constructed and registered here (never inside a collectible bundle) per
+         the App.Activity precedent (Services/Service.cs CreateDocumentStore/ResolveStorePath) and
+         vault/specs/2026-07-11-surrealdb-persistence-slice1-design.md section 3.1/3.2. -->
+    <PackageReference Include="UnifyStorage.Abstractions" />
+    <PackageReference Include="UnifyStorage.Runtime.LiteDb" />
   </ItemGroup>
 </Project>
