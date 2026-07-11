@@ -66,8 +66,22 @@ hand-feel/look verdict is the user's.
 4. Dead-code sweep from the split review (`PlanetShaderLibrary.HypsoPlateMaterial`,
    `PlateSurfaceMeshFactory.ToColor`/`.ToV3` orphans).
 5. Carried: D4.2 unit sweep, polarity flip, TimelineFace split, compose-json (locked, build at
-   first consumer), SurrealDB slice, vault README index, 0.02-sibling + mixed-frame intents
-   (awaiting user).
+   first consumer), SurrealDB slice, vault README index.
+
+## 4b. USER DECISIONS (2026-07-11, this session — close the two parked intents)
+
+- **Spin rate = ADJUSTABLE PROPERTY, not a constant.** Resolves the 0.02-sibling straggler AND
+  parameter-audit finding "spinRateRadiansPerMegaAnnum is roster-bypassed (placebo)": wire ONE
+  real spin-rate parameter end-to-end — graph knob (WorldGenerationNodeCatalog) → WorldCrustRunSpec
+  → OnsetRoster → AND GlobeReconstructor (delete its legacy `SpinRatePerMegaAnnum = 0.02` const;
+  consume the property). Default = calibrated 0.0035 (OnsetRoster.DefaultAngularDriftPerMegaAnnum,
+  tools/rates/2026-07-07-rate-calibration-report.md). Chip spawned for the wiring slice.
+- **Mixed-frame residue = DEFERRED deliberately** (do NOT "fix" it in a cleanup pass). Rationale:
+  the timeline will carry ASYMMETRIC per-layer time scales — plate movement at ~ka canonical
+  cadence, later layers (e.g. rivers) at ~jw scale — so frame semantics get redesigned when
+  per-layer cadences land (ties into the track registry / dual-time-base tunnel direction).
+  Until then the current split stands: elevations/fractions smooth at playhead,
+  thickness/sections at snapshot frame (≤ one snapshot-spacing lag).
 
 ## 5. State at session end
 
