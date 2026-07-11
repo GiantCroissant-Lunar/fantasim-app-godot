@@ -35,12 +35,18 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
     private const string WorldBundleId = "world";
     private static readonly NodePath StageEnvironmentPath = new("Environment");
 
-    // Flat-annulus tunnel geometry shared by Rings.cs and Corridors.cs: every ring/wedge/quad is a
-    // sector of an annulus in the mount's local XY plane (normal +Z), radius = "depth" per
-    // TunnelDepthMapper -- spec §2.1/§2.2's "no new domain math" extended to rendering. Slice-1
-    // placeholder magnitudes (spec Decision Point 12: real tuning is a later eye-judged pass).
+    // Flat-annulus tunnel geometry + face-on framing shared by Rings.cs, Corridors.cs, and
+    // Camera.cs: every ring/wedge/quad is a sector of an annulus in the mount's local XY plane
+    // (normal +Z), radius = "depth" per TunnelDepthMapper -- spec §2.1/§2.2's "no new domain math"
+    // extended to rendering. Slice-1 placeholder magnitudes (spec Decision Point 12: real tuning is
+    // a later eye-judged pass); the lead iterates these constants by hot-reloading the world bundle
+    // in the windowed app. TunnelCameraDistance/FovDeg frame the annulus face-on (Camera.cs) so it
+    // reads as a radial dartboard with the globe visible through the throat hole, instead of being
+    // swallowed by the orbit rig's ~6.5-unit eye distance.
     private const float ThroatRadius = 2.5f;
-    private const float OuterRadius = 18.0f;
+    private const float OuterRadius = 10.0f;
+    private const float TunnelCameraDistance = 16.0f;
+    private const float TunnelCameraFovDeg = 55.0f;
 
     private readonly IRegistry _registry;
     private readonly IBundleSceneRegistry _sceneRegistry;
@@ -116,10 +122,14 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         if (_mount is not null && GodotObject.IsInstanceValid(_mount))
         {
             _mount.Visible = enabled;
+            if (enabled)
+                ActivateTunnelCamera();
+            else
+                RestorePreviousCamera();
             TryBuildOnce();
         }
         // else: _mount is still pending its deferred EnsureMounted call, which reads _enabled
-        // itself once the mount exists -- no separate "apply later" queue needed.
+        // itself once the mount exists -- camera activation is handled there too.
     }
 
     private void TryBuildOnce()
@@ -152,6 +162,12 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         // Godot's _UnhandledInput fires on invisible-but-in-tree nodes.
         _inputRelay = new TunnelInputRelay { Name = "TunnelInputRelay", OnEvent = HandleInputEvent };
         _mount.AddChild(_inputRelay);
+
+        EnsureTunnelCamera();
+        // Deferred-mount case: SetEnabled(true) ran before the mount existed -- activate now that
+        // the camera exists, same path SetEnabled takes when the mount is already present.
+        if (_enabled)
+            ActivateTunnelCamera();
 
         _log.LogInformation("Tunnel presentation mounted under stage Environment (visible={Visible}).", _enabled);
         _worldRuntimeReload.MarkMounted();
@@ -241,8 +257,13 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
 
     private void ClearMount()
     {
+        // Restore the viewport BEFORE freeing the mount -- the tunnel camera is a child of _mount
+        // and must never be left as the current camera pointing at freed geometry (ALC-unload safe).
+        RestorePreviousCamera();
+
         ClearRingRoots();
         ClearCorridorsRoot();
+        ClearTunnelCamera();
 
         if (_mount is not null && GodotObject.IsInstanceValid(_mount))
         {
