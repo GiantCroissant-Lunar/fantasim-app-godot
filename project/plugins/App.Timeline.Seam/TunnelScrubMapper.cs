@@ -1,32 +1,154 @@
 using System;
+using FantaSim.App.Timeline;
 
 namespace FantaSim.App.Timeline.Seam;
 
 /// <summary>
-/// Pure scrub-gesture math for the tunnel's current-tick ring: radius-gated press dispatch
-/// (mirrors the wireframe's mode='time' vs 'wall' split, spec §5.1) plus a linear horizontal-
-/// pixel-delta-to-tick-delta drag mapping reusing the SAME view span the 2D ruler uses, so an
-/// identical pixel drag moves the SAME number of ticks in either view. Godot-free; linked into
-/// App.Timeline.Tests. vault/plans/2026-07-11-tunnel-slice1-plan.md.
+/// Pure Godot-free seam for the two-ring prototype's outer-dial mapping and hit arbitration
+/// (vault/plans/2026-07-12-rotating-tunnel-two-ring-prototype-plan.md Task 1). One accumulated
+/// clockwise revolution maps to exactly one canonical kb; rounding happens once with
+/// <see cref="MidpointRounding.AwayFromZero"/> before the final clamp; ring/wall hits are
+/// exclusive. The kb rung is resolved from <see cref="TimelineModel.GetLadderRungs"/> exactly as
+/// production does.
 /// </summary>
+public enum TunnelHitRegion
+{
+    None = 0,
+    OuterRing = 1,
+    InnerRing = 2,
+    Wall = 3,
+}
+
+/// <summary>
+/// The full outer-dial evidence record emitted during a gesture and in the structured log: the
+/// accumulated signed angle, the resolved kb rung, the raw proportional tick quantity, the
+/// once-rounded tick delta, the rounded target (pre-clamp), and the final clamped target tick.
+/// </summary>
+public readonly record struct TunnelOuterTickMapping(
+    double AccumulatedDegrees,
+    TimelineLadderRung Rung,
+    double RawTickDelta,
+    long RoundedTickDelta,
+    long RoundedTargetTick,
+    long ClampedTargetTick);
+
 public static class TunnelScrubMapper
 {
-    /// <summary>True when a press at screenRadiusPx from the ring's screen-projected center
-    /// falls within bandPx of ringRadiusPx -- i.e. the press targets the ring, not the wall.</summary>
-    public static bool IsWithinRingBand(float screenRadiusPx, float ringRadiusPx, float bandPx)
-        => MathF.Abs(screenRadiusPx - ringRadiusPx) <= bandPx;
+    /// <summary>The canonical coarse-time rung one outer revolution advances by.</summary>
+    public const string OuterRungSymbol = "kb";
 
-    /// <summary>Maps a horizontal drag delta (pixels) to a new absolute tick, clamped to
-    /// [viewStartTick, viewEndTick], reusing the same linear span TimelineScrubMapper.
-    /// TryLocalXToTick uses for the 2D ruler.</summary>
-    public static long DragDeltaToTick(
-        float pixelDeltaX, float viewportWidthPx, long viewStartTick, long viewEndTick, long baseTick)
+    /// <summary>Resolves the real kb entry from <see cref="TimelineModel.GetLadderRungs"/>; fails
+    /// loudly if the canonical ladder lacks kb rather than substituting another unit.</summary>
+    public static TimelineLadderRung ResolveOuterRung()
     {
-        if (viewportWidthPx <= 0f)
-            return baseTick;
+        foreach (var rung in TimelineModel.GetLadderRungs())
+        {
+            if (rung.Symbol == OuterRungSymbol)
+                return rung;
+        }
 
-        var span = viewEndTick - viewStartTick;
-        var deltaTicks = (pixelDeltaX / viewportWidthPx) * span;
-        return (long)Math.Clamp(baseTick + deltaTicks, viewStartTick, viewEndTick);
+        throw new InvalidOperationException(
+            $"The canonical timeline ladder has no '{OuterRungSymbol}' rung; the outer dial cannot map revolutions to canonical ticks.");
+    }
+
+    /// <summary>
+    /// Maps an accumulated signed clockwise angle to a clamped target tick. The mapping is
+    /// <c>pressTick + RoundAwayFromZero(accumulatedDegrees / 360 * kb.UnitTicks)</c>, rounded exactly
+    /// once before clamping to <c>[0, max(0, maxTick)]</c>. Non-finite angles throw; pathological
+    /// finite angles saturate at <see cref="long.MaxValue"/>/<see cref="long.MinValue"/> before the
+    /// final clamp so no cast produces false evidence.
+    /// </summary>
+    public static TunnelOuterTickMapping MapOuterAngleToTick(double accumulatedDegrees, long pressTick, long maxTick)
+    {
+        if (!double.IsFinite(accumulatedDegrees))
+        {
+            throw new ArgumentOutOfRangeException(nameof(accumulatedDegrees), accumulatedDegrees,
+                "Accumulated outer-dial angle must be a finite number of degrees.");
+        }
+
+        var rung = ResolveOuterRung();
+        var rawTickDelta = accumulatedDegrees / 360.0 * rung.UnitTicks;
+        var roundedDelta = SaturatingRoundAwayFromZero(rawTickDelta);
+        var roundedTarget = SaturatingAdd(pressTick, roundedDelta);
+        var ceiling = Math.Max(0L, maxTick);
+        var clampedTarget = Math.Clamp(roundedTarget, 0L, ceiling);
+
+        return new TunnelOuterTickMapping(
+            AccumulatedDegrees: accumulatedDegrees,
+            Rung: rung,
+            RawTickDelta: rawTickDelta,
+            RoundedTickDelta: roundedDelta,
+            RoundedTargetTick: roundedTarget,
+            ClampedTargetTick: clampedTarget);
+    }
+
+    /// <summary>
+    /// Normalizes a pointer-angle delta (degrees) into <c>[-180, +180]</c> and negates it so
+    /// clockwise motion is positive. <paramref name="previousPointerDegrees"/> and
+    /// <paramref name="currentPointerDegrees"/> are raw <c>atan2(y, x)</c> values in a Y-up local
+    /// frame (Godot mount-local XY), where increasing angle is counter-clockwise; the negation
+    /// converts that to the product contract's clockwise-positive convention. Non-finite inputs
+    /// throw.
+    /// </summary>
+    public static double NormalizeClockwiseDeltaDegrees(double previousPointerDegrees, double currentPointerDegrees)
+    {
+        if (!double.IsFinite(previousPointerDegrees) || !double.IsFinite(currentPointerDegrees))
+        {
+            throw new ArgumentOutOfRangeException(nameof(previousPointerDegrees),
+                $"Pointer angles must be finite (previous={previousPointerDegrees}, current={currentPointerDegrees}).");
+        }
+
+        var rawDelta = currentPointerDegrees - previousPointerDegrees;
+        var unwrapped = WrapToPlusMinus180(rawDelta);
+        return -unwrapped;
+    }
+
+    /// <summary>
+    /// Resolves the exclusive hit region for a press: a single ring wins over its backing wall;
+    /// both rings hit at once is ambiguous and returns <see cref="TunnelHitRegion.None"/>; nothing
+    /// hit returns <see cref="TunnelHitRegion.None"/>.
+    /// </summary>
+    public static TunnelHitRegion ResolveHitRegion(bool outerRingHit, bool innerRingHit, bool wallHit)
+    {
+        if (outerRingHit && innerRingHit)
+            return TunnelHitRegion.None;
+
+        if (outerRingHit)
+            return TunnelHitRegion.OuterRing;
+
+        if (innerRingHit)
+            return TunnelHitRegion.InnerRing;
+
+        if (wallHit)
+            return TunnelHitRegion.Wall;
+
+        return TunnelHitRegion.None;
+    }
+
+    private static double WrapToPlusMinus180(double degrees)
+    {
+        // Maps any finite angle into [-180, +180] so a branch-cut crossing is reported as the small
+        // signed step, not a full-revolution jump: e.g. +358 -> -2, -358 -> +2.
+        return ((degrees + 180.0) % 360.0 + 360.0) % 360.0 - 180.0;
+    }
+
+    // Rounds once with AwayFromZero, saturating at the long bounds so a pathological finite raw
+    // delta cannot overflow the cast into false evidence. The caller has already rejected NaN/inf.
+    private static long SaturatingRoundAwayFromZero(double value)
+    {
+        if (value >= long.MaxValue)
+            return long.MaxValue;
+        if (value <= long.MinValue)
+            return long.MinValue;
+        return (long)Math.Round(value, MidpointRounding.AwayFromZero);
+    }
+
+    private static long SaturatingAdd(long a, long b)
+    {
+        if (b > 0 && a > long.MaxValue - b)
+            return long.MaxValue;
+        if (b < 0 && a < long.MinValue - b)
+            return long.MinValue;
+        return a + b;
     }
 }

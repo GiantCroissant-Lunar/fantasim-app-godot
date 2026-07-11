@@ -1,93 +1,199 @@
+using System;
+using FantaSim.App.Timeline;
 using FantaSim.App.Timeline.Seam;
 using Xunit;
 
 namespace App.Timeline.Tests;
 
 /// <summary>
-/// Headless coverage for <see cref="TunnelScrubMapper"/> (tunnel slice-1 Task 4): the radius-
-/// gated press dispatch (mirrors the wireframe's mode='time' vs 'wall' split, spec §5.1) and the
-/// linear horizontal-pixel-delta-to-tick-delta drag mapping. No Godot types involved. See
-/// vault/plans/2026-07-11-tunnel-slice1-plan.md Task 4.
+/// Headless coverage for the two-ring prototype's outer-dial mapping and hit arbitration
+/// (vault/plans/2026-07-12-rotating-tunnel-two-ring-prototype-plan.md Task 1). Pure Godot-free
+/// seam: one accumulated clockwise revolution maps to exactly one canonical kb, rounding happens
+/// once with AwayFromZero before clamping, and ring/wall hits are exclusive. The kb rung is
+/// resolved from <see cref="TimelineModel.GetLadderRungs"/> exactly as production does, never
+/// reconstructed.
 /// </summary>
 public sealed class TunnelScrubMapperTests
 {
-    // ---- IsWithinRingBand ----
+    private static TimelineLadderRung Kb() =>
+        TimelineModel.GetLadderRungs().Single(r => r.Symbol == TunnelScrubMapper.OuterRungSymbol);
+
+    // The accumulated angle that produces a desired raw tick delta, given the real kb UnitTicks.
+    private static double AngleForRawTicks(double rawTicks)
+        => rawTicks * 360.0 / Kb().UnitTicks;
+
+    // ---- ResolveOuterRung ----
 
     [Fact]
-    public void IsWithinRingBand_ExactlyAtRingRadius_ReturnsTrue()
+    public void ResolveOuterRung_ReturnsTimelineModelsKbEntry()
     {
-        Assert.True(TunnelScrubMapper.IsWithinRingBand(screenRadiusPx: 100f, ringRadiusPx: 100f, bandPx: 8f));
+        var rung = TunnelScrubMapper.ResolveOuterRung();
+
+        Assert.Equal(TunnelScrubMapper.OuterRungSymbol, rung.Symbol);
+        var expected = Kb();
+        Assert.Equal(expected.UnitTicks, rung.UnitTicks);
+    }
+
+    // ---- MapOuterAngleToTick ----
+
+    [Fact]
+    public void MapOuterAngleToTick_PositiveFullRevolution_AddsExactlyOneKb()
+    {
+        var kb = Kb();
+        var mapping = TunnelScrubMapper.MapOuterAngleToTick(360.0, pressTick: 1_000L, maxTick: long.MaxValue);
+
+        Assert.Equal(360.0, mapping.AccumulatedDegrees);
+        Assert.Equal(kb.Symbol, mapping.Rung.Symbol);
+        Assert.Equal(kb.UnitTicks, mapping.RawTickDelta);
+        Assert.Equal((long)Math.Round(kb.UnitTicks, MidpointRounding.AwayFromZero), mapping.RoundedTickDelta);
+        Assert.Equal(1_000L + mapping.RoundedTickDelta, mapping.RoundedTargetTick);
+        Assert.Equal(mapping.RoundedTargetTick, mapping.ClampedTargetTick);
     }
 
     [Fact]
-    public void IsWithinRingBand_ExactlyBandPxAway_ReturnsTrue_InclusiveBoundary()
+    public void MapOuterAngleToTick_NegativeFullRevolution_SubtractsExactlyOneKb()
     {
-        Assert.True(TunnelScrubMapper.IsWithinRingBand(screenRadiusPx: 108f, ringRadiusPx: 100f, bandPx: 8f));
-        Assert.True(TunnelScrubMapper.IsWithinRingBand(screenRadiusPx: 92f, ringRadiusPx: 100f, bandPx: 8f));
+        var kb = Kb();
+        // pressTick comfortably above one kb so the target stays in range and is not clamped.
+        var pressTick = (long)Math.Round(kb.UnitTicks, MidpointRounding.AwayFromZero) * 3L;
+        var mapping = TunnelScrubMapper.MapOuterAngleToTick(-360.0, pressTick: pressTick, maxTick: long.MaxValue);
+
+        Assert.Equal(-kb.UnitTicks, mapping.RawTickDelta);
+        Assert.Equal(-(long)Math.Round(kb.UnitTicks, MidpointRounding.AwayFromZero), mapping.RoundedTickDelta);
+        Assert.Equal(pressTick + mapping.RoundedTickDelta, mapping.RoundedTargetTick);
+        Assert.Equal(mapping.RoundedTargetTick, mapping.ClampedTargetTick);
     }
 
     [Fact]
-    public void IsWithinRingBand_JustOverBandPxAway_ReturnsFalse()
+    public void MapOuterAngleToTick_FractionalAndMultipleRevolutions_MapProportionally()
     {
-        Assert.False(TunnelScrubMapper.IsWithinRingBand(screenRadiusPx: 109f, ringRadiusPx: 100f, bandPx: 8f));
+        var kb = Kb();
+
+        var half = TunnelScrubMapper.MapOuterAngleToTick(180.0, 0L, long.MaxValue);
+        Assert.Equal(0.5 * kb.UnitTicks, half.RawTickDelta, precision: 9);
+
+        // Three revolutions: raw delta = 3 kb units.
+        var triple = TunnelScrubMapper.MapOuterAngleToTick(360.0 * 3.0, 0L, long.MaxValue);
+        Assert.Equal(3.0 * kb.UnitTicks, triple.RawTickDelta, precision: 6);
+        Assert.Equal((long)Math.Round(3.0 * kb.UnitTicks, MidpointRounding.AwayFromZero), triple.RoundedTickDelta);
     }
 
     [Fact]
-    public void IsWithinRingBand_NegativeScreenRadius_HandledWithoutThrowing()
+    public void MapOuterAngleToTick_PositiveAndNegativeMidpoints_RoundSymmetricallyAwayFromZero()
     {
-        // A negative press radius is nonsensical input, but must degrade gracefully (never throw)
-        // -- close enough to a ring near zero still reads as a hit.
-        Assert.True(TunnelScrubMapper.IsWithinRingBand(screenRadiusPx: -5f, ringRadiusPx: 0f, bandPx: 10f));
-        // Far away still correctly reads as a miss, no exception either way.
-        Assert.False(TunnelScrubMapper.IsWithinRingBand(screenRadiusPx: -500f, ringRadiusPx: 100f, bandPx: 8f));
-    }
+        // Angles chosen so rawTickDelta is exactly +0.5 and -0.5 regardless of kb.UnitTicks.
+        var positive = TunnelScrubMapper.MapOuterAngleToTick(AngleForRawTicks(0.5), 0L, long.MaxValue);
+        var negative = TunnelScrubMapper.MapOuterAngleToTick(AngleForRawTicks(-0.5), 0L, long.MaxValue);
 
-    // ---- DragDeltaToTick ----
-
-    [Fact]
-    public void DragDeltaToTick_ZeroDelta_ReturnsBaseTickUnchanged()
-    {
-        var tick = TunnelScrubMapper.DragDeltaToTick(
-            pixelDeltaX: 0f, viewportWidthPx: 800f, viewStartTick: 0L, viewEndTick: 1_000L, baseTick: 400L);
-
-        Assert.Equal(400L, tick);
+        // AwayFromZero: +0.5 -> 1, -0.5 -> -1 (symmetric, not toward zero).
+        Assert.Equal(1L, positive.RoundedTickDelta);
+        Assert.Equal(-1L, negative.RoundedTickDelta);
+        Assert.Equal(1L, positive.RoundedTargetTick);
+        Assert.Equal(-1L, negative.RoundedTargetTick);
     }
 
     [Fact]
-    public void DragDeltaToTick_FullWidthDrag_MovesByFullViewSpan()
+    public void MapOuterAngleToTick_RoundsBeforeClamping()
     {
-        var tick = TunnelScrubMapper.DragDeltaToTick(
-            pixelDeltaX: 800f, viewportWidthPx: 800f, viewStartTick: 0L, viewEndTick: 1_000L, baseTick: 0L);
+        // maxTick = 0 so any positive rounded target must clamp to 0. The RoundedTargetTick still
+        // records the pre-clamp rounded value (1), proving the round happened before the clamp.
+        var mapping = TunnelScrubMapper.MapOuterAngleToTick(AngleForRawTicks(0.6), pressTick: 0L, maxTick: 0L);
 
-        Assert.Equal(1_000L, tick);
+        Assert.Equal(1L, mapping.RoundedTickDelta);
+        Assert.Equal(1L, mapping.RoundedTargetTick);
+        Assert.Equal(0L, mapping.ClampedTargetTick);
     }
 
     [Fact]
-    public void DragDeltaToTick_OvershootPastViewEnd_ClampsToViewEndTick()
+    public void MapOuterAngleToTick_ClampsAtBothTimelineBounds()
     {
-        var tick = TunnelScrubMapper.DragDeltaToTick(
-            pixelDeltaX: 400f, viewportWidthPx: 800f, viewStartTick: 0L, viewEndTick: 1_000L, baseTick: 900L);
+        // Upper bound: a large positive angle clamps to maxTick.
+        var upper = TunnelScrubMapper.MapOuterAngleToTick(360.0 * 1_000_000.0, pressTick: 0L, maxTick: 42L);
+        Assert.Equal(42L, upper.ClampedTargetTick);
 
-        Assert.Equal(1_000L, tick);
+        // Lower bound: a large negative angle clamps to 0.
+        var lower = TunnelScrubMapper.MapOuterAngleToTick(-360.0 * 1_000_000.0, pressTick: 100L, maxTick: 42L);
+        Assert.Equal(0L, lower.ClampedTargetTick);
     }
 
     [Fact]
-    public void DragDeltaToTick_OvershootPastViewStart_ClampsToViewStartTick()
+    public void MapOuterAngleToTick_PathologicalFiniteAngles_SaturateBeforeFinalClamp()
     {
-        var tick = TunnelScrubMapper.DragDeltaToTick(
-            pixelDeltaX: -8_000f, viewportWidthPx: 800f, viewStartTick: 0L, viewEndTick: 1_000L, baseTick: 100L);
+        // A finite angle so large the raw tick delta overflows long: saturating conversion must
+        // cap at long.MaxValue, then the final clamp brings it back to maxTick without overflow.
+        var huge = TunnelScrubMapper.MapOuterAngleToTick(1e18, pressTick: 0L, maxTick: 99L);
+        Assert.Equal(99L, huge.ClampedTargetTick);
+        Assert.True(huge.RoundedTickDelta > 0L);
 
-        Assert.Equal(0L, tick);
+        var hugeNeg = TunnelScrubMapper.MapOuterAngleToTick(-1e18, pressTick: 5_000L, maxTick: 99L);
+        Assert.Equal(0L, hugeNeg.ClampedTargetTick);
+        Assert.True(hugeNeg.RoundedTickDelta < 0L);
     }
 
     [Theory]
-    [InlineData(0f)]
-    [InlineData(-10f)]
-    public void DragDeltaToTick_NonPositiveViewportWidth_ReturnsBaseTickUnchanged(float viewportWidthPx)
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void MapOuterAngleToTick_NonFiniteAngle_Throws(double angle)
     {
-        var tick = TunnelScrubMapper.DragDeltaToTick(
-            pixelDeltaX: 50f, viewportWidthPx: viewportWidthPx, viewStartTick: 0L, viewEndTick: 1_000L, baseTick: 500L);
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => TunnelScrubMapper.MapOuterAngleToTick(angle, pressTick: 0L, maxTick: 100L));
+    }
 
-        Assert.Equal(500L, tick);
+    // ---- NormalizeClockwiseDeltaDegrees ----
+
+    [Fact]
+    public void NormalizeClockwiseDeltaDegrees_UnwrapsBothDirectionsAcrossBranchCut()
+    {
+        // previous=-179, current=179: the pointer crossed the +X axis by +2deg, not -358deg.
+        Assert.Equal(2.0, TunnelScrubMapper.NormalizeClockwiseDeltaDegrees(-179.0, 179.0));
+        // Reverse crossing: 179 -> -179 is -2deg.
+        Assert.Equal(-2.0, TunnelScrubMapper.NormalizeClockwiseDeltaDegrees(179.0, -179.0));
+    }
+
+    [Fact]
+    public void NormalizeClockwiseDeltaDegrees_ClockwiseIsPositive()
+    {
+        // In screen coordinates increasing angle is counter-clockwise (math convention) while the
+        // product contract says clockwise is positive, so the delta is negated.
+        Assert.Equal(-10.0, TunnelScrubMapper.NormalizeClockwiseDeltaDegrees(0.0, 10.0));
+        Assert.Equal(10.0, TunnelScrubMapper.NormalizeClockwiseDeltaDegrees(10.0, 0.0));
+    }
+
+    [Theory]
+    [InlineData(double.NaN, 0.0)]
+    [InlineData(0.0, double.NaN)]
+    [InlineData(double.PositiveInfinity, 1.0)]
+    public void NormalizeClockwiseDeltaDegrees_NonFiniteInputThrows(double previous, double current)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => TunnelScrubMapper.NormalizeClockwiseDeltaDegrees(previous, current));
+    }
+
+    // ---- ResolveHitRegion ----
+
+    [Fact]
+    public void ResolveHitRegion_EachSingleCandidate_IsExclusive()
+    {
+        Assert.Equal(TunnelHitRegion.OuterRing, TunnelScrubMapper.ResolveHitRegion(outerRingHit: true, innerRingHit: false, wallHit: false));
+        Assert.Equal(TunnelHitRegion.InnerRing, TunnelScrubMapper.ResolveHitRegion(outerRingHit: false, innerRingHit: true, wallHit: false));
+        Assert.Equal(TunnelHitRegion.Wall, TunnelScrubMapper.ResolveHitRegion(outerRingHit: false, innerRingHit: false, wallHit: true));
+        Assert.Equal(TunnelHitRegion.None, TunnelScrubMapper.ResolveHitRegion(outerRingHit: false, innerRingHit: false, wallHit: false));
+    }
+
+    [Fact]
+    public void ResolveHitRegion_RingWinsOverBackingWall()
+    {
+        // A ring sits in front of the wall at the same angular position; the ring wins.
+        Assert.Equal(TunnelHitRegion.OuterRing, TunnelScrubMapper.ResolveHitRegion(true, false, true));
+        Assert.Equal(TunnelHitRegion.InnerRing, TunnelScrubMapper.ResolveHitRegion(false, true, true));
+    }
+
+    [Fact]
+    public void ResolveHitRegion_AmbiguousRings_ReturnsNone()
+    {
+        // Both rings hit at once is ambiguous -- refuse to own the gesture.
+        Assert.Equal(TunnelHitRegion.None, TunnelScrubMapper.ResolveHitRegion(true, true, false));
+        Assert.Equal(TunnelHitRegion.None, TunnelScrubMapper.ResolveHitRegion(true, true, true));
     }
 }
