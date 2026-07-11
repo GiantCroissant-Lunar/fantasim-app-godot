@@ -27,5 +27,6 @@
     <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelDepthMapper.cs" Link="TunnelDepthMapper.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelCorridorLayout.cs" Link="TunnelCorridorLayout.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelScrubMapper.cs" Link="TunnelScrubMapper.cs" />
+    <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelRayHitMapper.cs" Link="TunnelRayHitMapper.cs" />
   </ItemGroup>
 </Project>
