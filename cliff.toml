@@ -29,13 +29,7 @@ body = """
 {% endfor %}\n
 """
 trim = true
-footer = """
-{% for release in releases %}\
-    {% if release.previous %}\
-        {% set diff = release.version | split(pat=".") | last | int - release.previous.version | split(pat=".") | last | int %}\
-    {% endif %}\
-{% endfor %}\
-"""
+footer = ""
 postprocessors = [
   { pattern = ">$", replace = "" },
 ]
@@ -64,7 +58,6 @@ protect_breaking_commits = false
 filter_commits = false
 tag_pattern = "v[0-9].*"
 sort_commits = "oldest"
-limit_commits = 42
 
 [remote.github]
 owner = ""
