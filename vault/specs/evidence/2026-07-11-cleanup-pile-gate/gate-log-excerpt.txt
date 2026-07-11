@@ -1,0 +1,40 @@
+
+[file] 932 (1):
+     0: refreshing presentation.
+
+[file] 934 (1):
+     0: view=World, subdivision=adaptive, plates=10, triangles=626, meshVertices=1878...
+
+[file] 938 (1):
+     0: refreshing presentation.
+
+[file] 940 (1):
+     0: view=World, subdivision=adaptive, plates=10, triangles=558, meshVertices=1674...
+
+[file] 944 (1):
+     0: refreshing presentation.
+
+[file] 946 (1):
+     0: view=World, subdivision=adaptive, plates=10, triangles=550, meshVertices=1650...
+
+[file] 950 (1):
+     0: view=World, subdivision=adaptive, plates=10, triangles=6018, meshVertices=180...
+
+[file] 956 (1):
+     0: refreshing presentation.
+
+[file] 958 (1):
+     0: view=World, subdivision=adaptive, plates=10, triangles=10476, meshVertices=31...
+
+[file] 964 (1):
+     0: refreshing presentation.
+
+[file] 966 (1):
+     0: tick=180,000,000, canonicalTick=180,000,000, window=36, revision=1, snapshots=5
+
+[file] 974 (1):
+     0: view=World, subdivision=adaptive, plates=10, triangles=11616, meshVertices=34...
+
+[file] 978 (1):
+     0: view=World, subdivision=adaptive, plates=10, triangles=11616, meshVertices=34...
+
