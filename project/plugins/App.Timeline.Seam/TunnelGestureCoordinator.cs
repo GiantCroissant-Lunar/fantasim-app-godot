@@ -190,12 +190,14 @@ public sealed class TunnelGestureCoordinator
     private TunnelGestureUpdate PressOuter(long currentTick)
     {
         var action = _coalescer.Press(currentTick);
+        var zeroMapping = TunnelScrubMapper.MapOuterAngleToTick(0.0, currentTick, _maxTick);
+        _latestOuter = zeroMapping;
         return new TunnelGestureUpdate(
             Handled: true,
             Gesture: TunnelGestureKind.OuterRing,
             AccumulatedDegrees: 0.0,
             ScrubAction: action,
-            OuterTick: null,
+            OuterTick: zeroMapping,
             FinePreview: null,
             CarouselSnap: null,
             FineResetReason: null);
@@ -248,7 +250,7 @@ public sealed class TunnelGestureCoordinator
         return new TunnelGestureUpdate(
             Handled: true,
             Gesture: TunnelGestureKind.InnerRing,
-            AccumulatedDegrees: _accumulatedDegrees,
+            AccumulatedDegrees: preview.AccumulatedDegrees,
             ScrubAction: TimelineScrubAction.None,
             OuterTick: null,
             FinePreview: preview,
@@ -289,7 +291,7 @@ public sealed class TunnelGestureCoordinator
         return new TunnelGestureUpdate(
             Handled: true,
             Gesture: TunnelGestureKind.InnerRing,
-            AccumulatedDegrees: _accumulatedDegrees,
+            AccumulatedDegrees: preview.AccumulatedDegrees,
             ScrubAction: TimelineScrubAction.None,
             OuterTick: null,
             FinePreview: preview,

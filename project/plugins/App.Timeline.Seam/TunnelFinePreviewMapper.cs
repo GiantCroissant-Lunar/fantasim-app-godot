@@ -109,8 +109,13 @@ public static class TunnelFinePreviewMapper
 
     private static long? TryIntegralTickDelta(double rawTickQuantity)
     {
-        if (Math.Abs(rawTickQuantity - Math.Round(rawTickQuantity)) < WholeTickTolerance)
-            return (long)Math.Round(rawTickQuantity, MidpointRounding.AwayFromZero);
+        var rounded = Math.Round(rawTickQuantity, MidpointRounding.AwayFromZero);
+        var distance = Math.Abs(rawTickQuantity - rounded);
+        // Relative tolerance: a nonzero sub-tick quantity (e.g. a rung with UnitTicks near 1e-9
+        // at ±360°) must stay fractional. An absolute 1e-6 floor would collapse it to integral 0.
+        // Exactly zero is always integral (distance 0 <= 0).
+        if (distance <= WholeTickTolerance * Math.Abs(rawTickQuantity))
+            return (long)rounded;
 
         return null;
     }

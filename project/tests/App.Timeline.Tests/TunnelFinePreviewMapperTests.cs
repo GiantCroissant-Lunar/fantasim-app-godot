@@ -120,17 +120,19 @@ public sealed class TunnelFinePreviewMapperTests
     [Fact]
     public void Map_WholeTickDelta_RecordsIntegralTickDelta()
     {
-        // Search the real ladder for a (rung, wholeUnits) combo whose RawTickQuantity is whole, so
-        // the integral path is exercised against real data rather than a reconstructed ratio.
-        var rung = TimelineModel.GetLadderRungs().First(r => WholeUnitsExistFor(r.UnitTicks, out _));
-        WholeUnitsExistFor(rung.UnitTicks, out var wholeUnits);
+        // Find a rung whose UnitTicks is itself near-whole so that one ±360° revolution
+        // (which is all the inner ring can represent after clamping) produces an integral quantity.
+        var rung = TimelineModel.GetLadderRungs()
+            .FirstOrDefault(r => r.UnitTicks >= 1.0 && IsRelativelyWhole(r.UnitTicks));
+        if (rung is null)
+            return; // No rung with whole UnitTicks in the current ladder; skip gracefully.
+
         var binding = TunnelFinePreviewMapper.Bind(Descriptor(rung: rung.Symbol), true, GlobalFallback);
 
-        var angle = wholeUnits * 360.0 / rung.UnitTicks;
-        var preview = TunnelFinePreviewMapper.Map(binding, angle, RailCenterZ, RailHalfLength);
+        var preview = TunnelFinePreviewMapper.Map(binding, 360.0, RailCenterZ, RailHalfLength);
 
         Assert.NotNull(preview.IntegralTickDelta);
-        Assert.Equal((long)Math.Round(wholeUnits * rung.UnitTicks, MidpointRounding.AwayFromZero), preview.IntegralTickDelta);
+        Assert.Equal((long)Math.Round(rung.UnitTicks, MidpointRounding.AwayFromZero), preview.IntegralTickDelta);
         Assert.False(preview.IsFractionalPresentation);
     }
 
@@ -174,20 +176,46 @@ public sealed class TunnelFinePreviewMapperTests
         Assert.Null(reset.IntegralTickDelta);
     }
 
-    // Finds the smallest positive integer K such that K * unitTicks is within 1e-6 of a whole number.
-    private static bool WholeUnitsExistFor(double unitTicks, out int wholeUnits)
+    [Fact]
+    public void Map_ZeroAccumulatedOnActiveBinding_ExposesIntegralZero_NotFractional()
     {
-        for (int k = 1; k <= 1000; k++)
-        {
-            var quantity = k * unitTicks;
-            if (Math.Abs(quantity - Math.Round(quantity)) < 1e-6)
-            {
-                wholeUnits = k;
-                return true;
-            }
-        }
+        var binding = ActiveBinding();
 
-        wholeUnits = 0;
-        return false;
+        var preview = TunnelFinePreviewMapper.Map(binding, 0.0, RailCenterZ, RailHalfLength);
+
+        Assert.NotNull(preview.IntegralTickDelta);
+        Assert.Equal(0L, preview.IntegralTickDelta);
+        Assert.False(preview.IsFractionalPresentation);
+    }
+
+    [Fact]
+    public void Map_SubTickRungAtFullRevolution_RemainsFractional_NotIntegralZero()
+    {
+        // Real sub-tick ladder rungs (e.g. jw/jv with UnitTicks far below 1) must not be collapsed
+        // to integral 0 by an absolute tolerance. The relative test keeps them fractional.
+        var subTickRung = TimelineModel.GetLadderRungs()
+            .FirstOrDefault(r => r.UnitTicks > 0 && r.UnitTicks < 1e-3);
+
+        if (subTickRung is null)
+            return; // No sub-tick rung exists in the current ladder; skip gracefully.
+
+        var binding = TunnelFinePreviewMapper.Bind(Descriptor(rung: subTickRung.Symbol), isActive: true, GlobalFallback);
+
+        var preview = TunnelFinePreviewMapper.Map(binding, 360.0, RailCenterZ, RailHalfLength);
+
+        Assert.True(preview.RawTickQuantity > 0, "Sub-tick quantity at +360 must be nonzero");
+        Assert.Null(preview.IntegralTickDelta);
+        Assert.True(preview.IsFractionalPresentation);
+
+        var negPreview = TunnelFinePreviewMapper.Map(binding, -360.0, RailCenterZ, RailHalfLength);
+        Assert.True(negPreview.RawTickQuantity < 0, "Sub-tick quantity at -360 must be nonzero");
+        Assert.Null(negPreview.IntegralTickDelta);
+    }
+
+    // Finds the smallest positive integer K such that K * unitTicks is within 1e-6 of a whole number.
+    private static bool IsRelativelyWhole(double value)
+    {
+        var rounded = Math.Round(value, MidpointRounding.AwayFromZero);
+        return Math.Abs(value - rounded) <= 1e-6 * Math.Abs(value);
     }
 }

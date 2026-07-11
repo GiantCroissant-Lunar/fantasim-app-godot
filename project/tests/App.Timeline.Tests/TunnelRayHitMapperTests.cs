@@ -173,4 +173,20 @@ public sealed class TunnelRayHitMapperTests
 
         Assert.False(hit);
     }
+
+    [Fact]
+    public void TryIntersectCylinder_FiniteInputsWithOverflowingQuadratic_ReturnsFalse_NeverNaNHit()
+    {
+        // Finite inputs whose quadratic intermediates overflow to Infinity/NaN must not produce a
+        // successful hit with garbage coordinates. The discriminant b² or 4ac overflows here, but
+        // every value is finite on input.
+        var ray = new TunnelRay3(
+            new TunnelPoint3(1e150, 1e150, 0),
+            new TunnelPoint3(1e150, 1e150, -1));
+
+        var hit = TunnelRayHitMapper.TryIntersectCylinder(ray, radius: 8.0, throatZ: -14.0, mouthZ: 0.0, out var point);
+
+        Assert.False(hit);
+        Assert.Equal(default, point);
+    }
 }

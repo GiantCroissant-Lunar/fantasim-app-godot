@@ -261,6 +261,30 @@ public sealed class TunnelCorridorLayoutTests
         Assert.Equal(-1, snap0.FocusIndex);
     }
 
+    [Fact]
+    public void SnapFocus_StepDeltaBeyondIntMaxValue_ReducesModuloBeforeCombining()
+    {
+        // A stepDelta beyond int.MaxValue must be reduced modulo trackCount (as long) before
+        // narrowing to int; (int)(focusIndex + stepDelta) would overflow and produce garbage.
+        long bigStep = (long)int.MaxValue + 100; // 2147483747, well beyond int range
+        var snap = TunnelCorridorLayout.SnapFocus(2, 5, accumulatedDegrees: bigStep * 30.0);
+
+        Assert.True(snap.StepDelta > int.MaxValue);
+        Assert.Equal(bigStep, snap.StepDelta);
+        Assert.True(snap.FocusIndex >= 0 && snap.FocusIndex < 5);
+    }
+
+    [Fact]
+    public void SnapFocus_StepDeltaBelowIntMinValue_ReducesModuloBeforeCombining()
+    {
+        long bigNegStep = (long)int.MinValue - 100; // -2147483748, well beyond int range
+        var snap = TunnelCorridorLayout.SnapFocus(3, 5, accumulatedDegrees: bigNegStep * 30.0);
+
+        Assert.True(snap.StepDelta < int.MinValue);
+        Assert.Equal(bigNegStep, snap.StepDelta);
+        Assert.True(snap.FocusIndex >= 0 && snap.FocusIndex < 5);
+    }
+
     // ---- ResolveCorridorRung (retained from slice 1) ----
 
     [Fact]

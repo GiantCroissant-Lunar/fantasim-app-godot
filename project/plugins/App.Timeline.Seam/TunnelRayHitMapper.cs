@@ -77,19 +77,26 @@ public static class TunnelRayHitMapper
         var dy = ray.Direction.Y;
 
         var a = dx * dx + dy * dy;
-        if (a < ParallelEpsilon)
-            return false; // Ray parallel to the cylinder axis.
+        if (a < ParallelEpsilon || !double.IsFinite(a))
+            return false;
 
         var b = 2.0 * (ox * dx + oy * dy);
         var c = ox * ox + oy * oy - radius * radius;
         var discriminant = b * b - 4.0 * a * c;
-        if (discriminant < 0.0)
-            return false; // No real roots: ray misses the infinite cylinder.
+        if (!double.IsFinite(discriminant) || discriminant < 0.0)
+            return false;
 
         var sqrtD = Math.Sqrt(discriminant);
+        if (!double.IsFinite(sqrtD))
+            return false;
         var inv2a = 1.0 / (2.0 * a);
+        if (!double.IsFinite(inv2a))
+            return false;
         var tNear = (-b - sqrtD) * inv2a;
         var tFar = (-b + sqrtD) * inv2a;
+
+        if (!double.IsFinite(tNear) || !double.IsFinite(tFar))
+            return false;
 
         if (tNear > tFar)
             (tNear, tFar) = (tFar, tNear);
@@ -107,17 +114,19 @@ public static class TunnelRayHitMapper
         TunnelRay3 ray, double t, double throatZ, double mouthZ, out TunnelPoint3 point)
     {
         point = default;
-        if (t < 0.0)
+        if (!double.IsFinite(t) || t < 0.0)
             return false;
 
         var z = ray.Origin.Z + t * ray.Direction.Z;
-        if (z < throatZ || z > mouthZ)
+        if (!double.IsFinite(z) || z < throatZ || z > mouthZ)
             return false;
 
-        point = new TunnelPoint3(
-            ray.Origin.X + t * ray.Direction.X,
-            ray.Origin.Y + t * ray.Direction.Y,
-            z);
+        var x = ray.Origin.X + t * ray.Direction.X;
+        var y = ray.Origin.Y + t * ray.Direction.Y;
+        if (!double.IsFinite(x) || !double.IsFinite(y))
+            return false;
+
+        point = new TunnelPoint3(x, y, z);
         return true;
     }
 

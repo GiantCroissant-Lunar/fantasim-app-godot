@@ -210,6 +210,39 @@ public sealed class TunnelGestureCoordinatorTests
         Assert.False(coord.OwnsGesture);
     }
 
+    [Fact]
+    public void InnerMotion_AccumulatedDegreesMatchesClampedPreview_NotUnclamped720()
+    {
+        // The inner gesture's update AccumulatedDegrees must match the clamped ±360° fine preview,
+        // not the raw unclamped accumulation. Two full clockwise revolutions (720°) clamp to 360°.
+        var coord = new TunnelGestureCoordinator();
+        coord.Press(TunnelHitRegion.InnerRing, Context());
+
+        var m1 = coord.Motion(360.0);
+        var m2 = coord.Motion(360.0);
+
+        Assert.NotNull(m2.FinePreview);
+        Assert.Equal(360.0, m2.FinePreview!.Value.AccumulatedDegrees, precision: 6);
+        Assert.Equal(m2.FinePreview.Value.AccumulatedDegrees, m2.AccumulatedDegrees, precision: 6);
+        Assert.NotEqual(720.0, m2.AccumulatedDegrees);
+    }
+
+    // ---- Outer press returns zero-degree OuterTick ----
+
+    [Fact]
+    public void Press_OuterRing_ReturnsZeroDegreeOuterTick_AlongsideScrubPreview()
+    {
+        var coord = new TunnelGestureCoordinator();
+
+        var press = coord.Press(TunnelHitRegion.OuterRing, Context(tick: 500_000L));
+
+        Assert.NotNull(press.OuterTick);
+        Assert.Equal(0.0, press.OuterTick!.Value.AccumulatedDegrees, precision: 6);
+        Assert.Equal(500_000L, press.OuterTick.Value.ClampedTargetTick);
+        Assert.True(press.ScrubAction.ShouldApply);
+        Assert.Equal(TimelineTickOrigin.ScrubPreview, press.ScrubAction.Origin);
+    }
+
     // ---- Wall snap ----
 
     [Fact]
