@@ -426,42 +426,39 @@ public sealed class CameraRig : ICameraRig
         snapshot["cameraPath"] = rig.Camera.GetPath().ToString();
         snapshot["cameraTransform"] = BuildTransformDictionary(rig.Camera.GlobalTransform);
 
-        if (activePcam is PhantomCamera3D activePcamNode)
-        {
-            snapshot["activePcamPath"] = activePcamNode.Node3D.GetPath().ToString();
-            snapshot["activePcamTransform"] = BuildTransformDictionary(activePcamNode.Node3D.GlobalTransform);
-            snapshot["followTargetPath"] = activePcamNode.Node3D.Get("follow_target").Obj is Node ft ? ft.GetPath().ToString() : "(null)";
-            snapshot["springLength"] = (float)activePcamNode.Node3D.Get("spring_length");
-        }
-        else
-        {
-            snapshot["activePcamPath"] = "(none)";
-            snapshot["activePcamTransform"] = "(none)";
-            snapshot["followTargetPath"] = "(none)";
-            snapshot["springLength"] = 0f;
-        }
+        PhantomCamera3D? activePcamNode = activePcam as PhantomCamera3D;
+        snapshot["activePcamPresent"] = activePcamNode is not null;
+        snapshot["activePcamPath"] = activePcamNode is { } apcam
+            ? apcam.Node3D.GetPath().ToString()
+            : "";
+        snapshot["activePcamTransform"] = activePcamNode is { } apcamT
+            ? BuildTransformDictionary(apcamT.Node3D.GlobalTransform)
+            : EmptyTransformDictionary();
+        snapshot["followTargetPath"] = activePcamNode is { } apcamFt
+            && apcamFt.Node3D.Get("follow_target").Obj is Node ft
+                ? ft.GetPath().ToString()
+                : "";
+        snapshot["springLength"] = activePcamNode is { } apcamSl
+            ? (float)apcamSl.Node3D.Get("spring_length")
+            : 0f;
 
-        if (GlobeOrbitControls.ActiveInstance is { } controls)
-        {
-            var input = new Godot.Collections.Dictionary();
-            input["hostBound"] = controls.DiagHostBound;
-            input["draggingNow"] = controls.DiagDraggingNow;
-            input["pressesSeen"] = controls.DiagPressesSeen;
-            input["releasesSeen"] = controls.DiagReleasesSeen;
-            input["wheelSeen"] = controls.DiagWheelSeen;
-            input["motionsSeen"] = controls.DiagMotionsSeen;
-            input["dragMotionsApplied"] = controls.DiagDragMotionsApplied;
-            snapshot["orbitInput"] = input;
+        var controls = GlobeOrbitControls.ActiveInstance;
+        snapshot["orbitControlsPresent"] = controls is not null;
+        snapshot["orbitYawDeg"] = controls?.DiagOrbitSnapshot.YawDeg ?? 0d;
+        snapshot["orbitPitchDeg"] = controls?.DiagOrbitSnapshot.PitchDeg ?? 0d;
+        snapshot["orbitDistance"] = controls?.DiagOrbitSnapshot.Distance ?? 0d;
+        snapshot["draggingNow"] = controls?.DiagDraggingNow ?? false;
+        snapshot["dragMotionsApplied"] = controls?.DiagDragMotionsApplied ?? 0;
 
-            var orbit = controls.DiagOrbitSnapshot;
-            snapshot["orbitYawDeg"] = orbit.YawDeg;
-            snapshot["orbitPitchDeg"] = orbit.PitchDeg;
-            snapshot["orbitDistance"] = orbit.Distance;
-        }
-        else
-        {
-            snapshot["orbitInput"] = "(no GlobeOrbitControls in tree)";
-        }
+        var input = new Godot.Collections.Dictionary();
+        input["hostBound"] = controls?.DiagHostBound ?? false;
+        input["draggingNow"] = controls?.DiagDraggingNow ?? false;
+        input["pressesSeen"] = controls?.DiagPressesSeen ?? 0;
+        input["releasesSeen"] = controls?.DiagReleasesSeen ?? 0;
+        input["wheelSeen"] = controls?.DiagWheelSeen ?? 0;
+        input["motionsSeen"] = controls?.DiagMotionsSeen ?? 0;
+        input["dragMotionsApplied"] = controls?.DiagDragMotionsApplied ?? 0;
+        snapshot["orbitInput"] = input;
 
         var pcams = new Godot.Collections.Array();
         foreach (var (id, entry) in _cameras)
@@ -486,16 +483,27 @@ public sealed class CameraRig : ICameraRig
 
     private static Godot.Collections.Dictionary BuildTransformDictionary(Transform3D t)
     {
+        // Godot 4.7 Basis exposes its three columns as Vector3 X/Y/Z; the documented scalar key
+        // names (basisXX..originZ) are preserved verbatim so existing evidence tooling is stable.
         var b = t.Basis;
         var o = t.Origin;
         return new Godot.Collections.Dictionary
         {
-            ["basisXX"] = b.Xx, ["basisXY"] = b.Xy, ["basisXZ"] = b.Xz,
-            ["basisYX"] = b.Yx, ["basisYY"] = b.Yy, ["basisYZ"] = b.Yz,
-            ["basisZX"] = b.Zx, ["basisZY"] = b.Zy, ["basisZZ"] = b.Zz,
+            ["basisXX"] = b.X.X, ["basisXY"] = b.X.Y, ["basisXZ"] = b.X.Z,
+            ["basisYX"] = b.Y.X, ["basisYY"] = b.Y.Y, ["basisYZ"] = b.Y.Z,
+            ["basisZX"] = b.Z.X, ["basisZY"] = b.Z.Y, ["basisZZ"] = b.Z.Z,
             ["originX"] = o.X, ["originY"] = o.Y, ["originZ"] = o.Z,
         };
     }
+
+    private static Godot.Collections.Dictionary EmptyTransformDictionary()
+        => new()
+        {
+            ["basisXX"] = 0d, ["basisXY"] = 0d, ["basisXZ"] = 0d,
+            ["basisYX"] = 0d, ["basisYY"] = 0d, ["basisYZ"] = 0d,
+            ["basisZX"] = 0d, ["basisZY"] = 0d, ["basisZZ"] = 0d,
+            ["originX"] = 0d, ["originY"] = 0d, ["originZ"] = 0d,
+        };
 
     private void EnsureViewportRig(string viewportId)
     {
