@@ -1,0 +1,27 @@
+=== BOOT 1 (cold) — fresh builds ===
+   1 ready in 102 ms via fresh pipeline
+   3 ready in 12 ms via fresh pipeline
+   3 ready in 15 ms via fresh pipeline
+   2 ready in 21 ms via fresh pipeline
+   1 ready in 58 ms via fresh pipeline
+   2 ready in 9 ms via fresh pipeline
+
+=== BOOT 2 (warm, same seeks) — restores ===
+  12 ready in 0 ms via persisted-cache restore
+   5 ready in 1 ms via persisted-cache restore
+   1 ready in 13 ms via persisted-cache restore
+   2 ready in 3 ms via persisted-cache restore
+   2 ready in 4 ms via persisted-cache restore
+   1 ready in 42 ms via persisted-cache restore
+
+=== BOOT 2 reload round ===
+      Hot-reload: old ALC collected for bundle activity
+      Hot-reload: old ALC collected for bundle assist
+      Hot-reload: old ALC collected for bundle world
+      Hot-reload: old ALC collected for bundle timeline
+      Hot-reload: old ALC collected for bundle assist
+      Hot-reload: old ALC collected for bundle stage
+      Hot-reload: old ALC collected for bundle timeline
+still-pinned: 0
+errors: 0
+store: ~/Library/Application Support/FantaSim/complete-app/crust-cache.litedb
