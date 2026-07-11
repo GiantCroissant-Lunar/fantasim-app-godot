@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using FantaSim.App.Ecs.Systems;
 using FantaSim.App.NodeGraph;
+using FantaSim.App.World.Composition;
 using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Topography;
 using Xunit;
@@ -103,6 +104,28 @@ public sealed class WorldGenerationRenderOptionsTests
         Assert.Equal(2, options.AdaptiveSubdivisionMaxDepth);
         Assert.Equal(0.02, options.AdaptiveSubdivisionEdgeHeightDelta);
         Assert.Equal(0.25, options.AdaptiveSubdivisionFeatureWeightDelta);
+    }
+
+    [Fact]
+    public void Default_spin_rate_is_the_calibrated_onset_roster_default()
+    {
+        Assert.Equal(
+            OnsetRoster.DefaultAngularDriftPerMegaAnnum,
+            WorldGenerationRenderOptions.Default.SpinRateRadiansPerMegaAnnum);
+    }
+
+    [Fact]
+    public async Task Resolve_reads_spin_rate_override()
+    {
+        var source = new WorldGenerationGraphSource(
+            "world-generation",
+            WorldGenerationGraphDefaults.BuildCrustGraph());
+        await source.ApplyEditAsync(new GraphEdit.SetParam(
+            "options", "spinRateRadiansPerMegaAnnum", JsonValue.Create(0.017)));
+
+        var options = WorldGenerationRenderOptions.Resolve(source.Graph);
+
+        Assert.Equal(0.017, options.SpinRateRadiansPerMegaAnnum);
     }
 
     [Fact]

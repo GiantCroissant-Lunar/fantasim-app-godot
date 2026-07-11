@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using FantaSim.App.NodeGraph;
+using FantaSim.App.World.Composition;
 
 namespace FantaSim.App.World.GenerationGraph;
 
@@ -35,7 +37,13 @@ public static class WorldGenerationNodeCatalog
                 new WorldGenerationGraphParameter("seed", "Seed", "7", "int"),
                 new WorldGenerationGraphParameter("frequency", "Frequency", "4", "int"),
                 new WorldGenerationGraphParameter("canonicalTick", "Canonical Tick", "8000000", "long"),
-                new WorldGenerationGraphParameter("spinRateRadiansPerMegaAnnum", "Spin Rate", "0.0035", "float"),
+                // The default is the calibrated OnsetRoster source of truth — ONE adjustable
+                // spin-rate property end-to-end (user decision 2026-07-11), no duplicated literal.
+                new WorldGenerationGraphParameter(
+                    "spinRateRadiansPerMegaAnnum",
+                    "Spin Rate",
+                    OnsetRoster.DefaultAngularDriftPerMegaAnnum.ToString(CultureInfo.InvariantCulture),
+                    "float"),
                 new WorldGenerationGraphParameter("hydrosphereMode", "Hydrosphere Mode", "absent", "string"),
                 new WorldGenerationGraphParameter("surfaceSubdivision", "Surface Subdivision", "adaptive", "string"),
                 new WorldGenerationGraphParameter("adaptiveSubdivisionMaxDepth", "Adaptive Subdivision Max Depth", "2", "int"),

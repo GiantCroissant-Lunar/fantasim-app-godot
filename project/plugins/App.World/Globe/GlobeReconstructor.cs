@@ -62,12 +62,6 @@ namespace FantaSim.App.World.Globe;
 
 public sealed class GlobeReconstructor
 {
-    // Legacy non-graph (DefaultPlates) path value — intentionally NOT recalibrated.
-    // The node-graph path (WorldCrustRunSpec) is the product path and uses the calibrated
-    // 0.0035 rad/Ma from OnsetRoster.DefaultAngularDriftPerMegaAnnum; see OnsetRoster and
-    // tools/rates/2026-07-07-rate-calibration-report.md.
-    private const double SpinRatePerMegaAnnum = 0.02;
-
     private readonly int _frequency;
     private readonly GeodesicSphereTessellation _tessellation;
     private readonly IReadOnlyList<Plate> _plates;
@@ -735,7 +729,11 @@ public sealed class GlobeReconstructor
     /// </summary>
     private static IReadOnlyList<Plate> DefaultPlates()
     {
-        double rate = UnitConverter.RadiansPerMegaAnnumToRadiansPerTick(SpinRatePerMegaAnnum);
+        // ONE spin-rate property end-to-end (user decision 2026-07-11): even this legacy
+        // non-graph seed consumes the calibrated OnsetRoster default — the former local
+        // 0.02 rad/Ma constant (uncalibrated movers p90) is gone.
+        double rate = UnitConverter.RadiansPerMegaAnnumToRadiansPerTick(
+            OnsetRoster.DefaultAngularDriftPerMegaAnnum);
         var zAxis = new Vector3D(0, 0, 1);
         var yAxis = new Vector3D(0, 1, 0);
         return new[]

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
 using FantaSim.App.Ecs.Systems;
+using FantaSim.App.World.Composition;
 using FantaSim.App.World.Topography;
 
 namespace FantaSim.App.World.GenerationGraph;
@@ -30,6 +31,15 @@ public sealed record WorldGenerationRenderOptions(int Seed, int TessellationFreq
     /// different world can override any shape number.
     /// </summary>
     public BoundaryProfileParameters BoundaryProfiles { get; init; } = BoundaryProfileParameters.Default;
+
+    /// <summary>
+    /// Plate angular-drift rate in rad/Ma — the ONE adjustable spin-rate property (user decision
+    /// 2026-07-11), authored on the <c>world.options</c> node as <c>spinRateRadiansPerMegaAnnum</c>.
+    /// rad/Ma is authoring vocabulary only: the value is converted to rad/tick at the declared
+    /// conversion point inside <see cref="OnsetRoster.Build"/>. Default is the calibrated
+    /// <see cref="OnsetRoster.DefaultAngularDriftPerMegaAnnum"/>.
+    /// </summary>
+    public double SpinRateRadiansPerMegaAnnum { get; init; } = OnsetRoster.DefaultAngularDriftPerMegaAnnum;
 
     /// <summary>
     /// Vertical exaggeration (scale rule S1): the factor that maps a crust elevation in metres (on the
@@ -123,6 +133,15 @@ public sealed record WorldGenerationRenderOptions(int Seed, int TessellationFreq
                 "Vertical exaggeration must be positive.");
         }
 
+        var spinRate = ReadDouble(optionsNode.Params, "spinRateRadiansPerMegaAnnum", options.SpinRateRadiansPerMegaAnnum);
+        if (spinRate < 0 || double.IsNaN(spinRate) || double.IsInfinity(spinRate))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(SpinRateRadiansPerMegaAnnum),
+                spinRate,
+                "Spin rate must be a finite, non-negative rad/Ma value.");
+        }
+
         var adaptiveDepth = ReadInt(optionsNode.Params, "adaptiveSubdivisionMaxDepth", options.AdaptiveSubdivisionMaxDepth);
         if (adaptiveDepth < 0)
         {
@@ -156,6 +175,7 @@ public sealed record WorldGenerationRenderOptions(int Seed, int TessellationFreq
         return new WorldGenerationRenderOptions(seed, frequency)
         {
             BoundaryProfiles = profiles,
+            SpinRateRadiansPerMegaAnnum = spinRate,
             VerticalExaggeration = verticalExaggeration,
             HydrosphereMode = ReadHydrosphereMode(optionsNode.Params, options.HydrosphereMode),
             SurfaceSubdivision = ReadSurfaceSubdivisionMode(optionsNode.Params, options.SurfaceSubdivision),

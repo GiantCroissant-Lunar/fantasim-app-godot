@@ -38,10 +38,10 @@ internal sealed record WorldCrustRunSpec(
     private static readonly CrustPatchRecipe DefaultPatchRecipe = new(Seed: 0, PatchCount: 5);
 
     private const double DefaultDurationMegaAnnum = 8.0;
-    // Calibrated 2026-07-07 against real plate-stage rates from Cao et al. 2024 (1.8 Ga GPlates
-    // model): 0.0035 rad/Ma is the Phanerozoic movers MEDIAN, matching OnsetRoster's
-    // DefaultAngularDriftPerMegaAnnum. See tools/rates/2026-07-07-rate-calibration-report.md.
-    private const double DefaultSpinRateRadiansPerMegaAnnum = 0.0035;
+    // ONE spin-rate property end-to-end (user decision 2026-07-11): the default is the calibrated
+    // OnsetRoster source of truth, not a local copy. Provenance:
+    // tools/rates/2026-07-07-rate-calibration-report.md.
+    private const double DefaultSpinRateRadiansPerMegaAnnum = OnsetRoster.DefaultAngularDriftPerMegaAnnum;
     private const double DefaultOrogenicPerMegaAnnum = 1.0;
     private const double DefaultArcVolcanismPerMegaAnnum = 0.6;
     private const double DefaultIslandArcVolcanismPerMegaAnnum = 0.4;
@@ -114,7 +114,11 @@ internal sealed record WorldCrustRunSpec(
         if (onsetTick < 0) throw new ArgumentOutOfRangeException(nameof(onsetTick));
         if (referenceTick < 0) throw new ArgumentOutOfRangeException(nameof(referenceTick));
 
-        var roster = OnsetRoster.Build(renderOptions.Seed, onsetTick, renderOptions.TessellationFrequency);
+        var roster = OnsetRoster.Build(
+            renderOptions.Seed,
+            onsetTick,
+            renderOptions.TessellationFrequency,
+            renderOptions.SpinRateRadiansPerMegaAnnum);
         var plates = roster.SeedPlatesAt(onsetTick);
         if (plates.Count == 0)
             throw new ArgumentException("Presentation crust run spec requires seed plates at onset.", nameof(onsetTick));
@@ -212,14 +216,14 @@ internal sealed record WorldCrustRunSpec(
     private static IReadOnlyList<TopoPlate> DefaultOnsetPlates(
         int seed,
         int frequency,
-        double fallbackRatePerMegaAnnum)
+        double spinRateRadiansPerMegaAnnum)
     {
         var onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
-        var roster = OnsetRoster.Build(seed, onsetTick, frequency);
+        var roster = OnsetRoster.Build(seed, onsetTick, frequency, spinRateRadiansPerMegaAnnum);
         var plates = roster.SeedPlatesAt(onsetTick);
         if (plates.Count > 0) return plates;
 
-        double ratePerTick = UnitConverter.RadiansPerMegaAnnumToRadiansPerTick(fallbackRatePerMegaAnnum);
+        double ratePerTick = UnitConverter.RadiansPerMegaAnnumToRadiansPerTick(spinRateRadiansPerMegaAnnum);
         return new[]
         {
             new TopoPlate(0, SphericalPoint.FromDegrees(0, 0), new EulerPole(new Vector3D(0, 0, 1), +ratePerTick)),

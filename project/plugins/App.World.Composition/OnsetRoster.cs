@@ -26,16 +26,19 @@ namespace FantaSim.App.World.Composition;
 /// </remarks>
 public sealed class OnsetRoster
 {
-    // Calibrated 2026-07-07 against real plate-stage rates from Cao et al. 2024 (1.8 Ga GPlates
-    // model): 0.0035 rad/Ma ≈ 0.20°/Ma is the Phanerozoic movers MEDIAN. The previous 0.02 rad/Ma
-    // was the movers p90 (~5.7× too fast for a default). See
-    // tools/rates/2026-07-07-rate-calibration-report.md ( quaternion stage-rate analysis of the
-    // real .rot files). The lively upper below is kept as a documented alternative, not wired.
-    private const double DefaultAngularDriftPerMegaAnnum = 0.0035;
+    /// <summary>
+    /// Calibrated default plate angular-drift rate in rad/Ma — the single source of truth behind
+    /// the <c>spinRateRadiansPerMegaAnnum</c> world knob (user decision 2026-07-11: ONE adjustable
+    /// property end-to-end, no scattered constants). Calibrated 2026-07-07 against real plate-stage
+    /// rates from Cao et al. 2024 (1.8 Ga GPlates model): 0.0035 rad/Ma ≈ 0.20°/Ma is the
+    /// Phanerozoic movers MEDIAN. The previous 0.02 rad/Ma was the movers p90 (~5.7× too fast for
+    /// a default). See tools/rates/2026-07-07-rate-calibration-report.md (quaternion stage-rate
+    /// analysis of the real .rot files). The lively upper below is kept as a documented
+    /// alternative, not wired.
+    /// </summary>
+    public const double DefaultAngularDriftPerMegaAnnum = 0.0035;
     // ~p90 of real plates — "lively" option, see tools/rates/2026-07-07-rate-calibration-report.md.
     private const double LivelyUpperAngularDriftPerMegaAnnum = 0.017;
-    private static readonly double DefaultAngularDriftPerTick =
-        UnitConverter.RadiansPerMegaAnnumToRadiansPerTick(DefaultAngularDriftPerMegaAnnum);
 
     /// <summary>
     /// The TruthStream identity used by LidFractureAtOnset / PlateTopologyEmitter when producing
@@ -71,13 +74,32 @@ public sealed class OnsetRoster
     ///         via <see cref="PlateTopologyMaterializer.Apply"/> (proven engine fold, not re-derived here).</item>
     /// </list>
     /// Pure/deterministic: same inputs produce the same roster every call.
+    /// <para><paramref name="angularDriftPerMegaAnnum"/> is the world spin-rate knob
+    /// (<c>spinRateRadiansPerMegaAnnum</c>), authored in rad/Ma and converted to rad/tick here —
+    /// the declared conversion point; everything downstream is tick-native.</para>
     /// </summary>
-    public static OnsetRoster Build(int worldSeed, long onsetTick, int tessellationFrequency)
+    public static OnsetRoster Build(
+        int worldSeed,
+        long onsetTick,
+        int tessellationFrequency,
+        double angularDriftPerMegaAnnum = DefaultAngularDriftPerMegaAnnum)
     {
+        if (double.IsNaN(angularDriftPerMegaAnnum)
+            || double.IsInfinity(angularDriftPerMegaAnnum)
+            || angularDriftPerMegaAnnum < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(angularDriftPerMegaAnnum),
+                angularDriftPerMegaAnnum,
+                "Plate angular drift must be a finite, non-negative rad/Ma value.");
+        }
+
+        double angularDriftPerTick =
+            UnitConverter.RadiansPerMegaAnnumToRadiansPerTick(angularDriftPerMegaAnnum);
         var field = new ConvectionFieldGenerator(new ConvectionFieldConfig
         {
             Seed = worldSeed,
-            AngularDriftPerTick = DefaultAngularDriftPerTick,
+            AngularDriftPerTick = angularDriftPerTick,
         });
         var tess = new GeodesicSphereTessellation(tessellationFrequency);
 
@@ -94,7 +116,7 @@ public sealed class OnsetRoster
             var nextAxis = i < nextStructure.Upwellings.Count
                 ? NormalizeOrZero(nextStructure.Upwellings[i].Position)
                 : axis;
-            seedPlates.Add(new Plate(i, ToSpherical(axis), PoleFromCenterDrift(axis, nextAxis)));
+            seedPlates.Add(new Plate(i, ToSpherical(axis), PoleFromCenterDrift(axis, nextAxis, angularDriftPerTick)));
         }
 
         IReadOnlyList<ITruthEventDraft> drafts = LidFractureAtOnset.Fracture(
@@ -133,17 +155,17 @@ public sealed class OnsetRoster
         return len < 1e-15 ? new Vector3D(0, 0, 0) : new Vector3D(v.X / len, v.Y / len, v.Z / len);
     }
 
-    private static EulerPole PoleFromCenterDrift(Vector3D current, Vector3D next)
+    private static EulerPole PoleFromCenterDrift(Vector3D current, Vector3D next, double fallbackRatePerTick)
     {
         var cross = Cross(current, next);
         var crossLength = Length(cross);
         if (crossLength < 1e-15)
-            return new EulerPole(FallbackPoleAxis(current), DefaultAngularDriftPerTick);
+            return new EulerPole(FallbackPoleAxis(current), fallbackRatePerTick);
 
         var axis = new Vector3D(cross.X / crossLength, cross.Y / crossLength, cross.Z / crossLength);
         var dot = Math.Clamp(Dot(current, next), -1.0, 1.0);
         var rate = Math.Atan2(crossLength, dot);
-        return new EulerPole(axis, rate <= 0.0 ? DefaultAngularDriftPerTick : rate);
+        return new EulerPole(axis, rate <= 0.0 ? fallbackRatePerTick : rate);
     }
 
     private static Vector3D FallbackPoleAxis(Vector3D current)

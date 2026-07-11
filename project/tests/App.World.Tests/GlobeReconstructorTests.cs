@@ -3,6 +3,7 @@ using System.Linq;
 using FantaSim.App.World.Composition;
 using FantaSim.App.World.Dto;
 using FantaSim.App.World.Globe;
+using FantaSim.World.Contracts.Units;
 using Xunit;
 
 namespace FantaSim.App.World.Tests;
@@ -36,16 +37,19 @@ public sealed class GlobeReconstructorTests
     }
 
     [Fact]
-    public void BuildGlobe_default_seed_spinners_are_in_rad_per_tick()
+    public void BuildGlobe_default_seed_spinners_use_the_calibrated_rate_in_rad_per_tick()
     {
         var snapshot = new GlobeReconstructor(frequency: 3).BuildGlobe();
 
         var spinners = snapshot.Plates.Where(p => Math.Abs(p.RatePerTick) > 0).ToList();
         // The four-plate seed has three spinning plates (plate 1 is still).
         Assert.Equal(3, spinners.Count);
-        // 0.02 rad/Ma / 100_000 ticks-per-Ma = 2e-7 rad/tick — tick-native, NOT the rad/Ma value
-        // (catches a missing rad/Ma -> rad/tick conversion, which would read ~0.02).
-        Assert.All(spinners, p => Assert.InRange(Math.Abs(p.RatePerTick), 1e-7, 1e-6));
+        // The legacy DefaultPlates arrangement consumes the calibrated OnsetRoster default —
+        // tick-native, converted once at the declared conversion point (catches both a missing
+        // rad/Ma -> rad/tick conversion and a resurrected local spin constant).
+        double expected = UnitConverter.RadiansPerMegaAnnumToRadiansPerTick(
+            OnsetRoster.DefaultAngularDriftPerMegaAnnum);
+        Assert.All(spinners, p => Assert.Equal(expected, Math.Abs(p.RatePerTick), 15));
     }
 
     [Fact]

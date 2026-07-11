@@ -1090,7 +1090,7 @@ public sealed class Service : IService, IDisposable
     private readonly record struct Rgb(byte R, byte G, byte B);
 
     private readonly object _globeReconstructorGate = new();
-    private (int Seed, int Frequency) _globeReconstructorKey;
+    private (int Seed, int Frequency, double SpinRateRadiansPerMegaAnnum) _globeReconstructorKey;
     private OnsetRoster? _cachedGlobeRoster;
     private GlobeReconstructor? _cachedGlobeReconstructor;
 
@@ -1098,13 +1098,18 @@ public sealed class Service : IService, IDisposable
         WorldGenerationRenderOptions renderOptions,
         long onsetTick)
     {
-        var key = (renderOptions.Seed, renderOptions.TessellationFrequency);
+        // Spin rate is part of the key: authoring the knob must rebuild the roster, not
+        // serve a reconstructor seeded at the previous rate.
+        var key = (renderOptions.Seed, renderOptions.TessellationFrequency, renderOptions.SpinRateRadiansPerMegaAnnum);
         lock (_globeReconstructorGate)
         {
             if (_cachedGlobeReconstructor is null || _globeReconstructorKey != key)
             {
                 _cachedGlobeRoster = OnsetRoster.Build(
-                    renderOptions.Seed, onsetTick, renderOptions.TessellationFrequency);
+                    renderOptions.Seed,
+                    onsetTick,
+                    renderOptions.TessellationFrequency,
+                    renderOptions.SpinRateRadiansPerMegaAnnum);
                 _cachedGlobeReconstructor = GlobeReconstructor.FromOnsetRoster(
                     _cachedGlobeRoster,
                     onsetTick,

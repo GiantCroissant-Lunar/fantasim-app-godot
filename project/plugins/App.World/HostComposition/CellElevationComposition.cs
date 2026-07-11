@@ -17,7 +17,11 @@ public static class CellElevationComposition
         {
             long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
             var renderOptions = ResolveWorldRenderOptions();
-            var roster = OnsetRoster.Build(renderOptions.Seed, onsetTick, renderOptions.TessellationFrequency);
+            var roster = OnsetRoster.Build(
+                renderOptions.Seed,
+                onsetTick,
+                renderOptions.TessellationFrequency,
+                renderOptions.SpinRateRadiansPerMegaAnnum);
             var schedule = SphereRegimeScheduleDefaults.GeosphereDefault;
             var reconstructor = GlobeReconstructor.FromOnsetRoster(roster, onsetTick, schedule, renderOptions.TessellationFrequency);
 

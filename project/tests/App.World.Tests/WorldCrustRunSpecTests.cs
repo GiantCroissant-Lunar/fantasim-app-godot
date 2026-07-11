@@ -151,6 +151,47 @@ public sealed class WorldCrustRunSpecTests
     }
 
     [Fact]
+    public void FromExecutionPayload_spin_rate_knob_reaches_the_onset_roster()
+    {
+        long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        var defaults = WorldGenerationRenderOptions.Default;
+        var payload = new JsonObject
+        {
+            ["options"] = new JsonObject { ["spinRateRadiansPerMegaAnnum"] = 0.017 },
+        };
+
+        var spec = WorldCrustRunSpec.FromExecutionPayload(payload);
+        var expected = OnsetRoster.Build(
+                defaults.Seed,
+                onsetTick,
+                defaults.TessellationFrequency,
+                angularDriftPerMegaAnnum: 0.017)
+            .SeedPlatesAt(onsetTick);
+        var calibrated = WorldCrustRunSpec.FromExecutionPayload(new JsonObject());
+
+        // The knob must reach the roster itself — not just the never-taken zero-plate fallback.
+        Assert.Equal(expected, spec.Plates);
+        Assert.NotEqual(calibrated.Plates, spec.Plates);
+    }
+
+    [Fact]
+    public void ForPresentation_threads_render_options_spin_rate_into_the_roster()
+    {
+        long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        var options = WorldGenerationRenderOptions.Default with { SpinRateRadiansPerMegaAnnum = 0.017 };
+
+        var spec = WorldCrustRunSpec.ForPresentation(options, onsetTick, onsetTick);
+        var expected = OnsetRoster.Build(
+                options.Seed,
+                onsetTick,
+                options.TessellationFrequency,
+                angularDriftPerMegaAnnum: 0.017)
+            .SeedPlatesAt(onsetTick);
+
+        Assert.Equal(expected, spec.Plates);
+    }
+
+    [Fact]
     public void ForReconstructor_uses_supplied_plates_ticks_and_default_crust_config()
     {
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
