@@ -1,0 +1,79 @@
+TASK: Resume and finish ONLY the remaining rotating-tunnel Godot binder/input implementation after a stalled nested delegation.
+
+WORKDIR
+/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot
+
+HARD EXECUTION RULE
+Work inline yourself. DO NOT delegate, spawn a sub-agent, create a background task, or hand this block to another worker. The previous OpenCode run stalled for >10 minutes after delegating this exact block. You have full authority and context to implement it directly.
+
+READ FIRST
+- AGENTS.md
+- vault/specs/2026-07-12-rotating-tunnel-two-ring-prototype-design.md
+- vault/plans/2026-07-12-rotating-tunnel-two-ring-prototype-plan.md, especially Tasks 5 and 6
+- the current pure seam APIs and tests added by commits 119e6c1, 0e6b332, 4775706, 6318d8c, 52ee21d
+- current tunnel binder partials, relay, PlanetPresentationBinder, PresentationComposition, PresentationPlugin
+
+CURRENT STATE TO PRESERVE
+- Commits through cb4274b are intentional; do not rewrite/reset them.
+- The worktree intentionally has three uncommitted structural edits adding PlanetBody/provider wiring:
+  project/plugins/App.Presentation/PlanetPresentationBinder.cs
+  project/plugins/App.Presentation/PresentationComposition.cs
+  project/plugins/App.Presentation/PresentationPlugin.cs
+  Continue and include them in the final presentation commit; do not discard them.
+- No unrelated user changes are present.
+
+FIRST FIX THE VERIFIED CAMERA COMPILE DEFECT
+Commit cb4274b claimed camera tests, but `App.Camera.Tests` does not compile `App.Camera.Seam` and the resident seam currently fails: Godot 4.7 `Basis` has no `Xx/Xy/...` properties. Replace the 9 basis reads in `CameraRig.BuildTransformDictionary` with valid Godot 4.7 C# access through the basis column vectors (`b.X.X`, `b.X.Y`, etc., preserving the documented scalar key names). Run:
+
+dotnet build project/plugins/App.Camera.Seam/App.Camera.Seam.csproj --no-restore
+dotnet test project/tests/App.Camera.Tests/App.Camera.Tests.csproj --no-restore
+
+Also make `camera.debug` one stable typed schema: add explicit `activePcamPresent` and `orbitControlsPresent` booleans; keep `cameraTransform` and `activePcamTransform` dictionaries on every branch (empty dictionary when absent), path fields strings, and top-level scalar `orbitYawDeg`, `orbitPitchDeg`, `orbitDistance`, `springLength`, `draggingNow`, and `dragMotionsApplied`. Do not change any of those keys to a diagnostic string on an absence branch. Normal runtime evidence will fail unless both presence booleans and `hostBound` are true.
+
+Commit the compile fix as `fix(camera): compile atomic orbit transform snapshot`.
+
+THEN FIX THE FRESH PURE-SEAM REVIEW FINDINGS
+The first GLM run's focused tests missed these real contract defects. Add failing regression tests first, observe RED, then fix:
+
+1. `TunnelFinePreviewMapper`: real nonzero sub-tick ladder values such as `jw`/`jv` at ±360° must remain fractional; the current absolute `1e-6` whole-number tolerance incorrectly turns them into integral zero. A true adjustable reset/zero preview should expose integral `0L`, not label zero as fractional.
+2. `TunnelCorridorLayout.SnapFocus`: reduce `long StepDelta % trackCount` before combining with the focus index; do not narrow a huge long step to int first. Test beyond `int.MaxValue` in both directions.
+3. `TunnelGestureCoordinator`: inner `TunnelGestureUpdate.AccumulatedDegrees` must match the clamped ±360° fine preview, not report an unclamped 720° state. Outer press must return the required zero-degree `OuterTick` mapping alongside its applicable scrub-preview action.
+4. `TunnelRayHitMapper`: finite inputs whose quadratic intermediates overflow must not produce a successful NaN/Infinity hit; validate discriminant, roots, Z, and output coordinates as finite.
+
+Run the relevant focused tests, then all tunnel/coalescer tests. Commit as `fix(timeline): harden tunnel edge mappings` before touching the Godot binder.
+
+THEN IMPLEMENT PLAN TASKS 5 AND 6 COMPLETELY, INLINE
+- real depth-tested inward cylinder sectors spanning Z=0 to Z=-TunnelDepth plus a dark 360-degree shell;
+- exactly two physical mouth-ring roots, each with an asymmetric visible marker; delete all ladder/current/depth-ring behavior;
+- five unique real registry descriptors around bottom-center focus using TunnelCorridorLayout; no fake track/rung/frame/globe;
+- runtime activity through TunnelTrackActivity;
+- real filmstrip frame ticks with fixed one-kb Z scale and valid-request clipping near MaxTick;
+- persistent corridor root rotates during wall motion; rebuild/request once after snap, never per motion;
+- focused axial fine rail/cursor only; inner has no PushTick path;
+- oblique camera and TunnelMount under Stage Environment aligned to execution-time real PlanetBody; never parent under replaceable root;
+- replace screen-radius hit testing with tested ray/plane/cylinder helpers;
+- relay `_Input` + `SetInputAsHandled`, owned motion/release across HUD, `_Process` ConsumeFrame, F9 Echo=false;
+- release commits latest outer accumulated angle exactly once;
+- tick/base refresh repositions existing frames, recomputes activity/inner binding, resets fine preview without request storms;
+- synchronous managed delegate/provider sever before deferred Godot cleanup; generation/teardown guards on queued callbacks;
+- exact structured ownership/outer/inner/wall/cancel logs from the plan.
+- because the tunnel now depends on an execution-time PlanetBody provider, `PresentationPlugin.ShutdownAsync` must unregister/dispose the tunnel first and only then unregister/dispose the planet; never leave the tunnel mounted/registered across awaited planet disposal.
+
+Do not choose authoritative inner semantics. Inner remains presentation-only. Do not add reload-state persistence beyond the approved scope.
+
+REQUIRED COMPILE/TEST GATES BEFORE COMMIT
+dotnet build project/plugins/App.Presentation/App.Presentation.csproj --no-restore
+dotnet test project/tests/App.Timeline.Tests/App.Timeline.Tests.csproj --filter 'FullyQualifiedName~Tunnel|FullyQualifiedName~TimelineScrubCoalescer' --no-restore
+dotnet test project/tests/App.Presentation.Tests/App.Presentation.Tests.csproj --no-restore
+
+Fix every compiler/test failure in the touched scope. Then commit all Task 5+6 presentation/provider/input work as coherent Conventional Commit(s); do not push.
+
+FINAL DETERMINISTIC GATES
+task restore
+task test
+task bundle:stagetool:test
+
+Do not launch or control the windowed app, do not capture screenshots, do not edit the approved spec/plan/AGENT-SUMMARY/evidence, and do not kill the existing exported app.
+
+FINAL OUTPUT
+Report commits, exact tests/totals, all changed files, any runtime uncertainty, and `git status --short`. If you hit a blocker, keep working through compile errors; do not delegate or stop merely because the binder is large.
