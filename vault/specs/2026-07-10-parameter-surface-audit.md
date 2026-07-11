@@ -14,7 +14,14 @@ before declaring timeline DTO fields dead.
   it has NEVER done anything. **RESOLVED 2026-07-10 @4ad9827: wired end-to-end** (compiler parses
   "object" kind-hints; ReadPatchRecipe is null-unless-authored so the default path stays on
   recipe init; both RunAsync call sites forward spec.PatchRecipe). `spinRateRadiansPerMegaAnnum`
-  only acts as a fallback when the OnsetRoster yields zero plates — i.e. never on the product path.
+  only acted as a fallback when the OnsetRoster yields zero plates — i.e. never on the product
+  path. **RESOLVED 2026-07-11 @8e10a68: plumbed end-to-end** per the user decision (d8b-slice1
+  handover §4b — ONE adjustable spin-rate property): the knob flows graph →
+  WorldGenerationRenderOptions.Resolve → WorldCrustRunSpec (FromExecutionPayload AND
+  ForPresentation) → OnsetRoster.Build (rad/Ma converted once at the declared UnitConverter
+  point) → GlobeReconstructor; the reconstructor's legacy 0.02 const is deleted (its
+  DefaultPlates seed consumes the calibrated OnsetRoster.DefaultAngularDriftPerMegaAnnum);
+  the Service reconstructor cache key includes the rate.
 - **Two competing undeclared wire shapes for `rotationSource`** (nested object vs flat keys); the
   nested one is parsed-and-validated but has zero consumers; the flat one is consumed but never
   produced by the graph path.
@@ -38,8 +45,10 @@ timeline DTO fields `TimelineBand.Variant`/`.IsActive`/`.EndTick`, `TimelineTrac
 verify WorldRuntime once, then drop).
 
 **RENAME to canonical:** `orogenicPerMegaAnnum`→`orogenicPerTick` (etc. for arc/islandArc/ridge
-volcanism — the `*PerTick` forms already exist and win), `plates[].rate`→`plates[].ratePerTick`,
-`spinRateRadiansPerMegaAnnum`→per-tick (AND plumb into OnsetRoster.Build, or drop as placebo).
+volcanism — the `*PerTick` forms already exist and win), `plates[].rate`→`plates[].ratePerTick`.
+(`spinRateRadiansPerMegaAnnum`: the plumb half landed 2026-07-11 @8e10a68; the user decision keeps
+rad/Ma as its AUTHORING vocabulary with the single declared conversion point inside
+OnsetRoster.Build, so it is no longer on the rename list.)
 
 **DECLARE (read-but-invisible knobs):** crust.generate's real surface (`canonicalTick`,
 `snapshotTicks`, `rotationReferenceTick`, rate keys, `plates[]`, `continentalPlates[]`, `seed`,
@@ -59,7 +68,7 @@ resolution path both executors share.
 |---|---------|-------------|--------|----------------|
 | 1 | world.options | `continentalPatches` | ~~set-but-ignored, triple-broken~~ RESOLVED 2026-07-10 @4ad9827: wired end-to-end, null-unless-authored keeps default path on recipe init | keep in v1 schema (now live) |
 | 2 | crust.generate | `rotationSource` nested vs flat keys | nested parsed-never-consumed; flat consumed-never-produced; neither declared | one canonical shape, delete the other |
-| 3 | world.options | `spinRateRadiansPerMegaAnnum` (+`spinRate`) | misnamed-Ma + placebo (fallback only when roster yields 0 plates) | rename per-tick + plumb into roster, or drop |
+| 3 | world.options | `spinRateRadiansPerMegaAnnum` (+`spinRate`) | ~~misnamed-Ma + placebo (fallback only when roster yields 0 plates)~~ RESOLVED 2026-07-11 @8e10a68: plumbed graph→render-options→run-spec→OnsetRoster→reconstructor; rad/Ma kept as authoring vocab, one declared conversion point (user decision, d8b-slice1 handover §4b) | keep in v1 schema (now live) |
 | 4 | SPEC wire keys | `durationMegaAnnum, durationMa, orogenicPerMegaAnnum, arcVolcanismPerMegaAnnum, islandArcVolcanismPerMegaAnnum, ridgeVolcanismPerMegaAnnum, plates[].rate` | misnamed-Ma (full set) | keep only `*PerTick` forms |
 | 5 | crust.generate node | catalog declares zero params; executor reads ~20 | undeclared-but-read | declare real surface; drop aliases |
 | 6 | world.options render knobs | 13 boundary keys + `verticalExaggeration`, `hydrosphereMode` | honored in view path, ignored by FromExecutionPayload | unify resolution path |
