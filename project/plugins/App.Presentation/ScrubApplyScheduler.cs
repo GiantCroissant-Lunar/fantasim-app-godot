@@ -19,6 +19,8 @@ internal sealed class ScrubApplyScheduler
 
     public bool HasPending => _pendingTick is not null;
 
+    internal long RestDelayMs => _restDelayMs;
+
     public ScrubApplySchedule? RecordPreview(long tick, bool heavyRequested, long nowMs)
     {
         if (!heavyRequested && _pendingTick is null)

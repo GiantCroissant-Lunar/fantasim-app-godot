@@ -1,3 +1,4 @@
+using FantaSim.App.World.Composition;
 using FantaSim.App.World.Dto;
 using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Services;
@@ -268,5 +269,44 @@ public sealed class WorldServiceGenerationProductsTests
         Assert.Equal(document.AdaptiveSubdivisionEdgeHeightDelta, crust.AdaptiveSubdivisionEdgeHeightDelta);
         Assert.Equal(document.AdaptiveSubdivisionFeatureWeightDelta, crust.AdaptiveSubdivisionFeatureWeightDelta);
         Assert.True(crust.PreservesCellProvenance);
+    }
+
+    // D8b progressive-resolution scrub (vault/plans/2026-07-11-d8b-progressive-resolution-slice1-plan.md):
+    // the 2-arg GetPlanetPresentationAsync overload materializes crust products at the requested
+    // tessellation frequency (clamped to [2, configured default]). The document's GlobeSnapshot
+    // carries the effective frequency so the binder can log it.
+    [Fact]
+    public void PlanetPresentation_AtFrequency2_CarriesFrequency2Snapshot()
+    {
+        using var service = new Service(new ServiceRegistry());
+        var document = service.GetPlanetPresentationAsync();
+        var defaultFrequency = document.GlobeSnapshot!.Frequency;
+
+        var lowRes = service.GetPlanetPresentationAsync(SphereRegimeScheduleDefaults.PlateOnsetTick, 2);
+
+        Assert.Equal(2, lowRes.GlobeSnapshot!.Frequency);
+        Assert.Equal(defaultFrequency, document.GlobeSnapshot!.Frequency);
+    }
+
+    [Fact]
+    public void PlanetPresentation_BelowMinimumFrequency_ClampsTo2()
+    {
+        using var service = new Service(new ServiceRegistry());
+
+        var document = service.GetPlanetPresentationAsync(SphereRegimeScheduleDefaults.PlateOnsetTick, 0);
+
+        Assert.Equal(2, document.GlobeSnapshot!.Frequency);
+    }
+
+    [Fact]
+    public void PlanetPresentation_AboveConfiguredDefault_ClampsToDefault()
+    {
+        using var service = new Service(new ServiceRegistry());
+        var standard = service.GetPlanetPresentationAsync();
+        var configuredDefault = standard.GlobeSnapshot!.Frequency;
+
+        var document = service.GetPlanetPresentationAsync(SphereRegimeScheduleDefaults.PlateOnsetTick, configuredDefault + 5);
+
+        Assert.Equal(configuredDefault, document.GlobeSnapshot!.Frequency);
     }
 }

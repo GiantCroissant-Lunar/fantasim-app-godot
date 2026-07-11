@@ -147,10 +147,25 @@ public sealed class Service : IService, IDisposable
         => GetPlanetPresentationAsync(SphereRegimeScheduleDefaults.PlateOnsetTick);
 
     public PlanetPresentationDocument GetPlanetPresentationAsync(long referenceTick)
+        => GetPlanetPresentationAsyncCore(referenceTick, ResolvePlanetRenderOptions(WorldGenerationGraphDefaults.BuildFamily()));
+
+    /// <summary>
+    /// D8b progressive-resolution scrub (vault/plans/2026-07-11-d8b-progressive-resolution-slice1-plan.md):
+    /// clamps the frequency to [2, configured default] and threads it through the same path as the
+    /// 1-arg overload so both caches (crust product + reconstructor) stay frequency-keyed.
+    /// </summary>
+    public PlanetPresentationDocument GetPlanetPresentationAsync(long referenceTick, int tessellationFrequency)
+    {
+        var family = WorldGenerationGraphDefaults.BuildFamily();
+        var renderOptions = ResolvePlanetRenderOptions(family);
+        var clamped = Math.Clamp(tessellationFrequency, 2, renderOptions.TessellationFrequency);
+        return GetPlanetPresentationAsyncCore(referenceTick, renderOptions with { TessellationFrequency = clamped });
+    }
+
+    private PlanetPresentationDocument GetPlanetPresentationAsyncCore(long referenceTick, WorldGenerationRenderOptions renderOptions)
     {
         PresentationRequested?.Invoke();
         var family = WorldGenerationGraphDefaults.BuildFamily();
-        var renderOptions = ResolvePlanetRenderOptions(family);
         var overview = _runtime.GetOverview();
         var renderSnapshot = _runtime.GetRenderSnapshot();
         var runtime = BuildPlanetPresentationRuntime(family, renderOptions, referenceTick);

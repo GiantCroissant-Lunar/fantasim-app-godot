@@ -58,6 +58,8 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
     private readonly PlanetPresentationReloadGate _worldRuntimeReload = new();
     private string? _boundRegimeId;
     private bool _regimeRefreshPending;
+    private int? _pendingFrequencyOverride;
+    private bool _applyingRefreshedDocument;
     private readonly ScrubRefreshCoordinator _scrubRefresh;
     private long? _boundCrustSnapshotTick;
     private IReadOnlyList<long> _boundCrustSnapshotTicks = Array.Empty<long>();
@@ -102,7 +104,7 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
         _timeline = new PlanetTimelineController(ApplyTimelineTick);
         _scrubRefresh = new ScrubRefreshCoordinator(
             new ScrubApplyScheduler(restDelayMs: 300L),
-            ScheduleRegimeRefresh,
+            requestRefresh: freq => ScheduleRegimeRefresh(freq),
             a => Callable.From(() => a()).CallDeferred(),
             () => System.Environment.TickCount64);
 
@@ -129,6 +131,7 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
     {
         _boundRegimeId = null;
         _regimeRefreshPending = false;
+        _pendingFrequencyOverride = null;
         _boundCrustSnapshotTick = null;
         _boundCrustSnapshotTicks = Array.Empty<long>();
         _boundContinentsTick = null;
@@ -232,7 +235,7 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
             // snapshot tracking) leaving the crossing detector unable to recover: the
             // 105M-vs-119M identical-terrain bug. Rebind stays for the initial mount only.
             if (_currentDocument is not null)
-                Callable.From(ScheduleRegimeRefresh).CallDeferred();
+                Callable.From(() => ScheduleRegimeRefresh()).CallDeferred();
             else
                 Callable.From(Rebind).CallDeferred();
         });
@@ -375,7 +378,12 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
             }
         }
 
-        _scrubRefresh.HandleTick(tick, origin, heavyRefreshRequested);
+        // D8b: a refresh apply's own echo (RefreshPresentationForRegime -> UpdateFrom -> PushTick
+        // re-applies the SAME playhead as a Standard tick) is not a user tick — feeding it back
+        // into scrub policy cancels the very rest/climb that requested the refresh, stranding the
+        // planet at a low rung. Suppress the echo unless it genuinely detects new content.
+        if (!_applyingRefreshedDocument || heavyRefreshRequested)
+            _scrubRefresh.HandleTick(tick, origin, heavyRefreshRequested);
 
         var previousDecision = _currentComposition;
         var decision = GlobeViewModeResolver.ResolveComposition(regimeId, _timeline.ActiveLayers, _plateViewOverride);
@@ -478,12 +486,15 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
         ApplyTimelineTick(_timeline.Tick);
     }
 
-    private void ScheduleRegimeRefresh()
+    private void ScheduleRegimeRefresh(int? frequencyOverride = null)
     {
+        // D8b last-writer-wins: a later full request (null) overwrites a pending low one; a later
+        // low request overwrites a pending full. One deferred refresh either way via _regimeRefreshPending.
+        _pendingFrequencyOverride = frequencyOverride;
         if (_regimeRefreshPending)
             return;
         _regimeRefreshPending = true;
-        Callable.From(RefreshPresentationForRegime).CallDeferred();
+        Callable.From(() => RefreshPresentationForRegime()).CallDeferred();
     }
 
     private void RefreshPresentationForRegime()
@@ -491,6 +502,7 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
         if (_disposed)
         {
             _regimeRefreshPending = false;
+            _pendingFrequencyOverride = null;
             return;
         }
 
@@ -498,14 +510,22 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
         if (world is null)
         {
             _regimeRefreshPending = false;
+            _pendingFrequencyOverride = null;
             _log.LogWarning("Planet presentation regime refresh skipped: world service is not registered.");
             return;
         }
 
+        // Capture the LATEST requested rung (last writer wins) and clear the stamp before the
+        // potentially slow fetch so a concurrent ScheduleRegimeRefresh can stamp the next one.
+        var frequencyOverride = _pendingFrequencyOverride;
+        _pendingFrequencyOverride = null;
+
         PlanetPresentationDocument document;
         try
         {
-            document = world.GetPlanetPresentationAsync(_timeline.Tick);
+            document = frequencyOverride is { } freq
+                ? world.GetPlanetPresentationAsync(_timeline.Tick, freq)
+                : world.GetPlanetPresentationAsync(_timeline.Tick);
         }
         catch (Exception ex)
         {
@@ -514,10 +534,20 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
             return;
         }
 
-        _timeline.UpdateFrom(document);
-        EnsureNodeGraphView(document);
-         BindDocument(document);
-         _regimeRefreshPending = false;
+        // Mark the apply so its echo tick (UpdateFrom -> PushTick at the same playhead) bypasses
+        // scrub policy — see the ApplyTimelineTick gate.
+        _applyingRefreshedDocument = true;
+        try
+        {
+            _timeline.UpdateFrom(document);
+            EnsureNodeGraphView(document);
+            BindDocument(document);
+        }
+        finally
+        {
+            _applyingRefreshedDocument = false;
+        }
+        _regimeRefreshPending = false;
      }
 
     // Computes per-cell color (world or crust ramp with trench/ridge accent baked in) and

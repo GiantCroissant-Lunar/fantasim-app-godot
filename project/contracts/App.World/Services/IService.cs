@@ -25,6 +25,16 @@ public interface IService
     PlanetPresentationDocument GetPlanetPresentationAsync(long referenceTick);
 
     /// <summary>
+    /// Same as <see cref="GetPlanetPresentationAsync(long)"/> but materializes crust products at the
+    /// requested tessellation frequency (clamped to [2, configured default]). D8b progressive-
+    /// resolution scrub (vault/plans/2026-07-11-d8b-progressive-resolution-slice1-plan.md): low
+    /// rungs follow the hand, the rest climb re-requests at higher rungs. Default implementation
+    /// ignores the hint so existing fakes compile unchanged.
+    /// </summary>
+    PlanetPresentationDocument GetPlanetPresentationAsync(long referenceTick, int tessellationFrequency)
+        => GetPlanetPresentationAsync(referenceTick);
+
+    /// <summary>
     /// Light per-tick globe snapshot (M0, spec §3.2): returns the reassigned cell-&gt;plate globe at
     /// <paramref name="tick"/>, equivalent to <c>reconstructor.BuildGlobeAt(tick)</c>, without
     /// materializing crust. The OnsetRoster and GlobeReconstructor are cached per

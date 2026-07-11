@@ -273,7 +273,7 @@ internal sealed partial class PlanetPresentationBinder
         _lastContinentsFrontier = continentsFrontier;
 
         _log.LogInformation(
-            "Planet plate surface bound: view={ViewMode}, subdivision={Subdivision}, plates={PlateCount}, triangles={TriangleCount}, meshVertices={VertexCount}, scale={Scale}, trueScale={TrueScale}, amplification={Amplification}x.",
+            "Planet plate surface bound: view={ViewMode}, subdivision={Subdivision}, plates={PlateCount}, triangles={TriangleCount}, meshVertices={VertexCount}, scale={Scale}, trueScale={TrueScale}, amplification={Amplification}x, frequency={Frequency}.",
             viewMode,
             useAdaptiveSurface ? "adaptive" : "fixed",
             caps.Count,
@@ -281,6 +281,7 @@ internal sealed partial class PlanetPresentationBinder
             meshes.Sum(mesh => mesh.VertexCount),
             projection.MetresToUnitRadius,
             projection.TrueScaleMetresToUnitRadius,
-            projection.ReliefAmplification);
+            projection.ReliefAmplification,
+            snapshot.Frequency);
     }
 }
