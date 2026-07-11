@@ -258,10 +258,11 @@ public sealed class Service : IService, IDisposable
 
     /// <summary>
     /// Mobile-plate presentation window after onset. Widened from the original 20 Ma proving
-    /// window to 1 Gy (1M ticks/Ma) so long-arc plate motion is scrubbable; snapshot products
-    /// materialize lazily per governing snapshot, so the wider window costs nothing until seeked.
+    /// window to 1 Gy (1000 Ma = 100,000,000 ticks at 100k ticks/Ma = 1000 ka) so long-arc
+    /// plate motion is scrubbable; snapshot products materialize lazily per governing snapshot,
+    /// so the wider window costs nothing until seeked.
     /// </summary>
-    internal const long MobilePlateWindowTicks = 1_000_000_000L;
+    internal const long MobilePlateWindowTicks = 100_000_000L;
 
     /// <summary>
     /// Per-tick continental fraction (P3 light path): re-samples the cached crust snapshot's onset

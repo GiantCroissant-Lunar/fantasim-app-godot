@@ -34,7 +34,7 @@ public static class SphereRegimeScheduleDefaults
                     ActiveLayers: residentLayers.Select(l => l.Id).ToList()),
             });
 
-    /// <summary>End of the stylized magma-ocean regime (R1: ~1e6 ticks = ~10 Ma); mobile plates follow.
+    /// <summary>End of the stylized magma-ocean regime (R1: 1,000,000 ticks = 10 ka = 10 Ma); mobile plates follow.
     /// The stagnant-lid regime (step 4) will later split <c>[MagmaOceanEndTick, plate-onset)</c>.</summary>
     public const long MagmaOceanEndTick = 1_000_000;
 
@@ -73,8 +73,8 @@ public static class SphereRegimeScheduleDefaults
 
     /// <summary>Window past <see cref="PlateOnsetTick"/> over which plate features (boundary lines,
     /// subduction/rift/transform marks) fade in instead of popping at full strength (step 5
-    /// crossfade). ~5 Ma = 5% of the onset tick.</summary>
-    public const long PlateFeatureFadeInTicks = 5_000_000;
+    /// crossfade). 500,000 ticks = 5 ka = 5 Ma (0.5% of the 100,000,000-tick onset).</summary>
+    public const long PlateFeatureFadeInTicks = 500_000;
 
     /// <summary>
     /// The LIVE geosphere schedule (sphere-regimes steps 3-4) for a given plate <paramref name="onsetTick"/>:
