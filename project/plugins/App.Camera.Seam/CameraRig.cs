@@ -382,8 +382,7 @@ public sealed class CameraRig : ICameraRig
 
     private string DebugSnapshotImpl(string viewportId, Vector2? probePoint = null)
     {
-        var snapshot = new Godot.Collections.Dictionary();
-        snapshot["viewportId"] = viewportId;
+        var snapshot = EmptyDebugSnapshot(viewportId);
 
         if (probePoint is { } probe)
         {
@@ -396,10 +395,7 @@ public sealed class CameraRig : ICameraRig
         }
 
         if (!_rigs.TryGetValue(viewportId, out var rig))
-        {
-            snapshot["rigExists"] = false;
             return Json.Stringify(snapshot, "  ");
-        }
 
         snapshot["rigExists"] = true;
         snapshot["layerBit"] = rig.LayerBit;
@@ -483,16 +479,62 @@ public sealed class CameraRig : ICameraRig
 
     private static Godot.Collections.Dictionary BuildTransformDictionary(Transform3D t)
     {
-        // Godot 4.7 Basis exposes its three columns as Vector3 X/Y/Z; the documented scalar key
-        // names (basisXX..originZ) are preserved verbatim so existing evidence tooling is stable.
+        // Basis.X/Y/Z are columns. The evidence keys use the conventional row-then-column order,
+        // so off-diagonal entries select the corresponding component from the other column.
         var b = t.Basis;
         var o = t.Origin;
         return new Godot.Collections.Dictionary
         {
-            ["basisXX"] = b.X.X, ["basisXY"] = b.X.Y, ["basisXZ"] = b.X.Z,
-            ["basisYX"] = b.Y.X, ["basisYY"] = b.Y.Y, ["basisYZ"] = b.Y.Z,
-            ["basisZX"] = b.Z.X, ["basisZY"] = b.Z.Y, ["basisZZ"] = b.Z.Z,
+            ["basisXX"] = b.X.X, ["basisXY"] = b.Y.X, ["basisXZ"] = b.Z.X,
+            ["basisYX"] = b.X.Y, ["basisYY"] = b.Y.Y, ["basisYZ"] = b.Z.Y,
+            ["basisZX"] = b.X.Z, ["basisZY"] = b.Y.Z, ["basisZZ"] = b.Z.Z,
             ["originX"] = o.X, ["originY"] = o.Y, ["originZ"] = o.Z,
+        };
+    }
+
+    private static Godot.Collections.Dictionary EmptyDebugSnapshot(string viewportId)
+    {
+        var input = new Godot.Collections.Dictionary
+        {
+            ["hostBound"] = false,
+            ["draggingNow"] = false,
+            ["pressesSeen"] = 0,
+            ["releasesSeen"] = 0,
+            ["wheelSeen"] = 0,
+            ["motionsSeen"] = 0,
+            ["dragMotionsApplied"] = 0,
+        };
+
+        return new Godot.Collections.Dictionary
+        {
+            ["viewportId"] = viewportId,
+            ["rigExists"] = false,
+            ["layerBit"] = 0,
+            ["cameraInTree"] = false,
+            ["cameraCurrent"] = false,
+            ["cameraGlobalPosition"] = Vector3.Zero,
+            ["hostInTree"] = false,
+            ["hostLayers"] = 0,
+            ["hostProcessMode"] = 0,
+            ["managerAutoloadPresent"] = false,
+            ["managerPcamCount"] = 0,
+            ["managerHostCount"] = 0,
+            ["hostActivePcam"] = "",
+            ["cameraPath"] = "",
+            ["cameraTransform"] = EmptyTransformDictionary(),
+            ["activePcamPresent"] = false,
+            ["activePcamPath"] = "",
+            ["activePcamTransform"] = EmptyTransformDictionary(),
+            ["followTargetPath"] = "",
+            ["springLength"] = 0f,
+            ["orbitControlsPresent"] = false,
+            ["orbitYawDeg"] = 0d,
+            ["orbitPitchDeg"] = 0d,
+            ["orbitDistance"] = 0d,
+            ["draggingNow"] = false,
+            ["dragMotionsApplied"] = 0,
+            ["orbitInput"] = input,
+            ["pcams"] = new Godot.Collections.Array(),
         };
     }
 

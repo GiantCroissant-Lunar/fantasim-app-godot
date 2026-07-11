@@ -19,6 +19,7 @@ public static class CameraComposition
 {
     public const string DefaultGlobeCameraId = "globe.default";
     public const string OrbitCommandId = "camera.orbit";
+    public const string DebugCommandId = "camera.debug";
 
     public static ICameraCompositionHandle ComposeCamera(HostCompositionContext ctx, Node hostNode)
     {
@@ -102,7 +103,7 @@ public static class CameraComposition
 
             commandService.Register(
                 new FantaSim.App.Command.CommandDescriptor(
-                    Id: "camera.debug",
+                    Id: DebugCommandId,
                     Title: "Camera rig introspection",
                     Description: "Reports the live camera-rig state: real camera position/current, phantom host, " +
                                  "manager autoload, and every registered pcam's addon-visible state. Diagnostic; no side effects.",
@@ -257,6 +258,7 @@ internal sealed class CameraCompositionHandle : ICameraCompositionHandle
 
         registry?.UnregisterAll<FantaSim.App.Camera.IService>();
         registry?.TryGet<FantaSim.App.Command.IService>()?.Unregister(CameraComposition.OrbitCommandId);
+        registry?.TryGet<FantaSim.App.Command.IService>()?.Unregister(CameraComposition.DebugCommandId);
     }
 
     public void SetOrbitTarget(Func<double?, double?, double?, FantaSim.App.Camera.CameraOrbitSnapshot>? target)
