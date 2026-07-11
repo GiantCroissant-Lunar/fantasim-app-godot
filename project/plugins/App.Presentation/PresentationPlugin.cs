@@ -68,7 +68,9 @@ public sealed partial class PresentationPlugin : ILifecyclePlugin
         var sceneRegistry = registry.TryGet<IBundleSceneRegistry>();
         if (sceneRegistry is not null)
         {
-            _tunnelPresentation = PresentationComposition.CreateTunnelPresentation(registry, sceneRegistry, loggerFactory);
+            _tunnelPresentation = PresentationComposition.CreateTunnelPresentation(
+                registry, sceneRegistry, loggerFactory,
+                planetBodyProvider: () => (_presentation as PlanetPresentationBinder)?.PlanetBody);
             _tunnelRegistration = registry.RegisterOwned<ITunnelPresentation>(
                 _tunnelPresentation,
                 new ServiceRegistration
@@ -88,41 +90,10 @@ public sealed partial class PresentationPlugin : ILifecyclePlugin
 
     public async ValueTask ShutdownAsync(CancellationToken ct = default)
     {
-        _registration?.Dispose();
-        _registration = null;
-
-        var presentation = _presentation;
-        _presentation = null;
-        if (presentation is not null)
-        {
-            // Binder disposal frees Godot nodes — main-thread only. The reload path may run
-            // ShutdownAsync off the main thread (RemoveGroupWithDiagnosticsAsync); marshal and WAIT
-            // so the unmount completes BEFORE the ALC unloads.
-            if (_isOnMainThread())
-            {
-                presentation.Dispose();
-            }
-            else
-            {
-                var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                Callable.From(() =>
-                {
-                    try
-                    {
-                        presentation.Dispose();
-                        done.TrySetResult();
-                    }
-                    catch (Exception ex)
-                    {
-                        done.TrySetException(ex);
-                    }
-                }).CallDeferred();
-                await done.Task.ConfigureAwait(false);
-            }
-        }
-
-        // Tunnel slice-1: same main-thread-marshal-and-wait discipline as the planet presentation
-        // above (its binder also frees Godot nodes on Dispose).
+        // Tunnel is disposed BEFORE the planet: the tunnel binder resolves PlanetBody at execution
+        // time through a provider that reads (_presentation as PlanetPresentationBinder)?.PlanetBody.
+        // Disposing the tunnel first severs that dependency cleanly; disposing the planet first
+        // would leave the tunnel mounted against a freed root across an awaited disposal.
         _tunnelRegistration?.Dispose();
         _tunnelRegistration = null;
 
@@ -142,6 +113,36 @@ public sealed partial class PresentationPlugin : ILifecyclePlugin
                     try
                     {
                         tunnelPresentation.Dispose();
+                        done.TrySetResult();
+                    }
+                    catch (Exception ex)
+                    {
+                        done.TrySetException(ex);
+                    }
+                }).CallDeferred();
+                await done.Task.ConfigureAwait(false);
+            }
+        }
+
+        _registration?.Dispose();
+        _registration = null;
+
+        var presentation = _presentation;
+        _presentation = null;
+        if (presentation is not null)
+        {
+            if (_isOnMainThread())
+            {
+                presentation.Dispose();
+            }
+            else
+            {
+                var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                Callable.From(() =>
+                {
+                    try
+                    {
+                        presentation.Dispose();
                         done.TrySetResult();
                     }
                     catch (Exception ex)

@@ -1,5 +1,7 @@
+using System;
 using FantaSim.App.Presentation.Tunnel;
 using FantaSim.App.Resource.Bundle;
+using Godot;
 using Microsoft.Extensions.Logging;
 using ServiceArchi.Contracts;
 using ResourceService = FantaSim.App.Resource.IService;
@@ -23,14 +25,14 @@ public static class PresentationComposition
         => new PlanetPresentationBinder(registry, resource, sceneRegistry, loggerFactory, plateViewOverride, showWorldGraph);
 
     /// <summary>
-    /// Tunnel timeline presentation (slice 1, vault/plans/2026-07-11-tunnel-slice1-plan.md Task 7).
-    /// No ResourceService parameter: unlike PlanetPresentationBinder, TunnelPresentationBinder
-    /// resolves it itself from the registry (it has no plateViewOverride/showWorldGraph knobs to
-    /// justify a wider composition surface for slice 1).
+    /// Tunnel timeline two-ring presentation. The planetBodyProvider resolves the real PlanetBody
+    /// node at execution time (not capture time) so the tunnel mount aligns its local throat to
+    /// the current globe through whatever presentation root is live after a rebind.
     /// </summary>
     public static ITunnelPresentation CreateTunnelPresentation(
         IRegistry registry,
         IBundleSceneRegistry sceneRegistry,
-        ILoggerFactory loggerFactory)
-        => new TunnelPresentationBinder(registry, sceneRegistry, loggerFactory);
+        ILoggerFactory loggerFactory,
+        Func<Node3D?> planetBodyProvider)
+        => new TunnelPresentationBinder(registry, sceneRegistry, loggerFactory, planetBodyProvider);
 }

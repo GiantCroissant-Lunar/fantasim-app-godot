@@ -5,129 +5,192 @@ using Godot;
 
 namespace FantaSim.App.Presentation.Tunnel;
 
-// Depth rings: the ladder ruler (spec §2.2) reused verbatim through TimelineModel.Ruler, plus a
-// separately-colored, cheaply-rebuilt current-tick ring (plan Task 8 Step 2). Split from the core
-// file 2026-07-11 (vault/plans/2026-07-11-tunnel-slice1-plan.md Task 8).
 internal sealed partial class TunnelPresentationBinder
 {
-    private const float LadderRingThickness = 0.04f;
-    private const float CurrentTickRingThickness = 0.09f;
-    private static readonly Color LadderRingColor = new(0.35f, 0.62f, 0.78f, 0.85f);
-    private static readonly Color CurrentTickRingColor = new(0.98f, 0.72f, 0.20f, 0.95f); // amber, per the wireframe's jogRing
+    private static readonly Color OuterRingColor = new(0.35f, 0.62f, 0.78f);
+    private static readonly Color InnerRingColor = new(0.98f, 0.72f, 0.20f);
+    private static readonly Color InnerRingInactiveColor = new(0.50f, 0.50f, 0.55f);
+    private const float RingMarkerHalfSize = 0.35f;
 
-    private Node3D? _ladderRingsRoot;
-    private Node3D? _currentTickRingRoot;
-
-    // Read by Input.cs (Task 10) for the current-tick ring's screen-space hit test.
-    private float _currentTickRingRadius;
-
-    // Slice 1 reuses whichever [0, MaxTick] view range the 2D face's zoom controls already imply
-    // globally -- plan Task 8 Step 2: "the tunnel does not own a second view-range." A per-track
-    // native rung (spec §3.2) is intentionally NOT read here; that stays deferred (Decision Points
-    // 5/6) to Corridors.cs' filmstrip request only (Task 9), the one place this slice actually
-    // consumes LayerTrackDescriptor.TimeDomain.Rung.
-    private TimelineLadderRung GlobalRung => TimelineModel.SelectRungForSpan(Math.Max(0L, _ctl?.MaxTick ?? 0L));
+    private Node3D? _outerRingRoot;
+    private Node3D? _innerRingRoot;
+    private Label3D? _outerLabel;
+    private Label3D? _innerLabel;
 
     private void EnsureRingRoots()
     {
         if (_mount is null)
             return;
 
-        if (_ladderRingsRoot is null || !GodotObject.IsInstanceValid(_ladderRingsRoot))
+        if (_outerRingRoot is null || !GodotObject.IsInstanceValid(_outerRingRoot))
         {
-            _ladderRingsRoot = new Node3D { Name = "LadderRings" };
-            _mount.AddChild(_ladderRingsRoot);
+            _outerRingRoot = new Node3D { Name = "OuterCoarseRing" };
+            _mount.AddChild(_outerRingRoot);
         }
 
-        if (_currentTickRingRoot is null || !GodotObject.IsInstanceValid(_currentTickRingRoot))
+        if (_innerRingRoot is null || !GodotObject.IsInstanceValid(_innerRingRoot))
         {
-            _currentTickRingRoot = new Node3D { Name = "CurrentTickRing" };
-            _mount.AddChild(_currentTickRingRoot);
+            _innerRingRoot = new Node3D { Name = "InnerFocusRing" };
+            _mount.AddChild(_innerRingRoot);
         }
     }
 
     private void ClearRingRoots()
     {
-        _ladderRingsRoot = null;
-        _currentTickRingRoot = null;
+        _outerRingRoot = null;
+        _innerRingRoot = null;
+        _outerLabel = null;
+        _innerLabel = null;
     }
 
-    private void RebuildRings()
+    private void RebuildTwoRingControls()
     {
-        if (_disposed || _mount is null || !GodotObject.IsInstanceValid(_mount) || _ctl is null)
+        if (_disposed || _mount is null || !GodotObject.IsInstanceValid(_mount))
             return;
 
         EnsureRingRoots();
-        ClearChildren(_ladderRingsRoot!);
+        ClearChildren(_outerRingRoot!);
+        ClearChildren(_innerRingRoot!);
 
-        var maxTick = Math.Max(0L, _ctl.MaxTick);
-        var marks = TimelineModel.Ruler(0L, maxTick, GlobalRung);
-
-        foreach (var mark in marks)
+        var outerMesh = BuildPlanarAnnulusSectorMesh(
+            0.0, 360.0, OuterRingInnerRadius, OuterRingOuterRadius, MouthZ);
+        if (outerMesh is not null)
         {
-            var radius = (float)TunnelDepthMapper.RadiusForFraction(mark.Fraction, ThroatRadius, OuterRadius);
-
-            var ringMesh = BuildAnnulusSectorMesh(0.0, 360.0, radius - (LadderRingThickness / 2f), radius + (LadderRingThickness / 2f));
-            var ring = new MeshInstance3D
+            var outer = new MeshInstance3D
             {
-                Name = "Ring",
-                Mesh = ringMesh,
-                MaterialOverride = BuildUnlitMaterial(LadderRingColor),
+                Name = "OuterRing",
+                Mesh = outerMesh,
+                MaterialOverride = BuildUnlitMaterial(OuterRingColor),
             };
-            _ladderRingsRoot!.AddChild(ring);
+            _outerRingRoot!.AddChild(outer);
 
-            var label = new Label3D
-            {
-                Name = "RingLabel",
-                Text = mark.Label,
-                Position = new Vector3(radius, 0f, 0.05f),
-                Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
-                FontSize = 32,
-                Modulate = new Color(0.85f, 0.90f, 0.95f, 0.90f),
-                OutlineModulate = new Color(0f, 0f, 0f, 0.65f),
-                NoDepthTest = true,
-            };
-            _ladderRingsRoot!.AddChild(label);
+            var marker = BuildAsymmetricMarker(OuterRingColor, OuterRingOuterRadius);
+            _outerRingRoot!.AddChild(marker);
         }
 
-        RebuildCurrentTickRing();
+        var innerColor = _fineBinding.CanAdjust ? InnerRingColor : InnerRingInactiveColor;
+        var innerMesh = BuildPlanarAnnulusSectorMesh(
+            0.0, 360.0, InnerRingInnerRadius, InnerRingOuterRadius, MouthZ);
+        if (innerMesh is not null)
+        {
+            var inner = new MeshInstance3D
+            {
+                Name = "InnerRing",
+                Mesh = innerMesh,
+                MaterialOverride = BuildUnlitMaterial(innerColor),
+            };
+            _innerRingRoot!.AddChild(inner);
+
+            var marker = BuildAsymmetricMarker(innerColor, InnerRingOuterRadius);
+            _innerRingRoot!.AddChild(marker);
+        }
     }
 
-    // Rebuilt on every OnTickChanged -- cheap, one ring, never the whole ladder (plan Task 8 Step 2).
-    private void RebuildCurrentTickRing()
+    private void UpdateRingLabels()
     {
-        if (_disposed || _mount is null || !GodotObject.IsInstanceValid(_mount) || _ctl is null)
+        if (_disposed || _outerRingRoot is null || _innerRingRoot is null)
             return;
 
-        EnsureRingRoots();
-        ClearChildren(_currentTickRingRoot!);
+        _outerLabel?.QueueFree();
+        _innerLabel?.QueueFree();
 
-        var maxTick = Math.Max(0L, _ctl.MaxTick);
-        var fraction = TimelineScrubMapper.TickToFraction(_ctl.Tick, 0L, maxTick);
-        var radius = (float)TunnelDepthMapper.RadiusForFraction(fraction, ThroatRadius, OuterRadius);
-        _currentTickRingRadius = radius;
-
-        var ringMesh = BuildAnnulusSectorMesh(0.0, 360.0, radius - (CurrentTickRingThickness / 2f), radius + (CurrentTickRingThickness / 2f));
-        var ring = new MeshInstance3D
+        var outerText = BuildOuterLabelText();
+        _outerLabel = new Label3D
         {
-            Name = "Ring",
-            Mesh = ringMesh,
-            MaterialOverride = BuildUnlitMaterial(CurrentTickRingColor),
+            Name = "OuterLabel",
+            Text = outerText,
+            Position = new Vector3(0f, OuterRingOuterRadius + 0.8f, 0.1f),
+            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            FontSize = 28,
+            Modulate = new Color(0.85f, 0.90f, 0.95f, 0.92f),
+            OutlineModulate = new Color(0f, 0f, 0f, 0.65f),
+            NoDepthTest = false,
         };
-        _currentTickRingRoot!.AddChild(ring);
+        _outerRingRoot.AddChild(_outerLabel);
+
+        var innerText = BuildInnerLabelText();
+        _innerLabel = new Label3D
+        {
+            Name = "InnerLabel",
+            Text = innerText,
+            Position = new Vector3(0f, -(InnerRingOuterRadius + 0.8f), 0.1f),
+            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            FontSize = 24,
+            Modulate = new Color(0.92f, 0.94f, 0.97f, 0.92f),
+            OutlineModulate = new Color(0f, 0f, 0f, 0.65f),
+            NoDepthTest = false,
+        };
+        _innerRingRoot.AddChild(_innerLabel);
     }
 
-    private void OnTickChanged(long tick)
+    private string BuildOuterLabelText()
     {
-        // SetArchived/PushTick may fire from a command handler off the main thread; the rebuild
-        // walks into AddChild/QueueFree, which Godot only allows on the main thread -- same
-        // CallDeferred discipline TimelineFace.OnLayerTrackRegistryChanged already uses.
-        if (OS.GetThreadCallerId() == OS.GetMainThreadId())
-        {
-            RebuildCurrentTickRing();
-            return;
-        }
+        if (_ctl is null)
+            return "tick: —";
 
-        Callable.From(RebuildCurrentTickRing).CallDeferred();
+        var kbRung = TunnelScrubMapper.ResolveOuterRung();
+        return $"tick {_ctl.Tick} | {kbRung.Symbol}";
+    }
+
+    private string BuildInnerLabelText()
+    {
+        if (_fineBinding.Descriptor is null)
+            return "No track";
+
+        var state = _fineBinding.IsActive ? "active" : "inactive";
+        var rung = _fineBinding.Rung?.Symbol ?? "?";
+        var delta = _finePreview.IntegralTickDelta is { } integral
+            ? $"{integral:+0;-0;0} ticks"
+            : $"{_finePreview.RawTickQuantity:+0.###;-0.###;0} {rung}";
+        return $"{_fineBinding.OwnerLabel} | {rung} | {state} | {delta}";
+    }
+
+    private void UpdateOuterRingVisual(TunnelOuterTickMapping mapping)
+    {
+        if (_outerRingRoot is not null && GodotObject.IsInstanceValid(_outerRingRoot))
+            _outerRingRoot.RotationDegrees = new Vector3(0f, 0f, -(float)(mapping.AccumulatedDegrees % 360.0));
+
+        if (_outerLabel is not null && GodotObject.IsInstanceValid(_outerLabel))
+            _outerLabel.Text = $"tick {mapping.ClampedTargetTick} | {mapping.Rung.Symbol}";
+    }
+
+    private void UpdateInnerRingVisual(TunnelFineTrackBinding binding, TunnelFinePreview preview)
+    {
+        if (_innerRingRoot is not null && GodotObject.IsInstanceValid(_innerRingRoot))
+            _innerRingRoot.RotationDegrees = new Vector3(0f, 0f, -(float)preview.AccumulatedDegrees);
+
+        if (_innerLabel is not null && GodotObject.IsInstanceValid(_innerLabel))
+        {
+            var state = binding.IsActive ? "active" : "inactive";
+            var rung = binding.Rung?.Symbol ?? "?";
+            var delta = preview.IntegralTickDelta is { } integral
+                ? $"{integral:+0;-0;0} ticks"
+                : $"{preview.RawTickQuantity:+0.###;-0.###;0} {rung}";
+            _innerLabel.Text = $"{binding.OwnerLabel} | {rung} | {state} | {delta}";
+        }
+    }
+
+    private static MeshInstance3D BuildAsymmetricMarker(Color color, float outerRadius)
+    {
+        var markerMesh = BuildPlanarAnnulusSectorMesh(
+            -8.0, 16.0, outerRadius + 0.1f, outerRadius + 0.5f, MouthZ + 0.02f);
+        return new MeshInstance3D
+        {
+            Name = "RingMarker",
+            Mesh = markerMesh,
+            MaterialOverride = BuildUnlitMaterial(new Color(
+                Math.Min(1f, color.R + 0.3f),
+                Math.Min(1f, color.G + 0.3f),
+                Math.Min(1f, color.B + 0.3f))),
+        };
+    }
+
+    private void ClearChildren(Node3D root)
+    {
+        foreach (var child in root.GetChildren())
+        {
+            root.RemoveChild(child);
+            child.QueueFree();
+        }
     }
 }

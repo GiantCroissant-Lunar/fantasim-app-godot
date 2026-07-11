@@ -1,5 +1,5 @@
 using System;
-using System.Linq;
+using System.Collections.Generic;
 using FantaSim.App.Timeline;
 using FantaSim.App.Timeline.Seam;
 using FantaSim.App.World.Composition;
@@ -7,25 +7,16 @@ using Godot;
 
 namespace FantaSim.App.Presentation.Tunnel;
 
-// Track corridors: sphere-sector wedges built from TrackLaneViewModelBuilder.BuildLanes +
-// TunnelCorridorLayout.BuildWedges (plan Task 8 Step 3), with filmstrip-kind wedges additionally
-// getting a texture quad wired through FilmstripPreviewController via QuadMaterialFilmstripSink
-// (Task 9). Split from the core file 2026-07-11 (vault/plans/2026-07-11-tunnel-slice1-plan.md).
 internal sealed partial class TunnelPresentationBinder
 {
-    // Base tints per presenter kind -- a slice-1 look-dev choice, not spec-pinned. Dimmed alpha
-    // copies TimelineFace.Lanes.cs's private DimmedTrackModulateAlpha VALUE (0.55f) verbatim per
-    // plan Task 8 Step 3 ("do not reintroduce a different dim level") -- the constant itself is
-    // private to that file/assembly, so the value is copied, not referenced.
-    private static readonly Color FilmstripWedgeColor = new(0.30f, 0.55f, 0.62f);
-    private static readonly Color GraphWedgeColor = new(0.52f, 0.40f, 0.62f);
-    private static readonly Color GenericWedgeColor = new(0.42f, 0.44f, 0.46f);
-    private const float DimmedWedgeAlpha = 0.55f;
-    private const double WedgeGapDeg = 2.0;
-    private const float FilmstripQuadHalfWidth = 1.4f;
-    private const float FilmstripQuadHalfHeight = 1.0f;
+    private static readonly Color CorridorActiveColor = new(0.30f, 0.55f, 0.62f);
+    private static readonly Color CorridorInactiveColor = new(0.42f, 0.44f, 0.46f);
+    private static readonly Color CorridorFocusColor = new(0.42f, 0.68f, 0.52f);
+    private const double CorridorGapDeg = 2.0;
 
     private Node3D? _corridorsRoot;
+    private Node3D? _fineRailRoot;
+    private readonly List<(MeshInstance3D Node, long Tick)> _frameNodes = new();
 
     private void EnsureCorridorsRoot()
     {
@@ -42,150 +33,329 @@ internal sealed partial class TunnelPresentationBinder
     private void ClearCorridorsRoot()
     {
         _corridorsRoot = null;
+        _fineRailRoot = null;
+        _frameNodes.Clear();
     }
 
     private void RebuildCorridors()
     {
-        if (_disposed || _mount is null || !GodotObject.IsInstanceValid(_mount)
-            || _ctl is null || _layerTrackRegistry is null)
+        if (_disposed || _mount is null || !GodotObject.IsInstanceValid(_mount) || _ctl is null)
             return;
 
         EnsureCorridorsRoot();
         ClearChildren(_corridorsRoot!);
+        _frameNodes.Clear();
+        _fineRailRoot = null;
 
-        var lanes = TrackLaneViewModelBuilder.BuildLanes(_layerTrackRegistry.Current);
-        var wedges = TunnelCorridorLayout.BuildWedges(lanes);
-        // Zip: TunnelCorridorLayout.BuildWedges iterates `lanes` in the exact nested lane/track
-        // order it was given (Task 3's own contiguous/ordered-span contract + tests), so flattening
-        // `lanes` the identical way recovers each wedge's originating descriptor without BuildWedges
-        // itself needing to carry it (its record stays UI-shaped, not domain-shaped).
-        var descriptors = lanes.SelectMany(lane => lane.Tracks).ToList();
-
-        var globalRung = GlobalRung;
-
-        for (var i = 0; i < wedges.Count; i++)
+        var gen = _generation;
+        if (_sourceTracks.Count == 0)
         {
-            var wedge = wedges[i];
-            var descriptor = i < descriptors.Count ? descriptors[i].Descriptor : null;
+            UpdateInnerBinding(gen);
+            return;
+        }
 
-            var baseColor = wedge.PresenterKind switch
+        var window = TunnelCorridorLayout.BuildFocusedWindow(_sourceTracks, _focusIndex);
+        var baseTick = _ctl.Tick;
+        var coarse = TunnelScrubMapper.MapOuterAngleToTick(360d, baseTick, _ctl.MaxTick);
+        var requestEnd = Math.Min(coarse.ClampedTargetTick, _ctl.MaxTick);
+
+        foreach (var slot in window)
+        {
+            BuildCorridorSlot(slot, baseTick, coarse.Rung.UnitTicks, requestEnd, gen);
+        }
+
+        UpdateInnerBinding(gen);
+        BuildFineRailIfFocused(window, gen);
+    }
+
+    private void BuildCorridorSlot(
+        TunnelCorridorLayout.TunnelTrackSlot slot,
+        long baseTick,
+        double coarseUnitTicks,
+        long requestEnd,
+        int gen)
+    {
+        if (_corridorsRoot is null || _ctl is null)
+            return;
+
+        var isActive = TunnelTrackActivity.IsActive(
+            slot.Descriptor, _ctl.Tick, _ctl.GeosphereSchedule, _ctl.AtmosphereSchedule);
+
+        var color = slot.IsFocused
+            ? CorridorFocusColor
+            : (isActive ? CorridorActiveColor : CorridorInactiveColor);
+
+        var centerAngle = slot.CenterAngleDegrees;
+        var start = centerAngle - (CorridorSpanDegrees / 2.0) + (CorridorGapDeg / 2.0);
+        var span = Math.Max(0.0, CorridorSpanDegrees - CorridorGapDeg);
+
+        var wallMesh = BuildCylinderSectorMesh(start, span, CorridorSurfaceRadius, MouthZ, ThroatZ);
+        if (wallMesh is not null)
+        {
+            var wall = new MeshInstance3D
             {
-                TrackContentPresenterKind.Filmstrip => FilmstripWedgeColor,
-                TrackContentPresenterKind.Graph => GraphWedgeColor,
-                _ => GenericWedgeColor,
+                Name = $"Corridor_{SafeNodeName(slot.Descriptor.SphereId)}_{SafeNodeName(slot.Descriptor.LayerId)}",
+                Mesh = wallMesh,
+                MaterialOverride = BuildUnlitMaterial(color),
             };
-            var alpha = wedge.IsDimmed ? DimmedWedgeAlpha : 1f;
+            _corridorsRoot!.AddChild(wall);
+        }
 
-            var start = wedge.StartAngleDeg + (WedgeGapDeg / 2.0);
-            var span = Math.Max(0.0, wedge.SpanAngleDeg - WedgeGapDeg);
-            var panelMesh = BuildAnnulusSectorMesh(start, span, ThroatRadius, OuterRadius);
-            var panel = new MeshInstance3D
+        var labelRad = Mathf.DegToRad((float)centerAngle);
+        var labelPos = new Vector3(
+            Mathf.Cos(labelRad) * (CorridorSurfaceRadius - 0.3f),
+            Mathf.Sin(labelRad) * (CorridorSurfaceRadius - 0.3f),
+            0.1f);
+        var label = new Label3D
+        {
+            Name = "CorridorLabel",
+            Text = slot.Descriptor.DisplayName,
+            Position = labelPos,
+            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            FontSize = 22,
+            Modulate = new Color(0.92f, 0.94f, 0.97f, 0.92f),
+            OutlineModulate = new Color(0f, 0f, 0f, 0.65f),
+            NoDepthTest = false,
+        };
+        _corridorsRoot!.AddChild(label);
+
+        if (slot.Descriptor.Content.Type == "filmstrip")
+            BuildFilmstripFrames(slot.Descriptor, centerAngle, baseTick, coarseUnitTicks, requestEnd, gen);
+    }
+
+    private void BuildFilmstripFrames(
+        LayerTrackDescriptor descriptor,
+        double centerAngleDeg,
+        long baseTick,
+        double coarseUnitTicks,
+        long requestEnd,
+        int gen)
+    {
+        if (_corridorsRoot is null || _ctl is null || coarseUnitTicks <= 0)
+            return;
+
+        var requestStart = baseTick;
+        if (requestEnd <= requestStart)
+            return;
+
+        var contentWidth = TimelineFilmstrip.ThumbnailWidth * FilmstripFramesPerCorridor;
+        var slots = TimelineFilmstrip.PlanSlots(requestStart, requestEnd, contentWidth);
+
+        var rad = Mathf.DegToRad((float)centerAngleDeg);
+        var rung = TunnelCorridorLayout.ResolveCorridorRung(descriptor.TimeDomain.Rung, TunnelScrubMapper.ResolveOuterRung());
+
+        foreach (var fs in slots)
+        {
+            var fraction = coarseUnitTicks > 0
+                ? (double)(fs.Tick - baseTick) / coarseUnitTicks
+                : 0;
+            if (fraction < 0 || fraction > 1)
+                continue;
+
+            var z = MouthZ - (float)(fraction * TunnelDepth);
+            var tangentX = -Mathf.Sin(rad);
+            var tangentY = Mathf.Cos(rad);
+
+            var frameCenter = new Vector3(
+                Mathf.Cos(rad) * (CorridorSurfaceRadius - 0.05f),
+                Mathf.Sin(rad) * (CorridorSurfaceRadius - 0.05f),
+                z);
+
+            var halfW = 0.5f;
+            var halfH = 0.35f;
+            var radial = new Vector3(Mathf.Cos(rad), Mathf.Sin(rad), 0f);
+            var tangent = new Vector3(tangentX, tangentY, 0f);
+
+            var q0 = frameCenter - tangent * halfW - radial * halfH;
+            var q1 = frameCenter + tangent * halfW - radial * halfH;
+            var q2 = frameCenter + tangent * halfW + radial * halfH;
+            var q3 = frameCenter - tangent * halfW + radial * halfH;
+
+            var mesh = BuildQuadMesh(q0, q1, q2, q3);
+            var material = new StandardMaterial3D
             {
-                Name = $"Corridor_{SafeNodeName(wedge.SphereId)}_{SafeNodeName(wedge.LayerId)}",
-                Mesh = panelMesh,
-                MaterialOverride = BuildUnlitMaterial(baseColor, alpha),
+                AlbedoColor = Colors.White,
+                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+                CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+                Transparency = BaseMaterial3D.TransparencyEnum.Disabled,
             };
-            _corridorsRoot!.AddChild(panel);
-
-            var midAngleDeg = wedge.StartAngleDeg + (wedge.SpanAngleDeg / 2.0);
-            var midRadius = (ThroatRadius + OuterRadius) / 2.0;
-
-            if (wedge.PresenterKind == TrackContentPresenterKind.Filmstrip && descriptor is not null)
+            var owner = new MeshInstance3D
             {
-                // Task 9: PLAIN tinted wedge above is already built for every presenter kind
-                // (including Filmstrip); this adds the real-texture quad on top, never blocking
-                // Task 8's base rendering on Task 9's wiring.
-                BuildFilmstripQuad(descriptor, midAngleDeg, midRadius, globalRung);
-            }
-            else
-            {
-                // Graph/Generic content types render as a plain labeled/dimmed wedge, spec §7:
-                // no in-3D graph, no pop-out yet -- the Unity round-trip degradation guarantee.
-                var label = BuildCorridorLabel(descriptor?.DisplayName ?? wedge.LayerId, midAngleDeg, midRadius);
-                _corridorsRoot!.AddChild(label);
-            }
+                Name = $"Frame_{SafeNodeName(descriptor.SphereId)}_{SafeNodeName(descriptor.LayerId)}_{fs.Tick}",
+                Mesh = mesh,
+                MaterialOverride = material,
+            };
+            _corridorsRoot!.AddChild(owner);
+            _frameNodes.Add((owner, fs.Tick));
+
+            var sink = new QuadMaterialFilmstripSink(owner, material);
+            _filmstrip.RequestTexture(sink, descriptor.SphereId, descriptor.LayerId, fs.Tick, rung.Symbol, graphRevision: 0);
         }
     }
 
-    private static Label3D BuildCorridorLabel(string text, double midAngleDeg, double midRadius)
+    private static ArrayMesh BuildQuadMesh(Vector3 q0, Vector3 q1, Vector3 q2, Vector3 q3)
     {
-        var rad = Math.PI / 180.0 * midAngleDeg;
-        var position = new Vector3((float)(Math.Cos(rad) * midRadius), (float)(Math.Sin(rad) * midRadius), 0.05f);
-        return new Label3D
+        var normal = CalculateNormal(q0, q1, q2);
+        var vertices = new List<Vector3> { q0, q1, q2, q0, q2, q3 };
+        var normals = new List<Vector3> { normal, normal, normal, normal, normal, normal };
+        var uvs = new List<Vector2>
         {
-            Name = "CorridorLabel",
-            Text = text,
-            Position = position,
-            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
-            FontSize = 28,
-            Modulate = new Color(0.92f, 0.94f, 0.97f, 0.95f),
-            OutlineModulate = new Color(0f, 0f, 0f, 0.65f),
-            NoDepthTest = true,
+            new(0f, 1f), new(1f, 1f), new(1f, 0f),
+            new(0f, 1f), new(1f, 0f), new(0f, 0f),
         };
+        return BuildMeshFromArrays(vertices, normals, uvs);
     }
 
-    // Task 9 Step 2: "pick the simpler single-quad-per-corridor for slice 1" -- one small flat quad
-    // tangent to the wedge's mid-radius, not a curved wedge-shaped texture. Task 9 Step 1's
-    // FilmstripPreviewController instance (constructed once in the ctor, provider set per-Rebind)
-    // is reused verbatim through the sink seam (Task 5/Task 6), same cache/queue/ALC-discipline
-    // machinery the 2D face uses -- this is purely a different sink for the same texture.
-    private void BuildFilmstripQuad(LayerTrackDescriptor descriptor, double midAngleDeg, double midRadius, TimelineLadderRung globalRung)
+    private void BuildFineRailIfFocused(IReadOnlyList<TunnelCorridorLayout.TunnelTrackSlot> window, int gen)
     {
-        if (_ctl is null)
+        if (_corridorsRoot is null)
             return;
 
-        var rad = Math.PI / 180.0 * midAngleDeg;
-        var center = new Vector3((float)(Math.Cos(rad) * midRadius), (float)(Math.Sin(rad) * midRadius), 0.06f);
-        var tangent = new Vector3((float)-Math.Sin(rad), (float)Math.Cos(rad), 0f);
-        var radial = new Vector3((float)Math.Cos(rad), (float)Math.Sin(rad), 0f);
+        var focused = System.Linq.Enumerable.FirstOrDefault(window, s => s.IsFocused);
+        if (focused.Descriptor is null)
+            return;
 
-        var q0 = center - (tangent * FilmstripQuadHalfWidth) - (radial * FilmstripQuadHalfHeight);
-        var q1 = center + (tangent * FilmstripQuadHalfWidth) - (radial * FilmstripQuadHalfHeight);
-        var q2 = center + (tangent * FilmstripQuadHalfWidth) + (radial * FilmstripQuadHalfHeight);
-        var q3 = center - (tangent * FilmstripQuadHalfWidth) + (radial * FilmstripQuadHalfHeight);
+        _fineRailRoot = new Node3D { Name = "FineRail" };
+        _corridorsRoot.AddChild(_fineRailRoot);
 
-        var mesh = BuildQuadMesh(q0, q1, q2, q3);
-        var material = new StandardMaterial3D
+        var railMesh = BuildCylinderSectorMesh(
+            -2.0, 4.0, CorridorSurfaceRadius - 0.15f,
+            FineRailCenterZ + FineRailHalfLength,
+            FineRailCenterZ - FineRailHalfLength);
+        if (railMesh is not null)
         {
-            AlbedoColor = Colors.White,
-            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
-            CullMode = BaseMaterial3D.CullModeEnum.Disabled,
-            Transparency = BaseMaterial3D.TransparencyEnum.Disabled,
-        };
-        var owner = new MeshInstance3D
+            var rail = new MeshInstance3D
+            {
+                Name = "FineRailBar",
+                Mesh = railMesh,
+                MaterialOverride = BuildUnlitMaterial(new Color(0.6f, 0.6f, 0.65f, 0.4f)),
+            };
+            _fineRailRoot.AddChild(rail);
+        }
+
+        var cursorMesh = BuildPlanarAnnulusSectorMesh(
+            -4.0, 8.0, CorridorSurfaceRadius - 0.25f, CorridorSurfaceRadius - 0.05f, (float)_finePreview.CursorZ);
+        if (cursorMesh is not null)
         {
-            Name = $"FilmstripQuad_{SafeNodeName(descriptor.SphereId)}_{SafeNodeName(descriptor.LayerId)}",
-            Mesh = mesh,
-            MaterialOverride = material,
-        };
-        _corridorsRoot!.AddChild(owner);
+            var cursor = new MeshInstance3D
+            {
+                Name = "FineCursor",
+                Mesh = cursorMesh,
+                MaterialOverride = BuildUnlitMaterial(new Color(0.95f, 0.85f, 0.3f)),
+            };
+            _fineRailRoot.AddChild(cursor);
+        }
+    }
 
-        var sink = new QuadMaterialFilmstripSink(owner, material);
-        // First real consumer of LayerTrackDescriptor.TimeDomain.Rung (plan's Grounding facts /
-        // TunnelCorridorLayout.ResolveCorridorRung's own doc comment): an unrecognized or absent
-        // native rung symbol degrades to the tunnel's global rung, never a throw.
-        var rung = TunnelCorridorLayout.ResolveCorridorRung(descriptor.TimeDomain.Rung, globalRung);
+    private void UpdateInnerBinding(int gen)
+    {
+        if (_disposed || gen != _generation)
+            return;
 
-        // Slice-1 simplification (plan Task 9 Step 1): graphRevision fixed at 0. The tunnel has no
-        // cheap access to the generation-graph-family revision the 2D face threads through
-        // (WorldService.GetPlanetPresentationAsync(tick).GenerationGraphFamily is an expensive call
-        // to make once per corridor per rebuild); the tunnel's filmstrip cache is already documented
-        // as a SEPARATE cache from the 2D face's (independent re-fetch/re-cache is expected, not a
-        // bug), so this is a compatible degradation, not a new one.
-        _filmstrip.RequestTexture(sink, descriptor.SphereId, descriptor.LayerId, _ctl.Tick, rung.Symbol, graphRevision: 0);
+        var focused = TunnelCorridorLayout.ResolveFocusedTrack(_sourceTracks, _focusIndex);
+        var isActive = false;
+        if (focused is not null && _ctl is not null)
+        {
+            isActive = TunnelTrackActivity.IsActive(
+                focused, _ctl.Tick, _ctl.GeosphereSchedule, _ctl.AtmosphereSchedule);
+        }
+
+        var globalFallback = TunnelScrubMapper.ResolveOuterRung();
+        _fineBinding = TunnelFinePreviewMapper.Bind(focused, isActive, globalFallback);
+        _finePreview = TunnelFinePreviewMapper.Reset(_fineBinding, FineRailCenterZ, FineRailHalfLength);
+    }
+
+    private void RepositionExistingFrames(long baseTick, double coarseSpanTicks, long requestEndTick)
+    {
+        if (_corridorsRoot is null || coarseSpanTicks <= 0)
+            return;
+
+        foreach (var (node, tick) in _frameNodes)
+        {
+            if (!GodotObject.IsInstanceValid(node))
+                continue;
+
+            var fraction = (double)(tick - baseTick) / coarseSpanTicks;
+            if (fraction < 0 || fraction > 1)
+            {
+                node.Visible = false;
+                continue;
+            }
+
+            node.Visible = true;
+            var z = MouthZ - (float)(fraction * TunnelDepth);
+            var pos = node.Position;
+            node.Position = new Vector3(pos.X, pos.Y, z);
+        }
+    }
+
+    private void OnTickChanged(long tick)
+    {
+        if (_disposed)
+            return;
+
+        if (OS.GetThreadCallerId() == OS.GetMainThreadId())
+        {
+            RefreshTunnelForBaseTick(tick, rebuildFrameRequests: false);
+            return;
+        }
+
+        var gen = _generation;
+        Callable.From(() =>
+        {
+            if (gen == _generation)
+                RefreshTunnelForBaseTick(tick, rebuildFrameRequests: false);
+        }).CallDeferred();
+    }
+
+    private void RefreshTunnelForBaseTick(long tick, bool rebuildFrameRequests)
+    {
+        if (_disposed || _ctl is null)
+            return;
+
+        UpdateInnerBinding(_generation);
+
+        if (rebuildFrameRequests)
+        {
+            _filmstrip.Supersede();
+            RebuildCorridors();
+        }
+        else
+        {
+            var coarse = TunnelScrubMapper.MapOuterAngleToTick(360d, tick, _ctl.MaxTick);
+            var requestEnd = Math.Min(coarse.ClampedTargetTick, _ctl.MaxTick);
+            RepositionExistingFrames(tick, coarse.Rung.UnitTicks, requestEnd);
+
+            if (_outerLabel is not null && GodotObject.IsInstanceValid(_outerLabel))
+                _outerLabel.Text = BuildOuterLabelText();
+        }
     }
 
     private void OnRegistryChanged(LayerTrackRegistrySnapshot snapshot)
     {
-        // SetArchived/Reload may be invoked from a command handler off the main thread; the
-        // rebuild walks into AddChild/QueueFree, which Godot only allows on the main thread --
-        // same CallDeferred discipline TimelineFace.OnLayerTrackRegistryChanged already uses.
+        if (_disposed)
+            return;
+
         if (OS.GetThreadCallerId() == OS.GetMainThreadId())
         {
-            RebuildCorridors();
+            HandleRegistryChanged();
             return;
         }
 
-        Callable.From(RebuildCorridors).CallDeferred();
+        var gen = _generation;
+        Callable.From(() =>
+        {
+            if (gen == _generation)
+                HandleRegistryChanged();
+        }).CallDeferred();
+    }
+
+    private void HandleRegistryChanged()
+    {
+        CancelTunnelGesture("registry_changed");
+        _filmstrip.Supersede();
+        ResolveSourceTracks();
+        ResetFinePreview(TunnelFineResetReason.FocusChanged);
+        RebuildCorridors();
     }
 }

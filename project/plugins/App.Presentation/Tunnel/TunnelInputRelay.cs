@@ -3,13 +3,51 @@ using Godot;
 
 namespace FantaSim.App.Presentation.Tunnel;
 
-/// <summary>Visual-affordance-free input relay: the binder is a plain C# class (mirrors
-/// PlanetPresentationBinder), not a Node, so it cannot override _Input itself. This tiny Node
-/// forwards press/motion/release to a delegate the binder supplies -- same shape as
-/// TimelinePlayheadHandle's "input handled by the owner, not the Control" precedent.
-/// vault/plans/2026-07-11-tunnel-slice1-plan.md.</summary>
 internal sealed partial class TunnelInputRelay : Node3D
 {
-    public Action<InputEvent>? OnEvent;
-    public override void _UnhandledInput(InputEvent @event) => OnEvent?.Invoke(@event);
+    public Func<InputEvent, bool>? OnInput;
+    public Action<double>? OnProcess;
+    public Action<string>? OnCancel;
+
+    public override void _Input(InputEvent @event)
+    {
+        if (OnInput is null)
+            return;
+
+        bool handled;
+        try
+        {
+            handled = OnInput(@event);
+        }
+        catch
+        {
+            handled = false;
+        }
+
+        if (handled)
+            GetViewport()?.SetInputAsHandled();
+    }
+
+    public override void _Process(double delta)
+        => OnProcess?.Invoke(delta);
+
+    public override void _Notification(int what)
+    {
+        // WM_FOCUS_OUT / WM_EXIT_TREE — cancel any owned gesture so focus loss or tree exit
+        // does not strand a drag or leave a stale commit pending.
+        const int NotificationWmClose = 1006;
+        const int NotificationWmFocusOut = 1007;
+        const int NotificationPredelete = 1010;
+
+        if (what == NotificationWmFocusOut || what == NotificationWmClose || what == NotificationPredelete)
+            OnCancel?.Invoke("notification:" + what);
+    }
+
+    public override void _ExitTree()
+    {
+        OnCancel?.Invoke("exit_tree");
+        OnInput = null;
+        OnProcess = null;
+        OnCancel = null;
+    }
 }

@@ -55,6 +55,10 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
     /// the ONE new seam the spike adds.
     /// </summary>
     internal Node3D? ActiveRoot => _activeRoot;
+
+    // Resolved at execution time: the tunnel mount aligns to this node's global position without
+    // parenting under the replaceable root, so a planet rebind cannot free the tunnel.
+    internal Node3D? PlanetBody => _activeRoot?.GetNodeOrNull<Node3D>("PlanetBody");
     private PlateBoundaryFocusRenderer? _boundaryRenderer;
     private BoundarySectionRenderer? _boundarySectionRenderer;
     private PlanetGenerationGraphSource? _graphSource;
