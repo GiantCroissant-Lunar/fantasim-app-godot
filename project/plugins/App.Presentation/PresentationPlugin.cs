@@ -26,6 +26,8 @@ public sealed partial class PresentationPlugin : ILifecyclePlugin
     private readonly Func<bool> _isOnMainThread;
     private IDisposable? _registration;
     private IPlanetPresentation? _presentation;
+    private IDisposable? _tunnelRegistration;
+    private ITunnelPresentation? _tunnelPresentation;
     private ILogger? _log;
 
     public PresentationPlugin()
@@ -52,6 +54,35 @@ public sealed partial class PresentationPlugin : ILifecyclePlugin
             _presentation,
             new ServiceRegistration { Tags = new[] { "presentation", "world-bundle" }, Description = "planet presentation binder (world bundle)" });
         _log.LogInformation("PresentationPlugin: IPlanetPresentation registered.");
+
+        // Tunnel slice-1 (vault/plans/2026-07-11-tunnel-slice1-plan.md Task 7 Step 3): constructed
+        // AFTER _presentation above -- creating PlanetPresentationBinder first is what registers
+        // ITimelineController, which the tunnel binder's own Rebind() resolves. IBundleSceneRegistry
+        // is resolved via TryGet (not Get) rather than assumed present: production composition
+        // always registers it before this bundle loads (CreateDefault's own IPlanetPresentation path
+        // resolves it the same way), but PresentationPluginTests' fake registry does not, and a
+        // hard Get<T>() there would turn every existing lifecycle test into a tunnel-construction
+        // test it was never meant to be -- degrade gracefully (log + skip), matching the codebase's
+        // consistent "resolve optionally, skip if absent" doctrine (BindPlanetPresentation,
+        // ComposeTimeline) rather than throwing.
+        var sceneRegistry = registry.TryGet<IBundleSceneRegistry>();
+        if (sceneRegistry is not null)
+        {
+            _tunnelPresentation = PresentationComposition.CreateTunnelPresentation(registry, sceneRegistry, loggerFactory);
+            _tunnelRegistration = registry.RegisterOwned<ITunnelPresentation>(
+                _tunnelPresentation,
+                new ServiceRegistration
+                {
+                    Tags = new[] { "presentation", "tunnel", "world-bundle" },
+                    Description = "tunnel timeline binder (world bundle)"
+                });
+            _log.LogInformation("PresentationPlugin: ITunnelPresentation registered.");
+        }
+        else
+        {
+            _log.LogWarning("PresentationPlugin: IBundleSceneRegistry not registered; tunnel presentation skipped.");
+        }
+
         return ValueTask.CompletedTask;
     }
 
@@ -79,6 +110,38 @@ public sealed partial class PresentationPlugin : ILifecyclePlugin
                     try
                     {
                         presentation.Dispose();
+                        done.TrySetResult();
+                    }
+                    catch (Exception ex)
+                    {
+                        done.TrySetException(ex);
+                    }
+                }).CallDeferred();
+                await done.Task.ConfigureAwait(false);
+            }
+        }
+
+        // Tunnel slice-1: same main-thread-marshal-and-wait discipline as the planet presentation
+        // above (its binder also frees Godot nodes on Dispose).
+        _tunnelRegistration?.Dispose();
+        _tunnelRegistration = null;
+
+        var tunnelPresentation = _tunnelPresentation;
+        _tunnelPresentation = null;
+        if (tunnelPresentation is not null)
+        {
+            if (_isOnMainThread())
+            {
+                tunnelPresentation.Dispose();
+            }
+            else
+            {
+                var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                Callable.From(() =>
+                {
+                    try
+                    {
+                        tunnelPresentation.Dispose();
                         done.TrySetResult();
                     }
                     catch (Exception ex)

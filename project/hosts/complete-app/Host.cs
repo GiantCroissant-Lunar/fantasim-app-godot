@@ -33,6 +33,10 @@ public partial class Host : Node
     private CollectibleBundles? _collectibleBundles;
     private FantaSim.App.Ecs.IService? _ecs;
     private IPlanetPresentation? _planetPresentation;
+    // Tunnel slice-1 (vault/plans/2026-07-11-tunnel-slice1-plan.md Task 7 Step 4): mirrors every
+    // _planetPresentation lifecycle site exactly (severed on RuntimeChanging, resolved+rebound in
+    // BindPlanetPresentation, nulled on teardown) so the tunnel binder never pins the old world ALC.
+    private ITunnelPresentation? _tunnelPresentation;
     private FantaSim.App.Resource.IService? _resource;
     private IRenderCompositionHandle? _renderComposition;
     private ICameraCompositionHandle? _cameraComposition;
@@ -163,6 +167,7 @@ public partial class Host : Node
             _renderComposition?.SetMantleTarget(null);
             _cameraComposition?.SetOrbitTarget(null);
             _planetPresentation = null;
+            _tunnelPresentation = null;
         }
     }
 
@@ -721,6 +726,11 @@ public partial class Host : Node
         _renderComposition?.SetExplodedTarget(_planetPresentation.UpdateExploded);
         _renderComposition?.SetMantleTarget(_planetPresentation.UpdateMantle);
 
+        // Tunnel slice-1: resolved+rebound alongside the planet presentation on every (re)bind of
+        // the world bundle. No render-ingress targets to wire (the tunnel has none for slice 1).
+        _tunnelPresentation = registry.TryGet<ITunnelPresentation>();
+        _tunnelPresentation?.Rebind();
+
         // Mount the default globe camera now that the world bundle has mounted the globe at the
         // origin. Deferred so the pcam is built on the main thread after the scene tree settles.
         if (_cameraComposition is not null)
@@ -809,6 +819,7 @@ public partial class Host : Node
             // The world bundle's PresentationPlugin owns binder disposal (runs in the plugin-host
             // teardown inside _composition.Dispose()); the host only drops its handle.
             _planetPresentation = null;
+            _tunnelPresentation = null;
             _composition?.Dispose();
         }
         base._Notification(what);

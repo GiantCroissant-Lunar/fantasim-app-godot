@@ -28,6 +28,9 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
 
     internal const string SetTrackArchivedCommandId = "timeline.set_track_archived";
 
+    // Tunnel slice-1 (vault/plans/2026-07-11-tunnel-slice1-plan.md Task 11).
+    internal const string TunnelViewCommandId = "timeline.tunnel_view";
+
     private readonly Func<ITimelineFaceProxy> _faceProxyFactory;
 
     // Serializes compose/sever/shutdown across threads: world reloads raise RuntimeChanging/
@@ -371,6 +374,30 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
                     ["revision"] = layerTrackRegistry.Current.Revision,
                 }.ToJsonString());
             });
+
+        commandService.Register(
+            new FantaSim.App.Command.CommandDescriptor(
+                Id: TunnelViewCommandId,
+                Title: "Toggle tunnel view",
+                Description: "Enables/disables the 3D tunnel timeline. Payload: {\"enabled\":true}.",
+                Category: "timeline"),
+            (payloadJson, _) =>
+            {
+                var payload = ParseTunnelViewPayload(payloadJson);
+                if (!TryReadBool(payload["enabled"], out var enabled))
+                    throw new ArgumentException("timeline.tunnel_view requires boolean 'enabled'.");
+
+                // Resolved lazily on every invocation, never captured at registration: the tunnel
+                // binder lives in the WORLD bundle (a different collectible ALC than this timeline
+                // bundle) and may reload independently after this command registered.
+                var tunnel = _registry?.TryGet<FantaSim.App.Presentation.ITunnelPresentation>();
+                tunnel?.SetEnabled(enabled);
+                return Task.FromResult<string?>(new JsonObject
+                {
+                    ["ok"] = tunnel is not null,
+                    ["enabled"] = tunnel?.IsEnabled ?? false,
+                }.ToJsonString());
+            });
     }
 
     private void UnregisterTimelineCommands()
@@ -380,6 +407,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
         commandService?.Unregister(SelectLayerCommandId);
         commandService?.Unregister(ToggleLayerCommandId);
         commandService?.Unregister(SetTrackArchivedCommandId);
+        commandService?.Unregister(TunnelViewCommandId);
     }
 
     private void OnResourceRuntimeChanging(object? sender, ResourceRuntimeChangingEventArgs args)
@@ -511,6 +539,15 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
 
         return JsonNode.Parse(payloadJson) as JsonObject
             ?? throw new ArgumentException("timeline.set_track_archived payload must be a JSON object.");
+    }
+
+    private static JsonObject ParseTunnelViewPayload(string? payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+            throw new ArgumentException("timeline.tunnel_view payload is required.");
+
+        return JsonNode.Parse(payloadJson) as JsonObject
+            ?? throw new ArgumentException("timeline.tunnel_view payload must be a JSON object.");
     }
 
     internal static (string SphereId, string LayerId, bool Archived) ParseSetTrackArchivedPayload(JsonObject payload)
