@@ -16,7 +16,12 @@ internal sealed partial class TunnelPresentationBinder
 
     private Node3D? _corridorsRoot;
     private Node3D? _fineRailRoot;
+    private MeshInstance3D? _fineCursor;
     private readonly List<(MeshInstance3D Node, long Tick)> _frameNodes = new();
+    private readonly List<(MeshInstance3D Node, LayerTrackDescriptor Descriptor, bool IsFocused)> _corridorNodes = new();
+    private long _requestedFrameStartTick;
+    private long _requestedFrameEndTick;
+    private bool _hasRequestedFrameWindow;
 
     private void EnsureCorridorsRoot()
     {
@@ -34,7 +39,10 @@ internal sealed partial class TunnelPresentationBinder
     {
         _corridorsRoot = null;
         _fineRailRoot = null;
+        _fineCursor = null;
         _frameNodes.Clear();
+        _corridorNodes.Clear();
+        _hasRequestedFrameWindow = false;
     }
 
     private void RebuildCorridors()
@@ -42,22 +50,30 @@ internal sealed partial class TunnelPresentationBinder
         if (_disposed || _mount is null || !GodotObject.IsInstanceValid(_mount) || _ctl is null)
             return;
 
+        _pendingCorridorRebuild = false;
         EnsureCorridorsRoot();
         ClearChildren(_corridorsRoot!);
         _frameNodes.Clear();
+        _corridorNodes.Clear();
         _fineRailRoot = null;
+        _fineCursor = null;
 
         var gen = _generation;
+        var baseTick = _ctl.Tick;
+        var coarse = TunnelScrubMapper.MapOuterAngleToTick(360d, baseTick, _ctl.MaxTick);
+        var requestEnd = Math.Min(coarse.ClampedTargetTick, _ctl.MaxTick);
+        _requestedFrameStartTick = baseTick;
+        _requestedFrameEndTick = requestEnd;
+        _hasRequestedFrameWindow = true;
+
         if (_sourceTracks.Count == 0)
         {
             UpdateInnerBinding(gen);
+            UpdateInnerControlVisuals();
             return;
         }
 
         var window = TunnelCorridorLayout.BuildFocusedWindow(_sourceTracks, _focusIndex);
-        var baseTick = _ctl.Tick;
-        var coarse = TunnelScrubMapper.MapOuterAngleToTick(360d, baseTick, _ctl.MaxTick);
-        var requestEnd = Math.Min(coarse.ClampedTargetTick, _ctl.MaxTick);
 
         foreach (var slot in window)
         {
@@ -65,7 +81,8 @@ internal sealed partial class TunnelPresentationBinder
         }
 
         UpdateInnerBinding(gen);
-        BuildFineRailIfFocused(window, gen);
+        BuildFineRailIfFocused(window);
+        UpdateInnerControlVisuals();
     }
 
     private void BuildCorridorSlot(
@@ -99,6 +116,7 @@ internal sealed partial class TunnelPresentationBinder
                 MaterialOverride = BuildUnlitMaterial(color),
             };
             _corridorsRoot!.AddChild(wall);
+            _corridorNodes.Add((wall, slot.Descriptor, slot.IsFocused));
         }
 
         var labelRad = Mathf.DegToRad((float)centerAngle);
@@ -163,13 +181,15 @@ internal sealed partial class TunnelPresentationBinder
 
             var halfW = 0.5f;
             var halfH = 0.35f;
-            var radial = new Vector3(Mathf.Cos(rad), Mathf.Sin(rad), 0f);
             var tangent = new Vector3(tangentX, tangentY, 0f);
+            var axial = Vector3.Back;
 
-            var q0 = frameCenter - tangent * halfW - radial * halfH;
-            var q1 = frameCenter + tangent * halfW - radial * halfH;
-            var q2 = frameCenter + tangent * halfW + radial * halfH;
-            var q3 = frameCenter - tangent * halfW + radial * halfH;
+            // Local tangent-by-axial quad: node position owns the real tick's XYZ placement, so
+            // later base-time refreshes can replace Position.Z without double-applying mesh Z.
+            var q0 = -tangent * halfW - axial * halfH;
+            var q1 = -tangent * halfW + axial * halfH;
+            var q2 = tangent * halfW + axial * halfH;
+            var q3 = tangent * halfW - axial * halfH;
 
             var mesh = BuildQuadMesh(q0, q1, q2, q3);
             var material = new StandardMaterial3D
@@ -184,6 +204,7 @@ internal sealed partial class TunnelPresentationBinder
                 Name = $"Frame_{SafeNodeName(descriptor.SphereId)}_{SafeNodeName(descriptor.LayerId)}_{fs.Tick}",
                 Mesh = mesh,
                 MaterialOverride = material,
+                Position = frameCenter,
             };
             _corridorsRoot!.AddChild(owner);
             _frameNodes.Add((owner, fs.Tick));
@@ -200,13 +221,13 @@ internal sealed partial class TunnelPresentationBinder
         var normals = new List<Vector3> { normal, normal, normal, normal, normal, normal };
         var uvs = new List<Vector2>
         {
-            new(0f, 1f), new(1f, 1f), new(1f, 0f),
-            new(0f, 1f), new(1f, 0f), new(0f, 0f),
+            new(0f, 1f), new(0f, 0f), new(1f, 0f),
+            new(0f, 1f), new(1f, 0f), new(1f, 1f),
         };
         return BuildMeshFromArrays(vertices, normals, uvs);
     }
 
-    private void BuildFineRailIfFocused(IReadOnlyList<TunnelCorridorLayout.TunnelTrackSlot> window, int gen)
+    private void BuildFineRailIfFocused(IReadOnlyList<TunnelCorridorLayout.TunnelTrackSlot> window)
     {
         if (_corridorsRoot is null)
             return;
@@ -217,9 +238,10 @@ internal sealed partial class TunnelPresentationBinder
 
         _fineRailRoot = new Node3D { Name = "FineRail" };
         _corridorsRoot.AddChild(_fineRailRoot);
+        var centerAngle = focused.CenterAngleDegrees;
 
         var railMesh = BuildCylinderSectorMesh(
-            -2.0, 4.0, CorridorSurfaceRadius - 0.15f,
+            centerAngle - 2.0, 4.0, CorridorSurfaceRadius - 0.15f,
             FineRailCenterZ + FineRailHalfLength,
             FineRailCenterZ - FineRailHalfLength);
         if (railMesh is not null)
@@ -234,16 +256,18 @@ internal sealed partial class TunnelPresentationBinder
         }
 
         var cursorMesh = BuildPlanarAnnulusSectorMesh(
-            -4.0, 8.0, CorridorSurfaceRadius - 0.25f, CorridorSurfaceRadius - 0.05f, (float)_finePreview.CursorZ);
+            centerAngle - 4.0, 8.0,
+            CorridorSurfaceRadius - 0.25f, CorridorSurfaceRadius - 0.05f, 0f);
         if (cursorMesh is not null)
         {
-            var cursor = new MeshInstance3D
+            _fineCursor = new MeshInstance3D
             {
                 Name = "FineCursor",
                 Mesh = cursorMesh,
                 MaterialOverride = BuildUnlitMaterial(new Color(0.95f, 0.85f, 0.3f)),
+                Position = new Vector3(0f, 0f, (float)_finePreview.CursorZ),
             };
-            _fineRailRoot.AddChild(cursor);
+            _fineRailRoot.AddChild(_fineCursor);
         }
     }
 
@@ -276,7 +300,7 @@ internal sealed partial class TunnelPresentationBinder
                 continue;
 
             var fraction = (double)(tick - baseTick) / coarseSpanTicks;
-            if (fraction < 0 || fraction > 1)
+            if (tick < baseTick || tick > requestEndTick || fraction < 0 || fraction > 1)
             {
                 node.Visible = false;
                 continue;
@@ -291,7 +315,7 @@ internal sealed partial class TunnelPresentationBinder
 
     private void OnTickChanged(long tick)
     {
-        if (_disposed)
+        if (_disposed || _tearingDown)
             return;
 
         if (OS.GetThreadCallerId() == OS.GetMainThreadId())
@@ -310,13 +334,19 @@ internal sealed partial class TunnelPresentationBinder
 
     private void RefreshTunnelForBaseTick(long tick, bool rebuildFrameRequests)
     {
-        if (_disposed || _ctl is null)
+        if (_disposed || _tearingDown || _ctl is null)
             return;
 
         UpdateInnerBinding(_generation);
+        UpdateCorridorActivityStyles(tick);
+        UpdateInnerControlVisuals();
+
+        if (_outerLabel is not null && GodotObject.IsInstanceValid(_outerLabel))
+            _outerLabel.Text = BuildOuterLabelText();
 
         if (rebuildFrameRequests)
         {
+            _pendingCorridorRebuild = false;
             _filmstrip.Supersede();
             RebuildCorridors();
         }
@@ -326,14 +356,63 @@ internal sealed partial class TunnelPresentationBinder
             var requestEnd = Math.Min(coarse.ClampedTargetTick, _ctl.MaxTick);
             RepositionExistingFrames(tick, coarse.Rung.UnitTicks, requestEnd);
 
-            if (_outerLabel is not null && GodotObject.IsInstanceValid(_outerLabel))
-                _outerLabel.Text = BuildOuterLabelText();
+            if (!_applyingOuterScrubAction
+                && (!_hasRequestedFrameWindow
+                    || tick < _requestedFrameStartTick
+                    || tick > _requestedFrameEndTick))
+            {
+                ScheduleCorridorRequestRebuild();
+            }
         }
+    }
+
+    private void UpdateCorridorActivityStyles(long tick)
+    {
+        if (_ctl is null)
+            return;
+
+        foreach (var (node, descriptor, isFocused) in _corridorNodes)
+        {
+            if (!GodotObject.IsInstanceValid(node))
+                continue;
+
+            var active = TunnelTrackActivity.IsActive(
+                descriptor, tick, _ctl.GeosphereSchedule, _ctl.AtmosphereSchedule);
+            var color = isFocused
+                ? CorridorFocusColor
+                : (active ? CorridorActiveColor : CorridorInactiveColor);
+            node.MaterialOverride = BuildUnlitMaterial(color);
+        }
+    }
+
+    private void ScheduleCorridorRequestRebuild()
+    {
+        if (_pendingCorridorRebuild || !_enabled || !_builtOnce)
+            return;
+
+        _pendingCorridorRebuild = true;
+        var expectedGeneration = _generation;
+        Callable.From(() =>
+        {
+            if (_disposed || _tearingDown || expectedGeneration != _generation)
+                return;
+            if (!_pendingCorridorRebuild)
+                return;
+            if (!_enabled)
+            {
+                _pendingCorridorRebuild = false;
+                return;
+            }
+
+            _pendingCorridorRebuild = false;
+            _filmstrip.Supersede();
+            RebuildCorridors();
+        }).CallDeferred();
     }
 
     private void OnRegistryChanged(LayerTrackRegistrySnapshot snapshot)
     {
-        if (_disposed)
+        if (_disposed || _tearingDown)
             return;
 
         if (OS.GetThreadCallerId() == OS.GetMainThreadId())
@@ -345,17 +424,20 @@ internal sealed partial class TunnelPresentationBinder
         var gen = _generation;
         Callable.From(() =>
         {
-            if (gen == _generation)
+            if (!_tearingDown && gen == _generation)
                 HandleRegistryChanged();
         }).CallDeferred();
     }
 
     private void HandleRegistryChanged()
     {
+        if (_disposed || _tearingDown)
+            return;
+
         CancelTunnelGesture("registry_changed");
         _filmstrip.Supersede();
         ResolveSourceTracks();
-        ResetFinePreview(TunnelFineResetReason.FocusChanged);
         RebuildCorridors();
+        ResetFinePreview(TunnelFineResetReason.FocusChanged);
     }
 }

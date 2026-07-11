@@ -42,6 +42,7 @@ internal sealed class FilmstripPreviewController : IDisposable
     private CancellationTokenSource _filmstripCts = new();
     private int _filmstripActiveRequests;
     private int _filmstripGeneration;
+    private int _filmstripCancellationEpoch;
 
     private const int MaxConcurrentFilmstripRequests = 3;
     private const int MaxFilmstripTextureCacheEntries = 512;
@@ -52,7 +53,8 @@ internal sealed class FilmstripPreviewController : IDisposable
     internal sealed record QueuedFilmstripFrame(
         LayerFilmstripPreviewRequest Request,
         string RequestKey,
-        int GraphRevision);
+        int GraphRevision,
+        int CancellationEpoch);
 
     public FilmstripPreviewController(
         Func<bool> isFaceAlive,
@@ -76,6 +78,14 @@ internal sealed class FilmstripPreviewController : IDisposable
         _filmstripCts.Cancel();
         _filmstripCts.Dispose();
         _filmstripCts = new CancellationTokenSource();
+        // A remount may reuse this controller. Reset the retired epoch's accounting immediately;
+        // late completions carry the old epoch and cannot decrement/remove new requests.
+        _filmstripCancellationEpoch++;
+        _filmstripActiveRequests = 0;
+        _filmstripActiveKeys.Clear();
+        _filmstripQueue.Clear();
+        _filmstripQueuedKeys.Clear();
+        _filmstripWaiters.Clear();
     }
 
     public static Control BuildFramePlaceholder(TimelineFilmstripFrameSlot slot, bool activeAtSlot)
@@ -153,7 +163,11 @@ internal sealed class FilmstripPreviewController : IDisposable
         if (_filmstripActiveKeys.Contains(requestKey) || !_filmstripQueuedKeys.Add(requestKey))
             return;
 
-        _filmstripQueue.Enqueue(new QueuedFilmstripFrame(request, requestKey, graphRevision));
+        _filmstripQueue.Enqueue(new QueuedFilmstripFrame(
+            request,
+            requestKey,
+            graphRevision,
+            _filmstripCancellationEpoch));
         PumpFilmstripQueue();
     }
 
@@ -222,6 +236,8 @@ internal sealed class FilmstripPreviewController : IDisposable
                 // the trampoline — teardown noise, not a pin (the ALC still collects). Bail
                 // before any Godot call; the bookkeeping below dies with the instance anyway.
                 if (!_isFaceAlive())
+                    return;
+                if (queued.CancellationEpoch != _filmstripCancellationEpoch)
                     return;
 
                 _filmstripActiveRequests = Math.Max(0, _filmstripActiveRequests - 1);

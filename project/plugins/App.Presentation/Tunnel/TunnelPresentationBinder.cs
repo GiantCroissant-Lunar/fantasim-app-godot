@@ -49,6 +49,8 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
     private Node3D? _mount;
     private TunnelInputRelay? _inputRelay;
     private bool _enabled;
+    private bool _builtOnce;
+    private bool _tearingDown;
     private bool _disposed;
     private int _generation;
 
@@ -90,12 +92,34 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
 
     public void Rebind()
     {
-        if (_disposed)
+        if (_disposed || _tearingDown)
             return;
 
         var controller = _registry.TryGet<ITimelineController>();
         if (controller is null)
         {
+            _generation++;
+            _pendingCorridorRebuild = false;
+            CancelTunnelGesture("controller_lost");
+            ResetFinePreview(TunnelFineResetReason.ControllerLost);
+            UnsubscribeController();
+            UnsubscribeLayerTrackRegistry();
+            SeverFilmstrip();
+            _sourceTracks = Array.Empty<LayerTrackDescriptor>();
+            _focusIndex = -1;
+            _fineBinding = TunnelFinePreviewMapper.Bind(
+                null,
+                false,
+                TunnelScrubMapper.ResolveOuterRung());
+            _finePreview = TunnelFinePreviewMapper.Reset(
+                _fineBinding,
+                FineRailCenterZ,
+                FineRailHalfLength);
+            if (_mount is not null && GodotObject.IsInstanceValid(_mount))
+            {
+                _mount.Visible = false;
+                RestorePreviousCamera();
+            }
             _log.LogWarning("Tunnel presentation skipped: ITimelineController is not registered.");
             return;
         }
@@ -105,8 +129,8 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         _filmstrip.SetPreviewProvider((request, ct) =>
             _registry.TryGet<FantaSim.App.World.IService>()?.GetLayerFilmstripPreview(request, ct));
 
-        _generation++;
-        Callable.From(EnsureMounted).CallDeferred();
+        var expectedGeneration = ++_generation;
+        Callable.From(() => EnsureMounted(expectedGeneration)).CallDeferred();
     }
 
     public void SetEnabled(bool enabled)
@@ -117,6 +141,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         _enabled = enabled;
         if (!enabled)
         {
+            _pendingCorridorRebuild = false;
             CancelTunnelGesture("disabled");
             ResetFinePreview(TunnelFineResetReason.Disabled);
         }
@@ -125,7 +150,16 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         {
             _mount.Visible = enabled;
             if (enabled)
+            {
                 ActivateTunnelCamera();
+                if (_builtOnce && _ctl is not null)
+                {
+                    var outsideRequestWindow = !_hasRequestedFrameWindow
+                        || _ctl.Tick < _requestedFrameStartTick
+                        || _ctl.Tick > _requestedFrameEndTick;
+                    RefreshTunnelForBaseTick(_ctl.Tick, outsideRequestWindow);
+                }
+            }
             else
                 RestorePreviousCamera();
             TryBuildOnce();
@@ -134,21 +168,45 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
 
     private void TryBuildOnce()
     {
-        if (!_enabled || _mount is null || !GodotObject.IsInstanceValid(_mount))
+        if (_builtOnce || !_enabled || _mount is null || !GodotObject.IsInstanceValid(_mount))
             return;
 
+        _builtOnce = true;
         ResolveSourceTracks();
+        UpdateInnerBinding(_generation);
         RebuildTwoRingControls();
         RebuildCorridors();
         UpdateRingLabels();
     }
 
-    private void EnsureMounted()
+    private void EnsureMounted(int expectedGeneration)
     {
-        if (_disposed || _mount is not null)
+        if (_disposed || _tearingDown || expectedGeneration != _generation)
             return;
 
-        var gen = _generation;
+        if (_mount is not null)
+        {
+            _mount.Visible = _enabled;
+            AlignToPlanetBody(expectedGeneration);
+            if (_enabled)
+                ActivateTunnelCamera();
+            if (_builtOnce)
+            {
+                _pendingCorridorRebuild = false;
+                _filmstrip.Supersede();
+                ResolveSourceTracks();
+                RebuildCorridors();
+                UpdateInnerControlVisuals();
+                if (_outerLabel is not null && GodotObject.IsInstanceValid(_outerLabel))
+                    _outerLabel.Text = BuildOuterLabelText();
+            }
+            else
+            {
+                TryBuildOnce();
+            }
+            return;
+        }
+
         var stageEnvironment = _sceneRegistry.GetNodeOrNull(StageBundleId, StageEnvironmentPath) as Node3D;
         if (stageEnvironment is null)
         {
@@ -158,7 +216,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
 
         _mount = new Node3D { Name = "TunnelMount", Visible = _enabled };
         stageEnvironment.AddChild(_mount);
-        AlignToPlanetBody(gen);
+        AlignToPlanetBody(expectedGeneration);
 
         _inputRelay = new TunnelInputRelay
         {
@@ -183,7 +241,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
 
     private void AlignToPlanetBody(int gen)
     {
-        if (_disposed || gen != _generation || _mount is null || !GodotObject.IsInstanceValid(_mount))
+        if (_disposed || _tearingDown || gen != _generation || _mount is null || !GodotObject.IsInstanceValid(_mount))
             return;
 
         var body = _planetBodyProvider();
@@ -206,8 +264,31 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
             return;
         }
 
-        _sourceTracks = TunnelCorridorLayout.SelectSourceTracks(_layerTrackRegistry.Current);
-        _focusIndex = TunnelCorridorLayout.InitialFocusIndex(_sourceTracks.Count);
+        var previousFocused = TunnelCorridorLayout.ResolveFocusedTrack(_sourceTracks, _focusIndex);
+        var nextTracks = TunnelCorridorLayout.SelectSourceTracks(_layerTrackRegistry.Current);
+        _sourceTracks = nextTracks;
+        if (nextTracks.Count == 0)
+        {
+            _focusIndex = -1;
+            return;
+        }
+
+        if (previousFocused is not null)
+        {
+            for (var i = 0; i < nextTracks.Count; i++)
+            {
+                var candidate = nextTracks[i];
+                if (candidate.SphereId == previousFocused.SphereId && candidate.LayerId == previousFocused.LayerId)
+                {
+                    _focusIndex = i;
+                    return;
+                }
+            }
+        }
+
+        _focusIndex = _focusIndex < 0
+            ? TunnelCorridorLayout.InitialFocusIndex(nextTracks.Count)
+            : TunnelCorridorLayout.NormalizeFocusIndex(_focusIndex, nextTracks.Count);
     }
 
     private void BindController(ITimelineController? controller)
@@ -215,6 +296,8 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         if (ReferenceEquals(_ctl, controller))
             return;
 
+        if (_ctl is not null)
+            CancelTunnelGesture("controller_replaced");
         UnsubscribeController();
         _ctl = controller;
         if (_ctl is not null)
@@ -233,6 +316,8 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         if (ReferenceEquals(_layerTrackRegistry, registry))
             return;
 
+        if (_layerTrackRegistry is not null)
+            CancelTunnelGesture("registry_replaced");
         UnsubscribeLayerTrackRegistry();
         _layerTrackRegistry = registry;
         if (_layerTrackRegistry is not null)
@@ -251,15 +336,21 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         if (!string.Equals(args.BundleId, WorldBundleId, StringComparison.OrdinalIgnoreCase))
             return;
 
+        _tearingDown = true;
         _generation++;
+        _pendingCorridorRebuild = false;
         CancelTunnelGesture("bundle_teardown");
         ResetFinePreview(TunnelFineResetReason.BundleTeardown);
         SeverManagedInputCallbacks();
         UnsubscribeController();
         UnsubscribeLayerTrackRegistry();
         SeverFilmstrip();
+        _sourceTracks = Array.Empty<LayerTrackDescriptor>();
+        _focusIndex = -1;
         _worldRuntimeReload.MarkRuntimeChanging();
-        Callable.From(ClearMount).CallDeferred();
+        RestorePreviousCamera();
+        var detached = DetachMountState();
+        Callable.From(() => CleanupDetachedMount(detached)).CallDeferred();
         _log.LogInformation("Tunnel presentation released before resource {Operation}: {BundleId}", args.Operation, args.BundleId);
     }
 
@@ -268,15 +359,18 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         if (_disposed || !_worldRuntimeReload.TryScheduleDeferredAttempt())
             return;
 
-        Callable.From(TryRebindAfterWorldRuntimeChange).CallDeferred();
+        var expectedGeneration = _generation;
+        Callable.From(() => TryRebindAfterWorldRuntimeChange(expectedGeneration)).CallDeferred();
     }
 
-    private void TryRebindAfterWorldRuntimeChange()
+    private void TryRebindAfterWorldRuntimeChange(int expectedGeneration)
     {
         _worldRuntimeReload.CompleteDeferredAttempt();
-        if (_disposed || !_worldRuntimeReload.IsPending || !_resource.IsLoaded(WorldBundleId))
+        if (_disposed || expectedGeneration != _generation
+            || !_worldRuntimeReload.IsPending || !_resource.IsLoaded(WorldBundleId))
             return;
 
+        _tearingDown = false;
         Rebind();
     }
 
@@ -291,27 +385,41 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
     {
         if (_inputRelay is not null && GodotObject.IsInstanceValid(_inputRelay))
         {
+            _inputRelay.SetProcessInput(false);
+            _inputRelay.SetProcess(false);
             _inputRelay.OnInput = null;
             _inputRelay.OnProcess = null;
             _inputRelay.OnCancel = null;
         }
     }
 
+    private Node3D? DetachMountState()
+    {
+        var detached = _mount;
+        ClearRingRoots();
+        ClearCorridorsRoot();
+        _mount = null;
+        _inputRelay = null;
+        _tunnelCamera = null;
+        _previousCamera = null;
+        _builtOnce = false;
+        return detached;
+    }
+
+    private static void CleanupDetachedMount(Node3D? mount)
+    {
+        if (mount is null || !GodotObject.IsInstanceValid(mount))
+            return;
+
+        mount.GetParent()?.RemoveChild(mount);
+        mount.QueueFree();
+    }
+
     private void ClearMount()
     {
         RestorePreviousCamera();
-        ClearRingRoots();
-        ClearCorridorsRoot();
-        ClearTunnelCamera();
-
-        if (_mount is not null && GodotObject.IsInstanceValid(_mount))
-        {
-            _mount.GetParent()?.RemoveChild(_mount);
-            _mount.QueueFree();
-        }
-
-        _mount = null;
-        _inputRelay = null;
+        var detached = DetachMountState();
+        CleanupDetachedMount(detached);
     }
 
     private static string SafeNodeName(string value)
@@ -472,6 +580,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
             return;
 
         _disposed = true;
+        _tearingDown = true;
         _generation++;
         CancelTunnelGesture("disposed");
         ResetFinePreview(TunnelFineResetReason.Disposed);

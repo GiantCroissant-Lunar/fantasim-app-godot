@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using FantaSim.App.Timeline;
 using FantaSim.App.Timeline.Seam;
 using Godot;
@@ -16,6 +17,8 @@ internal sealed partial class TunnelPresentationBinder
     private Node3D? _innerRingRoot;
     private Label3D? _outerLabel;
     private Label3D? _innerLabel;
+    private MeshInstance3D? _innerRingMesh;
+    private MeshInstance3D? _innerRingMarker;
 
     private void EnsureRingRoots()
     {
@@ -41,6 +44,8 @@ internal sealed partial class TunnelPresentationBinder
         _innerRingRoot = null;
         _outerLabel = null;
         _innerLabel = null;
+        _innerRingMesh = null;
+        _innerRingMarker = null;
     }
 
     private void RebuildTwoRingControls()
@@ -73,16 +78,16 @@ internal sealed partial class TunnelPresentationBinder
             0.0, 360.0, InnerRingInnerRadius, InnerRingOuterRadius, MouthZ);
         if (innerMesh is not null)
         {
-            var inner = new MeshInstance3D
+            _innerRingMesh = new MeshInstance3D
             {
                 Name = "InnerRing",
                 Mesh = innerMesh,
                 MaterialOverride = BuildUnlitMaterial(innerColor),
             };
-            _innerRingRoot!.AddChild(inner);
+            _innerRingRoot!.AddChild(_innerRingMesh);
 
-            var marker = BuildAsymmetricMarker(innerColor, InnerRingOuterRadius);
-            _innerRingRoot!.AddChild(marker);
+            _innerRingMarker = BuildAsymmetricMarker(innerColor, InnerRingOuterRadius);
+            _innerRingRoot!.AddChild(_innerRingMarker);
         }
     }
 
@@ -139,9 +144,7 @@ internal sealed partial class TunnelPresentationBinder
 
         var state = _fineBinding.IsActive ? "active" : "inactive";
         var rung = _fineBinding.Rung?.Symbol ?? "?";
-        var delta = _finePreview.IntegralTickDelta is { } integral
-            ? $"{integral:+0;-0;0} ticks"
-            : $"{_finePreview.RawTickQuantity:+0.###;-0.###;0} {rung}";
+        var delta = FormatFineDelta(_finePreview, rung);
         return $"{_fineBinding.OwnerLabel} | {rung} | {state} | {delta}";
     }
 
@@ -163,25 +166,55 @@ internal sealed partial class TunnelPresentationBinder
         {
             var state = binding.IsActive ? "active" : "inactive";
             var rung = binding.Rung?.Symbol ?? "?";
-            var delta = preview.IntegralTickDelta is { } integral
-                ? $"{integral:+0;-0;0} ticks"
-                : $"{preview.RawTickQuantity:+0.###;-0.###;0} {rung}";
+            var delta = FormatFineDelta(preview, rung);
             _innerLabel.Text = $"{binding.OwnerLabel} | {rung} | {state} | {delta}";
         }
+
+        if (_fineCursor is not null && GodotObject.IsInstanceValid(_fineCursor))
+            _fineCursor.Position = new Vector3(0f, 0f, (float)preview.CursorZ);
     }
+
+    private void UpdateInnerControlVisuals()
+    {
+        var color = _fineBinding.CanAdjust ? InnerRingColor : InnerRingInactiveColor;
+        if (_innerRingMesh is not null && GodotObject.IsInstanceValid(_innerRingMesh))
+            _innerRingMesh.MaterialOverride = BuildUnlitMaterial(color);
+        if (_innerRingMarker is not null && GodotObject.IsInstanceValid(_innerRingMarker))
+            _innerRingMarker.MaterialOverride = BuildUnlitMaterial(Brighten(color));
+
+        UpdateInnerRingVisual(_fineBinding, _finePreview);
+    }
+
+    private static string FormatFineDelta(TunnelFinePreview preview, string rung)
+    {
+        if (preview.IntegralTickDelta is { } integral)
+            return $"{integral:+0;-0;0} ticks";
+
+        return $"{FormatSigned(preview.RawTickQuantity)} ticks "
+            + $"({FormatSigned(preview.RungUnits)} {rung}) fractional";
+    }
+
+    private static string FormatSigned(double value)
+    {
+        var magnitude = Math.Abs(value).ToString("G10", CultureInfo.InvariantCulture);
+        return value > 0d ? "+" + magnitude : value < 0d ? "-" + magnitude : "0";
+    }
+
+    private static Color Brighten(Color color)
+        => new(
+            Math.Min(1f, color.R + 0.3f),
+            Math.Min(1f, color.G + 0.3f),
+            Math.Min(1f, color.B + 0.3f));
 
     private static MeshInstance3D BuildAsymmetricMarker(Color color, float outerRadius)
     {
         var markerMesh = BuildPlanarAnnulusSectorMesh(
-            -8.0, 16.0, outerRadius + 0.1f, outerRadius + 0.5f, MouthZ + 0.02f);
+            -8.0, 16.0, outerRadius - 0.38f, outerRadius - 0.08f, MouthZ + 0.02f);
         return new MeshInstance3D
         {
             Name = "RingMarker",
             Mesh = markerMesh,
-            MaterialOverride = BuildUnlitMaterial(new Color(
-                Math.Min(1f, color.R + 0.3f),
-                Math.Min(1f, color.G + 0.3f),
-                Math.Min(1f, color.B + 0.3f))),
+            MaterialOverride = BuildUnlitMaterial(Brighten(color)),
         };
     }
 

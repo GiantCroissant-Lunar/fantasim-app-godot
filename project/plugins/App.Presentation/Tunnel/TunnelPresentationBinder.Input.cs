@@ -1,6 +1,7 @@
 using System;
 using FantaSim.App.Timeline;
 using FantaSim.App.Timeline.Seam;
+using FantaSim.App.World.Composition;
 using Godot;
 using Microsoft.Extensions.Logging;
 
@@ -10,6 +11,9 @@ internal sealed partial class TunnelPresentationBinder
 {
     private readonly TunnelGestureCoordinator _coordinator = new();
     private bool _gestureOwned;
+    private bool _applyingOuterScrubAction;
+    private long _gesturePressTick;
+    private int _gestureFocusBefore = -1;
 
     private bool HandleInputEvent(InputEvent @event)
     {
@@ -20,8 +24,8 @@ internal sealed partial class TunnelPresentationBinder
         {
             case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } pressed:
                 return TryBeginGesture(pressed);
-            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false }:
-                return HandleOwnedRelease();
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } released:
+                return HandleOwnedRelease(released);
             case InputEventMouseMotion motion when _gestureOwned:
                 return HandleOwnedMotion(motion);
             case InputEventKey { Pressed: true, Echo: false, Keycode: Key.F9 }:
@@ -52,6 +56,8 @@ internal sealed partial class TunnelPresentationBinder
 
         if (!TryResolveHit(press.Position, out var hit))
             return false;
+        if (!TryGetLocalPointerAngle(press.Position, out var pointerAngle))
+            return false;
 
         var context = BuildPressContext();
         var update = _coordinator.Press(hit, context);
@@ -59,7 +65,9 @@ internal sealed partial class TunnelPresentationBinder
             return false;
 
         _gestureOwned = true;
-        _lastPointerAngleDeg = LocalPointerAngle(press.Position);
+        _lastPointerAngleDeg = pointerAngle;
+        _gesturePressTick = context.CurrentTick;
+        _gestureFocusBefore = context.FocusIndex;
 
         LogOwnership(update.Gesture, press);
 
@@ -67,7 +75,11 @@ internal sealed partial class TunnelPresentationBinder
             UpdateOuterRingVisual(outerMapping);
 
         if (update.FinePreview is { } preview)
+        {
+            _finePreview = preview;
             UpdateInnerRingVisual(_fineBinding, preview);
+            LogInnerGesture("press", preview);
+        }
 
         if (update.ScrubAction.ShouldApply && update.OuterTick is { } om)
             ApplyOuterScrubAction(update.ScrubAction, om);
@@ -80,7 +92,9 @@ internal sealed partial class TunnelPresentationBinder
         if (!_gestureOwned)
             return false;
 
-        var currentAngle = LocalPointerAngle(motion.Position);
+        if (!TryGetLocalPointerAngle(motion.Position, out var currentAngle))
+            return true;
+
         var delta = TunnelScrubMapper.NormalizeClockwiseDeltaDegrees(_lastPointerAngleDeg, currentAngle);
         _lastPointerAngleDeg = currentAngle;
 
@@ -102,7 +116,7 @@ internal sealed partial class TunnelPresentationBinder
                 {
                     _finePreview = preview;
                     UpdateInnerRingVisual(_fineBinding, preview);
-                    LogInnerMotion(preview);
+                    LogInnerGesture("motion", preview);
                 }
                 break;
             case TunnelGestureKind.Wall:
@@ -115,10 +129,21 @@ internal sealed partial class TunnelPresentationBinder
         return true;
     }
 
-    private bool HandleOwnedRelease()
+    private bool HandleOwnedRelease(InputEventMouseButton release)
     {
         if (!_gestureOwned)
             return false;
+
+        // A release can arrive at a new position without a final motion event. Fold that last
+        // pointer segment into the coordinator so the commit/snap/readout reflects the real drop.
+        if (TryGetLocalPointerAngle(release.Position, out var releaseAngle))
+        {
+            var finalDelta = TunnelScrubMapper.NormalizeClockwiseDeltaDegrees(
+                _lastPointerAngleDeg,
+                releaseAngle);
+            _lastPointerAngleDeg = releaseAngle;
+            _coordinator.Motion(finalDelta);
+        }
 
         var update = _coordinator.Release();
         _gestureOwned = false;
@@ -132,7 +157,10 @@ internal sealed partial class TunnelPresentationBinder
                 if (update.OuterTick is { } outerMapping)
                 {
                     if (update.ScrubAction.ShouldApply)
+                    {
                         ApplyOuterScrubAction(update.ScrubAction, outerMapping);
+                        LogOuterGesture("commit", outerMapping, update.ScrubAction.Origin);
+                    }
                     UpdateOuterRingVisual(outerMapping);
                 }
                 break;
@@ -141,11 +169,13 @@ internal sealed partial class TunnelPresentationBinder
                 {
                     _finePreview = preview;
                     UpdateInnerRingVisual(_fineBinding, preview);
+                    LogInnerGesture("release", preview);
                 }
                 break;
             case TunnelGestureKind.Wall:
                 if (update.CarouselSnap is { } snap)
                 {
+                    var focusBefore = _focusIndex;
                     if (_corridorsRoot is not null && GodotObject.IsInstanceValid(_corridorsRoot))
                         _corridorsRoot.RotationDegrees = Vector3.Zero;
 
@@ -153,7 +183,7 @@ internal sealed partial class TunnelPresentationBinder
                     _filmstrip.Supersede();
                     RebuildCorridors();
                     ResetFinePreview(TunnelFineResetReason.FocusChanged);
-                    LogWallRelease(snap);
+                    LogWallRelease(focusBefore, snap);
                 }
                 break;
         }
@@ -193,10 +223,14 @@ internal sealed partial class TunnelPresentationBinder
 
     private bool TryProjectToMouthPlaneBand(Vector2 screenPosition, Camera3D camera, float innerR, float outerR)
     {
+        var mount = _mount;
+        if (mount is null || !GodotObject.IsInstanceValid(mount))
+            return false;
+
         var rayOrigin = camera.ProjectRayOrigin(screenPosition);
         var rayDir = camera.ProjectRayNormal(screenPosition);
 
-        var inv = _mount.GlobalTransform.AffineInverse();
+        var inv = mount.GlobalTransform.AffineInverse();
         var localOrigin = inv * rayOrigin;
         var localDir = inv.Basis * rayDir;
 
@@ -213,10 +247,14 @@ internal sealed partial class TunnelPresentationBinder
 
     private bool TryIntersectTunnelWall(Vector2 screenPosition, Camera3D camera)
     {
+        var mount = _mount;
+        if (mount is null || !GodotObject.IsInstanceValid(mount))
+            return false;
+
         var rayOrigin = camera.ProjectRayOrigin(screenPosition);
         var rayDir = camera.ProjectRayNormal(screenPosition);
 
-        var inv = _mount.GlobalTransform.AffineInverse();
+        var inv = mount.GlobalTransform.AffineInverse();
         var localOrigin = inv * rayOrigin;
         var localDir = inv.Basis * rayDir;
 
@@ -227,25 +265,31 @@ internal sealed partial class TunnelPresentationBinder
         return TunnelRayHitMapper.TryIntersectCylinder(ray, CorridorSurfaceRadius, ThroatZ, MouthZ, out _);
     }
 
-    private double LocalPointerAngle(Vector2 screenPosition)
+    private bool TryGetLocalPointerAngle(Vector2 screenPosition, out double angleDegrees)
     {
+        angleDegrees = 0d;
         var camera = _inputRelay?.GetViewport()?.GetCamera3D();
         if (camera is null || _mount is null)
-            return 0.0;
+            return false;
 
         if (!TryProjectToMouthPlaneGlobal(screenPosition, camera, out var localPoint))
-            return 0.0;
+            return false;
 
-        return Math.Atan2(localPoint.Y, localPoint.X) * 180.0 / Math.PI;
+        angleDegrees = Math.Atan2(localPoint.Y, localPoint.X) * 180.0 / Math.PI;
+        return double.IsFinite(angleDegrees);
     }
 
     private bool TryProjectToMouthPlaneGlobal(Vector2 screenPosition, Camera3D camera, out Vector3 localPoint)
     {
         localPoint = Vector3.Zero;
+        var mount = _mount;
+        if (mount is null || !GodotObject.IsInstanceValid(mount))
+            return false;
+
         var rayOrigin = camera.ProjectRayOrigin(screenPosition);
         var rayDir = camera.ProjectRayNormal(screenPosition);
 
-        var inv = _mount.GlobalTransform.AffineInverse();
+        var inv = mount.GlobalTransform.AffineInverse();
         var lo = inv * rayOrigin;
         var ld = inv.Basis * rayDir;
 
@@ -266,7 +310,20 @@ internal sealed partial class TunnelPresentationBinder
             return;
 
         var tick = Math.Clamp(action.Tick, 0L, Math.Max(0L, _ctl.MaxTick));
-        _ctl.PushTick(tick, action.Origin);
+        _applyingOuterScrubAction = true;
+        try
+        {
+            _ctl.PushTick(tick, action.Origin);
+            // Production deliberately suppresses TickChanged for ScrubPreview, so the tunnel owns
+            // its cheap preview refresh. ScrubCommit performs the one supersede/request rebuild.
+            RefreshTunnelForBaseTick(
+                tick,
+                rebuildFrameRequests: action.Origin == TimelineTickOrigin.ScrubCommit);
+        }
+        finally
+        {
+            _applyingOuterScrubAction = false;
+        }
     }
 
     private void CancelTunnelGesture(string reason)
@@ -285,6 +342,12 @@ internal sealed partial class TunnelPresentationBinder
 
         if (_corridorsRoot is not null && GodotObject.IsInstanceValid(_corridorsRoot))
             _corridorsRoot.RotationDegrees = Vector3.Zero;
+        if (_outerRingRoot is not null && GodotObject.IsInstanceValid(_outerRingRoot))
+            _outerRingRoot.RotationDegrees = Vector3.Zero;
+        if (_outerLabel is not null && GodotObject.IsInstanceValid(_outerLabel))
+            _outerLabel.Text = BuildOuterLabelText();
+
+        ResetFinePreview(TunnelFineResetReason.BaseTimeChanged);
     }
 
     private void ResetFinePreview(TunnelFineResetReason reason)
@@ -301,23 +364,28 @@ internal sealed partial class TunnelPresentationBinder
     {
         _log.LogInformation(
             "tunnel gesture ownership: kind={GestureKind} pointer={Pointer} button={Button} handled={Handled}",
-            kind, "mouse", press.ButtonIndex, true);
+            kind, press.Position, press.ButtonIndex, true);
     }
 
     private void LogOuterMotion(TunnelOuterTickMapping mapping)
     {
-        _log.LogInformation(
-            "tunnel outer gesture: phase={Phase} pressTick={PressTick} accumulatedDegrees={AccumulatedDegrees} unitSymbol={UnitSymbol} rawTickQuantity={RawTickQuantity} roundedTargetTick={RoundedTargetTick} clampedTargetTick={ClampedTargetTick} origin={Origin}",
-            "motion", 0L, mapping.AccumulatedDegrees, mapping.Rung.Symbol,
-            mapping.RawTickDelta, mapping.RoundedTargetTick, mapping.ClampedTargetTick, "tunnel");
+        LogOuterGesture("motion", mapping, TimelineTickOrigin.ScrubPreview);
     }
 
-    private void LogInnerMotion(TunnelFinePreview preview)
+    private void LogOuterGesture(string phase, TunnelOuterTickMapping mapping, TimelineTickOrigin origin)
+    {
+        _log.LogInformation(
+            "tunnel outer gesture: phase={Phase} pressTick={PressTick} accumulatedDegrees={AccumulatedDegrees} unitSymbol={UnitSymbol} rawTickQuantity={RawTickQuantity} roundedTargetTick={RoundedTargetTick} clampedTargetTick={ClampedTargetTick} origin={Origin}",
+            phase, _gesturePressTick, mapping.AccumulatedDegrees, mapping.Rung.Symbol,
+            mapping.RawTickDelta, mapping.RoundedTargetTick, mapping.ClampedTargetTick, origin);
+    }
+
+    private void LogInnerGesture(string phase, TunnelFinePreview preview)
     {
         var desc = preview.Binding.Descriptor;
         _log.LogInformation(
             "tunnel inner gesture: phase={Phase} sphereId={SphereId} layerId={LayerId} rung={Rung} active={Active} accumulatedDegrees={AccumulatedDegrees} rawTickQuantity={RawTickQuantity} cursorZ={CursorZ} authoritativeTick={AuthoritativeTick} mutated=false",
-            "motion",
+            phase,
             desc?.SphereId ?? "",
             desc?.LayerId ?? "",
             preview.Binding.Rung?.Symbol ?? "",
@@ -330,15 +398,17 @@ internal sealed partial class TunnelPresentationBinder
 
     private void LogWallMotion(double accumulatedDegrees)
     {
+        var snap = TunnelCorridorLayout.SnapFocus(
+            _gestureFocusBefore, _sourceTracks.Count, accumulatedDegrees);
         _log.LogInformation(
             "tunnel wall gesture: phase={Phase} focusBefore={FocusBefore} stepDelta={StepDelta} focusAfter={FocusAfter} snappedDegrees={SnappedDegrees}",
-            "motion", _focusIndex, 0L, _focusIndex, accumulatedDegrees);
+            "motion", _gestureFocusBefore, snap.StepDelta, snap.FocusIndex, snap.SnappedAngleDegrees);
     }
 
-    private void LogWallRelease(TunnelCorridorLayout.TunnelCarouselSnap snap)
+    private void LogWallRelease(int focusBefore, TunnelCorridorLayout.TunnelCarouselSnap snap)
     {
         _log.LogInformation(
             "tunnel wall gesture: phase={Phase} focusBefore={FocusBefore} stepDelta={StepDelta} focusAfter={FocusAfter} snappedDegrees={SnappedDegrees}",
-            "release", _focusIndex, snap.StepDelta, snap.FocusIndex, snap.SnappedAngleDegrees);
+            "release", focusBefore, snap.StepDelta, snap.FocusIndex, snap.SnappedAngleDegrees);
     }
 }

@@ -33,13 +33,10 @@ internal sealed partial class TunnelInputRelay : Node3D
 
     public override void _Notification(int what)
     {
-        // WM_FOCUS_OUT / WM_EXIT_TREE — cancel any owned gesture so focus loss or tree exit
-        // does not strand a drag or leave a stale commit pending.
-        const int NotificationWmClose = 1006;
-        const int NotificationWmFocusOut = 1007;
-        const int NotificationPredelete = 1010;
-
-        if (what == NotificationWmFocusOut || what == NotificationWmClose || what == NotificationPredelete)
+        if (what == NotificationWMWindowFocusOut
+            || what == NotificationApplicationFocusOut
+            || what == NotificationWMCloseRequest
+            || what == NotificationPredelete)
             OnCancel?.Invoke("notification:" + what);
     }
 

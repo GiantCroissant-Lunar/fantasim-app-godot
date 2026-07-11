@@ -22,7 +22,7 @@ internal sealed partial class TunnelPresentationBinder
                 Fov = TunnelCameraFovDeg,
             };
             _mount.AddChild(_tunnelCamera);
-            _tunnelCamera.LookAt(TunnelCameraLocalTarget, Vector3.Up);
+            _tunnelCamera.LookAt(_mount.ToGlobal(TunnelCameraLocalTarget), Vector3.Up);
         }
     }
 
@@ -34,7 +34,9 @@ internal sealed partial class TunnelPresentationBinder
         if (_previousCamera is null)
         {
             var viewport = _tunnelCamera.GetViewport();
-            _previousCamera = viewport?.GetCamera3D();
+            var current = viewport?.GetCamera3D();
+            if (current is not null && !ReferenceEquals(current, _tunnelCamera))
+                _previousCamera = current;
         }
 
         _tunnelCamera.MakeCurrent();
@@ -42,13 +44,17 @@ internal sealed partial class TunnelPresentationBinder
 
     private void RestorePreviousCamera()
     {
-        if (_previousCamera is null)
-            return;
-
-        if (GodotObject.IsInstanceValid(_previousCamera) && _previousCamera.IsInsideTree())
+        if (_previousCamera is not null
+            && GodotObject.IsInstanceValid(_previousCamera)
+            && _previousCamera.IsInsideTree())
+        {
             _previousCamera.MakeCurrent();
-        else
-            _log.LogWarning("Tunnel camera restore: previously-current camera is gone; viewport left as-is.");
+        }
+        else if (_tunnelCamera is not null && GodotObject.IsInstanceValid(_tunnelCamera))
+        {
+            _log.LogWarning("Tunnel camera restore: previously-current camera is gone; selecting the viewport's next camera.");
+            _tunnelCamera.ClearCurrent(enableNext: true);
+        }
 
         _previousCamera = null;
     }
