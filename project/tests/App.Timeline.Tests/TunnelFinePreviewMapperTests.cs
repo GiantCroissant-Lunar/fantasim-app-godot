@@ -93,6 +93,21 @@ public sealed class TunnelFinePreviewMapperTests
         Assert.Equal(-1.0, under.RungUnits, precision: 6);
     }
 
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void Map_NonFiniteAngle_Throws(double angle)
+    {
+        // Consistency with the sibling authority mapper (TunnelScrubMapper.MapOuterAngleToTick):
+        // a non-finite accumulated angle is an upstream defect and must fail loud, not silently
+        // propagate NaN into RungUnits/CursorZ and corrupt a Godot node's transform invisibly.
+        var binding = ActiveBinding();
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => TunnelFinePreviewMapper.Map(binding, angle, RailCenterZ, RailHalfLength));
+    }
+
     [Fact]
     public void Map_PositiveAngleMovesCursorTowardThroat()
     {

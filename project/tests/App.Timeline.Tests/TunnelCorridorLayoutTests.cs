@@ -321,6 +321,19 @@ public sealed class TunnelCorridorLayoutTests
         Assert.Equal(2, snap.FocusIndex);
     }
 
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void SnapFocus_NonFiniteAngle_Throws(double angle)
+    {
+        // A non-finite accumulated angle would cast to a garbage long step and emit a ~1e20
+        // SnappedAngleDegrees that callers fold back into gesture state; fail loud instead, matching
+        // TunnelScrubMapper.MapOuterAngleToTick and TunnelFinePreviewMapper.Map.
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => TunnelCorridorLayout.SnapFocus(2, 5, accumulatedDegrees: angle));
+    }
+
     // ---- ResolveCorridorRung (retained from slice 1) ----
 
     [Fact]

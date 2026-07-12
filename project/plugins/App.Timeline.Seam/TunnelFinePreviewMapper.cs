@@ -73,6 +73,12 @@ public static class TunnelFinePreviewMapper
         double railCenterZ,
         double railHalfLength)
     {
+        if (!double.IsFinite(accumulatedDegrees))
+            throw new ArgumentOutOfRangeException(
+                nameof(accumulatedDegrees),
+                accumulatedDegrees,
+                "Accumulated angle must be finite; a non-finite value indicates an upstream gesture defect.");
+
         if (!binding.CanAdjust || binding.Rung is not { } rung)
             return ZeroedPreview(binding, railCenterZ);
 

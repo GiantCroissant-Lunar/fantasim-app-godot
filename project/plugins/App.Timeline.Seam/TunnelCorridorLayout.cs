@@ -142,6 +142,12 @@ public static class TunnelCorridorLayout
     /// </summary>
     public static TunnelCarouselSnap SnapFocus(int focusIndex, int trackCount, double accumulatedDegrees)
     {
+        if (!double.IsFinite(accumulatedDegrees))
+            throw new ArgumentOutOfRangeException(
+                nameof(accumulatedDegrees),
+                accumulatedDegrees,
+                "Accumulated angle must be finite; a non-finite value would cast to a garbage carousel step.");
+
         if (trackCount <= 1)
             return new TunnelCarouselSnap(StepDelta: 0, FocusIndex: focusIndex, SnappedAngleDegrees: 0d);
 
