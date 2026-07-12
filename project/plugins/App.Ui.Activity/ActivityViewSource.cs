@@ -30,7 +30,10 @@ public sealed class ActivityViewSource : IViewSource, IDisposable
     private readonly IMessageBus? _bus;
     private readonly IDisposable? _entrySubscription;
     private readonly string _templateJson;
+    // Guarded by _expandedLock: the bus callback (OnEntry) can run off the main thread while Dispatch
+    // and BuildDocument touch the set on the main thread.
     private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
+    private readonly object _expandedLock = new();
     private int _revision;
     private bool _disposed;
 
@@ -42,7 +45,20 @@ public sealed class ActivityViewSource : IViewSource, IDisposable
         _ledger = ledger;
         _bus = bus;
         _templateJson = templateJson;
-        _entrySubscription = bus?.Subscribe<ActivityEntry>(_ => Changed?.Invoke());
+        _entrySubscription = bus?.Subscribe<ActivityEntry>(OnEntry);
+    }
+
+    // A new ledger entry arrived on the bus. Agent-authored detail (A2UI) is emitted to be seen, so
+    // surface such entries expanded by default (the user can still collapse them via the chevron).
+    private void OnEntry(ActivityEntry entry)
+    {
+        if (entry is not null && !string.IsNullOrWhiteSpace(entry.DetailDocumentJson))
+        {
+            lock (_expandedLock)
+                _expanded.Add(entry.EntryId);
+        }
+
+        Changed?.Invoke();
     }
 
     public string ViewId => "activity";
@@ -53,12 +69,16 @@ public sealed class ActivityViewSource : IViewSource, IDisposable
     public RuntimeSurfaceDocument BuildDocument()
     {
         var entries = _ledger?.QueryLatest(MaxEntries) ?? (IReadOnlyList<ActivityEntry>)Array.Empty<ActivityEntry>();
+        HashSet<string> expandedSnapshot;
+        lock (_expandedLock)
+            expandedSnapshot = new HashSet<string>(_expanded, StringComparer.Ordinal);
+
         return ActivityPresentationDocumentBuilder.Build(
             _templateJson,
             entries,
             ledgerAvailable: _ledger is not null,
             revision: ++_revision,
-            expanded: _expanded);
+            expanded: expandedSnapshot);
     }
 
     public void Dispatch(string action, string? componentId)
@@ -66,7 +86,11 @@ public sealed class ActivityViewSource : IViewSource, IDisposable
         if (action.StartsWith("toggle:", StringComparison.Ordinal))
         {
             var key = action["toggle:".Length..];
-            if (!_expanded.Remove(key)) _expanded.Add(key);
+            lock (_expandedLock)
+            {
+                if (!_expanded.Remove(key)) _expanded.Add(key);
+            }
+
             Changed?.Invoke();
             return;
         }

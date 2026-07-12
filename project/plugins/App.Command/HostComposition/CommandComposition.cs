@@ -1,6 +1,7 @@
 using FantaSim.App.Common;
 using Microsoft.Extensions.Logging;
 using ServiceArchi.Contracts;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -95,6 +96,51 @@ public static class CommandComposition
 
                 log.LogInformation("resource.reload_bundle: reloaded '{BundleId}'.", bundleId);
                 return JsonSerializer.Serialize(new { ok = true, bundleId });
+            });
+
+        // A3 (agent-UI pilot): emission path. An agent publishes an activity entry carrying an
+        // A2UI detail document (through the remote ingress = the AG-UI transport); the activity card
+        // renders it via A2uiPresentationNormalizer as the entry's expanded detail. Publishing on the
+        // bus records it in the ledger (App.Activity subscribes) AND refreshes the view (the source
+        // subscribes) in one call.
+        commands.Register(
+            new FantaSim.App.Command.CommandDescriptor(
+                Id: "activity.emit_detail",
+                Title: "Emit activity detail",
+                Description: "Publishes an activity entry carrying an agent-authored A2UI detail document. Payload: {\"name\":\"...\",\"category\":\"...\",\"outcome\":\"...\",\"detail\":{A2UI adjacency-list document}}.",
+                Category: "activity"),
+            (payloadJson, ct) =>
+            {
+                JsonObject? payload;
+                try
+                {
+                    payload = JsonNode.Parse(payloadJson ?? string.Empty) as JsonObject;
+                }
+                catch (JsonException)
+                {
+                    payload = null;
+                }
+
+                if (payload?["detail"] is not { } detail)
+                    return Task.FromResult(JsonSerializer.Serialize(new { ok = false, error = "missing 'detail' A2UI document" }));
+
+                var bus = registry.TryGet<CrosscutFoundation.Messaging.IMessageBus>();
+                if (bus is null)
+                    return Task.FromResult(JsonSerializer.Serialize(new { ok = false, error = "message bus not registered" }));
+
+                var name = payload["name"]?.GetValue<string>() ?? "agent.detail";
+                bus.Publish(new FantaSim.App.Activity.ActivityEntry(
+                    EntryId: Guid.NewGuid().ToString("N"),
+                    Kind: FantaSim.App.Activity.ActivityEntryKind.UiOperation,
+                    Timestamp: DateTimeOffset.UtcNow,
+                    Actor: new FantaSim.App.Activity.ActivityActor("agent", payload["actorId"]?.GetValue<string>() ?? "assistant"),
+                    Name: name,
+                    Category: payload["category"]?.GetValue<string>() ?? "agent",
+                    Outcome: payload["outcome"]?.GetValue<string>(),
+                    DetailDocumentJson: detail.ToJsonString()));
+
+                log.LogInformation("activity.emit_detail: published entry '{Name}' with agent detail.", name);
+                return Task.FromResult(JsonSerializer.Serialize(new { ok = true, name }));
             });
 
         var health = orchestration.HealthAsync().GetAwaiter().GetResult();
