@@ -245,6 +245,36 @@ public sealed class ActivityViewSourceTests
         Assert.DoesNotContain("run: run-1", recollapsed);
     }
 
+    [Fact]
+    public void ExpandedDetail_RendersArbitraryPayloadKeysGenerically()
+    {
+        // An agent-emitted entry with keys outside any old whitelist — A2 renders them all, typed.
+        var ledger = new FakeLedger(new ActivityEntry(
+            EntryId: "entry-generic",
+            Kind: ActivityEntryKind.UiOperation,
+            Timestamp: new DateTimeOffset(2026, 7, 12, 13, 0, 0, TimeSpan.Zero),
+            Actor: new ActivityActor("agent", "assistant"),
+            Name: "agent.custom.action",
+            Category: "agent",
+            PayloadJson: new JsonObject
+            {
+                ["customField"] = "custom-value",
+                ["enabled"] = true,
+                ["count"] = 42,
+                ["nested"] = new JsonObject { ["a"] = 1, ["b"] = 2 },
+            }.ToJsonString(),
+            Outcome: "done"));
+        var source = new ActivityViewSource(ledger, bus: null, TemplateJson);
+
+        source.Dispatch("toggle:entry-generic", componentId: null);
+        var text = CollectText(source.BuildDocument().Root, includeTooltip: false);
+
+        Assert.Contains("customField: custom-value", text); // arbitrary string key
+        Assert.Contains("enabled: true", text);             // bool
+        Assert.Contains("count: 42", text);                 // number
+        Assert.Contains("nested: {2 fields}", text);        // nested object summarized
+    }
+
     // ----- tree helpers (the document is a nested RuntimeComponentNode tree) -----
 
     private static RuntimeComponentNode? FindById(RuntimeComponentNode node, string id)

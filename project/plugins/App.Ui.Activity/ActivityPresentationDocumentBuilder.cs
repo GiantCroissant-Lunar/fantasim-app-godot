@@ -184,6 +184,8 @@ internal static class ActivityPresentationDocumentBuilder
     // touches Label controls (font/wrap overrides), not Button text, so this doesn't inherit that theming
     // — but a geometric-shape glyph (▾/▸) is not guaranteed present in every font, and this surface can't
     // be visually spot-checked from here, so stick to characters certain to render.
+    // ASCII only — the app font lacks geometric-shape glyphs (▸/▾ render as tofu). Prominence comes
+    // from the button's `neutral` variant styling (a small pill), not the glyph.
     private const string ChevronExpanded = "-";
     private const string ChevronCollapsed = "+";
 
@@ -231,7 +233,7 @@ internal static class ActivityPresentationDocumentBuilder
         => Node(
             id,
             "button",
-            properties: new JsonObject { ["text"] = Val(text) },
+            properties: new JsonObject { ["text"] = Val(text), ["variant"] = Val("neutral") },
             actions: new JsonArray
             {
                 new JsonObject { ["event"] = "pressed", ["command"] = command },
@@ -358,6 +360,9 @@ internal static class ActivityPresentationDocumentBuilder
         return parts.Count == 0 ? null : string.Join("  -  ", parts);
     }
 
+    // A2 (agent-UI pilot): render EVERY payload key generically — typed by JSON kind — instead of a
+    // hardcoded whitelist, so an arbitrary or agent-emitted payload shows proper detail. Keys already
+    // surfaced on the card (command name, descriptor lines, status) or that are pure plumbing are skipped.
     private static List<string> FormatPayloadDetailParts(ActivityEntry entry)
     {
         var parts = new List<string>();
@@ -369,21 +374,14 @@ internal static class ActivityPresentationDocumentBuilder
             if (JsonNode.Parse(entry.PayloadJson) is not JsonObject payload)
                 return parts;
 
-            foreach (var key in DetailKeys)
+            foreach (var (key, node) in payload)
             {
-                var value = ReadString(payload, key);
+                if (SkipDetailKeys.Contains(key))
+                    continue;
+                var value = FormatPayloadValue(key, node);
                 if (!string.IsNullOrWhiteSpace(value))
-                    AddPart(parts, LabelFor(key), key.EndsWith("Path", StringComparison.OrdinalIgnoreCase) ? CompactPath(value) : value);
+                    parts.Add($"{LabelFor(key)}: {value}");
             }
-
-            if (ReadInt(payload, "rowCount") is { } rowCount)
-                parts.Add($"rows: {rowCount}");
-            if (ReadInt(payload, "nodeCount") is { } nodeCount)
-                parts.Add($"nodes: {nodeCount}");
-            if (ReadInt(payload, "wireCount") is { } wireCount)
-                parts.Add($"wires: {wireCount}");
-            if (ReadInt(payload, "activeScenes") is { } activeScenes)
-                parts.Add($"active scenes: {activeScenes}");
 
             return parts;
         }
@@ -393,32 +391,38 @@ internal static class ActivityPresentationDocumentBuilder
         }
     }
 
-    private static void AddPart(List<string> parts, string key, string value)
+    private static string FormatPayloadValue(string key, JsonNode? node)
     {
-        if (!string.IsNullOrWhiteSpace(value))
-            parts.Add($"{key}: {value}");
+        switch (node)
+        {
+            case null:
+                return string.Empty;
+            case JsonObject obj:
+                return obj.Count == 0 ? "{}" : $"{{{obj.Count} fields}}";
+            case JsonArray array:
+                return $"[{array.Count} items]";
+            case JsonValue value:
+                if (value.TryGetValue<bool>(out var boolean))
+                    return boolean ? "true" : "false";
+                if (value.TryGetValue<string>(out var text))
+                {
+                    if (string.IsNullOrEmpty(text))
+                        return string.Empty;
+                    return key.EndsWith("path", StringComparison.OrdinalIgnoreCase)
+                        ? CompactPath(text)
+                        : Truncate(text, 60);
+                }
+                return value.ToJsonString(); // numbers render as-is
+            default:
+                return Truncate(node.ToJsonString(), 60);
+        }
     }
 
-    private static readonly string[] DetailKeys =
+    // Keys already shown elsewhere on the card, or internal plumbing — omitted from the generic detail.
+    private static readonly HashSet<string> SkipDetailKeys = new(StringComparer.OrdinalIgnoreCase)
     {
-        "command",
-        "viewId",
-        "recipe",
-        "runId",
-        "nodeId",
-        "functionId",
-        "status",
-        "sceneId",
-        "parentSceneId",
-        "bundleId",
-        "title",
-        "jobId",
-        "bodyName",
-        "sourcePath",
-        "artifactPath",
-        "glb_path",
-        "usd_path",
-        "path",
+        "command", "descriptorTitle", "descriptorDescription",
+        "actorKind", "actorId", "correlationId", "causationId", "componentId",
     };
 
     private static string LabelFor(string key) => key switch
@@ -437,6 +441,10 @@ internal static class ActivityPresentationDocumentBuilder
         "artifactPath" => "artifact",
         "glb_path" => "glb",
         "usd_path" => "usd",
+        "rowCount" => "rows",
+        "nodeCount" => "nodes",
+        "wireCount" => "wires",
+        "activeScenes" => "active scenes",
         _ => key,
     };
 
@@ -447,19 +455,6 @@ internal static class ActivityPresentationDocumentBuilder
         if (value is JsonValue jsonValue && jsonValue.TryGetValue<string>(out var text))
             return text ?? string.Empty;
         return value.ToString();
-    }
-
-    private static int? ReadInt(JsonObject payload, string key)
-    {
-        if (!payload.TryGetPropertyValue(key, out var value) || value is not JsonValue jsonValue)
-            return null;
-        if (jsonValue.TryGetValue<int>(out var intValue))
-            return intValue;
-        if (jsonValue.TryGetValue<long>(out var longValue))
-            return (int)longValue;
-        if (jsonValue.TryGetValue<string>(out var text) && int.TryParse(text, out var parsed))
-            return parsed;
-        return null;
     }
 
     private static string CompactPath(string path)
