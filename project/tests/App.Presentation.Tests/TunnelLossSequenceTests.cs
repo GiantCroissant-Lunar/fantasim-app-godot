@@ -36,10 +36,15 @@ public sealed class TunnelLossSequenceTests
 
     private sealed class RecordingModeOwner(List<string> events) : ITunnelModeOwner
     {
+        public TunnelHudSafetyState CurrentHudSafety { get; private set; }
+
         public void PrepareForTunnelLoss(TunnelModeEvent lossEvent)
         {
             Assert.Contains(lossEvent, new[] { TunnelModeEvent.WorldChanging, TunnelModeEvent.StageChanging });
+            CurrentHudSafety = new TunnelHudSafetyState(CurrentHudSafety.Epoch + 1L, true);
             events.Add("hud");
         }
+
+        public bool TryReleaseHudSafety(long expectedEpoch) => false;
     }
 }

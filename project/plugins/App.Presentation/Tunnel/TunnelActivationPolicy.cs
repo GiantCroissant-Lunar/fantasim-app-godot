@@ -1,6 +1,7 @@
 namespace FantaSim.App.Presentation.Tunnel;
 
 internal readonly record struct TunnelActivationReadiness(
+    bool BinderAvailable,
     bool WorldLoaded,
     bool StageLoaded,
     bool HasController,
@@ -12,6 +13,7 @@ internal static class TunnelActivationPolicy
 {
     internal static string FailureReason(TunnelActivationReadiness value)
     {
+        if (!value.BinderAvailable) return "tunnel presentation reloading";
         if (!value.WorldLoaded) return "world unavailable";
         if (!value.StageLoaded) return "stage unavailable";
         if (!value.HasController) return "timeline controller unavailable";

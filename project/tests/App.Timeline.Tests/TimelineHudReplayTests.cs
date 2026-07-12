@@ -56,6 +56,24 @@ public sealed class TimelineHudReplayTests
             currentModeEpoch: -1L));
     }
 
+    [Theory]
+    [InlineData(false, true, false)]
+    [InlineData(true, true, true)]
+    [InlineData(false, false, true)]
+    public void ForcedResidentSafetyRejectsOnlyHiddenHudWrites(
+        bool incomingVisible,
+        bool forceHudVisible,
+        bool expected)
+    {
+        Assert.Equal(expected, TimelineHudReplayPolicy.CanApply(
+            capturedBindGeneration: 8,
+            currentBindGeneration: 8,
+            incomingModeEpoch: 9L,
+            currentModeEpoch: 8L,
+            incomingVisible,
+            forceHudVisible));
+    }
+
     private static TimelineFaceContext NewContext(TimelineHudState desiredHudState)
         => new(
             controller: new FakeTimelineController(),

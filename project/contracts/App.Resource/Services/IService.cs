@@ -18,6 +18,14 @@ public interface IService
 
     bool IsLoaded(string id);
 
+    /// <summary>
+    /// Returns whether one or more lifecycle operations for <paramref name="id"/> have begun but
+    /// have not yet published their completion. The state becomes true before RuntimeChanging is
+    /// invoked and false before RuntimeChanged is invoked, so late subscribers can close multicast
+    /// event-snapshot races with a subscribe-then-read handshake.
+    /// </summary>
+    bool IsRuntimeChangeInProgress(string id);
+
     IResourceManifest? GetManifest(string id);
 
     Task AutoLoadAsync(CancellationToken cancellationToken = default);

@@ -10,6 +10,7 @@ public sealed class TunnelActivationPolicyTests
     public void ReadyActivation_HasNoFailureReason()
     {
         var readiness = new TunnelActivationReadiness(
+            BinderAvailable: true,
             WorldLoaded: true,
             StageLoaded: true,
             HasController: true,
@@ -21,13 +22,14 @@ public sealed class TunnelActivationPolicyTests
     }
 
     [Theory]
-    [InlineData(false, true, true, true, true, true, "world unavailable")]
-    [InlineData(true, false, true, true, true, true, "stage unavailable")]
-    [InlineData(true, true, false, true, true, true, "timeline controller unavailable")]
-    [InlineData(true, true, true, false, true, true, "tunnel mount unavailable")]
-    [InlineData(true, true, true, true, false, true, "tunnel camera unavailable")]
-    [InlineData(true, true, true, true, true, false, "planet body unavailable")]
+    [InlineData(true, false, true, true, true, true, true, "world unavailable")]
+    [InlineData(true, true, false, true, true, true, true, "stage unavailable")]
+    [InlineData(true, true, true, false, true, true, true, "timeline controller unavailable")]
+    [InlineData(true, true, true, true, false, true, true, "tunnel mount unavailable")]
+    [InlineData(true, true, true, true, true, false, true, "tunnel camera unavailable")]
+    [InlineData(true, true, true, true, true, true, false, "planet body unavailable")]
     public void MissingDependency_FailsClosed(
+        bool binderAvailable,
         bool worldLoaded,
         bool stageLoaded,
         bool hasController,
@@ -37,6 +39,7 @@ public sealed class TunnelActivationPolicyTests
         string expected)
     {
         var readiness = new TunnelActivationReadiness(
+            binderAvailable,
             worldLoaded,
             stageLoaded,
             hasController,
@@ -45,6 +48,21 @@ public sealed class TunnelActivationPolicyTests
             hasPlanetBody);
 
         Assert.Equal(expected, TunnelActivationPolicy.FailureReason(readiness));
+    }
+
+    [Fact]
+    public void ReloadingBinderFailsClosedBeforeInspectingSceneDependencies()
+    {
+        var readiness = new TunnelActivationReadiness(
+            BinderAvailable: false,
+            WorldLoaded: true,
+            StageLoaded: true,
+            HasController: true,
+            HasMount: true,
+            HasCamera: true,
+            HasPlanetBody: true);
+
+        Assert.Equal("tunnel presentation reloading", TunnelActivationPolicy.FailureReason(readiness));
     }
 
     [Fact]

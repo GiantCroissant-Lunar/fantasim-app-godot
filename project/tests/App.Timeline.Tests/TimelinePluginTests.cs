@@ -216,6 +216,68 @@ public sealed class TimelinePluginTests
     }
 
     [Fact]
+    public async Task ExplicitEnableAfterReloadReleasesResidentHudSafety()
+    {
+        var registry = NewRegistry();
+        var commands = new FakeCommandService();
+        var proxy = new FakeFaceProxy();
+        var modeOwner = new FakeTunnelModeOwner();
+        modeOwner.PrepareForTunnelLoss(TunnelModeEvent.WorldChanging);
+        var tunnel = new FakeTunnelPresentation(enabled =>
+            new TunnelActivationResult(enabled, enabled, string.Empty));
+        registry.Register<FantaSim.App.Command.IService>(commands);
+        registry.Register<ITimelineController>(new FakeTimelineController());
+        registry.Register<ITunnelPresentation>(tunnel);
+        registry.Register<ITunnelModeOwner>(modeOwner);
+
+        var plugin = new TimelinePlugin(() => proxy);
+        await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+
+        var result = await commands.ExecuteAsync(new CommandRequest(
+            TimelinePlugin.TunnelViewCommandId,
+            new JsonObject { ["enabled"] = true }.ToJsonString()));
+        var payload = JsonNode.Parse(result.ResultJson!)!.AsObject();
+
+        Assert.True(payload["effective"]!.GetValue<bool>());
+        Assert.False(modeOwner.CurrentHudSafety.ForceHudVisible);
+        Assert.False(proxy.HudVisible);
+    }
+
+    [Fact]
+    public async Task EnableSpanningNewLossCannotHideHudOrLeaveTunnelEnabled()
+    {
+        var registry = NewRegistry();
+        var commands = new FakeCommandService();
+        var proxy = new FakeFaceProxy();
+        var modeOwner = new FakeTunnelModeOwner();
+        var tunnel = new FakeTunnelPresentation(enabled =>
+        {
+            if (enabled)
+                modeOwner.PrepareForTunnelLoss(TunnelModeEvent.WorldChanging);
+            return new TunnelActivationResult(enabled, enabled, string.Empty);
+        });
+        registry.Register<FantaSim.App.Command.IService>(commands);
+        registry.Register<ITimelineController>(new FakeTimelineController());
+        registry.Register<ITunnelPresentation>(tunnel);
+        registry.Register<ITunnelModeOwner>(modeOwner);
+
+        var plugin = new TimelinePlugin(() => proxy);
+        await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+
+        var result = await commands.ExecuteAsync(new CommandRequest(
+            TimelinePlugin.TunnelViewCommandId,
+            new JsonObject { ["enabled"] = true }.ToJsonString()));
+        var payload = JsonNode.Parse(result.ResultJson!)!.AsObject();
+
+        Assert.False(payload["effective"]!.GetValue<bool>());
+        Assert.Equal("tunnel activation superseded by resource loss", payload["failureReason"]!.GetValue<string>());
+        Assert.False(tunnel.IsEnabled);
+        Assert.Equal(2, tunnel.TrySetEnabledCalls);
+        Assert.True(modeOwner.CurrentHudSafety.ForceHudVisible);
+        Assert.True(proxy.HudVisible);
+    }
+
+    [Fact]
     public async Task TunnelCommand_FailedEnableLeavesHudVisibleAndReportsReason()
     {
         var registry = NewRegistry();
@@ -442,9 +504,21 @@ public sealed class TimelinePluginTests
     private sealed class FakeTunnelModeOwner : ITunnelModeOwner
     {
         public int PrepareCalls { get; private set; }
+        public TunnelHudSafetyState CurrentHudSafety { get; private set; }
 
         public void PrepareForTunnelLoss(TunnelModeEvent lossEvent)
-            => PrepareCalls++;
+        {
+            PrepareCalls++;
+            CurrentHudSafety = new TunnelHudSafetyState(CurrentHudSafety.Epoch + 1L, true);
+        }
+
+        public bool TryReleaseHudSafety(long expectedEpoch)
+        {
+            if (CurrentHudSafety.Epoch != expectedEpoch)
+                return false;
+            CurrentHudSafety = CurrentHudSafety with { ForceHudVisible = false };
+            return true;
+        }
     }
 
     private sealed class FakeResourceService : FantaSim.App.Resource.IService
@@ -455,6 +529,8 @@ public sealed class TimelinePluginTests
 
         public bool IsLoaded(string id)
             => string.Equals(id, "world", StringComparison.Ordinal) && WorldLoaded;
+
+        public bool IsRuntimeChangeInProgress(string id) => false;
 
         public void RaiseRuntimeChanging(string bundleId, ResourceRuntimeOperation operation)
             => RuntimeChanging?.Invoke(this, new ResourceRuntimeChangingEventArgs(bundleId, operation));

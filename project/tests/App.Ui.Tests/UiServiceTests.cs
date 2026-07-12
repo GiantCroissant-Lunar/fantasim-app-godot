@@ -147,6 +147,8 @@ public sealed class UiServiceTests
 
         public bool IsLoaded(string id) => _loaded.Contains(id);
 
+        public bool IsRuntimeChangeInProgress(string id) => false;
+
         public Task LoadFromDirectoryAsync(string id, CancellationToken cancellationToken = default)
         {
             if (_loadable.Contains(id))

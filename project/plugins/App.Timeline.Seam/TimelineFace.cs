@@ -8,6 +8,7 @@ using FantaSim.App.World.Composition;
 using FantaSim.App.Timeline.Providers;
 using FantaSim.App.Timeline;
 using FantaSim.App.Command;
+using FantaSim.App.Presentation;
 using Microsoft.Extensions.Logging;
 using ServiceArchi.Contracts;
 
@@ -85,7 +86,7 @@ public partial class TimelineFace : Control, ITimelineFace
     public static void SetResidentRegistry(IRegistry registry)
         => ResidentRegistry = registry ?? throw new ArgumentNullException(nameof(registry));
 
-    public static bool TryRestoreSafeHud()
+    public static bool TryApplyResidentHudSafety(TunnelHudSafetyState state)
     {
         if (_activeFace?.TryGetTarget(out var face) != true
             || !GodotObject.IsInstanceValid(face)
@@ -94,7 +95,8 @@ public partial class TimelineFace : Control, ITimelineFace
             return false;
         }
 
-        face.Visible = true;
+        if (state.ForceHudVisible)
+            face.Visible = true;
         return true;
     }
 
@@ -170,7 +172,9 @@ public partial class TimelineFace : Control, ITimelineFace
                     bindGeneration,
                     _residentBindGeneration,
                     state.ModeEpoch,
-                    _hudModeEpoch))
+                    _hudModeEpoch,
+                    incomingVisible: state.Visible,
+                    forceHudVisible: ResidentRegistry?.TryGet<ITunnelModeOwner>()?.CurrentHudSafety.ForceHudVisible == true))
                 return;
             _hudModeEpoch = state.ModeEpoch;
             Visible = state.Visible;
@@ -204,6 +208,7 @@ public partial class TimelineFace : Control, ITimelineFace
         if (context is null)
         {
             ClearResidentContext();
+            ApplyCurrentResidentHudSafety();
             _log.LogWarning("No active timeline face context found.");
             SetProcess(true);
             return;
@@ -283,8 +288,18 @@ public partial class TimelineFace : Control, ITimelineFace
         }
 
         ApplyHudState(context.DesiredHudState);
+        // The collectible context can disappear or be superseded while this resident face is
+        // between generations. Resident state is the final authority and carries the newer epoch
+        // published by PrepareForTunnelLoss, so a pre-loss queued hide cannot win this bind.
+        ApplyCurrentResidentHudSafety();
         SeekTo(_ctl.Tick);
         UpdateLayout();
+    }
+
+    private void ApplyCurrentResidentHudSafety()
+    {
+        if (ResidentRegistry?.TryGet<ITunnelModeOwner>()?.CurrentHudSafety.ForceHudVisible == true)
+            Visible = true;
     }
 
     private void ClearResidentContext()

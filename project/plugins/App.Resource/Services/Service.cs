@@ -1,5 +1,6 @@
 using FantaSim.App.Resource.Providers;
 using Microsoft.Extensions.Logging;
+using System.Runtime.ExceptionServices;
 
 namespace FantaSim.App.Resource.Services;
 
@@ -9,6 +10,8 @@ public sealed class Service : IService
     private readonly IDirectoryResolver _directoryResolver;
     private readonly Func<string?> _autoLoadExcludeProvider;
     private readonly ILogger _logger;
+    private readonly object _runtimeChangeGate = new();
+    private readonly Dictionary<string, int> _runtimeChanges = new(StringComparer.OrdinalIgnoreCase);
     private IProvider? _resolvedProvider;
 
     public Service(
@@ -79,6 +82,15 @@ public sealed class Service : IService
 
     public bool IsLoaded(string id) => Provider.IsLoaded(id);
 
+    public bool IsRuntimeChangeInProgress(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return false;
+
+        lock (_runtimeChangeGate)
+            return _runtimeChanges.TryGetValue(id, out var count) && count > 0;
+    }
+
     public IResourceManifest? GetManifest(string id) => Provider.GetManifest(id);
 
     public async Task LoadAsync(string path, CancellationToken cancellationToken = default)
@@ -108,23 +120,31 @@ public sealed class Service : IService
     }
 
     public async Task UnloadAsync(string id, CancellationToken cancellationToken = default)
-    {
-        OnRuntimeChanging(id, ResourceRuntimeOperation.Unload);
-        await Provider.UnloadAsync(id, cancellationToken);
-        OnRuntimeChanged();
-    }
+        => await ExecuteRuntimeChangeAsync(
+            id,
+            ResourceRuntimeOperation.Unload,
+            Provider.UnloadAsync,
+            cancellationToken);
 
     public async Task ReloadAsync(string id, CancellationToken cancellationToken = default)
-    {
-        OnRuntimeChanging(id, ResourceRuntimeOperation.Reload);
-        await Provider.ReloadAsync(id, cancellationToken);
-        OnRuntimeChanged();
-    }
+        => await ExecuteRuntimeChangeAsync(
+            id,
+            ResourceRuntimeOperation.Reload,
+            Provider.ReloadAsync,
+            cancellationToken);
 
     public async Task ReloadByPathAsync(string path, CancellationToken cancellationToken = default)
     {
         if (ResolveLoadedBundleId(path) is { } bundleId)
-            OnRuntimeChanging(bundleId, ResourceRuntimeOperation.Reload);
+        {
+            await ExecuteRuntimeChangeAsync(
+                bundleId,
+                ResourceRuntimeOperation.Reload,
+                (_, ct) => Provider.ReloadByPathAsync(path, ct),
+                cancellationToken);
+            return;
+        }
+
         await Provider.ReloadByPathAsync(path, cancellationToken);
         OnRuntimeChanged();
     }
@@ -142,10 +162,99 @@ public sealed class Service : IService
 
     public async Task UnloadAllAsync(CancellationToken cancellationToken = default)
     {
-        foreach (var bundleId in Provider.ListLoaded())
-            OnRuntimeChanging(bundleId, ResourceRuntimeOperation.UnloadAll);
-        await Provider.UnloadAllAsync(cancellationToken);
-        OnRuntimeChanged();
+        var bundleIds = Provider.ListLoaded().ToArray();
+        foreach (var bundleId in bundleIds)
+            BeginRuntimeChange(bundleId);
+
+        Exception? failure = null;
+        try
+        {
+            foreach (var bundleId in bundleIds)
+                OnRuntimeChanging(bundleId, ResourceRuntimeOperation.UnloadAll);
+            await Provider.UnloadAllAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            failure = ex;
+        }
+        finally
+        {
+            foreach (var bundleId in bundleIds)
+                CompleteRuntimeChange(bundleId);
+            failure = PublishRuntimeChangedPreserving(failure);
+        }
+
+        Rethrow(failure);
+    }
+
+    private async Task ExecuteRuntimeChangeAsync(
+        string bundleId,
+        ResourceRuntimeOperation operation,
+        Func<string, CancellationToken, Task> change,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(bundleId);
+        BeginRuntimeChange(bundleId);
+
+        Exception? failure = null;
+        try
+        {
+            OnRuntimeChanging(bundleId, operation);
+            await change(bundleId, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            failure = ex;
+        }
+        finally
+        {
+            CompleteRuntimeChange(bundleId);
+            failure = PublishRuntimeChangedPreserving(failure);
+        }
+
+        Rethrow(failure);
+    }
+
+    private void BeginRuntimeChange(string bundleId)
+    {
+        lock (_runtimeChangeGate)
+            _runtimeChanges[bundleId] = _runtimeChanges.GetValueOrDefault(bundleId) + 1;
+    }
+
+    private void CompleteRuntimeChange(string bundleId)
+    {
+        lock (_runtimeChangeGate)
+        {
+            if (!_runtimeChanges.TryGetValue(bundleId, out var count) || count <= 1)
+                _runtimeChanges.Remove(bundleId);
+            else
+                _runtimeChanges[bundleId] = count - 1;
+        }
+    }
+
+    private Exception? PublishRuntimeChangedPreserving(Exception? priorFailure)
+    {
+        try
+        {
+            OnRuntimeChanged();
+            return priorFailure;
+        }
+        catch (Exception completionFailure)
+        {
+            if (priorFailure is null)
+                return completionFailure;
+
+            _logger.LogError(
+                completionFailure,
+                "A RuntimeChanged subscriber failed while propagating an earlier resource lifecycle error.");
+            return priorFailure;
+        }
+    }
+
+    private static void Rethrow(Exception? failure)
+    {
+        if (failure is not null)
+            ExceptionDispatchInfo.Capture(failure).Throw();
     }
 
     private void OnRuntimeChanging(string bundleId, ResourceRuntimeOperation operation)

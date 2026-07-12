@@ -43,13 +43,6 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
     private readonly object _lifecycleGate = new();
     private bool _shutdown;
 
-    // Outgoing world controller severed at RuntimeChanging. TryConsumePendingWorldRebind must
-    // not consume the flag against this instance: IsLoaded("world") stays true and the OLD
-    // registration is only disposed mid-unload, so an interleaved Changed event from another
-    // bundle's reload would otherwise rebind the timeline to the dying world ALC (same guard
-    // the Host grew for pin class 5 in 511bffe). WeakReference so the stash itself never pins.
-    private WeakReference? _outgoingController;
-
     private IDisposable? _activatorRegistration;
     private IDisposable? _timelineRegistration;
     private IDisposable? _faceContextRegistration;
@@ -62,6 +55,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
     private ITimelineFaceProxy? _faceProxy;
     private Action<long>? _tickChangedHandler;
     private ITimelineController? _subscribedController;
+    private ITunnelModeOwner? _modeOwner;
     private bool _worldRebindPending;
     private long _modeEpoch;
 
@@ -84,6 +78,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             _registry = registry;
             _loggerFactory = loggerFactory;
             _log = loggerFactory.CreateLogger("TimelinePlugin");
+            _modeOwner = registry.TryGet<ITunnelModeOwner>();
 
             _activatorRegistration = registry.RegisterOwned<ISceneActivator>(
                 new TimelineActivator(),
@@ -99,7 +94,19 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
                 _log.LogWarning("TimelinePlugin: resource service not registered; world reload rebind events unavailable.");
             }
 
-            ComposeTimeline(markPendingWhenMissing: true);
+            // Subscribe first, then read authoritative resident state. If RuntimeChanging already
+            // captured its subscriber snapshot, the state is already true; if it begins after this
+            // subscription, this generation receives the event. Either ordering prevents binding
+            // the outgoing world controller/ALC.
+            if (_resource?.IsRuntimeChangeInProgress("world") == true)
+            {
+                _worldRebindPending = true;
+                _log.LogInformation("TimelinePlugin: initialized during world runtime change; composition deferred.");
+            }
+            else
+            {
+                ComposeTimeline(markPendingWhenMissing: true);
+            }
 
             return ValueTask.CompletedTask;
         }
@@ -124,8 +131,8 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             _registry = null;
             _loggerFactory = null;
             _resource = null;
+            _modeOwner = null;
             _worldRebindPending = false;
-            _outgoingController = null;
             _log?.LogInformation("TimelinePlugin: shutdown completed.");
             _log = null;
             return ValueTask.CompletedTask;
@@ -420,9 +427,27 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
                     // Method-local only: the world-bundle binder may unload independently and must
                     // never be retained by the timeline bundle after this synchronous call.
                     var tunnel = _registry?.TryGet<ITunnelPresentation>();
-                    var result = tunnel is null
+                    var capturedSafetyEpoch = _modeOwner?.CurrentHudSafety.Epoch;
+                    var runtimeLossInProgress = enabled
+                        && (_resource?.IsRuntimeChangeInProgress("world") == true
+                            || _resource?.IsRuntimeChangeInProgress("stage") == true);
+                    var result = runtimeLossInProgress
+                        ? new TunnelActivationResult(true, false, "resource reload in progress")
+                        : tunnel is null
                         ? new TunnelActivationResult(enabled, false, "tunnel presentation unavailable")
                         : tunnel.TrySetEnabled(enabled);
+
+                    if (enabled
+                        && result.EffectiveEnabled
+                        && capturedSafetyEpoch is { } safetyEpoch
+                        && _modeOwner?.TryReleaseHudSafety(safetyEpoch) != true)
+                    {
+                        tunnel?.TrySetEnabled(false);
+                        result = new TunnelActivationResult(
+                            RequestedEnabled: true,
+                            EffectiveEnabled: false,
+                            FailureReason: "tunnel activation superseded by resource loss");
+                    }
                     var modeEvent = !enabled
                         ? TunnelModeEvent.DisableRequested
                         : result.EffectiveEnabled
@@ -487,12 +512,6 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
                 return;
             }
 
-            // Stash the OUTGOING generation's controller before severing: the bound controller
-            // when composed, else whatever is still registered (both belong to the dying world
-            // ALC). TryConsumePendingWorldRebind refuses to rebind to this exact instance.
-            var outgoing = _subscribedController ?? _registry?.TryGet<ITimelineController>();
-            _outgoingController = outgoing is not null ? new WeakReference(outgoing) : null;
-
             SeverTimelineService(unbindProxy: false);
             _worldRebindPending = true;
             _log?.LogInformation("TimelinePlugin: world runtime changing; timeline binding severed.");
@@ -508,23 +527,15 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
         {
             if (_shutdown || !_worldRebindPending || _registry is null || _resource is null)
                 return false;
+            if (_resource.IsRuntimeChangeInProgress("world"))
+                return false;
             if (!_resource.IsLoaded("world"))
                 return false;
             if (_registry.TryGet<ITimelineController>() is not { } controller)
                 return false;
 
-            // Leave the flag armed while only the OUTGOING registration resolves: IsLoaded("world")
-            // is still true for the old copy during its own unload and the old registration is only
-            // disposed mid-unload, so "some controller registered" is not enough (pin class 5's
-            // guard rule). The world reload's own Changed event completes the rebind against the
-            // NEW generation's instance.
-            if (ReferenceEquals(controller, _outgoingController?.Target))
-                return false;
-
             if (!ComposeTimeline(markPendingWhenMissing: false))
                 return false;
-
-            _outgoingController = null;
 
             // No manual tick push here: the face's BindResidentContext ends with SeekTo(_ctl.Tick),
             // so the rebind itself delivers the current controller tick — on the main thread, after

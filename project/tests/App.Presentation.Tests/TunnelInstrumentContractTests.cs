@@ -123,8 +123,9 @@ public sealed class TunnelInstrumentContractTests
             "Tunnel loss must route through the HUD-before-geometry sequence.");
         Assert.Contains("RegisterOwned<ITunnelModeOwner>", host, StringComparison.Ordinal);
         Assert.Contains("new ResidentTunnelModeOwner", host, StringComparison.Ordinal);
-        Assert.Contains("TimelineFace.TryRestoreSafeHud()", host, StringComparison.Ordinal);
-        Assert.Contains("face.Visible = true;", timelineFace, StringComparison.Ordinal);
+        Assert.Contains("TimelineFace.TryApplyResidentHudSafety(state)", host, StringComparison.Ordinal);
+        Assert.Contains("TryGet<ITunnelModeOwner>()?.CurrentHudSafety", timelineFace, StringComparison.Ordinal);
+        Assert.Contains("incomingVisible: state.Visible", timelineFace, StringComparison.Ordinal);
 
         var timelineBranch = binder.IndexOf("if (timelineChanging)", runtimeApplyMethod, StringComparison.Ordinal);
         Assert.True(timelineBranch >= 0, "Timeline runtime-changing branch is missing.");

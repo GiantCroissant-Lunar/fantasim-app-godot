@@ -12,9 +12,12 @@ public static class TimelineHudReplayPolicy
         int capturedBindGeneration,
         int currentBindGeneration,
         long incomingModeEpoch,
-        long currentModeEpoch)
+        long currentModeEpoch,
+        bool incomingVisible = true,
+        bool forceHudVisible = false)
         => capturedBindGeneration == currentBindGeneration
-            && incomingModeEpoch >= currentModeEpoch;
+            && incomingModeEpoch >= currentModeEpoch
+            && (incomingVisible || !forceHudVisible);
 }
 
 /// <summary>

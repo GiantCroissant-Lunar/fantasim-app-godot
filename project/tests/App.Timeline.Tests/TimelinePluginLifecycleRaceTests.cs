@@ -30,6 +30,113 @@ namespace App.Timeline.Tests;
 public sealed class TimelinePluginLifecycleRaceTests
 {
     [Fact]
+    public async Task NewGenerationExcludedFromChangingSnapshotWaitsForReplacementController()
+    {
+        var registry = NewRegistry();
+        var resource = new FakeResourceService { WorldLoaded = true };
+        var outgoingController = new GatedTimelineController();
+        registry.Register<FantaSim.App.Resource.IService>(resource);
+        registry.Register<ITimelineController>(outgoingController);
+
+        var outgoingPlugin = new TimelinePlugin(() => new FakeFaceProxy());
+        await outgoingPlugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+
+        // Deliver RuntimeChanging before the replacement plugin subscribes. The multicast event's
+        // captured handler list therefore excludes the replacement generation.
+        resource.BeginRuntimeChanging("world", ResourceRuntimeOperation.Reload);
+        await outgoingPlugin.ShutdownAsync();
+
+        var replacementPlugin = new TimelinePlugin(() => new FakeFaceProxy());
+        await replacementPlugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+
+        Assert.Null(registry.TryGet<ITimelineFaceContext>());
+        Assert.Null(registry.TryGet<FantaSim.App.Timeline.IService>());
+        Assert.Equal(0, outgoingController.TickChangedSubscriberCount);
+
+        registry.UnregisterAll<ITimelineController>();
+        var replacementController = new GatedTimelineController();
+        registry.Register<ITimelineController>(replacementController);
+        resource.CompleteRuntimeChange("world");
+
+        Assert.Same(replacementController, registry.TryGet<ITimelineFaceContext>()?.Controller);
+        Assert.Equal(0, outgoingController.TickChangedSubscriberCount);
+        Assert.Equal(1, replacementController.TickChangedSubscriberCount);
+        await replacementPlugin.ShutdownAsync();
+    }
+
+    [Fact]
+    public async Task GenerationExcludedFromCompletionSnapshotComposesWhenStateIsAlreadyClear()
+    {
+        var registry = NewRegistry();
+        var resource = new FakeResourceService { WorldLoaded = true };
+        var controller = new GatedTimelineController();
+        registry.Register<FantaSim.App.Resource.IService>(resource);
+        registry.Register<ITimelineController>(controller);
+
+        resource.BeginWithoutNotification("world");
+        // Completion already cleared authoritative state and captured an earlier subscriber list;
+        // the replacement intentionally receives neither lifecycle callback.
+        resource.ClearWithoutNotification("world");
+
+        var plugin = new TimelinePlugin(() => new FakeFaceProxy());
+        await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+
+        Assert.Same(controller, registry.TryGet<ITimelineFaceContext>()?.Controller);
+        Assert.Equal(1, controller.TickChangedSubscriberCount);
+        await plugin.ShutdownAsync();
+    }
+
+    [Fact]
+    public async Task FailedReloadBeforeUnloadRebindsTheStillValidControllerAfterStateClears()
+    {
+        var registry = NewRegistry();
+        var resource = new FakeResourceService { WorldLoaded = true };
+        var controller = new GatedTimelineController();
+        registry.Register<FantaSim.App.Resource.IService>(resource);
+        registry.Register<ITimelineController>(controller);
+
+        var plugin = new TimelinePlugin(() => new FakeFaceProxy());
+        await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+        resource.BeginRuntimeChanging("world", ResourceRuntimeOperation.Reload);
+        Assert.Equal(0, controller.TickChangedSubscriberCount);
+
+        // Provider failed before unloading: the same registration remains valid. Completion state,
+        // not instance inequality, is the authoritative permission to bind it again.
+        resource.CompleteRuntimeChange("world");
+
+        Assert.Same(controller, registry.TryGet<ITimelineFaceContext>()?.Controller);
+        Assert.Equal(1, controller.TickChangedSubscriberCount);
+        await plugin.ShutdownAsync();
+    }
+
+    [Fact]
+    public async Task ConcurrentWorldChangesRebindOnlyAfterTheFinalCompletion()
+    {
+        var registry = NewRegistry();
+        var resource = new FakeResourceService { WorldLoaded = true };
+        var outgoing = new GatedTimelineController();
+        registry.Register<FantaSim.App.Resource.IService>(resource);
+        registry.Register<ITimelineController>(outgoing);
+
+        var plugin = new TimelinePlugin(() => new FakeFaceProxy());
+        await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+        resource.BeginRuntimeChanging("world", ResourceRuntimeOperation.Reload);
+        resource.BeginRuntimeChanging("world", ResourceRuntimeOperation.Reload);
+        registry.UnregisterAll<ITimelineController>();
+        var replacement = new GatedTimelineController();
+        registry.Register<ITimelineController>(replacement);
+
+        resource.CompleteRuntimeChange("world");
+        Assert.Null(registry.TryGet<ITimelineFaceContext>());
+        Assert.Equal(0, replacement.TickChangedSubscriberCount);
+
+        resource.CompleteRuntimeChange("world");
+        Assert.Same(replacement, registry.TryGet<ITimelineFaceContext>()?.Controller);
+        Assert.Equal(1, replacement.TickChangedSubscriberCount);
+        await plugin.ShutdownAsync();
+    }
+
+    [Fact]
     public async Task InFlightWorldRebindCannotResurrectRegistrationsPastShutdown()
     {
         var registry = NewRegistry();
@@ -49,6 +156,7 @@ public sealed class TimelinePluginLifecycleRaceTests
         registry.UnregisterAll<ITimelineController>();
         var newController = new GatedTimelineController();
         registry.Register<ITimelineController>(newController);
+        resource.ClearWithoutNotification("world");
 
         // The RuntimeChanged handler starts recomposing on the threadpool and stalls mid-compose
         // (gate on the controller's TickChanged add) — modelling the in-flight handler the
@@ -95,10 +203,12 @@ public sealed class TimelinePluginLifecycleRaceTests
         Assert.False(plugin.TryConsumePendingWorldRebind());
         Assert.Null(registry.TryGet<ITimelineFaceContext>());
 
-        // Once the NEW generation registers a different controller instance, the rebind proceeds.
+        // Once the authoritative world operation completes and the new generation registers its
+        // controller, the rebind proceeds.
         registry.UnregisterAll<ITimelineController>();
         var newController = new GatedTimelineController();
         registry.Register<ITimelineController>(newController);
+        resource.ClearWithoutNotification("world");
 
         Assert.True(plugin.TryConsumePendingWorldRebind());
         Assert.Same(newController, registry.TryGet<ITimelineFaceContext>()?.Controller);
@@ -164,6 +274,7 @@ public sealed class TimelinePluginLifecycleRaceTests
 
     private sealed class FakeResourceService : FantaSim.App.Resource.IService
     {
+        private readonly Dictionary<string, int> _changes = new(StringComparer.OrdinalIgnoreCase);
         public bool WorldLoaded { get; set; }
         public event EventHandler<ResourceRuntimeChangingEventArgs>? RuntimeChanging;
         public event EventHandler? RuntimeChanged;
@@ -171,8 +282,34 @@ public sealed class TimelinePluginLifecycleRaceTests
         public bool IsLoaded(string id)
             => string.Equals(id, "world", StringComparison.Ordinal) && WorldLoaded;
 
+        public bool IsRuntimeChangeInProgress(string id)
+            => _changes.TryGetValue(id, out var count) && count > 0;
+
+        public void BeginWithoutNotification(string bundleId)
+            => _changes[bundleId] = _changes.GetValueOrDefault(bundleId) + 1;
+
+        public void ClearWithoutNotification(string bundleId)
+        {
+            if (_changes.TryGetValue(bundleId, out var count) && count > 1)
+                _changes[bundleId] = count - 1;
+            else
+                _changes.Remove(bundleId);
+        }
+
+        public void BeginRuntimeChanging(string bundleId, ResourceRuntimeOperation operation)
+        {
+            BeginWithoutNotification(bundleId);
+            RuntimeChanging?.Invoke(this, new ResourceRuntimeChangingEventArgs(bundleId, operation));
+        }
+
+        public void CompleteRuntimeChange(string bundleId)
+        {
+            ClearWithoutNotification(bundleId);
+            RuntimeChanged?.Invoke(this, EventArgs.Empty);
+        }
+
         public void RaiseRuntimeChanging(string bundleId, ResourceRuntimeOperation operation)
-            => RuntimeChanging?.Invoke(this, new ResourceRuntimeChangingEventArgs(bundleId, operation));
+            => BeginRuntimeChanging(bundleId, operation);
 
         public void RaiseRuntimeChanged()
             => RuntimeChanged?.Invoke(this, EventArgs.Empty);

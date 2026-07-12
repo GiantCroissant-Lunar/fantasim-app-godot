@@ -45,12 +45,6 @@ public partial class Host : Node
     private IDisposable? _worldBundleWatch;
     private bool _ecsWorldReady;
     private bool _worldReloadPending;
-    // Weak: identifies the OUTGOING generation's presentation during a world reload without
-    // pinning it. The rebind guard must not consume _worldReloadPending while TryGet still
-    // returns this instance (its registration is only disposed mid-unload, so interleaved
-    // Changed events from other bundles would otherwise rebind the host to the dying ALC —
-    // dump-verified 2026-07-10, second world reload).
-    private WeakReference? _outgoingPresentation;
 
     public override void _Ready()
     {
@@ -93,12 +87,13 @@ public partial class Host : Node
         RegisterPresentationOptions(ctx.Registry);
         TimelineFace.SetResidentRegistry(ctx.Registry);
         _tunnelModeOwnerRegistration = ctx.Registry.RegisterOwned<ITunnelModeOwner>(
-            new ResidentTunnelModeOwner(() =>
+            new ResidentTunnelModeOwner(state =>
             {
-                var appliedToFace = TimelineFace.TryRestoreSafeHud();
+                var appliedToFace = TimelineFace.TryApplyResidentHudSafety(state);
                 _log.LogInformation(
-                    "timeline HUD safety phase completed before tunnel teardown; faceApplied={FaceApplied}.",
-                    appliedToFace);
+                    "timeline HUD safety phase completed before tunnel teardown; faceApplied={FaceApplied} safetyEpoch={SafetyEpoch}.",
+                    appliedToFace,
+                    state.Epoch);
             }),
             new ServiceRegistration
             {
@@ -175,7 +170,6 @@ public partial class Host : Node
             // delegates, the camera orbit target, and the host's contract handle all point at
             // objects typed in the outgoing world ALC.
             _worldReloadPending = true;
-            _outgoingPresentation = _planetPresentation is { } outgoing ? new WeakReference(outgoing) : null;
             _renderComposition?.SetCutawayTarget(null);
             _renderComposition?.SetExplodedTarget(null);
             _renderComposition?.SetMantleTarget(null);
@@ -195,20 +189,15 @@ public partial class Host : Node
 
         if (_worldReloadPending)
         {
-            // Consume the flag only once the NEW bundle's plugin has registered its presentation
-            // — Changed events from OTHER bundles' reloads interleave with the world reload, and
-            // IsLoaded("world") is still true for the OLD copy during its own unload phase. The
-            // OUTGOING registration is only disposed mid-unload, so "some presentation registered"
-            // is not enough: it must be a DIFFERENT instance than the one severed at
-            // RuntimeChanging, or an interleaved event rebinds the host to the dying ALC and pins
-            // it. If the new registration is absent, leave the flag armed; the world reload's own
-            // Changed event completes the rebind.
-            if (resource?.IsLoaded("world") == true
-                && registry.TryGet<IPlanetPresentation>() is { } presentation
-                && !ReferenceEquals(presentation, _outgoingPresentation?.Target))
+            // Authoritative resource state is cleared before RuntimeChanged is published. Ignore
+            // unrelated/concurrent completion events while any world operation remains active;
+            // once clear, a pre-unload failure may validly leave the SAME presentation registered,
+            // while a successful reload presents a replacement instance.
+            if (resource?.IsRuntimeChangeInProgress("world") != true
+                && resource?.IsLoaded("world") == true
+                && registry.TryGet<IPlanetPresentation>() is not null)
             {
                 _worldReloadPending = false;
-                _outgoingPresentation = null;
                 HandleWorldBundleReloaded();
             }
         }

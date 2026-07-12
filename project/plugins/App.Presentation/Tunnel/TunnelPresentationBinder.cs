@@ -147,8 +147,12 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
             return new TunnelActivationResult(false, false, string.Empty);
         }
 
+        if (_tearingDown)
+            return new TunnelActivationResult(true, false, "tunnel presentation reloading");
+
         var body = _planetBodyProvider();
         var reason = TunnelActivationPolicy.FailureReason(new TunnelActivationReadiness(
+            BinderAvailable: !_tearingDown,
             WorldLoaded: _resource.IsLoaded(WorldBundleId),
             StageLoaded: _resource.IsLoaded(StageBundleId),
             HasController: _ctl is not null,

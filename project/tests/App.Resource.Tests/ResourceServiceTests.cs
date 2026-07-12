@@ -125,6 +125,87 @@ public sealed class ResourceServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ReloadStateIsVisibleBeforeChangingAndClearedBeforeCompletion()
+    {
+        var provider = new GatedReloadProvider();
+        var service = NewService(new FakeDirectoryResolver(_resourcesDir), provider);
+        var changingObservedActive = false;
+        var changedObservedInactive = false;
+        service.RuntimeChanging += (_, args) =>
+        {
+            if (args.BundleId == "world")
+                changingObservedActive = service.IsRuntimeChangeInProgress("world");
+        };
+        service.RuntimeChanged += (_, _) =>
+            changedObservedInactive = !service.IsRuntimeChangeInProgress("world");
+
+        var reload = service.ReloadAsync("world");
+        await provider.ReloadEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(service.IsRuntimeChangeInProgress("world"));
+        provider.ReleaseReload.SetResult();
+        await reload;
+
+        Assert.True(changingObservedActive);
+        Assert.True(changedObservedInactive);
+        Assert.False(service.IsRuntimeChangeInProgress("world"));
+    }
+
+    [Fact]
+    public async Task ConcurrentReloadsKeepPerBundleStateActiveUntilTheLastCompletion()
+    {
+        var provider = new CountingReloadProvider(expectedCalls: 2);
+        var service = NewService(new FakeDirectoryResolver(_resourcesDir), provider);
+
+        var first = service.ReloadAsync("world");
+        var second = service.ReloadAsync("world");
+        await provider.AllEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(service.IsRuntimeChangeInProgress("world"));
+
+        provider.ReleaseOne();
+        await provider.OneCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True(service.IsRuntimeChangeInProgress("world"));
+        Assert.False(service.IsRuntimeChangeInProgress("timeline"));
+
+        provider.ReleaseOne();
+        await Task.WhenAll(first, second);
+        Assert.False(service.IsRuntimeChangeInProgress("world"));
+    }
+
+    [Fact]
+    public async Task ReloadFailureClearsStateAndStillPublishesCompletion()
+    {
+        var service = NewService(new FakeDirectoryResolver(_resourcesDir), new FakeProvider());
+        var completions = 0;
+        service.RuntimeChanged += (_, _) => completions++;
+
+        await Assert.ThrowsAsync<NotSupportedException>(() => service.ReloadAsync("world"));
+
+        Assert.False(service.IsRuntimeChangeInProgress("world"));
+        Assert.Equal(1, completions);
+    }
+
+    [Fact]
+    public async Task UnrelatedBundleCompletionCannotClearWorldState()
+    {
+        var provider = new PerBundleGatedProvider("world", "timeline");
+        var service = NewService(new FakeDirectoryResolver(_resourcesDir), provider);
+        var world = service.ReloadAsync("world");
+        var timeline = service.ReloadAsync("timeline");
+        await provider.AllEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        provider.Release("timeline");
+        await timeline;
+
+        Assert.True(service.IsRuntimeChangeInProgress("world"));
+        Assert.False(service.IsRuntimeChangeInProgress("timeline"));
+
+        provider.Release("world");
+        await world;
+        Assert.False(service.IsRuntimeChangeInProgress("world"));
+    }
+
+    [Fact]
     public void IsLoaded_DelegatesToProvider()
     {
         var provider = new FakeProvider();
@@ -156,7 +237,7 @@ public sealed class ResourceServiceTests : IDisposable
         public string ResolveResourcesDirectory() => _dir;
     }
 
-    private sealed class FakeProvider : IProvider
+    private class FakeProvider : IProvider
     {
         public List<string> LoadedPaths { get; } = new();
         public HashSet<string> Loaded { get; } = new(StringComparer.Ordinal);
@@ -181,7 +262,7 @@ public sealed class ResourceServiceTests : IDisposable
         public Task UnloadAsync(string id, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
-        public Task ReloadAsync(string id, CancellationToken cancellationToken = default)
+        public virtual Task ReloadAsync(string id, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
         public Task ReloadByPathAsync(string path, CancellationToken cancellationToken = default)
@@ -189,5 +270,72 @@ public sealed class ResourceServiceTests : IDisposable
 
         public Task UnloadAllAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
+    }
+
+    private sealed class GatedReloadProvider : FakeProvider
+    {
+        public TaskCompletionSource ReloadEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ReleaseReload { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override async Task ReloadAsync(string id, CancellationToken cancellationToken = default)
+        {
+            ReloadEntered.TrySetResult();
+            await ReleaseReload.Task.WaitAsync(cancellationToken);
+        }
+    }
+
+    private sealed class CountingReloadProvider : FakeProvider
+    {
+        private readonly int _expectedCalls;
+        private readonly SemaphoreSlim _releases = new(0);
+        private int _entered;
+        private int _completed;
+
+        public CountingReloadProvider(int expectedCalls) => _expectedCalls = expectedCalls;
+        public TaskCompletionSource AllEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource OneCompleted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void ReleaseOne() => _releases.Release();
+
+        public override async Task ReloadAsync(string id, CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _entered) == _expectedCalls)
+                AllEntered.TrySetResult();
+            await _releases.WaitAsync(cancellationToken);
+            if (Interlocked.Increment(ref _completed) == 1)
+                OneCompleted.TrySetResult();
+        }
+    }
+
+    private sealed class PerBundleGatedProvider : FakeProvider
+    {
+        private readonly Dictionary<string, TaskCompletionSource> _entered;
+        private readonly Dictionary<string, TaskCompletionSource> _release;
+        private int _enteredCount;
+
+        public PerBundleGatedProvider(params string[] ids)
+        {
+            _entered = ids.ToDictionary(
+                id => id,
+                _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+                StringComparer.OrdinalIgnoreCase);
+            _release = ids.ToDictionary(
+                id => id,
+                _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+                StringComparer.OrdinalIgnoreCase);
+            ExpectedCount = ids.Length;
+        }
+
+        private int ExpectedCount { get; }
+        public TaskCompletionSource AllEntered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public void Release(string id) => _release[id].TrySetResult();
+
+        public override async Task ReloadAsync(string id, CancellationToken cancellationToken = default)
+        {
+            _entered[id].TrySetResult();
+            if (Interlocked.Increment(ref _enteredCount) == ExpectedCount)
+                AllEntered.TrySetResult();
+            await _release[id].Task.WaitAsync(cancellationToken);
+        }
     }
 }
