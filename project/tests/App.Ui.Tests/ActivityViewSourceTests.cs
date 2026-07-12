@@ -275,6 +275,39 @@ public sealed class ActivityViewSourceTests
         Assert.Contains("nested: {2 fields}", text);        // nested object summarized
     }
 
+    [Fact]
+    public void ExpandedDetail_RendersAgentAuthoredA2uiDocumentInsteadOfGenericWalker()
+    {
+        var detailDoc = """
+        { "root":"d", "components": {
+            "d":    {"type":"container","layout":"vertical","children":["msg","pill"]},
+            "msg":  {"type":"label","text":"Custom agent detail","variant":"muted"},
+            "pill": {"type":"badge","text":"synthesized","variant":"info"} } }
+        """;
+        var ledger = new FakeLedger(new ActivityEntry(
+            EntryId: "entry-a2ui",
+            Kind: ActivityEntryKind.UiOperation,
+            Timestamp: new DateTimeOffset(2026, 7, 12, 14, 0, 0, TimeSpan.Zero),
+            Actor: new ActivityActor("agent", "assistant"),
+            Name: "agent.render.detail",
+            Category: "agent",
+            PayloadJson: new JsonObject { ["ignored"] = "raw-payload" }.ToJsonString(),
+            DetailDocumentJson: detailDoc));
+        var source = new ActivityViewSource(ledger, bus: null, TemplateJson);
+
+        source.Dispatch("toggle:entry-a2ui", componentId: null);
+        var document = source.BuildDocument();
+
+        // The agent's A2UI nodes render, id-prefixed under the card...
+        Assert.NotNull(FindById(document.Root, "activity-card-entry-a2ui-a2ui-msg"));
+        Assert.NotNull(FindById(document.Root, "activity-card-entry-a2ui-a2ui-pill"));
+        var text = CollectText(document.Root, includeTooltip: false);
+        Assert.Contains("Custom agent detail", text);
+        Assert.Contains("synthesized", text);
+        // ...and the generic payload walker is NOT used when an A2UI document is present.
+        Assert.DoesNotContain("ignored: raw-payload", text);
+    }
+
     // ----- tree helpers (the document is a nested RuntimeComponentNode tree) -----
 
     private static RuntimeComponentNode? FindById(RuntimeComponentNode node, string id)

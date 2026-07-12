@@ -137,6 +137,18 @@ internal static class ActivityPresentationDocumentBuilder
 
     private static void AppendExpandedDetail(JsonArray children, string id, ActivityEntry entry)
     {
+        // A3 seam: if the entry carries an agent-authored A2UI detail document that normalizes cleanly,
+        // render THAT in place of the built-in payload rendering — this is where an AI drives the detail
+        // UI. A malformed/hostile document normalizes to null and we fall back to the generic view below.
+        if (!string.IsNullOrWhiteSpace(entry.DetailDocumentJson)
+            && A2uiPresentationNormalizer.Normalize(entry.DetailDocumentJson, $"{id}-a2ui") is { } detailTree)
+        {
+            children.Add(detailTree);
+            if (!string.IsNullOrWhiteSpace(entry.Error))
+                children.Add(DetailLabel(id, 0, Truncate($"error: {entry.Error}", DetailLineMaxChars), "danger"));
+            return;
+        }
+
         var index = 0;
 
         var descriptorDescription = ReadDescriptorDescription(entry);

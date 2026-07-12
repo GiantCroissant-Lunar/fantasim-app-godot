@@ -32,6 +32,12 @@ public sealed record ActivityActor(string Kind, string? Id = null);
 /// <param name="CorrelationId">Groups a task/session.</param>
 /// <param name="Outcome">Optional outcome summary.</param>
 /// <param name="Error">Optional error message.</param>
+/// <param name="DetailDocumentJson">
+/// Optional agent-authored detail UI, as an A2UI adjacency-list document (see
+/// <c>A2uiPresentationNormalizer</c>). When present, a presenter renders it in place of the built-in
+/// payload detail — this is the "AI follows a JSON schema to show proper detail" seam. Kept separate
+/// from <see cref="PayloadJson"/> so the raw domain payload and the presentation stay decoupled.
+/// </param>
 public sealed record ActivityEntry(
     string EntryId,
     ActivityEntryKind Kind,
@@ -43,4 +49,5 @@ public sealed record ActivityEntry(
     string? CausationId = null,
     string? CorrelationId = null,
     string? Outcome = null,
-    string? Error = null);
+    string? Error = null,
+    string? DetailDocumentJson = null);
