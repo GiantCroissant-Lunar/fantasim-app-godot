@@ -5,94 +5,165 @@ using Xunit;
 namespace App.Presentation.Tests;
 
 /// <summary>
-/// Pins the INTERIOR occupant framing of design §4a (2026-07-12 amendment, user eye verdict):
-/// near-axial camera at the mouth, the globe on the current-tick plane reading large at screen
-/// center, both dial rings fully inside the frame. The geometry literals mirror the binder's
-/// private tunables (GlobePlaneZ = -5, globe visual radius ~2 with relief/atmosphere, outer dial
-/// radius 2.9 on RingPlaneZ = -3) — update them together with TunnelPresentationBinder.
+/// Pure projection contract for the asymmetric cockpit framing in design §3 and plan Task 6.
+/// The projection oracle mirrors Godot 4.7 Camera3D perspective KEEP_HEIGHT semantics: vertical
+/// FOV remains fixed while landscape aspect changes horizontal FOV.
 /// </summary>
 public sealed class TunnelCameraFramingTests
 {
-    private const double ExportAspect = 3840.0 / 1914.0;
-    private const float GlobePlaneZ = -5.0f;
-    private const float GlobeVisualRadius = 2.0f;
-    private const float OuterDialRadius = 2.9f;
-    private const float RingPlaneZ = -3.0f;
+    private const float CorridorSurfaceRadius = TunnelCameraFraming.TunnelRadius - 0.06f;
+    private static readonly Vector3 PlanetCenter = new(0.0f, 0.0f, TunnelCameraFraming.CurrentPlaneZ);
+    private static readonly Vector3 FocusedCurrentAnchor = new(
+        -CorridorSurfaceRadius,
+        0.0f,
+        TunnelCameraFraming.CurrentPlaneZ);
 
     [Fact]
-    public void Default_framing_is_interior_axial_with_planet_large_at_center()
+    public void Camera_is_inside_shell_near_axial_and_clear_of_planet()
     {
         var position = TunnelCameraFraming.LocalPosition;
-        var target = TunnelCameraFraming.LocalTarget;
-        var forward = Vector3.Normalize(target - position);
-        var obliquityDegrees = Math.Acos(Math.Abs(forward.Z)) * 180.0 / Math.PI;
-        var axisOffset = Math.Sqrt(position.X * position.X + position.Y * position.Y);
+        var forward = Vector3.Normalize(TunnelCameraFraming.LocalTarget - position);
+        var obliquityDegrees = Math.Acos(Vector3.Dot(forward, -Vector3.UnitZ)) * 180.0 / Math.PI;
+        var radialDistance = Math.Sqrt(position.X * position.X + position.Y * position.Y);
+        var planetDistance = Vector3.Distance(position, PlanetCenter);
 
-        // Occupant, not spectator: on/near the tunnel axis at the mouth, looking down -Z.
-        Assert.True(obliquityDegrees <= 10.0,
-            $"Interior view must be near-axial; obliquity was {obliquityDegrees:F1} degrees.");
-        Assert.True(axisOffset <= 1.5,
-            $"Camera must sit on/near the tunnel axis; radial offset was {axisOffset:F2}.");
-        Assert.True(position.Z <= 3.0,
-            $"Camera must stand at the mouth, not outside as a spectator; Z was {position.Z:F1}.");
-
-        // Planet large at the center: the globe disc is centered and spans a big share of the
-        // frame height.
-        var globeCenter = Project(position, target, new Vector3(0.0f, 0.0f, GlobePlaneZ));
-        Assert.InRange(globeCenter.X, 0.40, 0.60);
-        Assert.InRange(globeCenter.Y, 0.40, 0.60);
-
-        var globeTop = Project(position, target, new Vector3(0.0f, GlobeVisualRadius, GlobePlaneZ));
-        var globeBottom = Project(position, target, new Vector3(0.0f, -GlobeVisualRadius, GlobePlaneZ));
-        var globeHeight = Math.Abs(globeBottom.Y - globeTop.Y);
-        Assert.True(globeHeight >= 0.35,
-            $"The planet must read LARGE at the center; projected height fraction was {globeHeight:F3}.");
-
-        // Both dial rings render as full, nearly circular circles inside the frame.
-        var bounds = ProjectRingBounds(position, target, OuterDialRadius, RingPlaneZ);
-        Assert.True(bounds.MinY >= 0.0 && bounds.MaxY <= 1.0 && bounds.MinX >= 0.0 && bounds.MaxX <= 1.0,
-            $"The outer dial must fit inside the frame; bounds were X [{bounds.MinX:F3}, {bounds.MaxX:F3}] Y [{bounds.MinY:F3}, {bounds.MaxY:F3}].");
-        var projectedAspect = (bounds.MaxX - bounds.MinX) * ExportAspect
-            / (bounds.MaxY - bounds.MinY);
-        Assert.InRange(projectedAspect, 0.95, 1.05);
+        Assert.True(position.Z > TunnelCameraFraming.CurrentPlaneZ);
+        Assert.True(position.Z <= TunnelCameraFraming.MouthZ);
+        Assert.True(radialDistance < TunnelCameraFraming.TunnelRadius - TunnelCameraFraming.RadialClearance,
+            $"Camera radial distance {radialDistance:F3} must remain inside the shell clearance.");
+        Assert.True(planetDistance > TunnelCameraFraming.PlanetVisualRadius
+            + TunnelCameraFraming.NearClip
+            + TunnelCameraFraming.PlanetClearance,
+            $"Camera-to-planet distance {planetDistance:F3} violates planet/near clearance.");
+        Assert.InRange(obliquityDegrees, 0.0, 10.0);
     }
 
-    private static (double MinX, double MaxX, double MinY, double MaxY) ProjectRingBounds(
-        Vector3 cameraPosition,
-        Vector3 cameraTarget,
-        float radius,
-        float z)
+    [Theory]
+    [InlineData(16.0 / 9.0)]
+    [InlineData(16.0 / 10.0)]
+    public void Widescreen_projection_keeps_left_focus_right_planet_and_two_rings_readable(double aspect)
     {
-        var minX = double.PositiveInfinity;
-        var maxX = double.NegativeInfinity;
-        var minY = double.PositiveInfinity;
-        var maxY = double.NegativeInfinity;
+        var planet = TunnelCameraFraming.Project(PlanetCenter, aspect);
+        var planetBounds = TunnelCameraFraming.ProjectSphereBounds(
+            PlanetCenter,
+            TunnelCameraFraming.PlanetVisualRadius,
+            aspect);
+        var focusedAnchor = TunnelCameraFraming.Project(FocusedCurrentAnchor, aspect);
+        var instrument = TunnelCameraFraming.ProjectInstrumentCenter(aspect);
 
-        for (var degree = 0; degree < 360; degree++)
-        {
-            var radians = degree * Math.PI / 180.0;
-            var point = new Vector3((float)Math.Cos(radians) * radius, (float)Math.Sin(radians) * radius, z);
-            var projected = Project(cameraPosition, cameraTarget, point);
-            minX = Math.Min(minX, projected.X);
-            maxX = Math.Max(maxX, projected.X);
-            minY = Math.Min(minY, projected.Y);
-            maxY = Math.Max(maxY, projected.Y);
-        }
+        Assert.InRange(planet.X, 0.62, 0.82);
+        Assert.InRange(planet.Y, 0.35, 0.65);
+        Assert.InRange(planetBounds.Height, 0.80, 1.20);
+        Assert.True(planetBounds.MinY <= 0.05 || planetBounds.MaxY >= 0.95,
+            $"Planet must intentionally touch/crop a vertical edge; bounds were [{planetBounds.MinY:F3}, {planetBounds.MaxY:F3}].");
 
-        return (minX, maxX, minY, maxY);
+        Assert.InRange(focusedAnchor.X, 0.12, 0.35);
+        Assert.InRange(focusedAnchor.Y, 0.35, 0.65);
+        Assert.InRange(instrument.X, 0.12, 0.35);
+        Assert.InRange(instrument.Y, 0.35, 0.65);
+        Assert.True(focusedAnchor.X < planetBounds.MinX,
+            $"Focused current anchor X={focusedAnchor.X:F3} overlaps planet start X={planetBounds.MinX:F3}.");
+
+        var innerInner = TunnelCameraFraming.ProjectInstrumentRingBounds(
+            TunnelCameraFraming.InnerRingInnerRadius,
+            aspect);
+        var innerOuter = TunnelCameraFraming.ProjectInstrumentRingBounds(
+            TunnelCameraFraming.InnerRingOuterRadius,
+            aspect);
+        var outerInner = TunnelCameraFraming.ProjectInstrumentRingBounds(
+            TunnelCameraFraming.OuterRingInnerRadius,
+            aspect);
+        var outerOuter = TunnelCameraFraming.ProjectInstrumentRingBounds(
+            TunnelCameraFraming.OuterRingOuterRadius,
+            aspect);
+
+        AssertInsideViewport(innerOuter);
+        AssertInsideViewport(outerOuter);
+        Assert.True(innerInner.MinX > innerOuter.MinX && innerInner.MaxX < innerOuter.MaxX);
+        Assert.True(outerInner.MinX > outerOuter.MinX && outerInner.MaxX < outerOuter.MaxX);
+        Assert.True(innerOuter.MaxX < outerInner.MaxX && innerOuter.MinX > outerInner.MinX,
+            "The camera-local annuli need a visible radial gap; their mesh bands must not overlap.");
+
+        var middleDepthCue = TunnelCameraFraming.Project(
+            new Vector3(
+                -CorridorSurfaceRadius,
+                0.0f,
+                (TunnelCameraFraming.CurrentPlaneZ + TunnelCameraFraming.ThroatZ) / 2.0f),
+            aspect);
+        var farDepthCue = TunnelCameraFraming.Project(
+            new Vector3(-CorridorSurfaceRadius, 0.0f, TunnelCameraFraming.ThroatZ + 1.0f),
+            aspect);
+
+        AssertInsideViewport(middleDepthCue);
+        AssertInsideViewport(farDepthCue);
+        Assert.True(Math.Abs(middleDepthCue.X - farDepthCue.X) >= 0.04,
+            "Separated axial cues must retain visible perspective separation.");
     }
 
-    private static Vector2 Project(Vector3 cameraPosition, Vector3 cameraTarget, Vector3 point)
+    [Fact]
+    public void TryTickToZ_maps_current_half_and_one_kb_without_stretching_short_ranges()
     {
-        var forward = Vector3.Normalize(cameraTarget - cameraPosition);
-        var right = Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitY));
-        var up = Vector3.Cross(right, forward);
-        var offset = point - cameraPosition;
-        var depth = Vector3.Dot(offset, forward);
-        var verticalScale = Math.Tan(TunnelCameraFraming.FieldOfViewDegrees * Math.PI / 360.0);
+        AssertTickToZ(
+            requestedTick: 100,
+            currentTick: 100,
+            kbUnitTicks: 1_000,
+            expectedZ: TunnelCameraFraming.CurrentPlaneZ);
+        AssertTickToZ(requestedTick: 600, currentTick: 100, kbUnitTicks: 1_000, -12.5f);
+        AssertTickToZ(
+            requestedTick: 1_100,
+            currentTick: 100,
+            kbUnitTicks: 1_000,
+            expectedZ: TunnelCameraFraming.ThroatZ);
 
-        return new Vector2(
-            (float)(0.5 + Vector3.Dot(offset, right) / (2.0 * depth * verticalScale * ExportAspect)),
-            (float)(0.5 - Vector3.Dot(offset, up) / (2.0 * depth * verticalScale)));
+        // If MaxTick is 600, its half-kb endpoint remains at -12.5. Callers leave the unused far
+        // segment empty; they do not renormalize the shortened range to the throat.
+        AssertTickToZ(requestedTick: 600, currentTick: 100, kbUnitTicks: 1_000, -12.5f);
+    }
+
+    [Theory]
+    [InlineData(99, 100, 1_000)]
+    [InlineData(1_101, 100, 1_000)]
+    [InlineData(100, 100, 0)]
+    [InlineData(100, 100, -1)]
+    public void TryTickToZ_rejects_past_out_of_kb_and_invalid_units(
+        long requestedTick,
+        long currentTick,
+        long kbUnitTicks)
+    {
+        var success = TunnelCameraFraming.TryTickToZ(
+            requestedTick,
+            currentTick,
+            kbUnitTicks,
+            out var z);
+
+        Assert.False(success);
+        Assert.Equal(TunnelCameraFraming.CurrentPlaneZ, z, precision: 5);
+    }
+
+    private static void AssertTickToZ(long requestedTick, long currentTick, long kbUnitTicks, float expectedZ)
+    {
+        var success = TunnelCameraFraming.TryTickToZ(
+            requestedTick,
+            currentTick,
+            kbUnitTicks,
+            out var z);
+
+        Assert.True(success);
+        Assert.Equal(expectedZ, z, precision: 5);
+    }
+
+    private static void AssertInsideViewport(TunnelProjectedPoint point)
+    {
+        Assert.InRange(point.X, 0.0, 1.0);
+        Assert.InRange(point.Y, 0.0, 1.0);
+        Assert.True(point.Depth > 0.0);
+    }
+
+    private static void AssertInsideViewport(TunnelProjectedBounds bounds)
+    {
+        Assert.InRange(bounds.MinX, 0.0, 1.0);
+        Assert.InRange(bounds.MaxX, 0.0, 1.0);
+        Assert.InRange(bounds.MinY, 0.0, 1.0);
+        Assert.InRange(bounds.MaxY, 0.0, 1.0);
     }
 }

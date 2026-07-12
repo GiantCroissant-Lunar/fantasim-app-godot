@@ -8,11 +8,11 @@ using Xunit;
 namespace App.Timeline.Tests;
 
 /// <summary>
-/// Headless coverage for the two-ring prototype's five-slot carousel and bottom-center focus
-/// (vault/plans/2026-07-12-rotating-tunnel-two-ring-prototype-plan.md Task 2). Pure Godot-free:
+/// Headless coverage for the asymmetric cockpit's five-slot carousel and left-center focus
+/// (vault/plans/2026-07-12-asymmetric-cockpit-tunnel-plan.md Task 6). Pure Godot-free:
 /// registry-source selection (drop archived), cyclic focus normalization, the focus-0/-1/+1/-2/+2
-/// window with (SphereId, LayerId) dedup, 30deg slot pitch, 15deg symmetric snap, and the retained
-/// rung-resolution path.
+/// window with (SphereId, LayerId) dedup, first-active initial selection, 30deg slot pitch,
+/// 15deg symmetric snap, and the retained rung-resolution path.
 /// </summary>
 public sealed class TunnelCorridorLayoutTests
 {
@@ -58,13 +58,49 @@ public sealed class TunnelCorridorLayoutTests
 
     // ---- InitialFocusIndex / NormalizeFocusIndex ----
 
-    [Theory]
-    [InlineData(0, -1)]
-    [InlineData(1, 0)]
-    [InlineData(5, 0)]
-    public void InitialFocusIndex_EmptyIsMinusOne_NonEmptyIsZero(int count, int expected)
+    [Fact]
+    public void InitialFocusIndex_PrefersFirstActiveNonArchivedTrack()
     {
-        Assert.Equal(expected, TunnelCorridorLayout.InitialFocusIndex(count));
+        var tracks = new[]
+        {
+            Descriptor("geosphere", "archived", LayerTrackStates.Archived),
+            Descriptor("geosphere", "inactive"),
+            Descriptor("geosphere", "active-first"),
+            Descriptor("geosphere", "active-second"),
+        };
+
+        var focus = TunnelCorridorLayout.InitialFocusIndex(tracks, new[] { true, false, true, true });
+
+        Assert.Equal(2, focus);
+    }
+
+    [Fact]
+    public void InitialFocusIndex_NoActiveTrack_FallsBackToFirstNonArchivedTrack()
+    {
+        var tracks = new[]
+        {
+            Descriptor("geosphere", "archived", LayerTrackStates.Archived),
+            Descriptor("geosphere", "fallback"),
+            Descriptor("geosphere", "later"),
+        };
+
+        var focus = TunnelCorridorLayout.InitialFocusIndex(tracks, new[] { true, false, false });
+
+        Assert.Equal(1, focus);
+    }
+
+    [Fact]
+    public void InitialFocusIndex_NoNonArchivedTrack_ReturnsMinusOne()
+    {
+        var tracks = new[]
+        {
+            Descriptor("geosphere", "a", LayerTrackStates.Archived),
+            Descriptor("geosphere", "b", LayerTrackStates.Archived),
+        };
+
+        var focus = TunnelCorridorLayout.InitialFocusIndex(tracks, new[] { true, true });
+
+        Assert.Equal(-1, focus);
     }
 
     [Fact]
@@ -186,24 +222,24 @@ public sealed class TunnelCorridorLayoutTests
     // ---- 30deg slot pitch and +30deg visual polarity ----
 
     [Fact]
-    public void BuildFocusedWindow_SlotCentersAreThirtyDegreesApart_AtBottomFocus()
+    public void BuildFocusedWindow_SlotCentersAreThirtyDegreesApart_AtLeftFocus()
     {
         var slots = TunnelCorridorLayout.BuildFocusedWindow(Tracks("a", "b", "c", "d", "e"), 0);
 
-        // accumulated = 0: CenterAngle = -90 + relativeSlot*30.
-        Assert.Equal(-90.0 - 60.0, slots.Single(s => s.RelativeSlot == -2).CenterAngleDegrees, precision: 6);
-        Assert.Equal(-90.0, slots.Single(s => s.RelativeSlot == 0).CenterAngleDegrees, precision: 6);
-        Assert.Equal(-90.0 + 60.0, slots.Single(s => s.RelativeSlot == 2).CenterAngleDegrees, precision: 6);
+        // accumulated = 0: CenterAngle = 180 + relativeSlot*30.
+        Assert.Equal(180.0 - 60.0, slots.Single(s => s.RelativeSlot == -2).CenterAngleDegrees, precision: 6);
+        Assert.Equal(180.0, slots.Single(s => s.RelativeSlot == 0).CenterAngleDegrees, precision: 6);
+        Assert.Equal(180.0 + 60.0, slots.Single(s => s.RelativeSlot == 2).CenterAngleDegrees, precision: 6);
     }
 
     [Fact]
-    public void BuildFocusedWindow_PositiveAccumulatedShiftsNextTrackTowardBottomFocus()
+    public void BuildFocusedWindow_PositiveAccumulatedShiftsNextTrackTowardLeftFocus()
     {
-        // accumulated = +30: the +1 track's center moves to -90 (bottom), proving clockwise advances
+        // accumulated = +30: the +1 track's center moves to 180 (left), proving clockwise advances
         // focus visually before the index advances on snap.
         var slots = TunnelCorridorLayout.BuildFocusedWindow(Tracks("a", "b", "c", "d", "e"), 0, accumulatedDegrees: 30.0);
 
-        Assert.Equal(-90.0, slots.Single(s => s.RelativeSlot == 1).CenterAngleDegrees, precision: 6);
+        Assert.Equal(180.0, slots.Single(s => s.RelativeSlot == 1).CenterAngleDegrees, precision: 6);
     }
 
     // ---- SnapFocus: 15deg threshold and multi-step drags ----

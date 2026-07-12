@@ -7,8 +7,8 @@ using FantaSim.App.World.Composition;
 namespace FantaSim.App.Timeline.Seam;
 
 /// <summary>
-/// Five-slot carousel layout for the two-ring prototype's focused track window
-/// (vault/plans/2026-07-12-rotating-tunnel-two-ring-prototype-plan.md Task 2). Pure Godot-free:
+/// Five-slot carousel layout for the asymmetric cockpit's focused track window
+/// (vault/plans/2026-07-12-asymmetric-cockpit-tunnel-plan.md Task 6). Pure Godot-free:
 /// selects non-archived registry tracks in stable order, normalizes a cyclic focus index, builds
 /// the focus-0/-1/+1/-2/+2 window with (SphereId, LayerId) dedup, and snaps accumulated wall angle
 /// to 30deg steps. Also retains the rung-resolution path consumed by the focused-corridor rebinding.
@@ -17,7 +17,7 @@ public static class TunnelCorridorLayout
 {
     public const int VisibleTrackSlots = 5;
     public const double TrackSlotPitchDegrees = 30d;
-    public const double BottomFocusAngleDegrees = -90d;
+    public const double LeftFocusAngleDegrees = 180d;
 
     private static readonly int[] WindowRelativeSlots = { 0, -1, 1, -2, 2 };
 
@@ -47,6 +47,34 @@ public static class TunnelCorridorLayout
     public static int InitialFocusIndex(int trackCount)
         => trackCount > 0 ? 0 : -1;
 
+    /// <summary>
+    /// Returns the first active, non-archived track in registry order; when none is active, returns
+    /// the first non-archived track. An all-archived or empty list returns -1.
+    /// </summary>
+    public static int InitialFocusIndex(
+        IReadOnlyList<LayerTrackDescriptor> tracks,
+        IReadOnlyList<bool> activityFlags)
+    {
+        ArgumentNullException.ThrowIfNull(tracks);
+        ArgumentNullException.ThrowIfNull(activityFlags);
+        if (tracks.Count != activityFlags.Count)
+            throw new ArgumentException("Track and activity counts must match.", nameof(activityFlags));
+
+        var fallback = -1;
+        for (var i = 0; i < tracks.Count; i++)
+        {
+            if (string.Equals(tracks[i].State, LayerTrackStates.Archived, StringComparison.Ordinal))
+                continue;
+
+            if (fallback < 0)
+                fallback = i;
+            if (activityFlags[i])
+                return i;
+        }
+
+        return fallback;
+    }
+
     /// <summary>Cyclic normalization into [0, trackCount). Zero or negative count returns -1.</summary>
     public static int NormalizeFocusIndex(int focusIndex, int trackCount)
     {
@@ -71,9 +99,9 @@ public static class TunnelCorridorLayout
     /// Builds the five-or-fewer-slot focused window. Candidates are resolved in the order focus 0,
     /// previous -1, next +1, second previous -2, second next +2; each is deduplicated by
     /// (SphereId, LayerId) so one track mounts at most once. The returned slots are sorted by
-    /// relative slot (-2..+2). CenterAngleDegrees = BottomFocusAngleDegrees + relativeSlot *
+    /// relative slot (-2..+2). CenterAngleDegrees = LeftFocusAngleDegrees + relativeSlot *
     /// 30deg - accumulatedDegrees, so a positive (clockwise) accumulated angle shifts the next
-    /// track toward bottom-center before the focus index advances on snap.
+    /// track toward left-center before the focus index advances on snap.
     /// </summary>
     public static IReadOnlyList<TunnelTrackSlot> BuildFocusedWindow(
         IReadOnlyList<LayerTrackDescriptor> tracks,
@@ -101,7 +129,7 @@ public static class TunnelCorridorLayout
             result.Add(new TunnelTrackSlot(
                 Descriptor: candidate,
                 RelativeSlot: relative,
-                CenterAngleDegrees: BottomFocusAngleDegrees + (relative * TrackSlotPitchDegrees) - accumulatedDegrees));
+                CenterAngleDegrees: LeftFocusAngleDegrees + (relative * TrackSlotPitchDegrees) - accumulatedDegrees));
         }
 
         return result.OrderBy(s => s.RelativeSlot).ToList();
