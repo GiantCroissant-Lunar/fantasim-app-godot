@@ -275,6 +275,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
                 OnInput = e => HandleInputEvent(e),
                 OnProcess = d => ConsumeTunnelFrame(d),
                 OnCancel = r => CancelTunnelGesture(r),
+                OnError = ex => _log.LogError(ex, "Tunnel input handler threw; gesture cancelled and event consumed."),
             };
             _mount.AddChild(_inputRelay);
         }
@@ -562,6 +563,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
             _inputRelay.OnInput = null;
             _inputRelay.OnProcess = null;
             _inputRelay.OnCancel = null;
+            _inputRelay.OnError = null;
         }
     }
 

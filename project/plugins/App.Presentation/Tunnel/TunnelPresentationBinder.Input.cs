@@ -133,6 +133,14 @@ internal sealed partial class TunnelPresentationBinder
         switch (@event)
         {
             case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } pressed:
+                if (_gestureOwned)
+                {
+                    // A nested press (a release we never saw) must not fall through and start a
+                    // concurrent globe drag. Consume it; the owned gesture still ends on its own
+                    // release, focus-loss, or lifecycle cancel.
+                    _log.LogDebug("tunnel gesture: nested left press consumed while a gesture is owned.");
+                    return true;
+                }
                 return TryBeginGesture(pressed);
             case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } released:
                 return HandleOwnedRelease(released);
@@ -338,7 +346,7 @@ internal sealed partial class TunnelPresentationBinder
 
         if (!TryResolveHit(press.Position, out var hit))
             return false;
-        if (!TryGetLocalPointerAngle(press.Position, out var pointerAngle))
+        if (!TryGetPointerAngle(hit == TunnelHitRegion.Wall, press.Position, out var pointerAngle))
             return false;
 
         if (hit == TunnelHitRegion.InnerRing && _fineInspectionActive)
@@ -377,7 +385,8 @@ internal sealed partial class TunnelPresentationBinder
         if (!_gestureOwned)
             return false;
 
-        if (!TryGetLocalPointerAngle(motion.Position, out var currentAngle))
+        var aboutTunnelAxis = _coordinator.ActiveGesture == TunnelGestureKind.Wall;
+        if (!TryGetPointerAngle(aboutTunnelAxis, motion.Position, out var currentAngle))
             return true;
 
         var delta = TunnelScrubMapper.NormalizeClockwiseDeltaDegrees(_lastPointerAngleDeg, currentAngle);
@@ -402,7 +411,7 @@ internal sealed partial class TunnelPresentationBinder
                     _finePreview = preview;
                     UpdateInnerRingVisual(_fineBinding, preview);
                     UpdateFineInspection(preview);
-                    LogInnerGesture("motion", preview);
+                    LogInnerGesture("motion", preview, LogLevel.Debug);
                 }
                 break;
             case TunnelGestureKind.Wall:
@@ -511,31 +520,78 @@ internal sealed partial class TunnelPresentationBinder
             projected,
             TunnelInstrumentContract.InnerRingInnerRadius,
             TunnelInstrumentContract.InnerRingOuterRadius);
-        var wallHit = TryIntersectTunnelWall(screenPosition, camera);
+        var wallHit = TryIntersectTunnelWall(screenPosition, camera, out var wallLocal);
+        // The opaque planet fills the view center; under the interior camera its rays also strike the
+        // wall behind it. Reject a wall pick the planet occludes so clicking the globe never starts a
+        // carousel drag. Rings win over the wall regardless (a ring band is nearer than the planet).
+        if (wallHit && IsPlanetOccludingWall(screenPosition, camera, wallLocal))
+            wallHit = false;
 
         hit = TunnelScrubMapper.ResolveHitRegion(outerHit, innerHit, wallHit);
         return hit != TunnelHitRegion.None;
     }
 
-    private bool TryIntersectTunnelWall(Vector2 screenPosition, Camera3D camera)
+    private bool TryBuildMountLocalRay(
+        Vector2 screenPosition, Camera3D camera, out TunnelRay3 ray, out TunnelPoint3 origin)
     {
+        ray = default;
+        origin = default;
         var mount = _mount;
         if (mount is null || !GodotObject.IsInstanceValid(mount))
             return false;
 
-        var rayOrigin = camera.ProjectRayOrigin(screenPosition);
-        var rayDir = camera.ProjectRayNormal(screenPosition);
-
         var inv = mount.GlobalTransform.AffineInverse();
-        var localOrigin = inv * rayOrigin;
-        var localDir = inv.Basis * rayDir;
-
-        var ray = new TunnelRay3(
-            new TunnelPoint3(localOrigin.X, localOrigin.Y, localOrigin.Z),
-            new TunnelPoint3(localDir.X, localDir.Y, localDir.Z));
-
-        return TunnelRayHitMapper.TryIntersectCylinder(ray, CorridorSurfaceRadius, ThroatZ, MouthZ, out _);
+        var localOrigin = inv * camera.ProjectRayOrigin(screenPosition);
+        var localDir = inv.Basis * camera.ProjectRayNormal(screenPosition);
+        origin = new TunnelPoint3(localOrigin.X, localOrigin.Y, localOrigin.Z);
+        ray = new TunnelRay3(origin, new TunnelPoint3(localDir.X, localDir.Y, localDir.Z));
+        return true;
     }
+
+    private bool TryIntersectTunnelWall(Vector2 screenPosition, Camera3D camera, out TunnelPoint3 wallLocal)
+    {
+        wallLocal = default;
+        if (!TryBuildMountLocalRay(screenPosition, camera, out var ray, out _))
+            return false;
+
+        return TunnelRayHitMapper.TryIntersectCylinder(ray, CorridorSurfaceRadius, ThroatZ, MouthZ, out wallLocal);
+    }
+
+    private bool IsPlanetOccludingWall(Vector2 screenPosition, Camera3D camera, TunnelPoint3 wallLocal)
+    {
+        if (!TryBuildMountLocalRay(screenPosition, camera, out var ray, out var origin))
+            return false;
+
+        var center = new TunnelPoint3(0d, 0d, TunnelCameraFraming.CurrentPlaneZ);
+        if (!TunnelRayHitMapper.TryIntersectSphere(ray, center, TunnelCameraFraming.PlanetVisualRadius, out var planetLocal))
+            return false;
+
+        // Both hits lie on the same ray, so nearer-along-ray reduces to squared distance from origin.
+        return SquaredDistance(origin, planetLocal) < SquaredDistance(origin, wallLocal);
+    }
+
+    private static double SquaredDistance(TunnelPoint3 a, TunnelPoint3 b)
+    {
+        var dx = b.X - a.X;
+        var dy = b.Y - a.Y;
+        var dz = b.Z - a.Z;
+        return (dx * dx) + (dy * dy) + (dz * dz);
+    }
+
+    // Reference plane (mount-local Z, perpendicular to the tunnel axis and centered on it) used to
+    // measure the wall carousel's pointer angle. Any axis-perpendicular plane in front of the
+    // interior camera yields the angular position ABOUT THE AXIS — which is what the corridors root
+    // rotates about — unlike the off-axis instrument dial plane the rings are measured on.
+    private const float WallAngleReferenceZ = (MouthZ + ThroatZ) * 0.5f;
+
+    // Outer/inner rings are dials on the off-axis instrument plane; the wall carousel rotates about
+    // the tunnel axis. Measuring both with the same instrument-plane angle made a wall drag pivot
+    // around the wrong center, so a one-pixel move near the dial singularity could snap the carousel
+    // several steps at once. Route each gesture to the angle source that matches its rotation axis.
+    private bool TryGetPointerAngle(bool aboutTunnelAxis, Vector2 screenPosition, out double angleDegrees)
+        => aboutTunnelAxis
+            ? TryGetWallPointerAngle(screenPosition, out angleDegrees)
+            : TryGetLocalPointerAngle(screenPosition, out angleDegrees);
 
     private bool TryGetLocalPointerAngle(Vector2 screenPosition, out double angleDegrees)
     {
@@ -548,6 +604,29 @@ internal sealed partial class TunnelPresentationBinder
             return false;
 
         angleDegrees = Math.Atan2(localPoint.Y, localPoint.X) * 180.0 / Math.PI;
+        return double.IsFinite(angleDegrees);
+    }
+
+    private bool TryGetWallPointerAngle(Vector2 screenPosition, out double angleDegrees)
+    {
+        angleDegrees = 0d;
+        var camera = _tunnelCamera;
+        var mount = _mount;
+        if (camera is null || !GodotObject.IsInstanceValid(camera) || !camera.Current
+            || mount is null || !GodotObject.IsInstanceValid(mount))
+            return false;
+
+        var inv = mount.GlobalTransform.AffineInverse();
+        var localOrigin = inv * camera.ProjectRayOrigin(screenPosition);
+        var localDir = inv.Basis * camera.ProjectRayNormal(screenPosition);
+        var ray = new TunnelRay3(
+            new TunnelPoint3(localOrigin.X, localOrigin.Y, localOrigin.Z),
+            new TunnelPoint3(localDir.X, localDir.Y, localDir.Z));
+
+        if (!TunnelRayHitMapper.TryIntersectMouthPlane(ray, WallAngleReferenceZ, out var hit))
+            return false;
+
+        angleDegrees = Math.Atan2(hit.Y, hit.X) * 180.0 / Math.PI;
         return double.IsFinite(angleDegrees);
     }
 
@@ -753,7 +832,14 @@ internal sealed partial class TunnelPresentationBinder
 
     private void LogOuterMotion(TunnelOuterTickMapping mapping)
     {
-        LogOuterGesture("motion", mapping, TimelineTickOrigin.ScrubPreview);
+        // Per-motion telemetry: Debug only. At Information it emitted hundreds of boxed records/sec
+        // during a drag. Press/commit boundaries stay at Information as the gate's evidence trail.
+        if (!_log.IsEnabled(LogLevel.Debug))
+            return;
+        _log.LogDebug(
+            "tunnel outer gesture: phase={Phase} pressTick={PressTick} accumulatedDegrees={AccumulatedDegrees} unitSymbol={UnitSymbol} rawTickQuantity={RawTickQuantity} roundedTargetTick={RoundedTargetTick} clampedTargetTick={ClampedTargetTick} origin={Origin}",
+            "motion", _gesturePressTick, mapping.AccumulatedDegrees, mapping.Rung.Symbol,
+            mapping.RawTickDelta, mapping.RoundedTargetTick, mapping.ClampedTargetTick, TimelineTickOrigin.ScrubPreview);
     }
 
     private void LogOuterGesture(string phase, TunnelOuterTickMapping mapping, TimelineTickOrigin origin)
@@ -764,10 +850,15 @@ internal sealed partial class TunnelPresentationBinder
             mapping.RawTickDelta, mapping.RoundedTargetTick, mapping.ClampedTargetTick, origin);
     }
 
-    private void LogInnerGesture(string phase, TunnelFinePreview preview)
+    private void LogInnerGesture(string phase, TunnelFinePreview preview, LogLevel level = LogLevel.Information)
     {
+        // Boundary phases (press/release) stay at Information as evidence that the inner ring never
+        // mutates authoritative time; the per-frame motion phase passes Debug to avoid drag spam.
+        if (!_log.IsEnabled(level))
+            return;
         var desc = preview.Binding.Descriptor;
-        _log.LogInformation(
+        _log.Log(
+            level,
             "tunnel inner gesture: phase={Phase} sphereId={SphereId} layerId={LayerId} rung={Rung} active={Active} accumulatedDegrees={AccumulatedDegrees} rawTickQuantity={RawTickQuantity} cursorZ={CursorZ} authoritativeTick={AuthoritativeTick} mutated=false",
             phase,
             desc?.SphereId ?? "",
@@ -782,9 +873,13 @@ internal sealed partial class TunnelPresentationBinder
 
     private void LogWallMotion(double accumulatedDegrees)
     {
+        // Debug only, and the SnapFocus recompute stays behind the level guard so a drag pays
+        // nothing for it when Debug is off. The authoritative snap is logged once on release.
+        if (!_log.IsEnabled(LogLevel.Debug))
+            return;
         var snap = TunnelCorridorLayout.SnapFocus(
             _gestureFocusBefore, _sourceTracks.Count, accumulatedDegrees);
-        _log.LogInformation(
+        _log.LogDebug(
             "tunnel wall gesture: phase={Phase} focusBefore={FocusBefore} stepDelta={StepDelta} focusAfter={FocusAfter} snappedDegrees={SnappedDegrees}",
             "motion", _gestureFocusBefore, snap.StepDelta, snap.FocusIndex, snap.SnappedAngleDegrees);
     }
