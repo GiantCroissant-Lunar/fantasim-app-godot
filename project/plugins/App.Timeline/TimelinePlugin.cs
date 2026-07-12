@@ -21,7 +21,7 @@ using ResourceService = FantaSim.App.Resource.IService;
 namespace FantaSim.App.Timeline;
 
 [Plugin("app.timeline", Name = "Timeline HUD", Description = "Registers the timeline scene activator.", Tags = "scene-tier")]
-public sealed partial class TimelinePlugin : ILifecyclePlugin
+public sealed partial class TimelinePlugin : ILifecyclePlugin, ITunnelModeOwner
 {
     internal const string SeekCommandId = "timeline.seek";
     internal const string SelectLayerCommandId = "timeline.select_layer";
@@ -51,6 +51,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
     private WeakReference? _outgoingController;
 
     private IDisposable? _activatorRegistration;
+    private IDisposable? _tunnelModeOwnerRegistration;
     private IDisposable? _timelineRegistration;
     private IDisposable? _faceContextRegistration;
     private TimelineFaceContext? _faceContext;
@@ -63,6 +64,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
     private Action<long>? _tickChangedHandler;
     private ITimelineController? _subscribedController;
     private bool _worldRebindPending;
+    private bool _lossHudPrepared;
     private long _modeEpoch;
 
     public TimelinePlugin()
@@ -88,6 +90,13 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             _activatorRegistration = registry.RegisterOwned<ISceneActivator>(
                 new TimelineActivator(),
                 new ServiceRegistration { Tags = new[] { "scene-activator" }, Description = "timeline activator (bundle)" });
+            _tunnelModeOwnerRegistration = registry.RegisterOwned<ITunnelModeOwner>(
+                this,
+                new ServiceRegistration
+                {
+                    Tags = new[] { "timeline", "tunnel-mode-owner" },
+                    Description = "timeline-owned HUD transition coordinator"
+                });
 
             _resource = registry.TryGet<ResourceService>();
             if (_resource is not null)
@@ -117,6 +126,8 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             _log?.LogInformation("TimelinePlugin: shutdown started.");
 
             UnsubscribeResourceEvents();
+            _tunnelModeOwnerRegistration?.Dispose();
+            _tunnelModeOwnerRegistration = null;
             UnregisterTimelineCommands();
             SeverTimelineService(unbindProxy: true);
 
@@ -126,6 +137,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             _loggerFactory = null;
             _resource = null;
             _worldRebindPending = false;
+            _lossHudPrepared = false;
             _outgoingController = null;
             _log?.LogInformation("TimelinePlugin: shutdown completed.");
             _log = null;
@@ -475,9 +487,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             }
 
             var lossEvent = stageChanging ? TunnelModeEvent.StageChanging : TunnelModeEvent.WorldChanging;
-            var lossDecision = TunnelModePolicy.Decide(lossEvent, tunnel?.IsEnabled ?? false, _modeEpoch);
-            _modeEpoch = lossDecision.ModeEpoch;
-            ApplyHudState(new TimelineHudState(lossDecision.HudVisible, lossDecision.ModeEpoch));
+            PrepareForTunnelLossUnderGate(lossEvent);
 
             if (stageChanging)
             {
@@ -500,8 +510,41 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
         }
     }
 
+    public void PrepareForTunnelLoss(TunnelModeEvent lossEvent)
+    {
+        if (lossEvent is not TunnelModeEvent.WorldChanging and not TunnelModeEvent.StageChanging)
+            throw new ArgumentOutOfRangeException(nameof(lossEvent), lossEvent, "Expected a world or stage loss event.");
+
+        lock (_lifecycleGate)
+        {
+            if (_shutdown)
+                return;
+            PrepareForTunnelLossUnderGate(lossEvent);
+        }
+    }
+
+    private void PrepareForTunnelLossUnderGate(TunnelModeEvent lossEvent)
+    {
+        if (_lossHudPrepared)
+            return;
+
+        var tunnelEnabled = _registry?.TryGet<ITunnelPresentation>()?.IsEnabled ?? false;
+        var decision = TunnelModePolicy.Decide(lossEvent, tunnelEnabled, _modeEpoch);
+        _modeEpoch = decision.ModeEpoch;
+        ApplyHudState(new TimelineHudState(decision.HudVisible, decision.ModeEpoch));
+        _lossHudPrepared = true;
+        _log?.LogInformation(
+            "TimelinePlugin: safe HUD prepared before tunnel loss ({LossEvent}); modeEpoch={ModeEpoch}.",
+            lossEvent,
+            decision.ModeEpoch);
+    }
+
     private void OnResourceRuntimeChanged(object? sender, EventArgs args)
-        => TryConsumePendingWorldRebind();
+    {
+        lock (_lifecycleGate)
+            _lossHudPrepared = false;
+        TryConsumePendingWorldRebind();
+    }
 
     internal bool TryConsumePendingWorldRebind()
     {

@@ -49,10 +49,12 @@ public sealed class TimelinePluginTests
 
         var plugin = new TimelinePlugin(() => proxy);
         await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+        Assert.NotNull(registry.TryGet<ITunnelModeOwner>());
         await plugin.ShutdownAsync();
 
         Assert.Null(registry.TryGet<FantaSim.App.Timeline.IService>());
         Assert.Null(registry.TryGet<ITimelineFaceContext>());
+        Assert.Null(registry.TryGet<ITunnelModeOwner>());
         Assert.Equal(1, proxy.RebindResidentContextCalls);
         Assert.Equal(1, proxy.UnbindCrossTargetCalls);
     }
@@ -116,6 +118,14 @@ public sealed class TimelinePluginTests
         Assert.Same(controller, registry.TryGet<ITimelineFaceContext>()?.Controller);
         Assert.False(proxy.HudVisible);
 
+        var modeOwner = Assert.IsAssignableFrom<ITunnelModeOwner>(registry.TryGet<ITunnelModeOwner>());
+        modeOwner.PrepareForTunnelLoss(TunnelModeEvent.WorldChanging);
+
+        Assert.True(proxy.HudVisible);
+        Assert.Equal(1L, proxy.HudState.ModeEpoch);
+        Assert.True(tunnel.IsEnabled);
+        Assert.Equal(0, tunnel.TrySetEnabledCalls);
+
         resource.RaiseRuntimeChanging("world", ResourceRuntimeOperation.Reload);
 
         // The watcher raises this event off the Godot main thread. Timeline owns the HUD; the
@@ -123,6 +133,7 @@ public sealed class TimelinePluginTests
         Assert.True(tunnel.IsEnabled);
         Assert.Equal(0, tunnel.TrySetEnabledCalls);
         Assert.True(proxy.HudVisible);
+        Assert.Equal(1L, proxy.HudState.ModeEpoch);
         Assert.Null(registry.TryGet<ITimelineFaceContext>());
         Assert.Null(registry.TryGet<FantaSim.App.Timeline.IService>());
         Assert.Equal(1, controller.UnregisterPlaybackCalls);

@@ -493,23 +493,28 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         _tearingDown = true;
         _generation++;
         var teardownReason = stageChanging ? "stage_teardown" : "world_teardown";
-        DisconnectStagePreparationRetry();
-        FailSafeDisable(teardownReason, TunnelFineResetReason.BundleTeardown);
-        SeverManagedInputCallbacks();
-        if (worldChanging)
+        var lossEvent = stageChanging ? TunnelModeEvent.StageChanging : TunnelModeEvent.WorldChanging;
+        var modeOwner = _registry.TryGet<ITunnelModeOwner>();
+        TunnelLossSequence.Run(modeOwner, lossEvent, teardownOnMainThread: () =>
         {
-            UnsubscribeController();
-            UnsubscribeLayerTrackRegistry();
-            SeverFilmstrip();
-            _sourceTracks = Array.Empty<LayerTrackDescriptor>();
-            _focusIndex = -1;
-        }
-        _worldRuntimeReload.MarkRuntimeChanging();
-        CleanupDetachedMount(DetachMountState());
-        _log.LogInformation(
-            "Tunnel presentation released before resource {Operation}: {BundleId}",
-            args.Operation,
-            args.BundleId);
+            DisconnectStagePreparationRetry();
+            FailSafeDisable(teardownReason, TunnelFineResetReason.BundleTeardown);
+            SeverManagedInputCallbacks();
+            if (worldChanging)
+            {
+                UnsubscribeController();
+                UnsubscribeLayerTrackRegistry();
+                SeverFilmstrip();
+                _sourceTracks = Array.Empty<LayerTrackDescriptor>();
+                _focusIndex = -1;
+            }
+            _worldRuntimeReload.MarkRuntimeChanging();
+            CleanupDetachedMount(DetachMountState());
+            _log.LogInformation(
+                "Tunnel presentation released before resource {Operation}: {BundleId}",
+                args.Operation,
+                args.BundleId);
+        });
     }
 
     private void OnResourceRuntimeChanged(object? sender, EventArgs args)

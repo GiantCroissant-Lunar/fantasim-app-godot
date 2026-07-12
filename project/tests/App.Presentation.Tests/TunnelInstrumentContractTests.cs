@@ -105,6 +105,20 @@ public sealed class TunnelInstrumentContractTests
         Assert.True(runtimeGate >= 0 && runtimeApply > runtimeGate && runtimeApplyMethod > runtimeApply,
             "Runtime-changing scene mutations must pass through the blocking main-thread gate.");
 
+        var lossEvent = binder.IndexOf("var lossEvent = stageChanging", runtimeApplyMethod, StringComparison.Ordinal);
+        var modeOwnerLookup = binder.IndexOf(
+            "var modeOwner = _registry.TryGet<ITunnelModeOwner>();",
+            lossEvent,
+            StringComparison.Ordinal);
+        var lossSequence = binder.IndexOf("TunnelLossSequence.Run(", modeOwnerLookup, StringComparison.Ordinal);
+        var failSafeDisable = binder.IndexOf("FailSafeDisable(teardownReason", lossEvent, StringComparison.Ordinal);
+        Assert.True(
+            lossEvent > runtimeApplyMethod
+            && modeOwnerLookup > lossEvent
+            && lossSequence > modeOwnerLookup
+            && failSafeDisable > lossSequence,
+            "Tunnel loss must route through the HUD-before-geometry sequence.");
+
         var timelineBranch = binder.IndexOf("if (timelineChanging)", runtimeApplyMethod, StringComparison.Ordinal);
         Assert.True(timelineBranch >= 0, "Timeline runtime-changing branch is missing.");
         var timelineCancel = binder.IndexOf(
