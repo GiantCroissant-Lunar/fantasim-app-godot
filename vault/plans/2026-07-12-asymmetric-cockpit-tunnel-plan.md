@@ -1044,7 +1044,8 @@ git commit -m "feat(timeline): schedule latest fine inspection"
 
 - [ ] Replace old framing tests with RED invariants at `16d/9d` and `16d/10d`: camera axial/radial/
   planet clearance, planet normalized center/silhouette-height/crop, left current anchor/instrument,
-  both ring bounds from the exact camera-local radii, non-overlap, and visible separated depth cues.
+  both ring bounds from the exact camera-local radii, non-overlap, the three approved
+  `NearInteriorLip` shell cues, and visible separated depth cues.
   Add tick-to-Z tests for current, half kb, one kb, past rejection, beyond-kb rejection, and a
   shortened `MaxTick` range that does not stretch to the throat.
 
@@ -1073,6 +1074,7 @@ internal static class TunnelCameraFraming
     internal const float PlanetClearance = 0.25f;
     internal const float NearClip = 0.05f;
     internal const float PlanetVisualRadius = 2.06f;
+    internal const float NearInteriorLipZ = -4.5f;
     internal static readonly Vector3 LocalPosition = new(-1.8f, 0.6f, -0.8f);
     internal static readonly Vector3 LocalTarget = new(-1.8f, 0.0f, -7.0f);
     internal static readonly Vector3 InstrumentLocalAnchor = new(-2.2f, 0.0f, -4.0f);
@@ -1567,7 +1569,7 @@ cp "$OUT/cockpit-16x10.png" "$E/cockpit-16x10.png"
 ```
 
   Visually require: left focus/instrument, on-axis planet projected into the right third and large/
-  vertically cropped, visible mouth/wall/two depth cues, one current plane, at most twenty honest
+  vertically cropped, visible near-interior lip/wall/two depth cues, one current plane, at most twenty honest
   spheres/unavailable sectors, exactly two rings, and stationary labels.
 
 - [ ] Perform a real-mouse outer gesture. Save camera-debug before/after/after-no-button-motion JSON,

@@ -60,6 +60,7 @@ Tunnel-local `Z` is time depth. The mouth is toward positive `Z`; future time re
 | `TunnelRadius` | `5.0` |
 | `MouthZ` | `0.0` |
 | `CurrentPlaneZ` | `-5.0` |
+| `NearInteriorLipZ` | `-4.5` |
 | `ThroatZ` | `-20.0` |
 | `TimelineDepth` | `CurrentPlaneZ - ThroatZ = 15.0` |
 | focused carousel angle | `180°` (left wall) |
@@ -115,7 +116,16 @@ Projection tests cover both `16:9` and `16:10`. At each aspect:
 - both the focused corridor's current anchor and the instrument center are within `X=[0.12, 0.35]`,
   `Y=[0.35, 0.65]`;
 - the left focus and planet do not overlap; and
-- mouth, wall, and at least two separated axial depth cues remain visible around the planet.
+- a sparse shell-attached near-interior lip, wall, and at least two separated axial depth cues
+  remain visible around the planet.
+
+The physical `MouthZ=0` plane is deliberately not claimed as visible. With `cameraZ <= MouthZ`, any
+ray from the camera to that plane is at least `90°` from `-Z`; the camera may deviate at most `10°`
+from `-Z`, while the farthest 16:10 corner of a 60° vertical-FOV frustum is only `47.4485°` from the
+forward vector. The real mouth is therefore outside the frustum by construction. The honest
+replacement is three disconnected, non-interactive shell chevrons at `NearInteriorLipZ=-4.5` and
+azimuths `160°`, `180°`, and `200°`. They expose nearby cylinder curvature without inventing a
+dashboard rim, annular control, or false mouth-plane evidence.
 
 The exact camera seed may change during the eye pass only if all projection and clearance contracts
 still pass. A framing test that merely permits `cameraZ > MouthZ` is invalid.

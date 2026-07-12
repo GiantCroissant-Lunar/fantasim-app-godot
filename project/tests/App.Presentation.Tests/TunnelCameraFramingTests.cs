@@ -1,4 +1,6 @@
 using FantaSim.App.Presentation.Tunnel;
+using FantaSim.App.Timeline;
+using System.Linq;
 using System.Numerics;
 using Xunit;
 
@@ -100,24 +102,50 @@ public sealed class TunnelCameraFramingTests
             "Separated axial cues must retain visible perspective separation.");
     }
 
-    [Fact]
-    public void TryTickToZ_maps_current_half_and_one_kb_without_stretching_short_ranges()
+    [Theory]
+    [InlineData(16.0 / 9.0)]
+    [InlineData(16.0 / 10.0)]
+    public void Sparse_near_interior_lip_is_visible_without_claiming_the_mouth_plane(double aspect)
     {
+        var projected = Enumerable.Range(0, TunnelCameraFraming.NearInteriorLipCueCount)
+            .Select(index => TunnelCameraFraming.Project(
+                TunnelCameraFraming.NearInteriorLipCuePoint(index),
+                aspect))
+            .ToArray();
+
+        Assert.All(projected, AssertInsideViewport);
+        Assert.True(projected.Max(point => point.Y) - projected.Min(point => point.Y) >= 0.50,
+            "Disconnected lip cues must expose a readable span of cylinder curvature.");
+        Assert.All(projected, point => Assert.True(point.X < 0.35,
+            $"Near-interior lip cue must remain on the open left side; X={point.X:F3}."));
+    }
+
+    [Fact]
+    public void TryTickToZ_maps_the_real_kb_period_without_stretching_short_ranges()
+    {
+        var kb = TimelineModel.GetLadderRungs().Single(rung => rung.Symbol == "kb");
+        var kbUnitTicks = TimelineModel.SpanTicksForRung(kb, units: 1);
+        Assert.Equal(100_000_000L, kbUnitTicks);
+
         AssertTickToZ(
-            requestedTick: 100,
-            currentTick: 100,
-            kbUnitTicks: 1_000,
+            requestedTick: 10_000_000L,
+            currentTick: 10_000_000L,
+            kbUnitTicks,
             expectedZ: TunnelCameraFraming.CurrentPlaneZ);
-        AssertTickToZ(requestedTick: 600, currentTick: 100, kbUnitTicks: 1_000, -12.5f);
         AssertTickToZ(
-            requestedTick: 1_100,
-            currentTick: 100,
-            kbUnitTicks: 1_000,
+            requestedTick: 60_000_000L,
+            currentTick: 10_000_000L,
+            kbUnitTicks,
+            expectedZ: -12.5f);
+        AssertTickToZ(
+            requestedTick: 110_000_000L,
+            currentTick: 10_000_000L,
+            kbUnitTicks,
             expectedZ: TunnelCameraFraming.ThroatZ);
 
-        // If MaxTick is 600, its half-kb endpoint remains at -12.5. Callers leave the unused far
-        // segment empty; they do not renormalize the shortened range to the throat.
-        AssertTickToZ(requestedTick: 600, currentTick: 100, kbUnitTicks: 1_000, -12.5f);
+        // If MaxTick is 60M, its half-kb endpoint above remains -12.5, strictly ahead of the
+        // throat. The clipped caller stops there and leaves the unused far segment empty.
+        Assert.True(-12.5f > TunnelCameraFraming.ThroatZ);
     }
 
     [Theory]

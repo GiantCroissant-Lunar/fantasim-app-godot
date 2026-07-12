@@ -33,6 +33,12 @@ internal static class TunnelCameraFraming
     internal const float NearClip = 0.05f;
     internal const float PlanetVisualRadius = 2.06f;
 
+    // The physical MouthZ plane is necessarily behind every near-axial interior camera and cannot
+    // enter a 60-degree widescreen frustum. These three disconnected points form an honest shell-
+    // attached near-interior lip instead: no annulus, hit region, or claim that Z=-4.5 is MouthZ.
+    internal const float NearInteriorLipZ = -4.5f;
+    internal const int NearInteriorLipCueCount = 3;
+
     // The approved -1.8 X seed put the real radius-4.94 focus anchor just outside X=0.12 at 16:10.
     // Moving camera and target together to -2.0 preserves the near-axial view and all clearances.
     internal static readonly Vector3 LocalPosition = new(-2.0f, 0.6f, -0.8f);
@@ -43,6 +49,22 @@ internal static class TunnelCameraFraming
     internal const float InnerRingOuterRadius = 0.52f;
     internal const float OuterRingInnerRadius = 0.64f;
     internal const float OuterRingOuterRadius = 0.82f;
+
+    internal static Vector3 NearInteriorLipCuePoint(int index)
+    {
+        var angleDegrees = index switch
+        {
+            0 => 160.0f,
+            1 => 180.0f,
+            2 => 200.0f,
+            _ => throw new ArgumentOutOfRangeException(nameof(index)),
+        };
+        var angle = angleDegrees * MathF.PI / 180.0f;
+        return new Vector3(
+            MathF.Cos(angle) * TunnelRadius,
+            MathF.Sin(angle) * TunnelRadius,
+            NearInteriorLipZ);
+    }
 
     internal static bool TryTickToZ(
         long requestedTick,
