@@ -188,18 +188,24 @@ internal sealed class FilmstripPreviewController : IDisposable
 
     /// <summary>Offers one presentation-only fine sample to the independent latest-wins lane.
     /// The key carries every completion guard (focus identity, bucket, revision, mount, epoch).</summary>
-    public void RequestFineTexture(IFilmstripFrameSink sink, TunnelFineRequestKey key)
+    public void RequestFineTexture(
+        LayerFilmstripPreviewRequest request,
+        int mountGeneration,
+        long fineEpoch,
+        long bucket,
+        IFilmstripFrameSink sink)
     {
+        ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(sink);
-        if (key.GraphRevision <= 0)
+        if (request.GraphRevision <= 0)
         {
             CancelFineInFlight();
             return;
         }
 
+        var key = TunnelFineRequestKey.From(request, mountGeneration, fineEpoch, bucket);
         _fineExpectedKey = key;
         _fineSink = sink;
-        var request = FineRequest(key);
         if (FilmstripFramePayloadPolicy.TryGetCached(
                 request,
                 _filmstripRequestTextureKeys,
@@ -216,6 +222,8 @@ internal sealed class FilmstripPreviewController : IDisposable
 
         HandleFineDecision(_fineScheduler.Offer(key, _monotonicMilliseconds()));
     }
+
+    public void CancelFineRequests() => CancelFineInFlight();
 
     /// <summary>Cancels fine work without clearing the scheduler's active key. The exact provider
     /// completion must unwind before another fine request may start.</summary>

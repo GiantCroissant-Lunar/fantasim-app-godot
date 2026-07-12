@@ -2,12 +2,60 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using FantaSim.App.Timeline.Seam;
+using FantaSim.App.World;
 using Xunit;
 
 namespace FantaSim.App.Timeline.Tests;
 
 public sealed class TunnelFineRequestSchedulerTests
 {
+    [Fact]
+    public void Consumer_key_is_derived_losslessly_from_the_revision_bearing_request()
+    {
+        var request = new LayerFilmstripPreviewRequest(
+            SphereId: "geosphere",
+            LayerId: "geosphere.crust",
+            Tick: 123_456L,
+            ViewRung: "ka",
+            GraphRevision: 17,
+            Width: 96,
+            Height: 48);
+
+        var key = TunnelFineRequestKey.From(
+            request,
+            mountGeneration: 9,
+            fineEpoch: 11L,
+            bucket: 13L);
+
+        Assert.Equal(request.SphereId, key.SphereId);
+        Assert.Equal(request.LayerId, key.LayerId);
+        Assert.Equal(request.Tick, key.SampleTick);
+        Assert.Equal(request.ViewRung, key.ViewRung);
+        Assert.Equal(request.GraphRevision, key.GraphRevision);
+        Assert.Equal(9, key.MountGeneration);
+        Assert.Equal(11L, key.Epoch);
+        Assert.Equal(13L, key.Bucket);
+    }
+
+    [Fact]
+    public void Consumer_key_rejects_dimensions_the_scheduler_cannot_preserve()
+    {
+        var request = new LayerFilmstripPreviewRequest(
+            "geosphere",
+            "geosphere.crust",
+            Tick: 123L,
+            ViewRung: "ka",
+            GraphRevision: 7,
+            Width: TimelineFilmstrip.ThumbnailWidth + 1,
+            Height: TimelineFilmstrip.ThumbnailHeight);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => TunnelFineRequestKey.From(
+            request,
+            mountGeneration: 1,
+            fineEpoch: 2L,
+            bucket: 3L));
+    }
+
     [Fact]
     public void Latest_wins_without_overlap_and_respects_minimum_start_interval()
     {

@@ -1,4 +1,8 @@
+using System.IO;
+using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace App.Timeline.Tests;
@@ -23,5 +27,38 @@ public class T3PurityTests
         Assert.False(modelType.IsSubclassOf(typeof(Godot.GodotObject))
             || modelType.IsSubclassOf(typeof(Godot.Node))
             || modelType.IsSubclassOf(typeof(Godot.Resource)));
+    }
+
+    [Fact]
+    public void Tunnel_inner_and_wall_presentation_have_no_timeline_authority()
+    {
+        var tunnelDirectory = ProjectPath("project/plugins/App.Presentation/Tunnel");
+        var occurrences = Directory
+            .GetFiles(tunnelDirectory, "*.cs", SearchOption.TopDirectoryOnly)
+            .SelectMany(path => Regex.Matches(
+                    File.ReadAllText(path),
+                    @"\bPushTick\s*\(")
+                .Select(match => (Path: path, match.Index)))
+            .ToArray();
+
+        var only = Assert.Single(occurrences);
+        Assert.EndsWith("TunnelPresentationBinder.Input.cs", only.Path);
+
+        var inputSource = File.ReadAllText(only.Path);
+        var owningMethod = inputSource.LastIndexOf(
+            "private void ApplyOuterScrubAction",
+            only.Index,
+            StringComparison.Ordinal);
+        Assert.True(owningMethod >= 0,
+            "The tunnel's sole PushTick call must remain inside ApplyOuterScrubAction.");
+    }
+
+    private static string ProjectPath(
+        string relativePath,
+        [CallerFilePath] string testSourcePath = "")
+    {
+        var testDirectory = Path.GetDirectoryName(testSourcePath)
+            ?? throw new InvalidOperationException("Test source directory is unavailable.");
+        return Path.GetFullPath(Path.Combine(testDirectory, "..", "..", "..", relativePath));
     }
 }

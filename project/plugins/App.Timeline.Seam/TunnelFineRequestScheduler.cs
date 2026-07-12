@@ -1,4 +1,6 @@
 using System.Threading;
+using FantaSim.App.Timeline;
+using FantaSim.App.World;
 
 namespace FantaSim.App.Timeline.Seam;
 
@@ -10,7 +12,34 @@ internal readonly record struct TunnelFineRequestKey(
     string ViewRung,
     int GraphRevision,
     int MountGeneration,
-    long Epoch);
+    long Epoch)
+{
+    internal static TunnelFineRequestKey From(
+        LayerFilmstripPreviewRequest request,
+        int mountGeneration,
+        long fineEpoch,
+        long bucket)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.Width != TimelineFilmstrip.ThumbnailWidth)
+            throw new ArgumentOutOfRangeException(
+                nameof(request),
+                $"Fine preview width must be {TimelineFilmstrip.ThumbnailWidth}.");
+        if (request.Height != TimelineFilmstrip.ThumbnailHeight)
+            throw new ArgumentOutOfRangeException(
+                nameof(request),
+                $"Fine preview height must be {TimelineFilmstrip.ThumbnailHeight}.");
+        return new TunnelFineRequestKey(
+            request.SphereId,
+            request.LayerId,
+            request.Tick,
+            bucket,
+            request.ViewRung,
+            request.GraphRevision,
+            mountGeneration,
+            fineEpoch);
+    }
+}
 
 internal static class TunnelFineCompletionPolicy
 {
