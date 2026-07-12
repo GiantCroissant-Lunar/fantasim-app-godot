@@ -38,6 +38,11 @@ internal sealed partial class TunnelPresentationBinder
     private MeshInstance3D? _fineCursor;
     private readonly List<TunnelFrameBinding> _frameBindings = new();
     private readonly List<CorridorWallBinding> _corridorNodes = new();
+
+    // Last-applied corridor active-flag bitmask (one bit per corridor, LSB = first). -1 means
+    // "unknown/invalidated" so the next style pass always applies. Reset wherever _corridorNodes is
+    // rebuilt, since a given mask value only maps to the corridor set that produced it.
+    private int _lastCorridorActivityMask = -1;
     private long _requestedFrameStartTick;
     private long _requestedFrameEndTick;
     private bool _hasRequestedFrameWindow;
@@ -65,6 +70,7 @@ internal sealed partial class TunnelPresentationBinder
         _fineRailRoot = null;
         _fineCursor = null;
         _corridorNodes.Clear();
+        _lastCorridorActivityMask = -1;
         _hasRequestedFrameWindow = false;
     }
 
@@ -81,6 +87,7 @@ internal sealed partial class TunnelPresentationBinder
         ReleaseFrameBindings(supersedeWaiters: true);
         ClearChildren(_corridorsRoot!);
         _corridorNodes.Clear();
+        _lastCorridorActivityMask = -1;
         _fineRailRoot = null;
         _fineCursor = null;
 
@@ -691,14 +698,36 @@ internal sealed partial class TunnelPresentationBinder
         if (_ctl is null)
             return;
 
+        // Corridor color only changes when a track's regime activity flips, which happens at rare
+        // schedule boundaries — not on most drag frames. Recompute the small active-flag mask (cheap
+        // schedule lookups) and early-out before touching any material when it is unchanged, so a
+        // scrub does not rewrite ~10 properties per corridor every frame for an identical result.
+        var mask = 0;
+        var bit = 1;
+        foreach (var binding in _corridorNodes)
+        {
+            if (GodotObject.IsInstanceValid(binding.Node)
+                && TunnelTrackActivity.IsActive(
+                    binding.Descriptor, tick, _ctl.GeosphereSchedule, _ctl.AtmosphereSchedule))
+            {
+                mask |= bit;
+            }
+            bit <<= 1;
+        }
+
+        if (mask == _lastCorridorActivityMask)
+            return;
+        _lastCorridorActivityMask = mask;
+
+        bit = 1;
         foreach (var binding in _corridorNodes)
         {
             var node = binding.Node;
+            var active = (mask & bit) != 0;
+            bit <<= 1;
             if (!GodotObject.IsInstanceValid(node))
                 continue;
 
-            var active = TunnelTrackActivity.IsActive(
-                binding.Descriptor, tick, _ctl.GeosphereSchedule, _ctl.AtmosphereSchedule);
             var color = binding.IsFocused
                 ? CorridorFocusColor
                 : (active ? CorridorActiveColor : CorridorInactiveColor);

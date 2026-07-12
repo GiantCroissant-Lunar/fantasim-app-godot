@@ -311,63 +311,66 @@ internal sealed partial class TunnelPresentationBinder
         if (_disposed || !EnsureInstrumentHierarchy() || _readoutRoot is null)
             return;
 
-        RemoveAndQueueFree(_outerLabel);
-        RemoveAndQueueFree(_innerLabel);
-        RemoveAndQueueFree(_statusLabel);
-
-        var outerText = BuildOuterLabelText();
-        _outerLabel = new Label3D
-        {
-            Name = TunnelInstrumentContract.OuterReadoutName,
-            Text = outerText,
-            Position = new Vector3(
+        // Idempotent: create each readout Label3D once, then update text in place on later calls
+        // (matching the in-place .Text writes in UpdateOuterRingVisual*). Reallocating three nodes
+        // per call was a node-churn trap for any future per-refresh caller.
+        _outerLabel = EnsureReadoutLabel(
+            _outerLabel,
+            TunnelInstrumentContract.OuterReadoutName,
+            new Vector3(
                 0f,
                 TunnelInstrumentContract.OuterRingOuterRadius + 0.24f,
                 TunnelInstrumentContract.GeometryPlaneZ + 0.02f),
-            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
-            FontSize = 22,
-            Modulate = new Color(0.85f, 0.90f, 0.95f, 0.92f),
-            OutlineModulate = new Color(0f, 0f, 0f, 0.65f),
-            NoDepthTest = true,
-        };
-        EnsureInstrumentParent(_readoutRoot, _outerLabel);
+            fontSize: 22,
+            new Color(0.85f, 0.90f, 0.95f, 0.92f));
+        _outerLabel.Text = BuildOuterLabelText();
 
-        var innerText = BuildInnerLabelText();
-        _innerLabel = new Label3D
-        {
-            Name = TunnelInstrumentContract.InnerReadoutName,
-            Text = innerText,
-            Position = new Vector3(
+        _innerLabel = EnsureReadoutLabel(
+            _innerLabel,
+            TunnelInstrumentContract.InnerReadoutName,
+            new Vector3(
                 0f,
                 -(TunnelInstrumentContract.OuterRingOuterRadius + 0.22f),
                 TunnelInstrumentContract.GeometryPlaneZ + 0.02f),
-            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
-            FontSize = 20,
-            Modulate = new Color(0.92f, 0.94f, 0.97f, 0.92f),
-            OutlineModulate = new Color(0f, 0f, 0f, 0.65f),
-            NoDepthTest = true,
-        };
-        EnsureInstrumentParent(_readoutRoot, _innerLabel);
+            fontSize: 20,
+            new Color(0.92f, 0.94f, 0.97f, 0.92f));
+        _innerLabel.Text = BuildInnerLabelText();
 
-        _statusLabel = new Label3D
-        {
-            Name = TunnelInstrumentContract.StatusReadoutName,
-            Text = BuildStatusLabelText(),
-            Position = new Vector3(
+        _statusLabel = EnsureReadoutLabel(
+            _statusLabel,
+            TunnelInstrumentContract.StatusReadoutName,
+            new Vector3(
                 0f,
                 -(TunnelInstrumentContract.OuterRingOuterRadius + 0.40f),
                 TunnelInstrumentContract.GeometryPlaneZ + 0.02f),
+            fontSize: 18,
+            new Color(0.68f, 0.68f, 0.72f, 0.94f));
+        _statusLabel.Text = BuildStatusLabelText();
+        _statusLabel.Modulate = _fineBinding.CanAdjust
+            ? new Color(0.82f, 0.92f, 0.82f, 0.94f)
+            : new Color(0.68f, 0.68f, 0.72f, 0.94f);
+
+        UpdateOuterRingVisualForTick(_ctl?.Tick ?? 0L);
+    }
+
+    private Label3D EnsureReadoutLabel(Label3D? existing, string name, Vector3 position, int fontSize, Color modulate)
+    {
+        if (existing is not null && GodotObject.IsInstanceValid(existing) && existing.IsInsideTree())
+            return existing;
+
+        RemoveAndQueueFree(existing);
+        var label = new Label3D
+        {
+            Name = name,
+            Position = position,
             Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
-            FontSize = 18,
-            Modulate = _fineBinding.CanAdjust
-                ? new Color(0.82f, 0.92f, 0.82f, 0.94f)
-                : new Color(0.68f, 0.68f, 0.72f, 0.94f),
+            FontSize = fontSize,
+            Modulate = modulate,
             OutlineModulate = new Color(0f, 0f, 0f, 0.65f),
             NoDepthTest = true,
         };
-        EnsureInstrumentParent(_readoutRoot, _statusLabel);
-
-        UpdateOuterRingVisualForTick(_ctl?.Tick ?? 0L);
+        EnsureInstrumentParent(_readoutRoot!, label);
+        return label;
     }
 
     private string BuildOuterLabelText()
