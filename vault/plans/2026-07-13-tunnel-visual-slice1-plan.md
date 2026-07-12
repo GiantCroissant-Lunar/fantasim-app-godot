@@ -1,7 +1,10 @@
 # Tunnel visual slice 1 — corridor headers, rings-on-tunnel, planet zoom
 
-> **Status:** approved direction (user picked the three decisions 2026-07-13); implementation in
-> progress. Design dialogue is in the session transcript; this is the concept-lock + acceptance.
+> **Status:** SHIPPED 2026-07-13 (commits `e93e6e7` A+C, `1b65021` B), unit-gated + live-verified on
+> a fresh export; framing eye-tuned with the user over two rounds. Design dialogue is in the session
+> transcript. Final Part B framing: camera `(-0.25, 0.25, 2.9)` → target `(0,0,-6)`, FOV 74, rings
+> inner 1.70–1.90 / outer 2.20–2.45 (axis-centered, mount-parented), lens X 2.85. **Owed:** user
+> real-mouse pass (ring gestures at the new positions; planet scroll-zoom feel) + final eye-judgment.
 
 Iteration over the shipped asymmetric-cockpit tunnel. Five user directives were triaged; this slice
 is the first three (independent visual wins). Deferred to later slices: **Slice 2** node-graph panel
