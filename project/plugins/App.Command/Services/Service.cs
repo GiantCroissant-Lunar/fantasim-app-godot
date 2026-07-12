@@ -214,6 +214,9 @@ public sealed class Service : IService, IDisposable
         string? causationId,
         CommandResult result)
     {
+        var actorKind = string.IsNullOrWhiteSpace(request.ActorKind) ? "system" : request.ActorKind!;
+        var actor = string.IsNullOrWhiteSpace(request.ActorId) ? actorKind : $"{actorKind}:{request.ActorId}";
+
         AppendActivity(new ActivityEntry(
             EntryId: Guid.NewGuid().ToString("N"),
             Kind: ActivityEntryKind.CommandResult,
@@ -225,7 +228,20 @@ public sealed class Service : IService, IDisposable
             CausationId: causationId,
             CorrelationId: correlationId,
             Outcome: result.Ok ? "ok" : "failed",
-            Error: result.Error?.Message));
+            Error: result.Error?.Message,
+            // Real domain flow: the command pipeline emits its OWN A2UI detail card (see
+            // CommandActivityDetail) instead of the demo activity.emit_detail command.
+            DetailDocumentJson: CommandActivityDetail.BuildResultDetail(
+                command: request.Command,
+                descriptorTitle: descriptor?.Title,
+                descriptorDescription: descriptor?.Description,
+                category: descriptor?.Category,
+                actor: actor,
+                correlationId: correlationId,
+                causationId: causationId,
+                ok: result.Ok,
+                errorType: result.Error?.Type,
+                errorMessage: result.Error?.Message)));
     }
 
     // ActivityEntry schema is intentionally unchanged; the structured envelope carries the

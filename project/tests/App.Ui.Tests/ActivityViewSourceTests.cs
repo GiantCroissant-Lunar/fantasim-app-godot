@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json.Nodes;
 using BoomHud.Abstractions.Runtime;
+using CrosscutFoundation.Messaging;
 using FantaSim.App.Activity;
 using FantaSim.App.Ui;
 using FantaSim.App.Ui.Activity;
@@ -308,6 +309,73 @@ public sealed class ActivityViewSourceTests
         Assert.DoesNotContain("ignored: raw-payload", text);
     }
 
+    // ----- auto-expand policy: failures + explicit emissions expand; routine results stay collapsed -----
+
+    // A minimal valid A2UI detail doc whose single label carries a findable marker string.
+    private static string SimpleDetailDoc(string marker)
+        => $$"""{ "root":"d", "components": { "d": {"type":"label","text":"{{marker}}"} } }""";
+
+    [Fact]
+    public void OnEntry_AutoExpandsFailingCommandResult_ButNotSuccessfulOne()
+    {
+        var failure = new ActivityEntry(
+            EntryId: "cr-fail",
+            Kind: ActivityEntryKind.CommandResult,
+            Timestamp: new DateTimeOffset(2026, 7, 12, 15, 0, 0, TimeSpan.Zero),
+            Actor: new ActivityActor("system", "command"),
+            Name: "world.refresh.result",
+            Category: "world",
+            Outcome: "failed",
+            Error: "kaboom",
+            DetailDocumentJson: SimpleDetailDoc("FAIL-MARKER"));
+        var success = new ActivityEntry(
+            EntryId: "cr-ok",
+            Kind: ActivityEntryKind.CommandResult,
+            Timestamp: new DateTimeOffset(2026, 7, 12, 15, 0, 1, TimeSpan.Zero),
+            Actor: new ActivityActor("system", "command"),
+            Name: "world.refresh.result",
+            Category: "world",
+            Outcome: "ok",
+            DetailDocumentJson: SimpleDetailDoc("OK-MARKER"));
+
+        var ledger = new FakeLedger(failure, success);
+        var bus = new FakeBus();
+        var source = new ActivityViewSource(ledger, bus, TemplateJson);
+
+        // The bus delivers the entries; OnEntry decides what auto-expands.
+        bus.Publish(failure);
+        bus.Publish(success);
+
+        var text = CollectText(source.BuildDocument().Root, includeTooltip: false);
+        Assert.Contains("FAIL-MARKER", text);        // failure auto-expanded (detail renders inline)
+        Assert.DoesNotContain("OK-MARKER", text);    // routine success stays collapsed
+    }
+
+    [Fact]
+    public void OnEntry_AutoExpandsExplicitEmissionWithDetail()
+    {
+        // The agent/UI emission path (e.g. activity.emit_detail) uses a non-result kind; it is
+        // "emitted to be seen", so it still auto-expands.
+        var emission = new ActivityEntry(
+            EntryId: "emit-1",
+            Kind: ActivityEntryKind.UiOperation,
+            Timestamp: new DateTimeOffset(2026, 7, 12, 15, 0, 2, TimeSpan.Zero),
+            Actor: new ActivityActor("agent", "assistant"),
+            Name: "agent.world.analysis",
+            Category: "agent",
+            Outcome: "ready",
+            DetailDocumentJson: SimpleDetailDoc("EMIT-MARKER"));
+
+        var ledger = new FakeLedger(emission);
+        var bus = new FakeBus();
+        var source = new ActivityViewSource(ledger, bus, TemplateJson);
+
+        bus.Publish(emission);
+
+        var text = CollectText(source.BuildDocument().Root, includeTooltip: false);
+        Assert.Contains("EMIT-MARKER", text);
+    }
+
     // ----- tree helpers (the document is a nested RuntimeComponentNode tree) -----
 
     private static RuntimeComponentNode? FindById(RuntimeComponentNode node, string id)
@@ -373,5 +441,28 @@ public sealed class ActivityViewSourceTests
 
         public IReadOnlyList<ActivityEntry> QueryByCorrelationId(string correlationId)
             => _entries.Where(entry => entry.CorrelationId == correlationId).ToArray();
+    }
+
+    // Minimal in-memory bus: delivers a published message synchronously to matching subscribers.
+    private sealed class FakeBus : IMessageBus
+    {
+        private readonly List<object> _handlers = new();
+
+        public IDisposable Subscribe<T>(Action<T> handler)
+        {
+            _handlers.Add(handler);
+            return new Unsubscribe();
+        }
+
+        public void Publish<T>(T message)
+        {
+            foreach (var handler in _handlers.OfType<Action<T>>())
+                handler(message);
+        }
+
+        private sealed class Unsubscribe : IDisposable
+        {
+            public void Dispose() { }
+        }
     }
 }

@@ -128,3 +128,28 @@ payload **before** emitting it (the first handover follow-up):
   evaluates as intended — meta-schema valid; both examples + 5 valid edge cases accepted; 12 should-fail
   payloads all rejected (incl. `text` on a container, `enabled` on a spacer, wrong event on a button,
   extra key in an action). Script kept in this session's scratchpad (not CI — CI is .NET/offline).
+
+## Delivered — real domain flow: the command pipeline emits its own card (2026-07-12)
+
+A3 shipped with a *demo* command (`activity.emit_detail`). This replaces the demo with a **real,
+always-on producer**: every command result now emits its own A2UI detail card.
+
+- **Producer:** `App.Command/Services/Service.cs` → `RecordCommandResult` sets `DetailDocumentJson`
+  from real execution data via `CommandActivityDetail.BuildResultDetail(...)` — a pure builder
+  (`App.Command/Services/CommandActivityDetail.cs`) that composes a context line (descriptor
+  description), an actor + category row, a compact correlation/causation lineage, and — **only on
+  failure** — an `Error` panel. Uses only catalog types + documented variants, so it always normalizes
+  and renders (this is the schema dogfooding itself: `CommandActivityDetailTests` pushes the builder
+  output through the real normalize→validate pipeline — success, failure, null-descriptor, truncation).
+- **Auto-expand refined** (`App.Ui.Activity/ActivityViewSource.cs`): the old rule expanded *any* entry
+  with a detail doc — which, now that every command result carries one, would wall the ledger with open
+  cards. New rule (`ShouldAutoExpand`): expand a **failure** (draws the eye) or an **explicit
+  agent/UI emission** (non-result kind, "emitted to be seen"); routine `CommandResult`/`DomainCommand`
+  entries stay collapsed but expandable. The `activity.emit_detail` demo (kind `UiOperation`) still
+  auto-expands. Covered by `ActivityViewSourceTests` (failure expands, routine success collapses,
+  explicit emission expands).
+- **Verification:** App.Command.Tests 19/19, App.Ui.Tests 104/104. **In-window visual pending** — a
+  clean relaunch (not into the concurrent tunnel agent's uncommitted WIP) will confirm the card looks
+  right; the logic is fully unit-covered. Note `App.Command` is resident (rebuild + relaunch) and
+  `App.Ui.Activity` is a collectible bundle (hot-reload) — the card *content* is baked at emit time
+  (resident), the card *rendering* hot-reloads.

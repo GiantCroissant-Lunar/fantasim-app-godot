@@ -48,17 +48,30 @@ public sealed class ActivityViewSource : IViewSource, IDisposable
         _entrySubscription = bus?.Subscribe<ActivityEntry>(OnEntry);
     }
 
-    // A new ledger entry arrived on the bus. Agent-authored detail (A2UI) is emitted to be seen, so
-    // surface such entries expanded by default (the user can still collapse them via the chevron).
+    // A new ledger entry arrived on the bus. Auto-expand only what is "emitted to be seen": a failure
+    // (draws the eye), or an explicit agent/UI emission that carries detail. Routine command-lifecycle
+    // results now carry a detail card too (the command pipeline emits its own — see CommandActivityDetail),
+    // but they stay collapsed so the ledger is not a wall of open cards — the chevron opens them on demand.
     private void OnEntry(ActivityEntry entry)
     {
-        if (entry is not null && !string.IsNullOrWhiteSpace(entry.DetailDocumentJson))
+        if (entry is not null && ShouldAutoExpand(entry))
         {
             lock (_expandedLock)
                 _expanded.Add(entry.EntryId);
         }
 
         Changed?.Invoke();
+    }
+
+    private static bool ShouldAutoExpand(ActivityEntry entry)
+    {
+        if (string.IsNullOrWhiteSpace(entry.DetailDocumentJson))
+            return false;
+
+        var isFailure = entry.Error is not null
+            || string.Equals(entry.Outcome, "failed", StringComparison.OrdinalIgnoreCase);
+        var isRoutineResult = entry.Kind is ActivityEntryKind.CommandResult or ActivityEntryKind.DomainCommand;
+        return isFailure || !isRoutineResult;
     }
 
     public string ViewId => "activity";
