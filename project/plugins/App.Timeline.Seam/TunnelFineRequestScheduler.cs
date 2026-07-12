@@ -68,7 +68,12 @@ internal readonly record struct TunnelFineScheduleDecision(
     long DueAtMs);
 
 /// <summary>Single-active latest-wins scheduler for presentation-only fine inspection. Reset and
-/// replacement cancel the active token but never clear the active key until its provider unwinds.</summary>
+/// replacement cancel the active token but never clear the active key until its provider unwinds.
+/// <para>NOT thread-safe: all members must be called on one thread (the Godot main thread for the
+/// production consumer). Providers run off-thread, so their completions must be marshalled back
+/// through <c>deferToMainThread</c> before calling <see cref="ActiveFinished"/> — never invoke it
+/// directly from the provider Task, or it races <see cref="Offer"/>/<see cref="Reset"/>.</para>
+/// </summary>
 internal sealed class TunnelFineRequestScheduler
 {
     internal const long MinimumStartIntervalMs = 100L;
@@ -82,8 +87,23 @@ internal sealed class TunnelFineRequestScheduler
 
     internal TunnelFineScheduleDecision Offer(TunnelFineRequestKey key, long nowMs)
     {
-        if (_active == key || _pending == key)
+        if (_pending == key)
             return new(TunnelFineScheduleAction.None, null, _nextStartAtMs);
+
+        if (_active == key)
+        {
+            // Re-offering the active key is a no-op only while that request is genuinely live.
+            // If its token is already cancelled the active is a zombie unwinding after a
+            // supersede, and this re-offer means the user scrubbed back to it — re-queue it as
+            // pending so latest-wins restarts THIS key on unwind, not the stale prior pending.
+            if (_activeCts is { IsCancellationRequested: true })
+            {
+                _pending = key;
+                return new(TunnelFineScheduleAction.Wait, null, _nextStartAtMs);
+            }
+
+            return new(TunnelFineScheduleAction.None, null, _nextStartAtMs);
+        }
 
         if (_active is not null)
         {

@@ -85,6 +85,26 @@ public sealed class TunnelFineRequestSchedulerTests
     }
 
     [Fact]
+    public void Reoffering_the_cancelled_active_key_requeues_it_so_latest_wins_holds()
+    {
+        var scheduler = new TunnelFineRequestScheduler();
+        var first = Key(bucket: 1, epoch: 1);
+        var second = Key(bucket: 2, epoch: 1);
+
+        Assert.Equal(TunnelFineScheduleAction.Start, scheduler.Offer(first, 0).Action);
+        Assert.Equal(TunnelFineScheduleAction.CancelActive, scheduler.Offer(second, 1).Action);
+
+        // The user scrubs the fine ring back onto the still-in-flight (already cancelled) bucket.
+        // Latest intent is `first`, so `first` must be what restarts once the stale provider
+        // unwinds — not the superseded `second` that was pending a moment ago.
+        scheduler.Offer(first, 2);
+
+        var restarted = scheduler.ActiveFinished(first, 100);
+        Assert.Equal(TunnelFineScheduleAction.Start, restarted.Action);
+        Assert.Equal(first, restarted.Key);
+    }
+
+    [Fact]
     public void Reset_cancels_active_keeps_it_until_unwind_and_drops_pending()
     {
         var scheduler = new TunnelFineRequestScheduler();
