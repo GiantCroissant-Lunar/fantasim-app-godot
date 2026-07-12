@@ -24,6 +24,7 @@ internal sealed class FilmstripPreviewController : IDisposable
 {
     private readonly Func<bool> _isFaceAlive;
     private readonly Action<Action> _deferToMainThread;
+    private readonly Func<long> _monotonicMilliseconds;
     private readonly ILogger _log;
 
     // Preview provider — read at EXECUTION time (ALC rule: never capture the Func in a closure
@@ -31,7 +32,7 @@ internal sealed class FilmstripPreviewController : IDisposable
     // in-flight Task reads null and skips). Set by the face at bind/clear time.
     private Func<LayerFilmstripPreviewRequest, CancellationToken, LayerFilmstripPreviewMap?>? _filmstripPreviewProvider;
 
-    private readonly Dictionary<FilmstripTextureCacheKey, ImageTexture> _filmstripTextureCache = new();
+    private readonly Dictionary<FilmstripTextureCacheKey, FilmstripFramePayload> _filmstripTextureCache = new();
     private readonly FilmstripCacheLedger _cacheLedger;
     private readonly Dictionary<string, FilmstripTextureCacheKey> _ledgerKeyToCacheKey = new(StringComparer.Ordinal);
     private readonly Dictionary<string, FilmstripTextureCacheKey> _filmstripRequestTextureKeys = new(StringComparer.Ordinal);
@@ -44,6 +45,14 @@ internal sealed class FilmstripPreviewController : IDisposable
     private int _filmstripGeneration;
     private int _filmstripCancellationEpoch;
 
+    // Dedicated fine-inspection lane. It never enters the bounded ordinary FIFO above: replacing
+    // a fine bucket cancels the one active provider and retains only the newest pending key.
+    private readonly TunnelFineRequestScheduler _fineScheduler = new();
+    private TunnelFineRequestKey? _fineExpectedKey;
+    private IFilmstripFrameSink? _fineSink;
+    private int _fineLaneEpoch;
+    private int _fineTimerVersion;
+
     private const int MaxConcurrentFilmstripRequests = 3;
     private const int MaxFilmstripTextureCacheEntries = 512;
     private const float TrackHeight = TimelineFilmstrip.CompactTrackHeight;
@@ -53,17 +62,19 @@ internal sealed class FilmstripPreviewController : IDisposable
     internal sealed record QueuedFilmstripFrame(
         LayerFilmstripPreviewRequest Request,
         string RequestKey,
-        int GraphRevision,
         int CancellationEpoch);
 
     public FilmstripPreviewController(
         Func<bool> isFaceAlive,
         Action<Action> deferToMainThread,
-        ILogger log)
+        ILogger log,
+        Func<long>? monotonicMilliseconds = null)
     {
         _isFaceAlive = isFaceAlive;
         _deferToMainThread = deferToMainThread;
         _log = log;
+        _monotonicMilliseconds = monotonicMilliseconds
+            ?? new Func<long>(() => System.Environment.TickCount64);
         _cacheLedger = new FilmstripCacheLedger(MaxFilmstripTextureCacheEntries);
     }
 
@@ -72,6 +83,7 @@ internal sealed class FilmstripPreviewController : IDisposable
 
     public void CancelInFlight()
     {
+        CancelFineInFlight();
         // Unwind IN-FLIGHT renders: their threadpool stacks execute bundle code and would root
         // the outgoing timeline+world ALCs past the collection probe (mechanism C,
         // clrstack-proven 2026-07-10). The world render honors the token per pixel row.
@@ -130,7 +142,7 @@ internal sealed class FilmstripPreviewController : IDisposable
         int graphRevision)
     {
         var provider = _filmstripPreviewProvider;
-        if (provider is null)
+        if (provider is null || graphRevision <= 0)
             return;
 
         var request = new LayerFilmstripPreviewRequest(
@@ -138,14 +150,18 @@ internal sealed class FilmstripPreviewController : IDisposable
             layerId,
             tick,
             rung,
+            graphRevision,
             TimelineFilmstrip.ThumbnailWidth,
             TimelineFilmstrip.ThumbnailHeight);
-        string requestKey = FilmstripRequestKey(request);
-        if (_filmstripRequestTextureKeys.TryGetValue(requestKey, out var cachedKey)
-            && _filmstripTextureCache.TryGetValue(cachedKey, out var cachedTexture)
-            && GodotObject.IsInstanceValid(cachedTexture))
+        string requestKey = FilmstripFramePayloadPolicy.RequestKey(request);
+        if (FilmstripFramePayloadPolicy.TryGetCached(
+                request,
+                _filmstripRequestTextureKeys,
+                _filmstripTextureCache,
+                out var cachedPayload)
+            && GodotObject.IsInstanceValid(cachedPayload.Texture))
         {
-            sink.SetTexture(cachedTexture);
+            sink.SetFrame(cachedPayload);
             return;
         }
 
@@ -166,10 +182,174 @@ internal sealed class FilmstripPreviewController : IDisposable
         _filmstripQueue.Enqueue(new QueuedFilmstripFrame(
             request,
             requestKey,
-            graphRevision,
             _filmstripCancellationEpoch));
         PumpFilmstripQueue();
     }
+
+    /// <summary>Offers one presentation-only fine sample to the independent latest-wins lane.
+    /// The key carries every completion guard (focus identity, bucket, revision, mount, epoch).</summary>
+    public void RequestFineTexture(IFilmstripFrameSink sink, TunnelFineRequestKey key)
+    {
+        ArgumentNullException.ThrowIfNull(sink);
+        if (key.GraphRevision <= 0)
+        {
+            CancelFineInFlight();
+            return;
+        }
+
+        _fineExpectedKey = key;
+        _fineSink = sink;
+        var request = FineRequest(key);
+        if (FilmstripFramePayloadPolicy.TryGetCached(
+                request,
+                _filmstripRequestTextureKeys,
+                _filmstripTextureCache,
+                out var cachedPayload)
+            && GodotObject.IsInstanceValid(cachedPayload.Texture))
+        {
+            _fineTimerVersion++;
+            _fineScheduler.Reset();
+            if (sink.IsAlive)
+                sink.SetFrame(cachedPayload);
+            return;
+        }
+
+        HandleFineDecision(_fineScheduler.Offer(key, _monotonicMilliseconds()));
+    }
+
+    /// <summary>Cancels fine work without clearing the scheduler's active key. The exact provider
+    /// completion must unwind before another fine request may start.</summary>
+    public void CancelFineInFlight()
+    {
+        _fineExpectedKey = null;
+        _fineSink = null;
+        _fineLaneEpoch++;
+        _fineTimerVersion++;
+        _fineScheduler.Reset();
+    }
+
+    private void HandleFineDecision(TunnelFineScheduleDecision decision)
+    {
+        switch (decision.Action)
+        {
+            case TunnelFineScheduleAction.Start when decision.Key is { } key:
+                StartFineRequest(key);
+                break;
+            case TunnelFineScheduleAction.Wait:
+                ScheduleFineDue(decision.DueAtMs);
+                break;
+        }
+    }
+
+    private void ScheduleFineDue(long dueAtMs)
+    {
+        var version = ++_fineTimerVersion;
+        var delayMs = Math.Max(0L, dueAtMs - _monotonicMilliseconds());
+        _ = Task.Run(async () =>
+        {
+            if (delayMs > 0L)
+                await Task.Delay(TimeSpan.FromMilliseconds(delayMs)).ConfigureAwait(false);
+
+            _deferToMainThread(() =>
+            {
+                if (version != _fineTimerVersion)
+                    return;
+                if (!_isFaceAlive())
+                {
+                    CancelFineInFlight();
+                    return;
+                }
+                HandleFineDecision(_fineScheduler.TakeDue(_monotonicMilliseconds()));
+            });
+        });
+    }
+
+    private void StartFineRequest(TunnelFineRequestKey key)
+    {
+        var cancellationToken = _fineScheduler.ActiveToken;
+        var laneEpoch = _fineLaneEpoch;
+        var request = FineRequest(key);
+        _ = Task.Run(() =>
+        {
+            LayerFilmstripPreviewMap? map = null;
+            try
+            {
+                // Resolve at execution time; never capture a bundle-owned provider delegate in a
+                // closure that can outlive sever/reload.
+                var provider = _filmstripPreviewProvider;
+                if (provider is not null && !cancellationToken.IsCancellationRequested)
+                    map = provider(request, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected latest-wins/reset path.
+            }
+            catch (Exception ex)
+            {
+                _log.LogWarning(
+                    ex,
+                    "Timeline fine preview failed for {SphereId}/{LayerId} at {Tick} ({ViewRung}).",
+                    request.SphereId,
+                    request.LayerId,
+                    request.Tick,
+                    request.ViewRung);
+            }
+            finally
+            {
+                _deferToMainThread(() => CompleteFineRequest(
+                    key,
+                    request,
+                    map,
+                    cancellationToken,
+                    laneEpoch));
+            }
+        });
+    }
+
+    private void CompleteFineRequest(
+        TunnelFineRequestKey key,
+        LayerFilmstripPreviewRequest request,
+        LayerFilmstripPreviewMap? map,
+        CancellationToken cancellationToken,
+        int laneEpoch)
+    {
+        if (!_isFaceAlive())
+        {
+            CancelFineInFlight();
+            _fineScheduler.AbandonFinished(key);
+            return;
+        }
+
+        var next = _fineScheduler.ActiveFinished(key, _monotonicMilliseconds());
+
+        if (map is not null
+            && TunnelFineCompletionPolicy.CanApply(
+                key,
+                _fineExpectedKey,
+                cancellationToken.IsCancellationRequested,
+                laneEpoch,
+                _fineLaneEpoch)
+            && _fineSink is { IsAlive: true } sink
+            && FilmstripFramePayloadPolicy.Matches(map, request))
+        {
+            var payload = GetOrCreatePayload(map);
+            _filmstripRequestTextureKeys[FilmstripFramePayloadPolicy.RequestKey(request)] =
+                FilmstripFramePayloadPolicy.CacheKey(map);
+            sink.SetFrame(payload);
+        }
+
+        HandleFineDecision(next);
+    }
+
+    private static LayerFilmstripPreviewRequest FineRequest(TunnelFineRequestKey key)
+        => new(
+            key.SphereId,
+            key.LayerId,
+            key.SampleTick,
+            key.ViewRung,
+            key.GraphRevision,
+            TimelineFilmstrip.ThumbnailWidth,
+            TimelineFilmstrip.ThumbnailHeight);
 
     private void PumpFilmstripQueue()
     {
@@ -223,9 +403,11 @@ internal sealed class FilmstripPreviewController : IDisposable
             {
                 _log.LogWarning(
                     ex,
-                    "Timeline filmstrip preview failed for {LayerId} at {Tick}.",
+                    "Timeline filmstrip preview failed for {SphereId}/{LayerId} at {Tick} ({ViewRung}).",
+                    queued.Request.SphereId,
                     queued.Request.LayerId,
-                    queued.Request.Tick);
+                    queued.Request.Tick,
+                    queued.Request.ViewRung);
             }
 
             _deferToMainThread(() =>
@@ -243,65 +425,33 @@ internal sealed class FilmstripPreviewController : IDisposable
                 _filmstripActiveRequests = Math.Max(0, _filmstripActiveRequests - 1);
                 _filmstripActiveKeys.Remove(queued.RequestKey);
                 if (map is not null)
-                    ApplyFilmstripPreview(queued.RequestKey, map, queued.GraphRevision);
+                    ApplyFilmstripPreview(queued, map);
                 _filmstripWaiters.Remove(queued.RequestKey);
                 PumpFilmstripQueue();
             });
         });
     }
 
-    private static string FilmstripRequestKey(LayerFilmstripPreviewRequest request)
-        => $"{request.SphereId}:{request.LayerId}:{request.Tick}:{request.ViewRung}:{request.Width}x{request.Height}";
-
-    private void ApplyFilmstripPreview(string requestKey, LayerFilmstripPreviewMap map, int graphRevision)
+    private void ApplyFilmstripPreview(QueuedFilmstripFrame queued, LayerFilmstripPreviewMap map)
     {
         // IsInstanceValid first: IsInsideTree is a native call and throws on a disposed face.
         if (!_isFaceAlive())
             return;
 
-        if (!_filmstripWaiters.TryGetValue(requestKey, out var waiters))
+        if (!_filmstripWaiters.TryGetValue(queued.RequestKey, out var waiters))
+            return;
+
+        if (!FilmstripFramePayloadPolicy.Matches(map, queued.Request))
             return;
 
         // GraphRevision completes the world-identity gap (2026-07-11 cache-key completion,
         // vault/specs/2026-07-11-surrealdb-persistence-slice1-design.md §1.3): see
         // FilmstripTextureCacheKey's doc comment for what IS/is-not reachable here and why (Seed
         // is residue -- not reachable without a T1 contract change).
-        var key = new FilmstripTextureCacheKey(
-            map.SphereId,
-            map.LayerId,
-            map.SnapshotTick,
-            map.ViewRung,
-            map.Width,
-            map.Height,
-            graphRevision);
-        var isNewKey = !_filmstripTextureCache.ContainsKey(key);
-        if (!_filmstripTextureCache.TryGetValue(key, out var texture)
-            || !GodotObject.IsInstanceValid(texture))
-        {
-            var image = Image.CreateFromData(map.Width, map.Height, false, Image.Format.Rgba8, map.Rgba32);
-            texture = ImageTexture.CreateFromImage(image);
-            _filmstripTextureCache[key] = texture;
-        }
+        var key = FilmstripFramePayloadPolicy.CacheKey(map);
+        var payload = GetOrCreatePayload(map);
 
-        if (isNewKey)
-        {
-            var ledgerKey = key.ToString();
-            var evictedKey = _cacheLedger.Record(ledgerKey);
-            _ledgerKeyToCacheKey[ledgerKey] = key;
-            if (evictedKey is not null)
-            {
-                if (_ledgerKeyToCacheKey.TryGetValue(evictedKey, out var evictedCacheKey))
-                {
-                    if (_filmstripTextureCache.TryGetValue(evictedCacheKey, out var evicted)
-                        && GodotObject.IsInstanceValid(evicted))
-                        evicted.Dispose();
-                    _filmstripTextureCache.Remove(evictedCacheKey);
-                    _ledgerKeyToCacheKey.Remove(evictedKey);
-                }
-            }
-        }
-
-        _filmstripRequestTextureKeys[requestKey] = key;
+        _filmstripRequestTextureKeys[queued.RequestKey] = key;
         foreach (var pending in waiters)
         {
             if (pending.Generation != _filmstripGeneration)
@@ -310,8 +460,40 @@ internal sealed class FilmstripPreviewController : IDisposable
             if (!pending.Sink.IsAlive)
                 continue;
 
-            pending.Sink.SetTexture(texture);
+            pending.Sink.SetFrame(payload);
         }
+    }
+
+    private FilmstripFramePayload GetOrCreatePayload(LayerFilmstripPreviewMap map)
+    {
+        var key = FilmstripFramePayloadPolicy.CacheKey(map);
+        var isNewKey = !_filmstripTextureCache.ContainsKey(key);
+        if (!_filmstripTextureCache.TryGetValue(key, out var payload)
+            || !GodotObject.IsInstanceValid(payload.Texture))
+        {
+            var image = Image.CreateFromData(map.Width, map.Height, false, Image.Format.Rgba8, map.Rgba32);
+            var texture = ImageTexture.CreateFromImage(image);
+            payload = FilmstripFramePayloadPolicy.Build(texture, map);
+            _filmstripTextureCache[key] = payload;
+        }
+
+        if (!isNewKey)
+            return payload;
+
+        var ledgerKey = key.ToString();
+        var evictedKey = _cacheLedger.Record(ledgerKey);
+        _ledgerKeyToCacheKey[ledgerKey] = key;
+        if (evictedKey is not null
+            && _ledgerKeyToCacheKey.TryGetValue(evictedKey, out var evictedCacheKey))
+        {
+            if (_filmstripTextureCache.TryGetValue(evictedCacheKey, out var evicted)
+                && GodotObject.IsInstanceValid(evicted.Texture))
+                evicted.Texture.Dispose();
+            _filmstripTextureCache.Remove(evictedCacheKey);
+            _ledgerKeyToCacheKey.Remove(evictedKey);
+        }
+
+        return payload;
     }
 
     private void PruneFilmstripWaiters(string requestKey)
@@ -326,6 +508,7 @@ internal sealed class FilmstripPreviewController : IDisposable
 
     public void Supersede()
     {
+        CancelFineInFlight();
         _filmstripGeneration++;
         _filmstripQueue.Clear();
         _filmstripQueuedKeys.Clear();
@@ -335,10 +518,11 @@ internal sealed class FilmstripPreviewController : IDisposable
 
     public void DisposeCache()
     {
-        foreach (var texture in _filmstripTextureCache.Values)
+        CancelFineInFlight();
+        foreach (var payload in _filmstripTextureCache.Values)
         {
-            if (GodotObject.IsInstanceValid(texture))
-                texture.Dispose();
+            if (GodotObject.IsInstanceValid(payload.Texture))
+                payload.Texture.Dispose();
         }
 
         _filmstripTextureCache.Clear();
@@ -354,6 +538,7 @@ internal sealed class FilmstripPreviewController : IDisposable
 
     public void Dispose()
     {
+        CancelFineInFlight();
         _filmstripCts.Cancel();
         _filmstripCts.Dispose();
     }

@@ -163,9 +163,10 @@ public partial class TimelineFace
         var snapshot = _layerTrackRegistry?.Current ?? EmptyLayerTrackRegistrySnapshot;
         var lanes = TrackLaneViewModelBuilder.BuildLanes(snapshot);
         var generationFamily = ResolveGenerationGraphFamily();
+        var filmstripGraphRevision = _filmstripGraphRevisionProvider?.Invoke() ?? 0;
 
         foreach (var lane in lanes)
-            BuildLane(lane, lanesList, generationFamily);
+            BuildLane(lane, lanesList, generationFamily, filmstripGraphRevision);
 
         UpdateLanesMinimumHeight();
     }
@@ -173,7 +174,8 @@ public partial class TimelineFace
     private void BuildLane(
         TrackLaneViewModel lane,
         Control lanesList,
-        WorldGenerationGraphFamilyDocument? generationFamily)
+        WorldGenerationGraphFamilyDocument? generationFamily,
+        int filmstripGraphRevision)
     {
         var laneRoot = new VBoxContainer { Name = $"Lane_{SafeNodeName(lane.SphereId)}" };
         lanesList.AddChild(laneRoot);
@@ -194,7 +196,7 @@ public partial class TimelineFace
         if (schedule is not null)
             BuildLaneBands(schedule, regimesRoot, bandList);
 
-        BuildLaneTracks(lane, tracksRoot, schedule, generationFamily);
+        BuildLaneTracks(lane, tracksRoot, schedule, generationFamily, filmstripGraphRevision);
     }
 
     private void BuildLaneBands(
@@ -233,7 +235,8 @@ public partial class TimelineFace
         TrackLaneViewModel lane,
         Control tracksRoot,
         SphereRegimeSchedule? schedule,
-        WorldGenerationGraphFamilyDocument? generationFamily)
+        WorldGenerationGraphFamilyDocument? generationFamily,
+        int filmstripGraphRevision)
     {
         var trackLayouts = TimelineTrackLayout.ToRowMap(TimelineTrackLayout.Plan(
             lane.Tracks.Select(track => new TimelineTrackLayoutInput(
@@ -251,10 +254,8 @@ public partial class TimelineFace
             var expanded = _expandedTracks.Contains(trackKey);
             var regimeId = schedule is not null ? ResolveTrackRegime(schedule, trackLayerId, _ctl!.Tick) : null;
             var graph = LayerTrackGraphProjection.Resolve(generationFamily, trackSphere, trackLayerId, regimeId);
-            // GraphRevision reuses the family document ALREADY resolved above for the graph
-            // projection -- no new call into the (expensive) generation-graph-family provider.
-            // Threaded through so the filmstrip cache key can include it (2026-07-11 cache-key
-            // completion, vault/specs/2026-07-11-surrealdb-persistence-slice1-design.md §1.3).
+            // This revision belongs only to the graph presenter. Filmstrip requests use the cheap
+            // generation-products revision resolved exactly once at the top of BuildLanes.
             var graphRevision = generationFamily?.Revision ?? 0;
 
             var row = new Control
@@ -325,7 +326,15 @@ public partial class TimelineFace
             if (expanded)
                 graphBinding = BuildExpandedGraph(content, graph);
             else
-                RenderTrackContent(t, content, trackSphere, trackLayerId, schedule, graph, graphRevision);
+                RenderTrackContent(
+                    t,
+                    content,
+                    trackSphere,
+                    trackLayerId,
+                    schedule,
+                    graph,
+                    graphRevision,
+                    filmstripGraphRevision);
 
             var toggleCallable = Callable.From(() => OnTrackPressed(trackSphere, trackLayerId));
             var chevronCallable = Callable.From(() => OnTrackExpandPressed(trackSphere, trackLayerId));
@@ -361,7 +370,8 @@ public partial class TimelineFace
         SphereRegimeSchedule? Schedule,
         LayerTrackGraphView Graph,
         LayerTrackDescriptor Descriptor,
-        int GraphRevision);
+        int GraphRevision,
+        int FilmstripGraphRevision);
 
     // Content strip rendering dispatch, keyed by TrackLaneViewModelBuilder's presenter-kind
     // resolution (itself keyed by descriptor.Content.Type -- Task 4's presenter lookup). A
@@ -373,9 +383,18 @@ public partial class TimelineFace
         string layerId,
         SphereRegimeSchedule? schedule,
         LayerTrackGraphView graph,
-        int graphRevision)
+        int graphRevision,
+        int filmstripGraphRevision)
     {
-        var context = new TrackContentRenderContext(content, sphereId, layerId, schedule, graph, track.Descriptor, graphRevision);
+        var context = new TrackContentRenderContext(
+            content,
+            sphereId,
+            layerId,
+            schedule,
+            graph,
+            track.Descriptor,
+            graphRevision,
+            filmstripGraphRevision);
         if (_trackContentPresenters.TryGetValue(track.PresenterKind, out var presenter))
             presenter(context);
         else
@@ -383,7 +402,12 @@ public partial class TimelineFace
     }
 
     private void RenderFilmstripTrackContent(TrackContentRenderContext context)
-        => BuildCompactFilmstrip(context.Content, context.Schedule, context.SphereId, context.LayerId, context.GraphRevision);
+        => BuildCompactFilmstrip(
+            context.Content,
+            context.Schedule,
+            context.SphereId,
+            context.LayerId,
+            context.FilmstripGraphRevision);
 
     // Existing D7c chip/graph path: a small label summarizing the resolved layer graph. The
     // chevron expand-to-full-GraphEdit affordance (BuildExpandedGraph) is separate and works for

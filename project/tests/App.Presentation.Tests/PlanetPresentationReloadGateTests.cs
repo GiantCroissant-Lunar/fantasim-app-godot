@@ -42,4 +42,21 @@ public sealed class PlanetPresentationReloadGateTests
         Assert.False(gate.IsPending);
         Assert.False(gate.TryScheduleDeferredAttempt());
     }
+
+    [Fact]
+    public void IndependentStageReload_RemainsArmedUntilTheReplacementMountBinds()
+    {
+        var gate = new PlanetPresentationReloadGate();
+
+        gate.MarkRuntimeChanging();
+        Assert.True(gate.TryScheduleDeferredAttempt());
+        Assert.False(gate.TryScheduleDeferredAttempt());
+
+        gate.CompleteDeferredAttempt();
+        Assert.True(gate.IsPending);
+        Assert.True(gate.TryScheduleDeferredAttempt());
+
+        gate.MarkMounted();
+        Assert.False(gate.IsPending);
+    }
 }

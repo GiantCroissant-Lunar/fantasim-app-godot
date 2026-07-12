@@ -9,6 +9,7 @@ public sealed record LayerFilmstripPreviewRequest(
     string LayerId,
     long Tick,
     string ViewRung,
+    int GraphRevision,
     int Width = 96,
     int Height = 48);
 
@@ -17,6 +18,7 @@ public sealed record LayerFilmstripPreviewMap(
     string LayerId,
     long RequestedTick,
     long SnapshotTick,
+    int GraphRevision,
     string ViewRung,
     int SourceFrequency,
     int Width,

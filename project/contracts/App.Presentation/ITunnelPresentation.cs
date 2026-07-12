@@ -10,9 +10,9 @@ public interface ITunnelPresentation : IDisposable
 {
     void Rebind();
 
-    /// <summary>Shows/hides the tunnel geometry. false leaves the binder mounted-but-empty (the
-    /// always-present input relay still captures the debug keybind while hidden).</summary>
-    void SetEnabled(bool enabled);
+    /// <summary>Attempts to change effective tunnel ownership. Enabling fails closed when any live
+    /// world/stage/controller/geometry dependency is unavailable; disabling is always idempotent.</summary>
+    TunnelActivationResult TrySetEnabled(bool enabled);
 
     bool IsEnabled { get; }
 }

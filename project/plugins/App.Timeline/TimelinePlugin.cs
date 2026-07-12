@@ -6,6 +6,7 @@ using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using FantaSim.App.Command;
+using FantaSim.App.Presentation;
 using FantaSim.App.Resource;
 using FantaSim.App.SceneFlow;
 using FantaSim.App.Timeline.Providers;
@@ -62,6 +63,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
     private Action<long>? _tickChangedHandler;
     private ITimelineController? _subscribedController;
     private bool _worldRebindPending;
+    private long _modeEpoch;
 
     public TimelinePlugin()
         : this(static () => new DeferredTimelineFace())
@@ -139,6 +141,10 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
         var controller = _registry.TryGet<ITimelineController>();
         if (controller is null)
         {
+            var lostDecision = TunnelModePolicy.Decide(TunnelModeEvent.ControllerLost, false, _modeEpoch);
+            _modeEpoch = lostDecision.ModeEpoch;
+            ApplyHudState(new TimelineHudState(lostDecision.HudVisible, lostDecision.ModeEpoch));
+            _registry.TryGet<ITunnelPresentation>()?.TrySetEnabled(false);
             SeverTimelineService(unbindProxy: false);
             if (markPendingWhenMissing)
                 _worldRebindPending = true;
@@ -159,11 +165,14 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
         }
         _registry.UnregisterAll<IService>();
 
+        var tunnelEffective = _registry.TryGet<ITunnelPresentation>()?.IsEnabled ?? false;
+        var desiredHudState = new TimelineHudState(!tunnelEffective, _modeEpoch);
         var faceContext = new TimelineFaceContext(
             controller,
             proxy,
             _registry.TryGet<IClient>(),
             tick => _registry.TryGet<FantaSim.App.World.IService>()?.GetPlanetPresentationAsync(tick).GenerationGraphFamily,
+            () => _registry.TryGet<FantaSim.App.World.IService>()?.GetGenerationProductsAsync().GraphRevision ?? 0,
             (request, cancellationToken) => _registry.TryGet<FantaSim.App.World.IService>()?.GetLayerFilmstripPreview(request, cancellationToken),
             // Owned and registered by the WORLD bundle (WorldPlugin), consumed here through the
             // shared T1 contract only -- a plugin-assembly reference from timeline to
@@ -173,7 +182,8 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             // nullable and ComposeTimeline reruns on world rebind.
             _registry.TryGet<ILayerTrackRegistry>(),
             _loggerFactory,
-            ticksPerSecond: 5_000_000.0);
+            ticksPerSecond: 5_000_000.0,
+            desiredHudState);
         _faceContext = faceContext;
         _faceContextRegistration = _registry.RegisterOwned<ITimelineFaceContext>(
             faceContext,
@@ -216,7 +226,15 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
     private void ApplyHudVisibilityFromTunnelState()
     {
         var tunnelEnabled = _registry?.TryGet<FantaSim.App.Presentation.ITunnelPresentation>()?.IsEnabled ?? false;
-        _faceProxy?.SetHudVisible(!tunnelEnabled);
+        ApplyHudState(new TimelineHudState(!tunnelEnabled, _modeEpoch));
+    }
+
+    private void ApplyHudState(TimelineHudState state)
+    {
+        // Store before forwarding: commands can arrive after context registration but before the
+        // resident face binds, and that later bind must replay the same epoch-bearing state.
+        _faceContext?.SetDesiredHudState(state);
+        _faceProxy?.ApplyHudState(state);
     }
 
     private void SeverTimelineService(bool unbindProxy)
@@ -398,20 +416,24 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
                 if (!TryReadBool(payload["enabled"], out var enabled))
                     throw new ArgumentException("timeline.tunnel_view requires boolean 'enabled'.");
 
-                // Resolved lazily on every invocation, never captured at registration: the tunnel
-                // binder lives in the WORLD bundle (a different collectible ALC than this timeline
-                // bundle) and may reload independently after this command registered.
-                var tunnel = _registry?.TryGet<FantaSim.App.Presentation.ITunnelPresentation>();
-                tunnel?.SetEnabled(enabled);
-                // The 2D HUD hides while the tunnel view is on (design §4a). Derived from the
-                // tunnel's EFFECTIVE state, not the requested one, so a missing/failed tunnel
-                // never strands the HUD hidden.
-                _faceProxy?.SetHudVisible(!(tunnel?.IsEnabled ?? false));
-                return Task.FromResult<string?>(new JsonObject
+                lock (_lifecycleGate)
                 {
-                    ["ok"] = tunnel is not null,
-                    ["enabled"] = tunnel?.IsEnabled ?? false,
-                }.ToJsonString());
+                    // Method-local only: the world-bundle binder may unload independently and must
+                    // never be retained by the timeline bundle after this synchronous call.
+                    var tunnel = _registry?.TryGet<ITunnelPresentation>();
+                    var result = tunnel is null
+                        ? new TunnelActivationResult(enabled, false, "tunnel presentation unavailable")
+                        : tunnel.TrySetEnabled(enabled);
+                    var modeEvent = !enabled
+                        ? TunnelModeEvent.DisableRequested
+                        : result.EffectiveEnabled
+                            ? TunnelModeEvent.EnableSucceeded
+                            : TunnelModeEvent.EnableFailed;
+                    var decision = TunnelModePolicy.Decide(modeEvent, result.EffectiveEnabled, _modeEpoch);
+                    _modeEpoch = decision.ModeEpoch;
+                    ApplyHudState(new TimelineHudState(decision.HudVisible, decision.ModeEpoch));
+                    return Task.FromResult<string?>(BuildTunnelResultJson(result, decision.ModeEpoch));
+                }
             });
     }
 
@@ -427,13 +449,42 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
 
     private void OnResourceRuntimeChanging(object? sender, ResourceRuntimeChangingEventArgs args)
     {
-        if (!string.Equals(args.BundleId, "world", StringComparison.Ordinal))
+        var worldChanging = string.Equals(args.BundleId, "world", StringComparison.OrdinalIgnoreCase);
+        var stageChanging = string.Equals(args.BundleId, "stage", StringComparison.OrdinalIgnoreCase);
+        var timelineChanging = string.Equals(args.BundleId, "timeline", StringComparison.OrdinalIgnoreCase);
+        if (!worldChanging && !stageChanging && !timelineChanging)
             return;
 
         lock (_lifecycleGate)
         {
             if (_shutdown)
                 return;
+
+            var tunnel = _registry?.TryGet<ITunnelPresentation>();
+            if (timelineChanging)
+            {
+                var decision = TunnelModePolicy.Decide(
+                    TunnelModeEvent.TimelineReload,
+                    tunnel?.IsEnabled ?? false,
+                    _modeEpoch);
+                _modeEpoch = decision.ModeEpoch;
+                ApplyHudState(new TimelineHudState(decision.HudVisible, decision.ModeEpoch));
+                SeverTimelineService(unbindProxy: false);
+                _log?.LogInformation("TimelinePlugin: timeline runtime changing; HUD state preserved for resident replay.");
+                return;
+            }
+
+            var lossEvent = stageChanging ? TunnelModeEvent.StageChanging : TunnelModeEvent.WorldChanging;
+            var lossDecision = TunnelModePolicy.Decide(lossEvent, tunnel?.IsEnabled ?? false, _modeEpoch);
+            _modeEpoch = lossDecision.ModeEpoch;
+            ApplyHudState(new TimelineHudState(lossDecision.HudVisible, lossDecision.ModeEpoch));
+            tunnel?.TrySetEnabled(false);
+
+            if (stageChanging)
+            {
+                _log?.LogInformation("TimelinePlugin: stage runtime changing; tunnel disabled and timeline binding retained.");
+                return;
+            }
 
             // Stash the OUTGOING generation's controller before severing: the bound controller
             // when composed, else whatever is still registered (both belong to the dying world
@@ -565,6 +616,18 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             ?? throw new ArgumentException("timeline.tunnel_view payload must be a JSON object.");
     }
 
+    private static string BuildTunnelResultJson(TunnelActivationResult result, long modeEpoch)
+    {
+        return new JsonObject
+        {
+            ["ok"] = result.RequestedEnabled == result.EffectiveEnabled,
+            ["requested"] = result.RequestedEnabled,
+            ["effective"] = result.EffectiveEnabled,
+            ["failureReason"] = result.FailureReason,
+            ["modeEpoch"] = modeEpoch,
+        }.ToJsonString();
+    }
+
     internal static (string SphereId, string LayerId, bool Archived) ParseSetTrackArchivedPayload(JsonObject payload)
     {
         var sphereId = payload["sphereId"]?.GetValue<string>();
@@ -610,35 +673,64 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
 internal sealed class TimelineFaceContext : ITimelineFaceContext, IDisposable
 {
     private bool _disposed;
+    private readonly SeverableIntProvider _filmstripRevision;
 
     public TimelineFaceContext(
         ITimelineController controller,
         ITimelineFaceProxy proxy,
         object? commandClient,
         Func<long, WorldGenerationGraphFamilyDocument?> generationGraphFamilyProvider,
+        Func<int> filmstripGraphRevisionProvider,
         Func<LayerFilmstripPreviewRequest, CancellationToken, LayerFilmstripPreviewMap?> filmstripPreviewProvider,
         ILayerTrackRegistry? layerTrackRegistry,
         ILoggerFactory loggerFactory,
-        double ticksPerSecond)
+        double ticksPerSecond,
+        TimelineHudState desiredHudState)
     {
         Controller = controller ?? throw new ArgumentNullException(nameof(controller));
         Proxy = proxy ?? throw new ArgumentNullException(nameof(proxy));
         CommandClient = commandClient;
         GenerationGraphFamilyProvider = generationGraphFamilyProvider ?? throw new ArgumentNullException(nameof(generationGraphFamilyProvider));
+        _filmstripRevision = new SeverableIntProvider(
+            filmstripGraphRevisionProvider ?? throw new ArgumentNullException(nameof(filmstripGraphRevisionProvider)));
+        // The copied delegate targets only the T1 holder below, not this context. Disposing severs
+        // the holder's collectible registry/world lambda before a resident face can outlive it.
+        FilmstripGraphRevisionProvider = _filmstripRevision.Read;
         FilmstripPreviewProvider = filmstripPreviewProvider ?? throw new ArgumentNullException(nameof(filmstripPreviewProvider));
         LayerTrackRegistry = layerTrackRegistry;
         LoggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         TicksPerSecond = ticksPerSecond;
+        _desiredHudState = desiredHudState;
     }
 
     public ITimelineController Controller { get; }
     public ITimelineFaceProxy Proxy { get; }
+    private readonly object _hudGate = new();
+    private TimelineHudState _desiredHudState;
+    public TimelineHudState DesiredHudState
+    {
+        get
+        {
+            lock (_hudGate)
+                return _desiredHudState;
+        }
+    }
     public object? CommandClient { get; }
     public Func<long, WorldGenerationGraphFamilyDocument?> GenerationGraphFamilyProvider { get; }
+    public Func<int> FilmstripGraphRevisionProvider { get; }
     public Func<LayerFilmstripPreviewRequest, CancellationToken, LayerFilmstripPreviewMap?> FilmstripPreviewProvider { get; }
     public ILayerTrackRegistry? LayerTrackRegistry { get; }
     public ILoggerFactory LoggerFactory { get; }
     public double TicksPerSecond { get; }
+
+    internal void SetDesiredHudState(TimelineHudState state)
+    {
+        lock (_hudGate)
+        {
+            if (state.ModeEpoch >= _desiredHudState.ModeEpoch)
+                _desiredHudState = state;
+        }
+    }
 
     public void Dispose()
     {
@@ -646,6 +738,18 @@ internal sealed class TimelineFaceContext : ITimelineFaceContext, IDisposable
             return;
 
         _disposed = true;
+        _filmstripRevision.Sever();
         Controller.UnregisterPlayback();
+    }
+
+    private sealed class SeverableIntProvider
+    {
+        private Func<int>? _source;
+
+        public SeverableIntProvider(Func<int> source) => _source = source;
+
+        public int Read() => Volatile.Read(ref _source)?.Invoke() ?? 0;
+
+        public void Sever() => Interlocked.Exchange(ref _source, null);
     }
 }

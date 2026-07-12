@@ -40,6 +40,7 @@ public partial class TimelineFace : Control, ITimelineFace
     private readonly FilmstripPreviewController _filmstrip;
     private IClient? _commandClient;
     private Func<long, WorldGenerationGraphFamilyDocument?>? _generationGraphFamilyProvider;
+    private Func<int>? _filmstripGraphRevisionProvider;
     private ILayerTrackRegistry? _layerTrackRegistry;
 
     private double _internalTick;
@@ -51,6 +52,8 @@ public partial class TimelineFace : Control, ITimelineFace
     private bool _nodesInitialized;
     private bool _playbackRegistered;
     private bool _proxyBound;
+    private long _hudModeEpoch = -1L;
+    private int _residentBindGeneration;
     private double _ticksPerSecond = 5_000_000.0;
     private const long MinViewSpanTicks = 1L;
     private const int RungSpanUnits = 10;
@@ -141,17 +144,27 @@ public partial class TimelineFace : Control, ITimelineFace
         ApplyScrubAction(_scrubCoalescer.ConsumeFrame());
     }
 
-    public void SetHudVisible(bool visible)
+    public void ApplyHudState(TimelineHudState state)
     {
+        var bindGeneration = _residentBindGeneration;
+        void Apply()
+        {
+            if (!TimelineHudReplayPolicy.CanApply(
+                    bindGeneration,
+                    _residentBindGeneration,
+                    state.ModeEpoch,
+                    _hudModeEpoch))
+                return;
+            _hudModeEpoch = state.ModeEpoch;
+            Visible = state.Visible;
+        }
+
         // Same off-thread marshal as RebindResidentContext: Control.Visible is main-thread-only,
         // and the tunnel-view command can reach this face from the ingress path.
         if (OS.GetThreadCallerId() == OS.GetMainThreadId())
-        {
-            Visible = visible;
-            return;
-        }
-
-        Callable.From(() => Visible = visible).CallDeferred();
+            Apply();
+        else
+            Callable.From(Apply).CallDeferred();
     }
 
     public void RebindResidentContext()
@@ -179,6 +192,17 @@ public partial class TimelineFace : Control, ITimelineFace
             return;
         }
 
+        _residentBindGeneration++;
+        _hudModeEpoch = -1L;
+        if (forceProxyBind || !_proxyBound)
+        {
+            // Bind forwarding before copying the context and replaying HUD state. A command that
+            // lands immediately after this point can forward, and epoch ordering makes either
+            // arrival order deterministic.
+            context.Proxy.BindCrossTarget(this);
+            _proxyBound = true;
+        }
+
         var controller = context.Controller;
         _log = context.LoggerFactory.CreateLogger("Timeline.Face");
 
@@ -196,6 +220,7 @@ public partial class TimelineFace : Control, ITimelineFace
 
         _commandClient = context.CommandClient as IClient;
         _generationGraphFamilyProvider = context.GenerationGraphFamilyProvider;
+        _filmstripGraphRevisionProvider = context.FilmstripGraphRevisionProvider;
         _filmstrip.SetPreviewProvider(context.FilmstripPreviewProvider);
         _ticksPerSecond = context.TicksPerSecond > 0.0 ? context.TicksPerSecond : 5_000_000.0;
         BindLayerTrackRegistry(context.LayerTrackRegistry);
@@ -240,18 +265,15 @@ public partial class TimelineFace : Control, ITimelineFace
             _playbackRegistered = true;
         }
 
-        if (forceProxyBind || !_proxyBound)
-        {
-            context.Proxy.BindCrossTarget(this);
-            _proxyBound = true;
-        }
-
+        ApplyHudState(context.DesiredHudState);
         SeekTo(_ctl.Tick);
         UpdateLayout();
     }
 
     private void ClearResidentContext()
     {
+        _residentBindGeneration++;
+        _hudModeEpoch = -1L;
         if (_ctl is not null && _playbackRegistered)
             _ctl.UnregisterPlayback();
         _playbackRegistered = false;
@@ -259,6 +281,7 @@ public partial class TimelineFace : Control, ITimelineFace
         _ctl = null;
         _commandClient = null;
         _generationGraphFamilyProvider = null;
+        _filmstripGraphRevisionProvider = null;
         // Drop queued filmstrip work with the severed provider: entries carry no provider
         // reference anymore (execution-time resolution), but launching them after a sever is
         // useless Task churn, and the generation bump makes any in-flight completion a no-op.

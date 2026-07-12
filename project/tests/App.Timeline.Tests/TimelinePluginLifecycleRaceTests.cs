@@ -130,7 +130,7 @@ public sealed class TimelinePluginLifecycleRaceTests
         public void Pause() { }
         public void SeekTo(long tick) { }
         public void ApplyView(TimelineViewSnapshot snapshot) { }
-        public void SetHudVisible(bool visible) { }
+        public void ApplyHudState(TimelineHudState state) { }
     }
 
     private sealed class FakeCommandService : FantaSim.App.Command.IService

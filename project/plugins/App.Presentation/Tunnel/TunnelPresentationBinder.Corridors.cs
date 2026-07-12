@@ -4,6 +4,7 @@ using FantaSim.App.Timeline;
 using FantaSim.App.Timeline.Seam;
 using FantaSim.App.World.Composition;
 using Godot;
+using Microsoft.Extensions.Logging;
 
 namespace FantaSim.App.Presentation.Tunnel;
 
@@ -17,7 +18,7 @@ internal sealed partial class TunnelPresentationBinder
     private Node3D? _corridorsRoot;
     private Node3D? _fineRailRoot;
     private MeshInstance3D? _fineCursor;
-    private readonly List<(MeshInstance3D Node, long Tick)> _frameNodes = new();
+    private readonly List<(Node3D Node, long Tick)> _frameNodes = new();
     private readonly List<(MeshInstance3D Node, LayerTrackDescriptor Descriptor, bool IsFocused)> _corridorNodes = new();
     private long _requestedFrameStartTick;
     private long _requestedFrameEndTick;
@@ -61,6 +62,7 @@ internal sealed partial class TunnelPresentationBinder
         var gen = _generation;
         var baseTick = _ctl.Tick;
         var coarse = TunnelScrubMapper.MapOuterAngleToTick(360d, baseTick, _ctl.MaxTick);
+        var coarseUnitTicks = TimelineModel.SpanTicksForRung(coarse.Rung, units: 1);
         var requestEnd = Math.Min(coarse.ClampedTargetTick, _ctl.MaxTick);
         _requestedFrameStartTick = baseTick;
         _requestedFrameEndTick = requestEnd;
@@ -74,10 +76,22 @@ internal sealed partial class TunnelPresentationBinder
         }
 
         var window = TunnelCorridorLayout.BuildFocusedWindow(_sourceTracks, _focusIndex);
+        var graphRevision = 0;
+        try
+        {
+            graphRevision = _registry.TryGet<FantaSim.App.World.IService>()?
+                .GetGenerationProductsAsync().GraphRevision ?? 0;
+        }
+        catch (Exception ex)
+        {
+            // Build every real corridor in its explicit unavailable state below. Revision lookup
+            // failure must never manufacture an unstamped request or erase track identity.
+            _log.LogWarning(ex, "Tunnel snapshot graph revision unavailable; previews remain unavailable.");
+        }
 
         foreach (var slot in window)
         {
-            BuildCorridorSlot(slot, baseTick, coarse.Rung.UnitTicks, requestEnd, gen);
+            BuildCorridorSlot(slot, baseTick, coarseUnitTicks, requestEnd, graphRevision, gen);
         }
 
         UpdateInnerBinding(gen);
@@ -88,8 +102,9 @@ internal sealed partial class TunnelPresentationBinder
     private void BuildCorridorSlot(
         TunnelCorridorLayout.TunnelTrackSlot slot,
         long baseTick,
-        double coarseUnitTicks,
+        long coarseUnitTicks,
         long requestEnd,
+        int graphRevision,
         int gen)
     {
         if (_corridorsRoot is null || _ctl is null)
@@ -138,15 +153,23 @@ internal sealed partial class TunnelPresentationBinder
         _corridorsRoot!.AddChild(label);
 
         if (slot.Descriptor.Content.Type == "filmstrip")
-            BuildFilmstripFrames(slot.Descriptor, centerAngle, baseTick, coarseUnitTicks, requestEnd, gen);
+            BuildFilmstripFrames(
+                slot.Descriptor,
+                centerAngle,
+                baseTick,
+                coarseUnitTicks,
+                requestEnd,
+                graphRevision,
+                gen);
     }
 
     private void BuildFilmstripFrames(
         LayerTrackDescriptor descriptor,
         double centerAngleDeg,
         long baseTick,
-        double coarseUnitTicks,
+        long coarseUnitTicks,
         long requestEnd,
+        int graphRevision,
         int gen)
     {
         if (_corridorsRoot is null || _ctl is null || coarseUnitTicks <= 0)
@@ -164,67 +187,66 @@ internal sealed partial class TunnelPresentationBinder
 
         foreach (var fs in slots)
         {
-            var fraction = coarseUnitTicks > 0
-                ? (double)(fs.Tick - baseTick) / coarseUnitTicks
-                : 0;
-            if (fraction < 0 || fraction > 1)
+            if (!TunnelCameraFraming.TryTickToZ(fs.Tick, baseTick, coarseUnitTicks, out var z))
                 continue;
-
-            var z = MouthZ - (float)(fraction * TunnelDepth);
-            var tangentX = -Mathf.Sin(rad);
-            var tangentY = Mathf.Cos(rad);
-
             var frameCenter = new Vector3(
-                Mathf.Cos(rad) * (CorridorSurfaceRadius - 0.05f),
-                Mathf.Sin(rad) * (CorridorSurfaceRadius - 0.05f),
+                Mathf.Cos(rad) * (CorridorSurfaceRadius - 0.55f),
+                Mathf.Sin(rad) * (CorridorSurfaceRadius - 0.55f),
                 z);
 
-            var halfW = 0.5f;
-            var halfH = 0.35f;
-            var tangent = new Vector3(tangentX, tangentY, 0f);
-            var axial = Vector3.Back;
-
-            // Local tangent-by-axial quad: node position owns the real tick's XYZ placement, so
-            // later base-time refreshes can replace Position.Z without double-applying mesh Z.
-            var q0 = -tangent * halfW - axial * halfH;
-            var q1 = -tangent * halfW + axial * halfH;
-            var q2 = tangent * halfW + axial * halfH;
-            var q3 = tangent * halfW - axial * halfH;
-
-            var mesh = BuildQuadMesh(q0, q1, q2, q3);
+            var frameRoot = new Node3D
+            {
+                Name = $"Frame_{SafeNodeName(descriptor.SphereId)}_{SafeNodeName(descriptor.LayerId)}_{fs.Tick}",
+                Position = frameCenter,
+            };
             var material = new StandardMaterial3D
             {
                 AlbedoColor = Colors.White,
-                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
-                CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+                ShadingMode = BaseMaterial3D.ShadingModeEnum.PerPixel,
+                Roughness = 0.72f,
+                Metallic = 0.02f,
                 Transparency = BaseMaterial3D.TransparencyEnum.Disabled,
             };
-            var owner = new MeshInstance3D
+            var sphere = new MeshInstance3D
             {
-                Name = $"Frame_{SafeNodeName(descriptor.SphereId)}_{SafeNodeName(descriptor.LayerId)}_{fs.Tick}",
-                Mesh = mesh,
+                Name = "SnapshotSphere",
+                Mesh = new SphereMesh
+                {
+                    Radius = 0.35f,
+                    Height = 0.70f,
+                    RadialSegments = 32,
+                    Rings = 16,
+                },
                 MaterialOverride = material,
-                Position = frameCenter,
             };
-            _corridorsRoot!.AddChild(owner);
-            _frameNodes.Add((owner, fs.Tick));
+            frameRoot.AddChild(sphere);
 
-            var sink = new QuadMaterialFilmstripSink(owner, material);
-            _filmstrip.RequestTexture(sink, descriptor.SphereId, descriptor.LayerId, fs.Tick, rung.Symbol, graphRevision: 0);
+            var unavailable = new Node3D { Name = "PreviewUnavailable" };
+            unavailable.AddChild(new Label3D
+            {
+                Text = "preview unavailable",
+                Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+                FontSize = 12,
+                Modulate = new Color(0.74f, 0.76f, 0.79f, 0.90f),
+                OutlineModulate = new Color(0f, 0f, 0f, 0.70f),
+            });
+            frameRoot.AddChild(unavailable);
+
+            _corridorsRoot!.AddChild(frameRoot);
+            _frameNodes.Add((frameRoot, fs.Tick));
+
+            var sink = new SnapshotSphereFilmstripSink(sphere, material, unavailable);
+            if (graphRevision > 0)
+            {
+                _filmstrip.RequestTexture(
+                    sink,
+                    descriptor.SphereId,
+                    descriptor.LayerId,
+                    fs.Tick,
+                    rung.Symbol,
+                    graphRevision);
+            }
         }
-    }
-
-    private static ArrayMesh BuildQuadMesh(Vector3 q0, Vector3 q1, Vector3 q2, Vector3 q3)
-    {
-        var normal = CalculateNormal(q0, q1, q2);
-        var vertices = new List<Vector3> { q0, q1, q2, q0, q2, q3 };
-        var normals = new List<Vector3> { normal, normal, normal, normal, normal, normal };
-        var uvs = new List<Vector2>
-        {
-            new(0f, 1f), new(0f, 0f), new(1f, 0f),
-            new(0f, 1f), new(1f, 0f), new(1f, 1f),
-        };
-        return BuildMeshFromArrays(vertices, normals, uvs);
     }
 
     private void BuildFineRailIfFocused(IReadOnlyList<TunnelCorridorLayout.TunnelTrackSlot> window)
@@ -289,7 +311,7 @@ internal sealed partial class TunnelPresentationBinder
         _finePreview = TunnelFinePreviewMapper.Reset(_fineBinding, FineRailCenterZ, FineRailHalfLength);
     }
 
-    private void RepositionExistingFrames(long baseTick, double coarseSpanTicks, long requestEndTick)
+    private void RepositionExistingFrames(long baseTick, long coarseSpanTicks, long requestEndTick)
     {
         if (_corridorsRoot is null || coarseSpanTicks <= 0)
             return;
@@ -299,15 +321,14 @@ internal sealed partial class TunnelPresentationBinder
             if (!GodotObject.IsInstanceValid(node))
                 continue;
 
-            var fraction = (double)(tick - baseTick) / coarseSpanTicks;
-            if (tick < baseTick || tick > requestEndTick || fraction < 0 || fraction > 1)
+            if (tick > requestEndTick
+                || !TunnelCameraFraming.TryTickToZ(tick, baseTick, coarseSpanTicks, out var z))
             {
                 node.Visible = false;
                 continue;
             }
 
             node.Visible = true;
-            var z = MouthZ - (float)(fraction * TunnelDepth);
             var pos = node.Position;
             node.Position = new Vector3(pos.X, pos.Y, z);
         }
@@ -353,8 +374,9 @@ internal sealed partial class TunnelPresentationBinder
         else
         {
             var coarse = TunnelScrubMapper.MapOuterAngleToTick(360d, tick, _ctl.MaxTick);
+            var coarseSpanTicks = TimelineModel.SpanTicksForRung(coarse.Rung, units: 1);
             var requestEnd = Math.Min(coarse.ClampedTargetTick, _ctl.MaxTick);
-            RepositionExistingFrames(tick, coarse.Rung.UnitTicks, requestEnd);
+            RepositionExistingFrames(tick, coarseSpanTicks, requestEnd);
 
             if (!_applyingOuterScrubAction
                 && (!_hasRequestedFrameWindow

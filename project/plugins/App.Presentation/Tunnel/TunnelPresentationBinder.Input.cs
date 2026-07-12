@@ -1,5 +1,6 @@
 using System;
 using System.Text.Json.Nodes;
+using System.Threading;
 using System.Threading.Tasks;
 using FantaSim.App.Timeline;
 using FantaSim.App.Timeline.Seam;
@@ -22,6 +23,9 @@ internal sealed partial class TunnelPresentationBinder
     private bool _applyingOuterScrubAction;
     private long _gesturePressTick;
     private int _gestureFocusBefore = -1;
+    private readonly object _f9CommandGate = new();
+    private CancellationTokenSource? _f9CommandCts;
+    private long _lastF9ModeEpoch = -1L;
 
     private bool HandleInputEvent(InputEvent @event)
     {
@@ -56,10 +60,7 @@ internal sealed partial class TunnelPresentationBinder
         var commandService = _registry.TryGet<CommandService>();
         if (commandService is null)
         {
-            _log.LogInformation(
-                "tunnel F9: command service unavailable; falling back to direct SetEnabled(enabled={Enabled}).",
-                desired);
-            SetEnabled(desired);
+            _log.LogWarning("tunnel F9: command service unavailable; request ignored.");
             return;
         }
 
@@ -70,46 +71,153 @@ internal sealed partial class TunnelPresentationBinder
             ActorKind: "user",
             ActorId: "godot-f9");
 
+        var cts = ReplaceF9CommandWork();
+        var expectedGeneration = _generation;
         // Fire-and-forget: input events run synchronously on the main thread and must not await.
-        // RunTunnelToggleCommandAsync owns every failure/fault path below so nothing goes
-        // unobserved.
-        _ = RunTunnelToggleCommandAsync(commandService, request, desired);
+        // The lifecycle CTS is cancelled before any timeline/world/stage ALC can sever.
+        _ = RunTunnelToggleCommandAsync(commandService, request, desired, expectedGeneration, cts);
     }
 
     private async Task RunTunnelToggleCommandAsync(
         CommandService commandService,
         FantaSim.App.Command.CommandRequest request,
-        bool desired)
+        bool desired,
+        int expectedGeneration,
+        CancellationTokenSource cts)
     {
         try
         {
-            var result = await commandService.ExecuteAsync(request).ConfigureAwait(false);
-            if (result.Ok)
+            var result = await commandService.ExecuteAsync(request, cts.Token).ConfigureAwait(false);
+            if (!result.Ok)
             {
-                _log.LogInformation(
-                    "tunnel F9: routed through {CommandId} (enabled={Enabled}).",
-                    TunnelViewCommandId, desired);
+                _log.LogWarning(
+                    "tunnel F9: {CommandId} reported failure ({Error}); request ignored.",
+                    TunnelViewCommandId, result.Error?.Message ?? "unknown error");
                 return;
             }
 
-            _log.LogWarning(
-                "tunnel F9: {CommandId} reported failure ({Error}); falling back to direct SetEnabled.",
-                TunnelViewCommandId, result.Error?.Message ?? "unknown error");
+            var responseValid = TryReadTunnelCommandResponse(result.ResultJson, out var responseEpoch, out var effective);
+            if (!responseValid)
+            {
+                _log.LogWarning("tunnel F9: {CommandId} returned malformed JSON; request ignored.", TunnelViewCommandId);
+                return;
+            }
+
+            lock (_f9CommandGate)
+            {
+                var completion = new TunnelF9CommandCompletion(
+                    ExpectedGeneration: expectedGeneration,
+                    CurrentGeneration: _generation,
+                    Cancelled: cts.Token.IsCancellationRequested || !ReferenceEquals(_f9CommandCts, cts),
+                    TransportOk: result.Ok,
+                    ResponseValid: responseValid,
+                    ResponseEpoch: responseEpoch,
+                    LastAcceptedEpoch: _lastF9ModeEpoch);
+                if (_disposed || !TunnelF9CommandPolicy.CanAccept(completion))
+                {
+                    _log.LogInformation("tunnel F9: stale command completion ignored.");
+                    return;
+                }
+                _lastF9ModeEpoch = responseEpoch;
+            }
+
+            _log.LogInformation(
+                "tunnel F9: routed through {CommandId} (requested={Requested}, effective={Effective}, modeEpoch={ModeEpoch}).",
+                TunnelViewCommandId, desired, effective, responseEpoch);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+            _log.LogInformation("tunnel F9: {CommandId} cancelled by lifecycle change.", TunnelViewCommandId);
         }
         catch (Exception ex)
         {
             _log.LogError(ex,
-                "tunnel F9: {CommandId} faulted; falling back to direct SetEnabled.",
+                "tunnel F9: {CommandId} faulted; request ignored.",
                 TunnelViewCommandId);
         }
+        finally
+        {
+            lock (_f9CommandGate)
+            {
+                if (ReferenceEquals(_f9CommandCts, cts))
+                    _f9CommandCts = null;
+            }
+            cts.Dispose();
+        }
+    }
 
-        // The command bundle (or its await) may resume off the main thread; SetEnabled touches
-        // Godot nodes and must run on it -- same CallDeferred discipline as
-        // TimelineFace.RebindResidentContext.
-        if (OS.GetThreadCallerId() == OS.GetMainThreadId())
-            SetEnabled(desired);
-        else
-            Callable.From(() => SetEnabled(desired)).CallDeferred();
+    private CancellationTokenSource ReplaceF9CommandWork()
+    {
+        CancellationTokenSource? outgoing;
+        var incoming = new CancellationTokenSource();
+        lock (_f9CommandGate)
+        {
+            outgoing = _f9CommandCts;
+            _f9CommandCts = incoming;
+        }
+        CancelOnly(outgoing);
+        return incoming;
+    }
+
+    private void CancelF9CommandWork(string reason)
+    {
+        CancellationTokenSource? outgoing;
+        lock (_f9CommandGate)
+        {
+            outgoing = _f9CommandCts;
+            _f9CommandCts = null;
+        }
+        if (outgoing is not null)
+            _log.LogInformation("tunnel F9: command work cancelled ({Reason}).", reason);
+        CancelOnly(outgoing);
+    }
+
+    private void ResetF9ModeEpoch()
+    {
+        lock (_f9CommandGate)
+            _lastF9ModeEpoch = -1L;
+    }
+
+    private void CancelOnly(CancellationTokenSource? source)
+    {
+        if (source is null)
+            return;
+        try
+        {
+            source.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+        catch (AggregateException ex)
+        {
+            _log.LogWarning(ex, "tunnel F9: cancellation callback faulted; lifecycle cancellation still requested.");
+        }
+    }
+
+    private static bool TryReadTunnelCommandResponse(
+        string? resultJson,
+        out long modeEpoch,
+        out bool effective)
+    {
+        modeEpoch = -1L;
+        effective = false;
+        if (string.IsNullOrWhiteSpace(resultJson))
+            return false;
+        try
+        {
+            var payload = JsonNode.Parse(resultJson) as JsonObject;
+            return payload is not null
+                && payload["modeEpoch"] is JsonValue epochValue
+                && epochValue.TryGetValue(out modeEpoch)
+                && payload["effective"] is JsonValue effectiveValue
+                && effectiveValue.TryGetValue(out effective);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private void ConsumeTunnelFrame(double delta)

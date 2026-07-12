@@ -16,6 +16,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
 {
     private const string StageBundleId = "stage";
     private const string WorldBundleId = "world";
+    private const string TimelineBundleId = "timeline";
     private static readonly NodePath StageEnvironmentPath = new("Environment");
 
     private const float TunnelRadius = 5.0f;
@@ -57,6 +58,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
     private readonly FilmstripPreviewController _filmstrip;
     private readonly Func<Node3D?> _planetBodyProvider;
     private readonly PlanetPresentationReloadGate _worldRuntimeReload = new();
+    private const int StagePreparationRetryLimit = 120;
 
     private ITimelineController? _ctl;
     private ILayerTrackRegistry? _layerTrackRegistry;
@@ -67,6 +69,10 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
     private bool _tearingDown;
     private bool _disposed;
     private int _generation;
+    private SceneTree? _stagePreparationRetryTree;
+    private Callable? _stagePreparationRetryCallable;
+    private int _stagePreparationRetryFrames;
+    private bool _stagePreparationRetryExhaustedLogged;
 
     private int _focusIndex = -1;
     private IReadOnlyList<LayerTrackDescriptor> _sourceTracks = Array.Empty<LayerTrackDescriptor>();
@@ -113,9 +119,8 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         if (controller is null)
         {
             _generation++;
-            _pendingCorridorRebuild = false;
-            CancelTunnelGesture("controller_lost");
-            ResetFinePreview(TunnelFineResetReason.ControllerLost);
+            DisconnectStagePreparationRetry();
+            FailSafeDisable("controller_lost", TunnelFineResetReason.ControllerLost);
             UnsubscribeController();
             UnsubscribeLayerTrackRegistry();
             SeverFilmstrip();
@@ -144,40 +149,72 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
             _registry.TryGet<FantaSim.App.World.IService>()?.GetLayerFilmstripPreview(request, ct));
 
         var expectedGeneration = ++_generation;
+        DisconnectStagePreparationRetry();
+        _stagePreparationRetryFrames = 0;
+        _stagePreparationRetryExhaustedLogged = false;
         Callable.From(() => EnsureMounted(expectedGeneration)).CallDeferred();
     }
 
-    public void SetEnabled(bool enabled)
+    public TunnelActivationResult TrySetEnabled(bool enabled)
     {
-        if (_disposed || _enabled == enabled)
-            return;
+        if (_disposed)
+            return new TunnelActivationResult(enabled, false, "tunnel presentation disposed");
 
-        _enabled = enabled;
         if (!enabled)
         {
-            _pendingCorridorRebuild = false;
-            CancelTunnelGesture("disabled");
-            ResetFinePreview(TunnelFineResetReason.Disabled);
+            FailSafeDisable("disabled", TunnelFineResetReason.Disabled);
+            return new TunnelActivationResult(false, false, string.Empty);
         }
 
-        if (_mount is not null && GodotObject.IsInstanceValid(_mount))
+        var body = _planetBodyProvider();
+        var reason = TunnelActivationPolicy.FailureReason(new TunnelActivationReadiness(
+            WorldLoaded: _resource.IsLoaded(WorldBundleId),
+            StageLoaded: _resource.IsLoaded(StageBundleId),
+            HasController: _ctl is not null,
+            HasMount: _mount is not null && GodotObject.IsInstanceValid(_mount) && _mount.IsInsideTree(),
+            HasCamera: _tunnelCamera is not null && GodotObject.IsInstanceValid(_tunnelCamera) && _tunnelCamera.IsInsideTree(),
+            HasPlanetBody: body is not null && GodotObject.IsInstanceValid(body) && body.IsInsideTree()));
+        if (!string.IsNullOrEmpty(reason))
         {
-            _mount.Visible = enabled;
-            if (enabled)
-            {
-                ActivateTunnelCamera();
-                if (_builtOnce && _ctl is not null)
-                {
-                    var outsideRequestWindow = !_hasRequestedFrameWindow
-                        || _ctl.Tick < _requestedFrameStartTick
-                        || _ctl.Tick > _requestedFrameEndTick;
-                    RefreshTunnelForBaseTick(_ctl.Tick, outsideRequestWindow);
-                }
-            }
-            else
-                RestorePreviousCamera();
-            TryBuildOnce();
+            FailSafeDisable("activation_failed", TunnelFineResetReason.Disabled);
+            // Preparation is independent from this failed request. It always mounts hidden and
+            // never records latent enable intent; the user must issue a later explicit command.
+            if (!_tearingDown)
+                Rebind();
+            return new TunnelActivationResult(true, false, reason);
         }
+
+        _mount!.Visible = true;
+        ActivateTunnelCamera();
+        if (_tunnelCamera is null || !GodotObject.IsInstanceValid(_tunnelCamera) || !_tunnelCamera.Current)
+        {
+            FailSafeDisable("camera_activation_failed", TunnelFineResetReason.Disabled);
+            return new TunnelActivationResult(true, false, "tunnel camera activation failed");
+        }
+        _enabled = true;
+        if (_builtOnce && _ctl is not null)
+        {
+            var outsideRequestWindow = !_hasRequestedFrameWindow
+                || _ctl.Tick < _requestedFrameStartTick
+                || _ctl.Tick > _requestedFrameEndTick;
+            RefreshTunnelForBaseTick(_ctl.Tick, outsideRequestWindow);
+        }
+        TryBuildOnce();
+        return new TunnelActivationResult(true, true, string.Empty);
+    }
+
+    private void FailSafeDisable(string reason, TunnelFineResetReason resetReason)
+    {
+        _enabled = false;
+        _pendingCorridorRebuild = false;
+        CancelTunnelGesture(reason);
+        ResetFinePreview(resetReason);
+        CancelF9CommandWork(reason);
+        _filmstrip.Supersede();
+        _filmstrip.CancelInFlight();
+        if (_mount is not null && GodotObject.IsInstanceValid(_mount))
+            _mount.Visible = false;
+        RestorePreviousCamera();
     }
 
     private void TryBuildOnce()
@@ -198,75 +235,151 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         if (_disposed || _tearingDown || expectedGeneration != _generation)
             return;
 
-        if (_mount is not null)
-        {
-            _mount.Visible = _enabled;
-            AlignToPlanetBody(expectedGeneration);
-            if (_enabled)
-                ActivateTunnelCamera();
-            if (_builtOnce)
-            {
-                _pendingCorridorRebuild = false;
-                _filmstrip.Supersede();
-                ResolveSourceTracks();
-                RebuildCorridors();
-                UpdateInnerControlVisuals();
-                if (_outerLabel is not null && GodotObject.IsInstanceValid(_outerLabel))
-                    _outerLabel.Text = BuildOuterLabelText();
-            }
-            else
-            {
-                TryBuildOnce();
-            }
-            return;
-        }
-
         var stageEnvironment = _sceneRegistry.GetNodeOrNull(StageBundleId, StageEnvironmentPath) as Node3D;
-        if (stageEnvironment is null)
+        var body = _planetBodyProvider();
+        var action = TunnelStagePreparationPolicy.Decide(new TunnelStagePreparationReadiness(
+            ExpectedGeneration: expectedGeneration,
+            CurrentGeneration: _generation,
+            BinderAlive: !_disposed && !_tearingDown,
+            WorldLoaded: _resource.IsLoaded(WorldBundleId),
+            StageLoaded: _resource.IsLoaded(StageBundleId),
+            HasEnvironment: stageEnvironment is not null
+                && GodotObject.IsInstanceValid(stageEnvironment)
+                && stageEnvironment.IsInsideTree(),
+            HasValidPlanetBody: body is not null && GodotObject.IsInstanceValid(body),
+            PlanetBodyInsideTree: body is not null
+                && GodotObject.IsInstanceValid(body)
+                && body.IsInsideTree()));
+
+        if (action == TunnelStagePreparationAction.Ignore)
+            return;
+        if (action == TunnelStagePreparationAction.RetryNextFrame)
         {
-            _log.LogWarning("Tunnel presentation skipped: stage Environment node not found at {Path}.", StageEnvironmentPath);
+            if (_mount is not null)
+                CleanupDetachedMount(DetachMountState());
+            ScheduleStagePreparationRetry(expectedGeneration, stageEnvironment);
             return;
         }
 
-        _mount = new Node3D { Name = "TunnelMount", Visible = _enabled };
-        stageEnvironment.AddChild(_mount);
-        AlignToPlanetBody(expectedGeneration);
+        DisconnectStagePreparationRetry();
 
-        _inputRelay = new TunnelInputRelay
+        if (_mount is null || !GodotObject.IsInstanceValid(_mount) || !_mount.IsInsideTree())
         {
-            Name = "TunnelInputRelay",
-            OnInput = e => HandleInputEvent(e),
-            OnProcess = d => ConsumeTunnelFrame(d),
-            OnCancel = r => CancelTunnelGesture(r),
-        };
-        _mount.AddChild(_inputRelay);
+            if (_mount is not null)
+                CleanupDetachedMount(DetachMountState());
+            _mount = new Node3D { Name = "TunnelMount", Visible = false };
+            stageEnvironment!.AddChild(_mount);
+        }
+        else
+        {
+            _mount.Visible = false;
+        }
+
+        if (!TryAlignToPlanetBody(body!, expectedGeneration))
+        {
+            CleanupDetachedMount(DetachMountState());
+            ScheduleStagePreparationRetry(expectedGeneration, stageEnvironment);
+            return;
+        }
+
+        if (_inputRelay is null || !GodotObject.IsInstanceValid(_inputRelay))
+        {
+            _inputRelay = new TunnelInputRelay
+            {
+                Name = "TunnelInputRelay",
+                OnInput = e => HandleInputEvent(e),
+                OnProcess = d => ConsumeTunnelFrame(d),
+                OnCancel = r => CancelTunnelGesture(r),
+            };
+            _mount.AddChild(_inputRelay);
+        }
 
         EnsureTunnelCamera();
-        if (_enabled)
-            ActivateTunnelCamera();
-
         BuildDarkShell();
 
-        _log.LogInformation("Tunnel presentation mounted under stage Environment (visible={Visible}).", _enabled);
-        _worldRuntimeReload.MarkMounted();
-
-        TryBuildOnce();
-    }
-
-    private void AlignToPlanetBody(int gen)
-    {
-        if (_disposed || _tearingDown || gen != _generation || _mount is null || !GodotObject.IsInstanceValid(_mount))
-            return;
-
-        var body = _planetBodyProvider();
-        if (body is null || !GodotObject.IsInstanceValid(body))
+        var shell = _mount.GetNodeOrNull<MeshInstance3D>("DarkShell/Shell");
+        if (_tunnelCamera is null || !GodotObject.IsInstanceValid(_tunnelCamera)
+            || !_tunnelCamera.IsInsideTree()
+            || _inputRelay is null || !GodotObject.IsInstanceValid(_inputRelay)
+            || !_inputRelay.IsInsideTree()
+            || shell is null || !GodotObject.IsInstanceValid(shell) || !shell.IsInsideTree())
         {
-            _log.LogWarning("Tunnel alignment degraded: PlanetBody provider returned null; shell remains mounted, throat is empty.");
+            CleanupDetachedMount(DetachMountState());
+            ScheduleStagePreparationRetry(expectedGeneration, stageEnvironment);
             return;
         }
+
+        _enabled = false;
+        _mount.Visible = false;
+        _stagePreparationRetryFrames = 0;
+        _stagePreparationRetryExhaustedLogged = false;
+        _log.LogInformation("Tunnel presentation prepared hidden under stage Environment.");
+        _worldRuntimeReload.MarkMounted();
+    }
+
+    private bool TryAlignToPlanetBody(Node3D body, int gen)
+    {
+        if (_disposed || _tearingDown || gen != _generation
+            || _mount is null || !GodotObject.IsInstanceValid(_mount) || !_mount.IsInsideTree()
+            || !GodotObject.IsInstanceValid(body) || !body.IsInsideTree())
+            return false;
 
         _mount.GlobalPosition = body.GlobalPosition + Vector3.Back * -GlobePlaneZ;
         _mount.GlobalBasis = Basis.Identity;
+        return true;
+    }
+
+    private void ScheduleStagePreparationRetry(int expectedGeneration, Node3D? stageEnvironment)
+    {
+        if (_disposed || _tearingDown || expectedGeneration != _generation)
+            return;
+        if (_stagePreparationRetryCallable.HasValue)
+            return;
+        if (_stagePreparationRetryFrames >= StagePreparationRetryLimit)
+        {
+            if (!_stagePreparationRetryExhaustedLogged)
+            {
+                _stagePreparationRetryExhaustedLogged = true;
+                _log.LogWarning(
+                    "Tunnel preparation remained pending after {FrameCount} process frames; waiting for a later resource change or explicit activation.",
+                    StagePreparationRetryLimit);
+            }
+            return;
+        }
+
+        var tree = stageEnvironment?.GetTree()
+            ?? _sceneRegistry.GetSceneOrNull(StageBundleId)?.GetTree()
+            ?? Engine.GetMainLoop() as SceneTree;
+        if (tree is null || !GodotObject.IsInstanceValid(tree))
+            return;
+
+        _stagePreparationRetryFrames++;
+        var callable = Callable.From(() => OnStagePreparationProcessFrame(expectedGeneration));
+        _stagePreparationRetryTree = tree;
+        _stagePreparationRetryCallable = callable;
+        tree.Connect(
+            SceneTree.SignalName.ProcessFrame,
+            callable,
+            (uint)GodotObject.ConnectFlags.OneShot);
+    }
+
+    private void OnStagePreparationProcessFrame(int expectedGeneration)
+    {
+        _stagePreparationRetryTree = null;
+        _stagePreparationRetryCallable = null;
+        EnsureMounted(expectedGeneration);
+    }
+
+    private void DisconnectStagePreparationRetry()
+    {
+        var tree = _stagePreparationRetryTree;
+        var callable = _stagePreparationRetryCallable;
+        _stagePreparationRetryTree = null;
+        _stagePreparationRetryCallable = null;
+        if (tree is null || !GodotObject.IsInstanceValid(tree) || !callable.HasValue)
+            return;
+        if (tree.IsConnected(SceneTree.SignalName.ProcessFrame, callable.Value))
+            tree.Disconnect(SceneTree.SignalName.ProcessFrame, callable.Value);
     }
 
     private void ResolveSourceTracks()
@@ -347,22 +460,34 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
 
     private void OnResourceRuntimeChanging(object? sender, ResourceRuntimeChangingEventArgs args)
     {
-        if (!string.Equals(args.BundleId, WorldBundleId, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(args.BundleId, TimelineBundleId, StringComparison.OrdinalIgnoreCase))
+        {
+            // The tunnel and world geometry remain live across a timeline-only reload. Drop only
+            // command work that captured the outgoing timeline bundle's command service.
+            CancelF9CommandWork("timeline_reload");
+            ResetF9ModeEpoch();
+            return;
+        }
+
+        var worldChanging = string.Equals(args.BundleId, WorldBundleId, StringComparison.OrdinalIgnoreCase);
+        var stageChanging = string.Equals(args.BundleId, StageBundleId, StringComparison.OrdinalIgnoreCase);
+        if (!worldChanging && !stageChanging)
             return;
 
         _tearingDown = true;
         _generation++;
-        _pendingCorridorRebuild = false;
-        CancelTunnelGesture("bundle_teardown");
-        ResetFinePreview(TunnelFineResetReason.BundleTeardown);
+        DisconnectStagePreparationRetry();
+        FailSafeDisable(stageChanging ? "stage_teardown" : "world_teardown", TunnelFineResetReason.BundleTeardown);
         SeverManagedInputCallbacks();
-        UnsubscribeController();
-        UnsubscribeLayerTrackRegistry();
-        SeverFilmstrip();
-        _sourceTracks = Array.Empty<LayerTrackDescriptor>();
-        _focusIndex = -1;
+        if (worldChanging)
+        {
+            UnsubscribeController();
+            UnsubscribeLayerTrackRegistry();
+            SeverFilmstrip();
+            _sourceTracks = Array.Empty<LayerTrackDescriptor>();
+            _focusIndex = -1;
+        }
         _worldRuntimeReload.MarkRuntimeChanging();
-        RestorePreviousCamera();
         var detached = DetachMountState();
         Callable.From(() => CleanupDetachedMount(detached)).CallDeferred();
         _log.LogInformation("Tunnel presentation released before resource {Operation}: {BundleId}", args.Operation, args.BundleId);
@@ -381,7 +506,9 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
     {
         _worldRuntimeReload.CompleteDeferredAttempt();
         if (_disposed || expectedGeneration != _generation
-            || !_worldRuntimeReload.IsPending || !_resource.IsLoaded(WorldBundleId))
+            || !_worldRuntimeReload.IsPending
+            || !_resource.IsLoaded(WorldBundleId)
+            || !_resource.IsLoaded(StageBundleId))
             return;
 
         _tearingDown = false;
@@ -593,11 +720,11 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         if (_disposed)
             return;
 
-        _disposed = true;
         _tearingDown = true;
         _generation++;
-        CancelTunnelGesture("disposed");
-        ResetFinePreview(TunnelFineResetReason.Disposed);
+        DisconnectStagePreparationRetry();
+        FailSafeDisable("disposed", TunnelFineResetReason.Disposed);
+        _disposed = true;
         _resource.RuntimeChanging -= OnResourceRuntimeChanging;
         _resource.RuntimeChanged -= OnResourceRuntimeChanged;
         SeverManagedInputCallbacks();

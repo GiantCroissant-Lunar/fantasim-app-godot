@@ -15,9 +15,17 @@ public interface ITimelineFaceContext
 
     ITimelineFaceProxy Proxy { get; }
 
+    TimelineHudState DesiredHudState { get; }
+
     object? CommandClient { get; }
 
     Func<long, WorldGenerationGraphFamilyDocument?> GenerationGraphFamilyProvider { get; }
+
+    /// <summary>
+    /// Cheap current generation-products revision used to stamp filmstrip requests. The face
+    /// resolves this once per lane rebuild, never once per frame.
+    /// </summary>
+    Func<int> FilmstripGraphRevisionProvider { get; }
 
     /// <summary>
     /// Cancellation-aware: the face cancels the token at sever/unbind and the render MUST honor

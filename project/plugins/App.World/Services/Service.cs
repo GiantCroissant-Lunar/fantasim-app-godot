@@ -331,7 +331,7 @@ public sealed class Service : IService, IDisposable
         return ContinentalFractionsFromState(sampledState);
     }
 
-    public LayerFilmstripPreviewMap GetLayerFilmstripPreview(LayerFilmstripPreviewRequest request, CancellationToken cancellationToken = default)
+    public LayerFilmstripPreviewMap? GetLayerFilmstripPreview(LayerFilmstripPreviewRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (request.Tick < 0) throw new ArgumentOutOfRangeException(nameof(request.Tick));
@@ -343,27 +343,36 @@ public sealed class Service : IService, IDisposable
         // ALCs past the hot-reload collection probe.
         cancellationToken.ThrowIfCancellationRequested();
 
-        var family = WorldGenerationGraphDefaults.BuildFamily();
-        var renderOptions = ResolvePlanetRenderOptions(family);
-        int previewFrequency = ResolveFilmstripFrequency(request.ViewRung);
-        var previewOptions = renderOptions with
-        {
-            TessellationFrequency = previewFrequency,
-            SurfaceSubdivision = SurfaceSubdivisionMode.Fixed,
-            AdaptiveSubdivisionMaxDepth = 0,
-        };
+        return FilmstripRevisionGate.RenderIfStable(
+            request.GraphRevision,
+            () => GetGenerationProductsAsync().GraphRevision,
+            startRevision =>
+            {
+                var family = WorldGenerationGraphDefaults.BuildFamily();
+                var renderOptions = ResolvePlanetRenderOptions(family);
+                int previewFrequency = ResolveFilmstripFrequency(request.ViewRung);
+                var previewOptions = renderOptions with
+                {
+                    TessellationFrequency = previewFrequency,
+                    SurfaceSubdivision = SurfaceSubdivisionMode.Fixed,
+                    AdaptiveSubdivisionMaxDepth = 0,
+                };
 
-        return request.LayerId switch
-        {
-            "geosphere.crust" => BuildCrustFilmstripPreview(request, previewOptions, family.Revision, cancellationToken),
-            "geosphere.plate" => BuildPlateFilmstripPreview(request, previewOptions, cancellationToken),
-            "geosphere.magma-ocean" => BuildProceduralFilmstripPreview(request, previewFrequency, "magma-ocean", new(225, 74, 38), new(255, 190, 72), cancellationToken),
-            "geosphere.stagnant-lid" => BuildProceduralFilmstripPreview(request, previewFrequency, "stagnant-lid", new(54, 68, 74), new(125, 101, 82), cancellationToken),
-            "geosphere.mantle" => BuildMantleFilmstripPreview(request, previewOptions, cancellationToken),
-            _ when string.Equals(request.SphereId, "atmosphere", StringComparison.Ordinal)
-                => BuildProceduralFilmstripPreview(request, previewFrequency, "atmosphere-placeholder", new(39, 93, 143), new(145, 203, 224), cancellationToken),
-            _ => BuildProceduralFilmstripPreview(request, previewFrequency, "layer-placeholder", new(70, 82, 92), new(128, 146, 156), cancellationToken),
-        };
+                var map = request.LayerId switch
+                {
+                    "geosphere.crust" => BuildCrustFilmstripPreview(request, previewOptions, startRevision, cancellationToken),
+                    "geosphere.plate" => BuildPlateFilmstripPreview(request, previewOptions, startRevision, cancellationToken),
+                    "geosphere.magma-ocean" => BuildProceduralFilmstripPreview(request, previewFrequency, startRevision, "magma-ocean", new(225, 74, 38), new(255, 190, 72), cancellationToken),
+                    "geosphere.stagnant-lid" => BuildProceduralFilmstripPreview(request, previewFrequency, startRevision, "stagnant-lid", new(54, 68, 74), new(125, 101, 82), cancellationToken),
+                    "geosphere.mantle" => BuildMantleFilmstripPreview(request, previewOptions, startRevision, cancellationToken),
+                    _ when string.Equals(request.SphereId, "atmosphere", StringComparison.Ordinal)
+                        => BuildProceduralFilmstripPreview(request, previewFrequency, startRevision, "atmosphere-placeholder", new(39, 93, 143), new(145, 203, 224), cancellationToken),
+                    _ => BuildProceduralFilmstripPreview(request, previewFrequency, startRevision, "layer-placeholder", new(70, 82, 92), new(128, 146, 156), cancellationToken),
+                };
+
+                cancellationToken.ThrowIfCancellationRequested();
+                return map;
+            });
     }
 
     private LayerFilmstripPreviewMap BuildCrustFilmstripPreview(
@@ -374,7 +383,7 @@ public sealed class Service : IService, IDisposable
     {
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
         if (request.Tick < onsetTick)
-            return BuildProceduralFilmstripPreview(request, previewOptions.TessellationFrequency, "pre-crust", new(45, 49, 54), new(100, 85, 68), cancellationToken);
+            return BuildProceduralFilmstripPreview(request, previewOptions.TessellationFrequency, graphRevision, "pre-crust", new(45, 49, 54), new(100, 85, 68), cancellationToken);
 
         var products = GetOrBuildCrustTickProducts(previewOptions, onsetTick, request.Tick, graphRevision);
         cancellationToken.ThrowIfCancellationRequested();
@@ -412,6 +421,7 @@ public sealed class Service : IService, IDisposable
             request.LayerId,
             request.Tick,
             products.SnapshotTick,
+            graphRevision,
             request.ViewRung,
             previewOptions.TessellationFrequency,
             request.Width,
@@ -423,6 +433,7 @@ public sealed class Service : IService, IDisposable
     private LayerFilmstripPreviewMap BuildPlateFilmstripPreview(
         LayerFilmstripPreviewRequest request,
         WorldGenerationRenderOptions previewOptions,
+        int graphRevision,
         CancellationToken cancellationToken)
     {
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
@@ -436,6 +447,7 @@ public sealed class Service : IService, IDisposable
             request.LayerId,
             request.Tick,
             request.Tick,
+            graphRevision,
             request.ViewRung,
             previewOptions.TessellationFrequency,
             request.Width,
@@ -447,6 +459,7 @@ public sealed class Service : IService, IDisposable
     private LayerFilmstripPreviewMap BuildMantleFilmstripPreview(
         LayerFilmstripPreviewRequest request,
         WorldGenerationRenderOptions previewOptions,
+        int graphRevision,
         CancellationToken cancellationToken)
     {
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
@@ -487,6 +500,7 @@ public sealed class Service : IService, IDisposable
             request.LayerId,
             request.Tick,
             request.Tick,
+            graphRevision,
             request.ViewRung,
             previewOptions.TessellationFrequency,
             request.Width,
@@ -498,6 +512,7 @@ public sealed class Service : IService, IDisposable
     private static LayerFilmstripPreviewMap BuildProceduralFilmstripPreview(
         LayerFilmstripPreviewRequest request,
         int sourceFrequency,
+        int graphRevision,
         string sourceKind,
         Rgb low,
         Rgb high,
@@ -522,6 +537,7 @@ public sealed class Service : IService, IDisposable
             request.LayerId,
             request.Tick,
             request.Tick,
+            graphRevision,
             request.ViewRung,
             sourceFrequency,
             request.Width,

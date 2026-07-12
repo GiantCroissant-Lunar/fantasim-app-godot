@@ -1,29 +1,10 @@
 namespace FantaSim.App.Timeline.Seam;
 
 /// <summary>
-/// Plugin-local (NOT T1) filmstrip texture cache key. Layers <see cref="GraphRevision"/> on top
-/// of the T1 <c>TimelineFilmstripCacheKey</c> shape (project/contracts/App.Timeline/
-/// TimelineFilmstrip.cs: SphereId, LayerId, SnapshotTick, ViewRung, Width, Height), which is left
-/// untouched deliberately -- extending a T1 contract record is out of scope for this fix
-/// (2026-07-11 cache-key completion, vault/specs/2026-07-11-surrealdb-persistence-slice1-design.md
-/// §1.3). Godot-free by design (no Godot types), same pattern as the sibling FilmstripCacheLedger
-/// -- both files are individually linked into App.Timeline.Tests so the key can be unit-tested
-/// directly without a full ProjectReference to this Godot-dependent assembly.
-///
-/// GraphRevision is sourced from the same <c>WorldGenerationGraphFamilyDocument.Revision</c> the
-/// crust-product cache key now carries (App.World/Services/Service.cs CrustProductCacheKey),
-/// reached here through <c>ITimelineFaceContext.GenerationGraphFamilyProvider</c> -- but NOT by
-/// invoking that provider again from this controller. It is already resolved once per
-/// <c>TimelineFace.BuildLanes()</c> pass (TimelineFace.Lanes.cs ResolveGenerationGraphFamily,
-/// cached per tick) for the layer-track-graph presenter, and this fix threads that ALREADY-PAID
-/// value down through the existing track-render parameter chain
-/// (BuildLaneTracks -> RenderTrackContent -> TrackContentRenderContext -> RenderFilmstripTrackContent
-/// -> BuildCompactFilmstrip -> FilmstripPreviewController.RequestTexture) instead of adding a new
-/// call. Calling the provider fresh from inside the filmstrip hot path would be a real behavior
-/// regression: it round-trips through <c>IService.GetPlanetPresentationAsync</c>, which can run a
-/// full crust materialization (~0.1-0.2s, WorldGenerationRenderOptions.cs) -- unacceptable on a
-/// per-texture path that fires for every visible filmstrip thumbnail, and out of scope for a fix
-/// that must not change behavior beyond key composition.
+/// Plugin-local, Godot-free texture identity. RequestedTick identifies the exact rendered frame;
+/// SnapshotTick identifies its governing stored world state. GraphRevision is provider-proven by
+/// App.World's before/render/after gate. The cheap products revision is resolved once per lane or
+/// corridor rebuild and threaded into every request, never reconstructed by the controller.
 ///
 /// RESIDUE -- Seed is NOT included, and cannot be without a T1 contract change:
 /// <c>WorldGenerationRenderOptions.Seed</c> is resolved only inside the App.World PLUGIN assembly
@@ -34,13 +15,13 @@ namespace FantaSim.App.Timeline.Seam;
 /// type-identity-split incident class documented in vault/architecture/cross-alc-rules.md and
 /// called out by the polarity-flip commit 9bda14f). Neither of the T1 contracts this bundle CAN
 /// see -- LayerFilmstripPreviewMap / LayerFilmstripPreviewRequest
-/// (project/contracts/App.World/LayerFilmstripPreview.cs) nor WorldGenerationGraphFamilyDocument
-/// itself -- carries Seed. Threading Seed through requires adding it to one of those T1 contracts,
-/// which is explicitly out of scope for this fix.
+/// (project/contracts/App.World/LayerFilmstripPreview.cs) carries Seed. Threading Seed through
+/// requires another T1 contract change and is explicitly deferred by the approved design.
 /// </summary>
 internal readonly record struct FilmstripTextureCacheKey(
     string SphereId,
     string LayerId,
+    long RequestedTick,
     long SnapshotTick,
     string ViewRung,
     int Width,

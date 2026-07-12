@@ -24,11 +24,14 @@
     <Compile Include="..\..\plugins\App.Timeline.Seam\TrackLaneViewModelBuilder.cs" Link="TrackLaneViewModelBuilder.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\FilmstripCacheLedger.cs" Link="FilmstripCacheLedger.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\FilmstripTextureCacheKey.cs" Link="FilmstripTextureCacheKey.cs" />
+    <Compile Include="..\..\plugins\App.Timeline.Seam\IFilmstripFrameSink.cs" Link="IFilmstripFrameSink.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelCorridorLayout.cs" Link="TunnelCorridorLayout.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelScrubMapper.cs" Link="TunnelScrubMapper.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelRayHitMapper.cs" Link="TunnelRayHitMapper.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelTrackActivity.cs" Link="TunnelTrackActivity.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelFinePreviewMapper.cs" Link="TunnelFinePreviewMapper.cs" />
+    <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelFineSamplePolicy.cs" Link="TunnelFineSamplePolicy.cs" />
+    <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelFineRequestScheduler.cs" Link="TunnelFineRequestScheduler.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelGestureCoordinator.cs" Link="TunnelGestureCoordinator.cs" />
   </ItemGroup>
 </Project>

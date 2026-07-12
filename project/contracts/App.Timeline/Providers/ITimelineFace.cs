@@ -3,6 +3,20 @@ using FantaSim.Cross;
 
 namespace FantaSim.App.Timeline.Providers;
 
+public readonly record struct TimelineHudState(bool Visible, long ModeEpoch);
+
+/// <summary>Godot-free guard shared by the resident face and lifecycle tests.</summary>
+public static class TimelineHudReplayPolicy
+{
+    public static bool CanApply(
+        int capturedBindGeneration,
+        int currentBindGeneration,
+        long incomingModeEpoch,
+        long currentModeEpoch)
+        => capturedBindGeneration == currentBindGeneration
+            && incomingModeEpoch >= currentModeEpoch;
+}
+
 /// <summary>
 /// The timeline service's engine seam: the Godot-facing backend that renders the timeline
 /// UI and drives the AnimationPlayer/Tree playback. The T3 service owns this seam and
@@ -57,5 +71,5 @@ public interface ITimelineFace
     /// unaffected while hidden.
     /// </summary>
     [CrossDelegate]
-    void SetHudVisible(bool visible);
+    void ApplyHudState(TimelineHudState state);
 }

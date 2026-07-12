@@ -68,7 +68,7 @@ public interface IService
     /// worst): callers cancel it when a bundle severs, because a render still on a threadpool
     /// stack roots the timeline AND world ALCs past the hot-reload collection probe.
     /// </summary>
-    LayerFilmstripPreviewMap GetLayerFilmstripPreview(LayerFilmstripPreviewRequest request, CancellationToken cancellationToken = default);
+    LayerFilmstripPreviewMap? GetLayerFilmstripPreview(LayerFilmstripPreviewRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Mantle x-ray view (M-A): the four isosurface meshes (translucent outer + opaque inner per

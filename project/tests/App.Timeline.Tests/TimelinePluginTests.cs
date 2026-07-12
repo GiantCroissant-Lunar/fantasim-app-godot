@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using FantaSim.App.Command;
+using FantaSim.App.Presentation;
 using FantaSim.App.Resource;
 using FantaSim.App.Timeline;
 using FantaSim.App.Timeline.Providers;
@@ -118,6 +120,186 @@ public sealed class TimelinePluginTests
         Assert.Equal(0, proxy.UnbindCrossTargetCalls);
     }
 
+    [Fact]
+    public async Task TimelineRuntimeChangingPreservesEffectiveTunnelAndHiddenHud()
+    {
+        var registry = NewRegistry();
+        var resource = new FakeResourceService { WorldLoaded = true };
+        var proxy = new FakeFaceProxy();
+        var tunnel = new FakeTunnelPresentation(
+            enabled => new TunnelActivationResult(enabled, enabled, string.Empty),
+            initiallyEnabled: true);
+        registry.Register<FantaSim.App.Resource.IService>(resource);
+        registry.Register<ITimelineController>(new FakeTimelineController());
+        registry.Register<ITunnelPresentation>(tunnel);
+
+        var plugin = new TimelinePlugin(() => proxy);
+        await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+        Assert.False(proxy.HudVisible);
+
+        resource.RaiseRuntimeChanging("timeline", ResourceRuntimeOperation.Reload);
+
+        Assert.True(tunnel.IsEnabled);
+        Assert.Equal(0, tunnel.TrySetEnabledCalls);
+        Assert.False(proxy.HudVisible);
+        Assert.Equal(1L, proxy.HudState.ModeEpoch);
+        Assert.Null(registry.TryGet<ITimelineFaceContext>());
+    }
+
+    [Fact]
+    public async Task StageRuntimeChangingShowsHudDisablesTunnelAndRetainsTimelineBinding()
+    {
+        var registry = NewRegistry();
+        var resource = new FakeResourceService { WorldLoaded = true };
+        var proxy = new FakeFaceProxy();
+        var tunnel = new FakeTunnelPresentation(
+            enabled => new TunnelActivationResult(enabled, enabled, string.Empty),
+            initiallyEnabled: true);
+        registry.Register<FantaSim.App.Resource.IService>(resource);
+        registry.Register<ITimelineController>(new FakeTimelineController());
+        registry.Register<ITunnelPresentation>(tunnel);
+
+        var plugin = new TimelinePlugin(() => proxy);
+        await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+
+        resource.RaiseRuntimeChanging("stage", ResourceRuntimeOperation.Reload);
+
+        Assert.False(tunnel.IsEnabled);
+        Assert.Equal(1, tunnel.TrySetEnabledCalls);
+        Assert.True(proxy.HudVisible);
+        Assert.Equal(1L, proxy.HudState.ModeEpoch);
+        Assert.NotNull(registry.TryGet<ITimelineFaceContext>());
+        Assert.NotNull(registry.TryGet<FantaSim.App.Timeline.IService>());
+    }
+
+    [Fact]
+    public async Task TunnelCommand_SuccessReportsRequestedEffectiveReasonAndEpoch()
+    {
+        var registry = NewRegistry();
+        var commands = new FakeCommandService();
+        var proxy = new FakeFaceProxy();
+        var tunnel = new FakeTunnelPresentation(enabled => new TunnelActivationResult(enabled, enabled, string.Empty));
+        registry.Register<FantaSim.App.Command.IService>(commands);
+        registry.Register<ITimelineController>(new FakeTimelineController());
+        registry.Register<ITunnelPresentation>(tunnel);
+
+        var plugin = new TimelinePlugin(() => proxy);
+        await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+
+        var result = await commands.ExecuteAsync(new CommandRequest(
+            TimelinePlugin.TunnelViewCommandId,
+            new JsonObject { ["enabled"] = true }.ToJsonString()));
+        var payload = JsonNode.Parse(result.ResultJson!)!.AsObject();
+
+        Assert.True(result.Ok);
+        Assert.True(payload["ok"]!.GetValue<bool>());
+        Assert.True(payload["requested"]!.GetValue<bool>());
+        Assert.True(payload["effective"]!.GetValue<bool>());
+        Assert.Equal(string.Empty, payload["failureReason"]!.GetValue<string>());
+        Assert.Equal(1L, payload["modeEpoch"]!.GetValue<long>());
+        Assert.False(proxy.HudVisible);
+    }
+
+    [Fact]
+    public async Task TunnelCommand_FailedEnableLeavesHudVisibleAndReportsReason()
+    {
+        var registry = NewRegistry();
+        var commands = new FakeCommandService();
+        var proxy = new FakeFaceProxy();
+        var tunnel = new FakeTunnelPresentation(enabled =>
+            new TunnelActivationResult(enabled, false, "stage unavailable"));
+        registry.Register<FantaSim.App.Command.IService>(commands);
+        registry.Register<ITimelineController>(new FakeTimelineController());
+        registry.Register<ITunnelPresentation>(tunnel);
+
+        var plugin = new TimelinePlugin(() => proxy);
+        await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+
+        var result = await commands.ExecuteAsync(new CommandRequest(
+            TimelinePlugin.TunnelViewCommandId,
+            new JsonObject { ["enabled"] = true }.ToJsonString()));
+        var payload = JsonNode.Parse(result.ResultJson!)!.AsObject();
+
+        Assert.False(payload["ok"]!.GetValue<bool>());
+        Assert.True(payload["requested"]!.GetValue<bool>());
+        Assert.False(payload["effective"]!.GetValue<bool>());
+        Assert.Equal("stage unavailable", payload["failureReason"]!.GetValue<string>());
+        Assert.True(proxy.HudVisible);
+    }
+
+    [Fact]
+    public async Task TunnelCommand_MissingPresentationFailsClosedAndShowsHud()
+    {
+        var registry = NewRegistry();
+        var commands = new FakeCommandService();
+        var proxy = new FakeFaceProxy();
+        registry.Register<FantaSim.App.Command.IService>(commands);
+        registry.Register<ITimelineController>(new FakeTimelineController());
+
+        var plugin = new TimelinePlugin(() => proxy);
+        await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+
+        var result = await commands.ExecuteAsync(new CommandRequest(
+            TimelinePlugin.TunnelViewCommandId,
+            new JsonObject { ["enabled"] = true }.ToJsonString()));
+        var payload = JsonNode.Parse(result.ResultJson!)!.AsObject();
+
+        Assert.False(payload["ok"]!.GetValue<bool>());
+        Assert.Equal("tunnel presentation unavailable", payload["failureReason"]!.GetValue<string>());
+        Assert.True(proxy.HudVisible);
+    }
+
+    [Fact]
+    public async Task TunnelCommand_DisableIsIdempotentAndReportsEffectiveFalse()
+    {
+        var registry = NewRegistry();
+        var commands = new FakeCommandService();
+        var proxy = new FakeFaceProxy();
+        var tunnel = new FakeTunnelPresentation(enabled =>
+            new TunnelActivationResult(enabled, false, string.Empty));
+        registry.Register<FantaSim.App.Command.IService>(commands);
+        registry.Register<ITimelineController>(new FakeTimelineController());
+        registry.Register<ITunnelPresentation>(tunnel);
+
+        var plugin = new TimelinePlugin(() => proxy);
+        await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+
+        var result = await commands.ExecuteAsync(new CommandRequest(
+            TimelinePlugin.TunnelViewCommandId,
+            new JsonObject { ["enabled"] = false }.ToJsonString()));
+        var payload = JsonNode.Parse(result.ResultJson!)!.AsObject();
+
+        Assert.True(payload["ok"]!.GetValue<bool>());
+        Assert.False(payload["requested"]!.GetValue<bool>());
+        Assert.False(payload["effective"]!.GetValue<bool>());
+        Assert.True(proxy.HudVisible);
+    }
+
+    [Fact]
+    public void FaceContextRevisionProviderIsLazyAndSeversOnDispose()
+    {
+        var revision = 4;
+        var context = new TimelineFaceContext(
+            controller: new FakeTimelineController(),
+            proxy: new FakeFaceProxy(),
+            commandClient: null,
+            generationGraphFamilyProvider: _ => null,
+            filmstripGraphRevisionProvider: () => revision,
+            filmstripPreviewProvider: (_, _) => null,
+            layerTrackRegistry: null,
+            loggerFactory: NullLoggerFactory.Instance,
+            ticksPerSecond: 5_000_000.0,
+            desiredHudState: new TimelineHudState(true, 0L));
+
+        Assert.Equal(4, context.FilmstripGraphRevisionProvider());
+        revision = 7;
+        Assert.Equal(7, context.FilmstripGraphRevisionProvider());
+
+        context.Dispose();
+
+        Assert.Equal(0, context.FilmstripGraphRevisionProvider());
+    }
+
     private static IRegistry NewRegistry() => new ServiceRegistry();
 
     private static IServiceProvider BuildProvider(IRegistry registry)
@@ -163,7 +345,13 @@ public sealed class TimelinePluginTests
         public void SeekTo(long tick) => Target?.SeekTo(tick);
         public void ApplyView(TimelineViewSnapshot snapshot) => Target?.ApplyView(snapshot);
         public bool HudVisible = true;
-        public void SetHudVisible(bool visible) { HudVisible = visible; Target?.SetHudVisible(visible); }
+        public TimelineHudState HudState = new(true, 0L);
+        public void ApplyHudState(TimelineHudState state)
+        {
+            HudState = state;
+            HudVisible = state.Visible;
+            Target?.ApplyHudState(state);
+        }
     }
 
     private sealed class FakeCommandService : FantaSim.App.Command.IService
@@ -179,7 +367,61 @@ public sealed class TimelinePluginTests
             => _handlers.Remove(commandId);
 
         public Task<CommandResult> ExecuteAsync(CommandRequest request, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
+        {
+            if (!_handlers.TryGetValue(request.Command, out var entry))
+                return Task.FromResult(new CommandResult(
+                    request.CorrelationId ?? "test-command",
+                    false,
+                    Error: new CommandError("unknown-command", request.Command)));
+            return ExecuteHandlerAsync(entry.Handler, request, cancellationToken);
+        }
+
+        private static async Task<CommandResult> ExecuteHandlerAsync(
+            CommandHandler handler,
+            CommandRequest request,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var json = await handler(request.PayloadJson, cancellationToken);
+                return new CommandResult(request.CorrelationId ?? "test-command", true, ResultJson: json);
+            }
+            catch (Exception ex)
+            {
+                return new CommandResult(
+                    request.CorrelationId ?? "test-command",
+                    false,
+                    Error: new CommandError(ex.GetType().Name, ex.Message));
+            }
+        }
+    }
+
+    private sealed class FakeTunnelPresentation : ITunnelPresentation
+    {
+        private readonly Func<bool, TunnelActivationResult> _activate;
+
+        public FakeTunnelPresentation(
+            Func<bool, TunnelActivationResult> activate,
+            bool initiallyEnabled = false)
+        {
+            _activate = activate;
+            IsEnabled = initiallyEnabled;
+        }
+
+        public bool IsEnabled { get; private set; }
+        public int TrySetEnabledCalls { get; private set; }
+
+        public void Rebind() { }
+
+        public TunnelActivationResult TrySetEnabled(bool enabled)
+        {
+            TrySetEnabledCalls++;
+            var result = _activate(enabled);
+            IsEnabled = result.EffectiveEnabled;
+            return result;
+        }
+
+        public void Dispose() { }
     }
 
     private sealed class FakeResourceService : FantaSim.App.Resource.IService

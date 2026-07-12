@@ -23,7 +23,7 @@ public class TimelineServiceTests
         public void SeekTo(long tick) { SeekCalls++; LastSeekTick = tick; }
         public void ApplyView(TimelineViewSnapshot snapshot) { ApplyViewCalls++; LastSnapshot = snapshot; }
         public bool HudVisible = true;
-        public void SetHudVisible(bool visible) => HudVisible = visible;
+        public void ApplyHudState(TimelineHudState state) => HudVisible = state.Visible;
     }
 
     private static (Service svc, FakeFace face) Build(long maxTick = 120_000_000)

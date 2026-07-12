@@ -69,6 +69,7 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
     private readonly bool _showWorldGraph;
     private int? _subscribedWorldHash;
     private readonly PlanetPresentationReloadGate _worldRuntimeReload = new();
+    private int _mountGeneration;
     private string? _boundRegimeId;
     private PlanetSurfaceBindStamp? _boundSurfaceStamp;
     private bool _regimeRefreshPending;
@@ -181,7 +182,8 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
         ResetRegimeTracking();
         _timeline.UpdateFrom(document);
         EnsureNodeGraphView(document);
-        Callable.From(() => BindDocument(document)).CallDeferred();
+        var expectedGeneration = ++_mountGeneration;
+        Callable.From(() => BindDocument(document, expectedGeneration)).CallDeferred();
     }
 
     private void EnsureNodeGraphView(PlanetPresentationDocument document)
@@ -262,13 +264,13 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
         });
     }
 
-    private void BindDocument(PlanetPresentationDocument document)
+    private void BindDocument(PlanetPresentationDocument document, int expectedGeneration)
     {
-        if (_disposed)
+        if (_disposed || expectedGeneration != _mountGeneration)
             return;
 
         var mount = _sceneRegistry.GetNodeOrNull(StageBundleId, PlanetLayerMountPath) as Node3D;
-        if (mount is null)
+        if (mount is null || !GodotObject.IsInstanceValid(mount) || !mount.IsInsideTree())
         {
             _log.LogWarning(
                 "Planet presentation skipped: stage mount not found at {Path}.",
@@ -582,7 +584,7 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
             }
             else
             {
-                BindDocument(document);
+                BindDocument(document, _mountGeneration);
             }
         }
         finally
@@ -689,18 +691,27 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
 
     private void OnResourceRuntimeChanging(object? sender, ResourceRuntimeChangingEventArgs args)
     {
-        if (!string.Equals(args.BundleId, WorldBundleId, StringComparison.OrdinalIgnoreCase))
+        var worldChanging = string.Equals(args.BundleId, WorldBundleId, StringComparison.OrdinalIgnoreCase);
+        var stageChanging = string.Equals(args.BundleId, StageBundleId, StringComparison.OrdinalIgnoreCase);
+        if (!worldChanging && !stageChanging)
             return;
 
-        _subscribedWorldHash = null;
-        _generationSubscription?.Dispose();
-        _generationSubscription = null;
+        var expectedGeneration = ++_mountGeneration;
+        if (worldChanging)
+        {
+            _subscribedWorldHash = null;
+            _generationSubscription?.Dispose();
+            _generationSubscription = null;
+        }
         _worldRuntimeReload.MarkRuntimeChanging();
         ResetRegimeTracking();
         Callable.From(() =>
         {
+            if (_disposed || expectedGeneration != _mountGeneration)
+                return;
             ClearActiveRoot();
-            ReleaseNodeGraphView();
+            if (worldChanging)
+                ReleaseNodeGraphView();
         }).CallDeferred();
         _log.LogInformation("Planet presentation released before resource {Operation}: {BundleId}", args.Operation, args.BundleId);
     }
@@ -716,7 +727,12 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
     private void TryRebindAfterWorldRuntimeChange()
     {
         _worldRuntimeReload.CompleteDeferredAttempt();
-        if (_disposed || !_worldRuntimeReload.IsPending || !_resource.IsLoaded(WorldBundleId))
+        if (_disposed || !_worldRuntimeReload.IsPending
+            || !_resource.IsLoaded(WorldBundleId)
+            || !_resource.IsLoaded(StageBundleId))
+            return;
+        var mount = _sceneRegistry.GetNodeOrNull(StageBundleId, PlanetLayerMountPath) as Node3D;
+        if (mount is null || !GodotObject.IsInstanceValid(mount) || !mount.IsInsideTree())
             return;
 
         Rebind();
@@ -809,6 +825,7 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
             return;
 
         _disposed = true;
+        _mountGeneration++;
         _timeline.LayerSelectionChanged -= OnLayerSelectionChanged;
         _resource.RuntimeChanging -= OnResourceRuntimeChanging;
         _resource.RuntimeChanged -= OnResourceRuntimeChanged;
