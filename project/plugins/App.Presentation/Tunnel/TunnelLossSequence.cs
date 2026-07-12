@@ -14,7 +14,17 @@ internal static class TunnelLossSequence
         if (lossEvent is not TunnelModeEvent.WorldChanging and not TunnelModeEvent.StageChanging)
             throw new ArgumentOutOfRangeException(nameof(lossEvent), lossEvent, "Expected a world or stage loss event.");
 
-        modeOwner?.PrepareForTunnelLoss(lossEvent);
-        teardownOnMainThread();
+        // HUD preparation touches Godot state and can throw mid-reload. Teardown must run
+        // regardless — skipping it would leave the mount/relay/frame bindings alive past the
+        // bundle unload and pin the outgoing ALC — so it is fenced in a finally. A HUD-prep
+        // failure still propagates after teardown rather than being swallowed.
+        try
+        {
+            modeOwner?.PrepareForTunnelLoss(lossEvent);
+        }
+        finally
+        {
+            teardownOnMainThread();
+        }
     }
 }
