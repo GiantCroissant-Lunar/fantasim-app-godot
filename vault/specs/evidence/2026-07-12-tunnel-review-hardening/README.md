@@ -63,15 +63,43 @@ App.Timeline 318, App.Presentation 173, App.Camera 30, App.Render 46, App.NodeGr
 smaller projects — **0 failures**. The tunnel + coalescer focused set went 165 → 172 → (with the new
 ray/sphere and hardening tests) higher, all passing.
 
-## OWED — live windowed gate
+## Live windowed gate — deterministic half PASSED (fresh export)
 
-The seam changes (`App.Timeline.Seam`, and the `App.Presentation` binder) are resident/collectible
-but the seam is **resident**, so the live gate needs one **fresh full export**, not a bundle
-hot-reload. On that build, re-run the tunnel acceptance: enable via `timeline.tunnel_view` / F9,
-screenshot the oblique interior, exercise real-mouse wall / outer / inner gestures (confirming the
-wall carousel no longer over-snaps and clicking the planet does nothing), and drive a live enabled
-world reload to confirm `Hot-reload: old ALC collected for bundle world` with no pin. Record the
-result here.
+Ran on a **fresh full desktop export** (`0.1.2`, resident common layer stripped/provisioned;
+`task build:godot:desktop` → `task bundles` → `task bundle:install`) because the seam is resident.
+App PID 88760, log `/private/tmp/fantasim-tunnel-hardening-gate/app.log`.
+
+- **Enables + renders** — `timeline.tunnel_view {enabled:true}` → `effective:true`; the interior view
+  renders correctly with the resident-seam changes baked in: planet large at center, both dial rings
+  with handle markers, five corridors, outer readout `tick 60000000 | kb`, focused readout
+  `Stagnant Lid | ka | 0 ticks — active at current time`, activity ledger `0 failed`
+  (`interior-enabled.jpg`).
+- **Live world reload while enabled — ALC collected, no pin** (`world-reload-segment.log`), the exact
+  required sequence and zero tunnel exceptions in the segment:
+
+  ```
+  Bundle unloaded: world
+  Bundle loaded: world from .../bundles/world.pck
+  resource.reload_bundle: reloaded 'world'.
+  Hot-reload: old ALC collected for bundle world
+  ```
+
+  This exercises the teardown path this pass changed (`TunnelLossSequence` try/finally, relay
+  `OnError`/sever): **no ALC pin was introduced.**
+- **Re-mounts + re-enables on the fresh binder** — post-reload `timeline.tunnel_view {enabled:true}`
+  → `effective:true`; ledger shows `resource.reload_bundle.result ok` → `world.presentation.rebound
+  rebind scheduled` → `timeline.tunnel_view result ok`, `0 failed` (`post-reload-reenabled.jpg`).
+- **Disable restores the globe cleanly** — `camera.debug` after disable:
+  `activePcamPath = …/PCam_globe_default`, `draggingNow = False`, `dragMotionsApplied = 0`,
+  `orbitDistance = 4.0` (the baseline) — no leaked drag state from the input changes.
+
+### Still owed — real-mouse sitting (needs the user's hands)
+
+The app is left running (PID 88760) with the tunnel enabled. The one part a command run cannot cover
+is OS-mouse gesture verification: (1) a **wall** drag should snap the carousel one step per ~30° and
+**not** over-snap near the dial center (the axis-angle fix); (2) clicking the **planet** should do
+nothing (the occlusion fix); (3) an **inner-ring** drag should move the fine cursor/readout with the
+authoritative tick unchanged. Confirm those three and this gate is fully closed.
 
 ## Deferred (design decisions, not landed)
 
