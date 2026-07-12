@@ -2,35 +2,55 @@ namespace FantaSim.App.Presentation;
 
 internal sealed class PlanetPresentationReloadGate
 {
+    private readonly object _gate = new();
     private bool _pending;
     private bool _scheduled;
 
-    public bool IsPending => _pending;
+    public bool IsPending
+    {
+        get
+        {
+            lock (_gate)
+                return _pending;
+        }
+    }
 
     public void MarkRuntimeChanging()
     {
-        _pending = true;
-        _scheduled = false;
+        lock (_gate)
+        {
+            _pending = true;
+            _scheduled = false;
+        }
     }
 
     public bool TryScheduleDeferredAttempt()
     {
-        if (!_pending || _scheduled)
-            return false;
+        lock (_gate)
+        {
+            if (!_pending || _scheduled)
+                return false;
 
-        _scheduled = true;
-        return true;
+            _scheduled = true;
+            return true;
+        }
     }
 
     public bool CompleteDeferredAttempt(bool runtimeChangeInProgress)
     {
-        _scheduled = false;
-        return _pending && !runtimeChangeInProgress;
+        lock (_gate)
+        {
+            _scheduled = false;
+            return _pending && !runtimeChangeInProgress;
+        }
     }
 
     public void MarkMounted()
     {
-        _pending = false;
-        _scheduled = false;
+        lock (_gate)
+        {
+            _pending = false;
+            _scheduled = false;
+        }
     }
 }

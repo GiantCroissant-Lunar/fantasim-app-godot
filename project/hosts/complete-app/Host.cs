@@ -44,6 +44,7 @@ public partial class Host : Node
     private SceneTierPckWatcher? _sceneTierPckWatcher;
     private IDisposable? _worldBundleWatch;
     private bool _ecsWorldReady;
+    private readonly object _worldPresentationGate = new();
     private bool _worldReloadPending;
 
     public override void _Ready()
@@ -161,19 +162,54 @@ public partial class Host : Node
 
     private void OnResourceRuntimeChanging(object? sender, FantaSim.App.Resource.ResourceRuntimeChangingEventArgs e)
     {
-        if (string.Equals(e.BundleId, "world", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(e.BundleId, "world", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        void SeverWorldPresentation()
         {
             // Reload, Unload, and UnloadAll all remove the current generation. Sever every
             // resident->bundle reference BEFORE that old ALC unloads: render-ingress delegates,
             // camera orbit target, and host contract handles all point into the outgoing world.
-            _worldReloadPending = true;
-            _renderComposition?.SetCutawayTarget(null);
-            _renderComposition?.SetExplodedTarget(null);
-            _renderComposition?.SetMantleTarget(null);
-            _cameraComposition?.SetOrbitTarget(null);
-            _planetPresentation = null;
-            _tunnelPresentation = null;
+            lock (_worldPresentationGate)
+            {
+                _worldReloadPending = true;
+                _renderComposition?.SetCutawayTarget(null);
+                _renderComposition?.SetExplodedTarget(null);
+                _renderComposition?.SetMantleTarget(null);
+                _cameraComposition?.SetOrbitTarget(null);
+                _planetPresentation = null;
+                _tunnelPresentation = null;
+            }
         }
+
+        if (OS.GetThreadCallerId() == OS.GetMainThreadId())
+        {
+            SeverWorldPresentation();
+            return;
+        }
+
+        // Resource watchers invoke RuntimeChanging on a worker. Provider unload must not proceed
+        // until resident delegates/camera targets are severed on Godot's main thread.
+        Exception? failure = null;
+        using var completed = new System.Threading.ManualResetEventSlim(false);
+        Callable.From(() =>
+        {
+            try
+            {
+                SeverWorldPresentation();
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+            }
+            finally
+            {
+                completed.Set();
+            }
+        }).CallDeferred();
+        completed.Wait();
+        if (failure is not null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
     }
 
     private void OnResourceRuntimeChanged(object? sender, EventArgs e)
@@ -184,21 +220,26 @@ public partial class Host : Node
         var registry = _composition.Bootstrap.Registry;
         var resource = registry.TryGet<FantaSim.App.Resource.IService>();
 
-        if (_worldReloadPending)
+        var scheduleWorldRebind = false;
+        lock (_worldPresentationGate)
         {
-            // Authoritative resource state is cleared before RuntimeChanged is published. Ignore
-            // unrelated/concurrent completion events while any world operation remains active;
-            // once clear, a pre-unload failure may validly leave the SAME presentation registered,
-            // while a successful reload presents a replacement instance.
-            if (resource?.IsRuntimeChangeInProgress("world") != true
-                && resource?.IsLoaded("world") == true
-                && registry.TryGet<IPlanetPresentation>() is not null)
+            if (_worldReloadPending)
             {
-                _worldReloadPending = false;
-                HandleWorldBundleReloaded();
+                // An interim completion may still observe a positive same-bundle count. Once the
+                // final completion clears it, a pre-unload failure may validly leave the SAME
+                // presentation registered while a successful reload presents a replacement.
+                if (resource?.IsRuntimeChangeInProgress("world") != true
+                    && resource?.IsLoaded("world") == true
+                    && registry.TryGet<IPlanetPresentation>() is not null)
+                {
+                    _worldReloadPending = false;
+                    scheduleWorldRebind = true;
+                }
             }
         }
 
+        if (scheduleWorldRebind)
+            HandleWorldBundleReloaded();
     }
 
     private void RegisterPresentationOptions(IRegistry registry)
@@ -224,16 +265,6 @@ public partial class Host : Node
         var registry = _composition.Bootstrap.Registry;
         Callable.From(() =>
         {
-            var resource = registry.TryGet<FantaSim.App.Resource.IService>();
-            if (resource?.IsRuntimeChangeInProgress("world") == true
-                || resource?.IsRuntimeChangeInProgress("stage") == true)
-            {
-                // A later operation began after RuntimeChanged scheduled this callback. Keep the
-                // recovery armed; its final completion will schedule a bind to the latest nodes.
-                _worldReloadPending = true;
-                return;
-            }
-
             BindPlanetPresentation(registry);
         }).CallDeferred();
         _log.LogInformation("world bundle reloaded; presentation rebind scheduled.");
@@ -724,31 +755,59 @@ public partial class Host : Node
     // severed on world RuntimeChanging so the old ALC can collect.
     private void BindPlanetPresentation(IRegistry registry)
     {
-        _planetPresentation = registry.TryGet<IPlanetPresentation>();
-        if (_planetPresentation is null)
+        lock (_worldPresentationGate)
         {
-            _log.LogWarning("world bundle loaded but IPlanetPresentation is not registered; planet stays unmounted.");
-            return;
+            var resource = registry.TryGet<FantaSim.App.Resource.IService>();
+            if (resource?.IsRuntimeChangeInProgress("world") == true
+                || resource?.IsRuntimeChangeInProgress("stage") == true)
+            {
+                // Begin precedes RuntimeChanging. Holding the same gate as the sever handler makes
+                // check+bind atomic with respect to that handler; an active operation rearms the
+                // final-completion retry instead of binding an outgoing generation.
+                _worldReloadPending = true;
+                return;
+            }
+
+            _planetPresentation = registry.TryGet<IPlanetPresentation>();
+            if (_planetPresentation is null)
+            {
+                _log.LogWarning("world bundle loaded but IPlanetPresentation is not registered; planet stays unmounted.");
+                return;
+            }
+
+            _planetPresentation.Rebind();
+            _renderComposition?.SetCutawayTarget(_planetPresentation.UpdateCutaway);
+            _renderComposition?.SetExplodedTarget(_planetPresentation.UpdateExploded);
+            _renderComposition?.SetMantleTarget(_planetPresentation.UpdateMantle);
+
+            // Tunnel slice-1: resolved+rebound alongside the planet presentation on every (re)bind
+            // of the world bundle. It has no render-ingress targets to wire.
+            _tunnelPresentation = registry.TryGet<ITunnelPresentation>();
+            _tunnelPresentation?.Rebind();
         }
-
-        _planetPresentation.Rebind();
-        _renderComposition?.SetCutawayTarget(_planetPresentation.UpdateCutaway);
-        _renderComposition?.SetExplodedTarget(_planetPresentation.UpdateExploded);
-        _renderComposition?.SetMantleTarget(_planetPresentation.UpdateMantle);
-
-        // Tunnel slice-1: resolved+rebound alongside the planet presentation on every (re)bind of
-        // the world bundle. No render-ingress targets to wire (the tunnel has none for slice 1).
-        _tunnelPresentation = registry.TryGet<ITunnelPresentation>();
-        _tunnelPresentation?.Rebind();
 
         // Mount the default globe camera now that the world bundle has mounted the globe at the
         // origin. Deferred so the pcam is built on the main thread after the scene tree settles.
         if (_cameraComposition is not null)
         {
-            Callable.From(() => CameraComposition.MountDefaultGlobeCamera(
-                new HostCompositionContext(_composition!),
-                this,
-                _cameraComposition)).CallDeferred();
+            Callable.From(() =>
+            {
+                lock (_worldPresentationGate)
+                {
+                    var resource = registry.TryGet<FantaSim.App.Resource.IService>();
+                    if (resource?.IsRuntimeChangeInProgress("world") == true
+                        || resource?.IsRuntimeChangeInProgress("stage") == true
+                        || resource?.IsLoaded("world") != true)
+                    {
+                        return;
+                    }
+
+                    CameraComposition.MountDefaultGlobeCamera(
+                        new HostCompositionContext(_composition!),
+                        this,
+                        _cameraComposition);
+                }
+            }).CallDeferred();
         }
     }
 

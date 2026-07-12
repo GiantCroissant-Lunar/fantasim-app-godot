@@ -162,6 +162,32 @@ public sealed class TimelinePluginTests
     }
 
     [Fact]
+    public async Task FailedTimelineSelfReloadRestoresSurvivingPluginBindingsOnCompletion()
+    {
+        var registry = NewRegistry();
+        var resource = new FakeResourceService { WorldLoaded = true };
+        var commands = new FakeCommandService();
+        var controller = new FakeTimelineController();
+        registry.Register<FantaSim.App.Resource.IService>(resource);
+        registry.Register<FantaSim.App.Command.IService>(commands);
+        registry.Register<ITimelineController>(controller);
+
+        var plugin = new TimelinePlugin(() => new FakeFaceProxy());
+        await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+        resource.RaiseRuntimeChanging("timeline", ResourceRuntimeOperation.Reload);
+        Assert.Null(registry.TryGet<ITimelineFaceContext>());
+        Assert.DoesNotContain(commands.Commands, command => command.Id.StartsWith("timeline.", StringComparison.Ordinal));
+
+        // Provider failed before unloading this plugin generation; completion must make the same
+        // still-valid controller/context/commands live again.
+        resource.RaiseRuntimeChanged();
+
+        Assert.Same(controller, registry.TryGet<ITimelineFaceContext>()?.Controller);
+        Assert.Contains(commands.Commands, command => command.Id == TimelinePlugin.TunnelViewCommandId);
+        await plugin.ShutdownAsync();
+    }
+
+    [Fact]
     public async Task StageRuntimeChangingShowsHudAndLeavesGeometryTeardownToWorldBinder()
     {
         var registry = NewRegistry();
@@ -291,6 +317,40 @@ public sealed class TimelinePluginTests
                 resource.BeginWithoutNotification("world");
             return new TunnelActivationResult(enabled, enabled, string.Empty);
         });
+        registry.Register<FantaSim.App.Command.IService>(commands);
+        registry.Register<FantaSim.App.Resource.IService>(resource);
+        registry.Register<ITimelineController>(new FakeTimelineController());
+        registry.Register<ITunnelPresentation>(tunnel);
+        registry.Register<ITunnelModeOwner>(modeOwner);
+
+        var plugin = new TimelinePlugin(() => proxy);
+        await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+
+        var result = await commands.ExecuteAsync(new CommandRequest(
+            TimelinePlugin.TunnelViewCommandId,
+            new JsonObject { ["enabled"] = true }.ToJsonString()));
+        var payload = JsonNode.Parse(result.ResultJson!)!.AsObject();
+
+        Assert.False(payload["effective"]!.GetValue<bool>());
+        Assert.Equal("tunnel activation superseded by resource loss", payload["failureReason"]!.GetValue<string>());
+        Assert.False(tunnel.IsEnabled);
+        Assert.Equal(2, tunnel.TrySetEnabledCalls);
+        Assert.True(proxy.HudVisible);
+    }
+
+    [Fact]
+    public async Task EnableThatOverlapsResourceBeginInsideSafetyReleaseFailsClosed()
+    {
+        var registry = NewRegistry();
+        var commands = new FakeCommandService();
+        var proxy = new FakeFaceProxy();
+        var resource = new FakeResourceService { WorldLoaded = true };
+        var modeOwner = new FakeTunnelModeOwner
+        {
+            BeforeRelease = () => resource.BeginWithoutNotification("world")
+        };
+        var tunnel = new FakeTunnelPresentation(enabled =>
+            new TunnelActivationResult(enabled, enabled, string.Empty));
         registry.Register<FantaSim.App.Command.IService>(commands);
         registry.Register<FantaSim.App.Resource.IService>(resource);
         registry.Register<ITimelineController>(new FakeTimelineController());
@@ -540,6 +600,7 @@ public sealed class TimelinePluginTests
     {
         public int PrepareCalls { get; private set; }
         public TunnelHudSafetyState CurrentHudSafety { get; private set; }
+        public Action? BeforeRelease { get; init; }
 
         public void PrepareForTunnelLoss(TunnelModeEvent lossEvent)
         {
@@ -549,6 +610,7 @@ public sealed class TimelinePluginTests
 
         public bool TryReleaseHudSafety(long expectedEpoch)
         {
+            BeforeRelease?.Invoke();
             if (CurrentHudSafety.Epoch != expectedEpoch)
                 return false;
             CurrentHudSafety = CurrentHudSafety with { ForceHudVisible = false };

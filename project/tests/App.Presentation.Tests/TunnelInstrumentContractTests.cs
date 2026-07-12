@@ -70,6 +70,8 @@ public sealed class TunnelInstrumentContractTests
             "project/plugins/App.Presentation/Tunnel/TunnelPresentationBinder.cs"));
         var planetBinder = File.ReadAllText(ProjectFile(
             "project/plugins/App.Presentation/PlanetPresentationBinder.cs"));
+        var reloadGate = File.ReadAllText(ProjectFile(
+            "project/plugins/App.Presentation/PlanetPresentationReloadGate.cs"));
         var host = File.ReadAllText(ProjectFile("project/hosts/complete-app/Host.cs"));
         var timelineFace = File.ReadAllText(ProjectFile(
             "project/plugins/App.Timeline.Seam/TimelineFace.cs"));
@@ -137,19 +139,26 @@ public sealed class TunnelInstrumentContractTests
         Assert.Contains("_resource.IsRuntimeChangeInProgress(WorldBundleId)", planetBinder, StringComparison.Ordinal);
         Assert.Contains("_resource.IsRuntimeChangeInProgress(StageBundleId)", planetBinder, StringComparison.Ordinal);
 
-        var worldReloadHandler = host.IndexOf("private void HandleWorldBundleReloaded()", StringComparison.Ordinal);
-        var deferredRebind = host.IndexOf("Callable.From(() =>", worldReloadHandler, StringComparison.Ordinal);
-        var executionGuard = host.IndexOf(
+        Assert.Contains("private readonly object _worldPresentationGate = new();", host, StringComparison.Ordinal);
+        var hostChanging = host.IndexOf("private void OnResourceRuntimeChanging", StringComparison.Ordinal);
+        var hostChangingLock = host.IndexOf("lock (_worldPresentationGate)", hostChanging, StringComparison.Ordinal);
+        var hostBind = host.IndexOf("private void BindPlanetPresentation", StringComparison.Ordinal);
+        var hostBindLock = host.IndexOf("lock (_worldPresentationGate)", hostBind, StringComparison.Ordinal);
+        var hostBindStateGuard = host.IndexOf(
             "IsRuntimeChangeInProgress(\"world\")",
-            deferredRebind,
+            hostBindLock,
             StringComparison.Ordinal);
-        var bindPlanet = host.IndexOf("BindPlanetPresentation(registry);", deferredRebind, StringComparison.Ordinal);
+        var hostBindAssignment = host.IndexOf("_planetPresentation =", hostBindLock, StringComparison.Ordinal);
         Assert.True(
-            worldReloadHandler >= 0
-            && deferredRebind > worldReloadHandler
-            && executionGuard > deferredRebind
-            && bindPlanet > executionGuard,
-            "Deferred host rebind must recheck authoritative world state at execution time.");
+            hostChangingLock > hostChanging
+            && hostBindLock > hostBind
+            && hostBindStateGuard > hostBindLock
+            && hostBindAssignment > hostBindStateGuard,
+            "Host world sever and bind paths must share one lifecycle lock and bind only after the execution-time state guard.");
+        Assert.Contains("OS.GetThreadCallerId() == OS.GetMainThreadId()", host, StringComparison.Ordinal);
+        Assert.Contains("}).CallDeferred();", host[hostChanging..], StringComparison.Ordinal);
+        Assert.Contains("completed.Wait();", host[hostChanging..], StringComparison.Ordinal);
+        Assert.Contains("lock (_gate)", reloadGate, StringComparison.Ordinal);
 
         var timelineBranch = binder.IndexOf("if (timelineChanging)", runtimeApplyMethod, StringComparison.Ordinal);
         Assert.True(timelineBranch >= 0, "Timeline runtime-changing branch is missing.");

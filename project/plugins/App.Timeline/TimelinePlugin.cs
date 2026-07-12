@@ -443,6 +443,17 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
                             || _resource?.IsRuntimeChangeInProgress("stage") == true
                             || (capturedSafetyEpoch is { } safetyEpoch
                                 && _modeOwner?.TryReleaseHudSafety(safetyEpoch) != true));
+                    if (!activationSuperseded
+                        && enabled
+                        && result.EffectiveEnabled
+                        && (_resource?.IsRuntimeChangeInProgress("world") == true
+                            || _resource?.IsRuntimeChangeInProgress("stage") == true))
+                    {
+                        // Begin publishes authoritative state before RuntimeChanging can block on
+                        // this plugin's lifecycle gate. Recheck after the safety CAS so a loss that
+                        // starts inside TryRelease cannot escape as a successful command result.
+                        activationSuperseded = true;
+                    }
                     if (activationSuperseded)
                     {
                         tunnel?.TrySetEnabled(false);
@@ -497,6 +508,9 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
                 _modeEpoch = decision.ModeEpoch;
                 ApplyHudState(new TimelineHudState(decision.HudVisible, decision.ModeEpoch));
                 SeverTimelineService(unbindProxy: false);
+                // If provider unload fails before replacing this plugin generation, the completion
+                // event must recompose the same still-valid controller/context/commands.
+                _worldRebindPending = true;
                 _log?.LogInformation("TimelinePlugin: timeline runtime changing; HUD state preserved for resident replay.");
                 return;
             }

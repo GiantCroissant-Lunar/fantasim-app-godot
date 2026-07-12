@@ -22,7 +22,9 @@ public interface IService
     /// Returns whether one or more lifecycle operations for <paramref name="id"/> have begun but
     /// have not yet published their completion. The state becomes true before RuntimeChanging is
     /// invoked and false before RuntimeChanged is invoked, so late subscribers can close multicast
-    /// event-snapshot races with a subscribe-then-read handshake.
+    /// event-snapshot races with a subscribe-then-read handshake. Concurrent operations for the
+    /// same bundle are counted, so interim RuntimeChanged notifications may still observe true;
+    /// the state is false before the final completion notification that clears the count.
     /// </summary>
     bool IsRuntimeChangeInProgress(string id);
 
