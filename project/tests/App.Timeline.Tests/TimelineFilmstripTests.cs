@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using FantaSim.App.Timeline;
+using FantaSim.App.Timeline.Seam;
 using FantaSim.App.World;
 using Xunit;
 
@@ -47,6 +48,85 @@ public sealed class TimelineFilmstripTests
         Assert.Equal(0f, slot.X);
         Assert.Equal(48f, slot.Width);
         Assert.Equal(150, slot.Tick);
+    }
+
+    [Fact]
+    public void TunnelPopulation_FiveVisibleTracksAreBoundedToTwentySamples()
+    {
+        var samples = TunnelCorridorFilmstripPolicy.PlanVisibleTracks(
+            visibleTrackCount: 6,
+            currentTick: 0,
+            maxTick: 1_000,
+            coarseUnitTicks: 1_000);
+
+        Assert.Equal(20, samples.Count);
+        Assert.Equal(5, samples.Select(sample => sample.TrackIndex).Distinct().Count());
+        Assert.All(
+            samples.GroupBy(sample => sample.TrackIndex),
+            track => Assert.Equal(4, track.Count()));
+    }
+
+    [Fact]
+    public void TunnelPopulation_PartialMaxTickRangeKeepsFourSamplesOnFixedCoarseDivisor()
+    {
+        const long currentTick = 950_000_000;
+        const long maxTick = 975_000_000;
+        var kb = TimelineModel.GetLadderRungs().Single(rung => rung.Symbol == "kb");
+        var coarseUnitTicks = TimelineModel.SpanTicksForRung(kb, units: 1);
+
+        Assert.Equal(100_000_000L, coarseUnitTicks);
+
+        var samples = TunnelCorridorFilmstripPolicy.PlanVisibleTracks(
+            visibleTrackCount: 1,
+            currentTick,
+            maxTick,
+            coarseUnitTicks);
+
+        Assert.Equal(4, samples.Count);
+        Assert.All(
+            samples,
+            sample => Assert.Equal(
+                (sample.Slot.Tick - currentTick) / (double)coarseUnitTicks,
+                sample.DepthFraction,
+                precision: 10));
+        Assert.True(samples[^1].DepthFraction < 0.25d);
+    }
+
+    [Fact]
+    public void TunnelDepthCues_AreSeparatedBetweenCurrentPlaneAndThroat()
+    {
+        const double currentPlaneZ = -5d;
+        const double throatZ = -20d;
+
+        var cues = TunnelCorridorFilmstripPolicy.PlanAxialCues(currentPlaneZ, throatZ);
+
+        Assert.True(cues.Count >= 2);
+        Assert.All(cues, cue => Assert.InRange(cue.Z, throatZ, currentPlaneZ));
+        Assert.Equal(cues.Count, cues.Select(cue => cue.Z).Distinct().Count());
+        Assert.True(cues.Max(cue => cue.Z) - cues.Min(cue => cue.Z) >= 5d);
+    }
+
+    [Fact]
+    public void TunnelDepthCues_TrackIdentityLabelSitsJustAheadOfCurrentPlane()
+    {
+        const double currentPlaneZ = -5d;
+
+        var labelZ = TunnelCorridorFilmstripPolicy.TrackIdentityLabelZ(currentPlaneZ);
+
+        Assert.InRange(labelZ, currentPlaneZ + 0.10d, currentPlaneZ + 0.30d);
+        Assert.True(labelZ < 0d, "An inside-camera corridor label must not return to MouthZ.");
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void TunnelFrameReset_SupersedesWaitersUntilControllerIsDisposed(
+        bool controllerDisposed,
+        bool expectedSupersede)
+    {
+        Assert.Equal(
+            expectedSupersede,
+            TunnelCorridorFilmstripPolicy.ShouldSupersedeWaitersOnReset(controllerDisposed));
     }
 
     [Fact]

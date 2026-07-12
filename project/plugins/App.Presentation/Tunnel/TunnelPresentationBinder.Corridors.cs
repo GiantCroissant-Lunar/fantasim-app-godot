@@ -13,13 +13,32 @@ internal sealed partial class TunnelPresentationBinder
     private static readonly Color CorridorActiveColor = new(0.30f, 0.55f, 0.62f);
     private static readonly Color CorridorInactiveColor = new(0.42f, 0.44f, 0.46f);
     private static readonly Color CorridorFocusColor = new(0.42f, 0.68f, 0.52f);
+    private static readonly Color CurrentPlaneCueColor = new(0.52f, 0.88f, 0.84f);
+    private static readonly Color AxialCueColor = new(0.35f, 0.62f, 0.78f);
     private const double CorridorGapDeg = 2.0;
+    private const int CorridorDepthBands = 4;
+
+    private sealed record TunnelFrameBinding(
+        long RequestedTick,
+        LayerTrackDescriptor Descriptor,
+        Node3D Root,
+        StandardMaterial3D Material,
+        MeshInstance3D Sphere,
+        Node3D Unavailable,
+        SnapshotSphereFilmstripSink Sink,
+        int MountGeneration);
+
+    private sealed record CorridorWallBinding(
+        MeshInstance3D Node,
+        LayerTrackDescriptor Descriptor,
+        bool IsFocused,
+        float DepthFraction);
 
     private Node3D? _corridorsRoot;
     private Node3D? _fineRailRoot;
     private MeshInstance3D? _fineCursor;
-    private readonly List<(Node3D Node, long Tick)> _frameNodes = new();
-    private readonly List<(MeshInstance3D Node, LayerTrackDescriptor Descriptor, bool IsFocused)> _corridorNodes = new();
+    private readonly List<TunnelFrameBinding> _frameBindings = new();
+    private readonly List<CorridorWallBinding> _corridorNodes = new();
     private long _requestedFrameStartTick;
     private long _requestedFrameEndTick;
     private bool _hasRequestedFrameWindow;
@@ -38,10 +57,14 @@ internal sealed partial class TunnelPresentationBinder
 
     private void ClearCorridorsRoot()
     {
+        // Every detach invalidates direct sink waiters before their Godot nodes are released. The
+        // final Dispose path is the sole exception: SeverFilmstrip already superseded/cancelled and
+        // disposed the controller immediately before ClearMount calls this reset.
+        ReleaseFrameBindings(
+            supersedeWaiters: TunnelCorridorFilmstripPolicy.ShouldSupersedeWaitersOnReset(_disposed));
         _corridorsRoot = null;
         _fineRailRoot = null;
         _fineCursor = null;
-        _frameNodes.Clear();
         _corridorNodes.Clear();
         _hasRequestedFrameWindow = false;
     }
@@ -53,8 +76,8 @@ internal sealed partial class TunnelPresentationBinder
 
         _pendingCorridorRebuild = false;
         EnsureCorridorsRoot();
+        ReleaseFrameBindings(supersedeWaiters: true);
         ClearChildren(_corridorsRoot!);
-        _frameNodes.Clear();
         _corridorNodes.Clear();
         _fineRailRoot = null;
         _fineCursor = null;
@@ -76,35 +99,36 @@ internal sealed partial class TunnelPresentationBinder
         }
 
         var window = TunnelCorridorLayout.BuildFocusedWindow(_sourceTracks, _focusIndex);
-        var graphRevision = 0;
-        try
+        var samplePlans = TunnelCorridorFilmstripPolicy.PlanVisibleTracks(
+            window.Count,
+            baseTick,
+            _ctl.MaxTick,
+            coarseUnitTicks);
+        for (var trackIndex = 0; trackIndex < window.Count; trackIndex++)
         {
-            graphRevision = _registry.TryGet<FantaSim.App.World.IService>()?
-                .GetGenerationProductsAsync().GraphRevision ?? 0;
-        }
-        catch (Exception ex)
-        {
-            // Build every real corridor in its explicit unavailable state below. Revision lookup
-            // failure must never manufacture an unstamped request or erase track identity.
-            _log.LogWarning(ex, "Tunnel snapshot graph revision unavailable; previews remain unavailable.");
+            BuildCorridorSlot(window[trackIndex], trackIndex, baseTick, coarseUnitTicks, samplePlans, gen);
         }
 
-        foreach (var slot in window)
-        {
-            BuildCorridorSlot(slot, baseTick, coarseUnitTicks, requestEnd, graphRevision, gen);
-        }
+        BuildAxialDepthCues();
 
         UpdateInnerBinding(gen);
         BuildFineRailIfFocused(window);
         UpdateInnerControlVisuals();
+
+        // Resolve the world service only after every real corridor/sample has mounted its explicit
+        // unavailable state. The integer revision is the only bundle product retained by waiters.
+        var resolvedRevision = ResolveGraphRevision();
+        if (resolvedRevision is not > 0)
+            return;
+        RequestOrdinaryFrameTextures(resolvedRevision.Value);
     }
 
     private void BuildCorridorSlot(
         TunnelCorridorLayout.TunnelTrackSlot slot,
+        int trackIndex,
         long baseTick,
         long coarseUnitTicks,
-        long requestEnd,
-        int graphRevision,
+        IReadOnlyList<TunnelCorridorFramePlan> samplePlans,
         int gen)
     {
         if (_corridorsRoot is null || _ctl is null)
@@ -121,24 +145,32 @@ internal sealed partial class TunnelPresentationBinder
         var start = centerAngle - (CorridorSpanDegrees / 2.0) + (CorridorGapDeg / 2.0);
         var span = Math.Max(0.0, CorridorSpanDegrees - CorridorGapDeg);
 
-        var wallMesh = BuildCylinderSectorMesh(start, span, CorridorSurfaceRadius, MouthZ, ThroatZ);
-        if (wallMesh is not null)
+        for (var depthBand = 0; depthBand < CorridorDepthBands; depthBand++)
         {
+            var nearFraction = depthBand / (float)CorridorDepthBands;
+            var farFraction = (depthBand + 1f) / CorridorDepthBands;
+            var nearZ = Mathf.Lerp(MouthZ, ThroatZ, nearFraction);
+            var farZ = Mathf.Lerp(MouthZ, ThroatZ, farFraction);
+            var wallMesh = BuildCylinderSectorMesh(start, span, CorridorSurfaceRadius, nearZ, farZ);
+            if (wallMesh is null)
+                continue;
+
             var wall = new MeshInstance3D
             {
-                Name = $"Corridor_{SafeNodeName(slot.Descriptor.SphereId)}_{SafeNodeName(slot.Descriptor.LayerId)}",
+                Name = $"Corridor_{SafeNodeName(slot.Descriptor.SphereId)}_{SafeNodeName(slot.Descriptor.LayerId)}_Depth{depthBand}",
                 Mesh = wallMesh,
-                MaterialOverride = BuildUnlitMaterial(color),
+                MaterialOverride = BuildCorridorDepthMaterial(color, nearFraction),
             };
             _corridorsRoot!.AddChild(wall);
-            _corridorNodes.Add((wall, slot.Descriptor, slot.IsFocused));
+            _corridorNodes.Add(new CorridorWallBinding(wall, slot.Descriptor, slot.IsFocused, nearFraction));
         }
 
         var labelRad = Mathf.DegToRad((float)centerAngle);
         var labelPos = new Vector3(
             Mathf.Cos(labelRad) * (CorridorSurfaceRadius - 0.3f),
             Mathf.Sin(labelRad) * (CorridorSurfaceRadius - 0.3f),
-            0.1f);
+            (float)TunnelCorridorFilmstripPolicy.TrackIdentityLabelZ(
+                TunnelCameraFraming.CurrentPlaneZ));
         var label = new Label3D
         {
             Name = "CorridorLabel",
@@ -152,41 +184,38 @@ internal sealed partial class TunnelPresentationBinder
         };
         _corridorsRoot!.AddChild(label);
 
+        BuildCurrentPlaneCue(slot.Descriptor, centerAngle, color);
+
         if (slot.Descriptor.Content.Type == "filmstrip")
             BuildFilmstripFrames(
                 slot.Descriptor,
+                trackIndex,
                 centerAngle,
                 baseTick,
                 coarseUnitTicks,
-                requestEnd,
-                graphRevision,
+                samplePlans,
                 gen);
     }
 
     private void BuildFilmstripFrames(
         LayerTrackDescriptor descriptor,
+        int trackIndex,
         double centerAngleDeg,
         long baseTick,
         long coarseUnitTicks,
-        long requestEnd,
-        int graphRevision,
+        IReadOnlyList<TunnelCorridorFramePlan> samplePlans,
         int gen)
     {
         if (_corridorsRoot is null || _ctl is null || coarseUnitTicks <= 0)
             return;
 
-        var requestStart = baseTick;
-        if (requestEnd <= requestStart)
-            return;
-
-        var contentWidth = TimelineFilmstrip.ThumbnailWidth * FilmstripFramesPerCorridor;
-        var slots = TimelineFilmstrip.PlanSlots(requestStart, requestEnd, contentWidth);
-
         var rad = Mathf.DegToRad((float)centerAngleDeg);
-        var rung = TunnelCorridorLayout.ResolveCorridorRung(descriptor.TimeDomain.Rung, TunnelScrubMapper.ResolveOuterRung());
 
-        foreach (var fs in slots)
+        foreach (var framePlan in samplePlans)
         {
+            if (framePlan.TrackIndex != trackIndex)
+                continue;
+            var fs = framePlan.Slot;
             if (!TunnelCameraFraming.TryTickToZ(fs.Tick, baseTick, coarseUnitTicks, out var z))
                 continue;
             var frameCenter = new Vector3(
@@ -196,7 +225,7 @@ internal sealed partial class TunnelPresentationBinder
 
             var frameRoot = new Node3D
             {
-                Name = $"Frame_{SafeNodeName(descriptor.SphereId)}_{SafeNodeName(descriptor.LayerId)}_{fs.Tick}",
+                Name = $"Frame_{SafeNodeName(descriptor.SphereId)}_{SafeNodeName(descriptor.LayerId)}_{fs.Index}_{fs.Tick}",
                 Position = frameCenter,
             };
             var material = new StandardMaterial3D
@@ -233,20 +262,282 @@ internal sealed partial class TunnelPresentationBinder
             frameRoot.AddChild(unavailable);
 
             _corridorsRoot!.AddChild(frameRoot);
-            _frameNodes.Add((frameRoot, fs.Tick));
 
             var sink = new SnapshotSphereFilmstripSink(sphere, material, unavailable);
-            if (graphRevision > 0)
-            {
-                _filmstrip.RequestTexture(
-                    sink,
-                    descriptor.SphereId,
-                    descriptor.LayerId,
-                    fs.Tick,
-                    rung.Symbol,
-                    graphRevision);
-            }
+            _frameBindings.Add(new TunnelFrameBinding(
+                fs.Tick,
+                descriptor,
+                frameRoot,
+                material,
+                sphere,
+                unavailable,
+                sink,
+                gen));
         }
+    }
+
+    private int? ResolveGraphRevision()
+    {
+        try
+        {
+            var world = _registry.TryGet<FantaSim.App.World.IService>();
+            return world?.GetGenerationProductsAsync().GraphRevision;
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Tunnel snapshot graph revision unavailable; previews remain unavailable.");
+            return null;
+        }
+    }
+
+    private void RequestOrdinaryFrameTextures(int graphRevision)
+    {
+        if (graphRevision <= 0)
+            return;
+
+        foreach (var binding in _frameBindings)
+        {
+            if (binding.MountGeneration != _generation || !binding.Sink.IsAlive)
+                continue;
+
+            var rung = TunnelCorridorLayout.ResolveCorridorRung(
+                binding.Descriptor.TimeDomain.Rung,
+                TunnelScrubMapper.ResolveOuterRung());
+            _filmstrip.RequestTexture(
+                binding.Sink,
+                binding.Descriptor.SphereId,
+                binding.Descriptor.LayerId,
+                binding.RequestedTick,
+                rung.Symbol,
+                graphRevision);
+        }
+    }
+
+    private void ReleaseFrameBindings(bool supersedeWaiters)
+    {
+        if (supersedeWaiters)
+            _filmstrip.Supersede();
+        if (_frameBindings.Count == 0)
+            return;
+
+        foreach (var binding in _frameBindings)
+        {
+            // Snapshot materials are intentionally per-sphere; detach the shared immutable texture
+            // before releasing the material so the controller cache remains its sole owner.
+            if (GodotObject.IsInstanceValid(binding.Material))
+                binding.Material.AlbedoTexture = null;
+            if (GodotObject.IsInstanceValid(binding.Sphere))
+            {
+                binding.Sphere.MaterialOverride = null;
+                binding.Sphere.Mesh = null;
+            }
+            if (GodotObject.IsInstanceValid(binding.Material))
+                binding.Material.Dispose();
+
+            if (!GodotObject.IsInstanceValid(binding.Root))
+                continue;
+            binding.Root.GetParent()?.RemoveChild(binding.Root);
+            binding.Root.QueueFree();
+        }
+
+        _frameBindings.Clear();
+    }
+
+    private void BuildCurrentPlaneCue(
+        LayerTrackDescriptor descriptor,
+        double centerAngleDegrees,
+        Color corridorColor)
+    {
+        if (_corridorsRoot is null)
+            return;
+
+        var rad = Mathf.DegToRad((float)centerAngleDegrees);
+        var radialDistance = CorridorSurfaceRadius - 0.58f;
+        var root = new Node3D
+        {
+            Name = $"CurrentPlaneCue_{SafeNodeName(descriptor.SphereId)}_{SafeNodeName(descriptor.LayerId)}",
+            Position = new Vector3(
+                Mathf.Cos(rad) * radialDistance,
+                Mathf.Sin(rad) * radialDistance,
+                TunnelCameraFraming.CurrentPlaneZ),
+            RotationDegrees = new Vector3(0f, 0f, (float)centerAngleDegrees - 90f),
+        };
+        _corridorsRoot.AddChild(root);
+
+        // BoxMesh is a render-only PrimitiveMesh; these nodes deliberately have no physics body,
+        // collision shape, annular geometry, or input relay registration.
+        // Source: https://docs.godotengine.org/en/4.7/classes/class_boxmesh.html
+        var slice = new MeshInstance3D
+        {
+            Name = "CurrentPlaneSlice",
+            Mesh = new BoxMesh { Size = new Vector3(1.10f, 0.72f, 0.035f) },
+            MaterialOverride = BuildCueMaterial(corridorColor, 0.075f),
+        };
+        root.AddChild(slice);
+
+        var chevronMaterial = BuildCueMaterial(CurrentPlaneCueColor, 0.82f);
+        root.AddChild(new MeshInstance3D
+        {
+            Name = "CurrentPlaneChevronLeft",
+            Position = new Vector3(-0.12f, -0.12f, 0.045f),
+            RotationDegrees = new Vector3(0f, 0f, 34f),
+            Mesh = new BoxMesh { Size = new Vector3(0.40f, 0.075f, 0.045f) },
+            MaterialOverride = chevronMaterial,
+        });
+        root.AddChild(new MeshInstance3D
+        {
+            Name = "CurrentPlaneChevronRight",
+            Position = new Vector3(0.12f, -0.12f, 0.045f),
+            RotationDegrees = new Vector3(0f, 0f, -34f),
+            Mesh = new BoxMesh { Size = new Vector3(0.40f, 0.075f, 0.045f) },
+            MaterialOverride = chevronMaterial,
+        });
+    }
+
+    private void BuildAxialDepthCues()
+    {
+        if (_corridorsRoot is null)
+            return;
+
+        BuildNearInteriorLipChevrons();
+
+        var cuePlans = TunnelCorridorFilmstripPolicy.PlanAxialCues(
+            TunnelCameraFraming.CurrentPlaneZ,
+            TunnelCameraFraming.ThroatZ);
+        var angleDegrees = TunnelCorridorLayout.LeftFocusAngleDegrees;
+        var angleRad = Mathf.DegToRad((float)angleDegrees);
+        var radialDistance = CorridorSurfaceRadius - 0.88f;
+
+        foreach (var cuePlan in cuePlans)
+        {
+            var cueRoot = new Node3D
+            {
+                Name = $"AxialDepthCue_{cuePlan.Index}",
+                Position = new Vector3(
+                    Mathf.Cos(angleRad) * radialDistance,
+                    Mathf.Sin(angleRad) * radialDistance,
+                    (float)cuePlan.Z),
+                RotationDegrees = new Vector3(0f, 0f, (float)angleDegrees - 90f),
+            };
+            _corridorsRoot.AddChild(cueRoot);
+
+            cueRoot.AddChild(new MeshInstance3D
+            {
+                Name = "DepthValueMarker",
+                Mesh = new BoxMesh { Size = new Vector3(0.10f, 0.42f, 0.10f) },
+                MaterialOverride = BuildCueMaterial(AxialCueColor, 0.72f),
+            });
+            cueRoot.AddChild(new Label3D
+            {
+                Name = "DepthValueLabel",
+                Text = FormattableString.Invariant($"+{cuePlan.FractionFromCurrent:0.00} kb"),
+                Position = new Vector3(0.42f, -0.08f, 0f),
+                Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+                FontSize = 15,
+                Modulate = new Color(0.64f, 0.78f, 0.88f, 0.72f),
+                OutlineModulate = new Color(0f, 0f, 0f, 0.72f),
+                NoDepthTest = false,
+            });
+
+            // OmniLight3D is position-dependent, so these two separated nodes add real axial
+            // illumination changes to shaded snapshot spheres and wall bands.
+            // Source: https://docs.godotengine.org/en/4.7/classes/class_omnilight3d.html
+            cueRoot.AddChild(new OmniLight3D
+            {
+                Name = "DepthLight",
+                Position = new Vector3(0f, -0.75f, 0f),
+                LightColor = AxialCueColor,
+                LightEnergy = 0.72f,
+                OmniRange = 4.8f,
+                ShadowEnabled = false,
+            });
+        }
+    }
+
+    private void BuildNearInteriorLipChevrons()
+    {
+        if (_corridorsRoot is null)
+            return;
+
+        for (var cueIndex = 0; cueIndex < TunnelCameraFraming.NearInteriorLipCueCount; cueIndex++)
+        {
+            var cuePoint = TunnelCameraFraming.NearInteriorLipCuePoint(cueIndex);
+            var angleDegrees = (float)(Math.Atan2(cuePoint.Y, cuePoint.X) * 180.0 / Math.PI);
+            var root = new Node3D
+            {
+                Name = $"InteriorLipChevron_{cueIndex}",
+                Position = new Vector3(cuePoint.X, cuePoint.Y, cuePoint.Z),
+                RotationDegrees = new Vector3(0f, 0f, angleDegrees - 90f),
+            };
+            _corridorsRoot.AddChild(root);
+
+            var material = BuildCueMaterial(CurrentPlaneCueColor, 0.52f);
+            root.AddChild(new MeshInstance3D
+            {
+                Name = "LipChevronLeft",
+                Position = new Vector3(-0.10f, -0.10f, 0f),
+                RotationDegrees = new Vector3(0f, 0f, 34f),
+                Mesh = new BoxMesh { Size = new Vector3(0.34f, 0.065f, 0.05f) },
+                MaterialOverride = material,
+            });
+            root.AddChild(new MeshInstance3D
+            {
+                Name = "LipChevronRight",
+                Position = new Vector3(0.10f, -0.10f, 0f),
+                RotationDegrees = new Vector3(0f, 0f, -34f),
+                Mesh = new BoxMesh { Size = new Vector3(0.34f, 0.065f, 0.05f) },
+                MaterialOverride = material,
+            });
+        }
+    }
+
+    private static StandardMaterial3D BuildCorridorDepthMaterial(Color color, float depthFraction)
+    {
+        var material = new StandardMaterial3D();
+        ApplyCorridorDepthMaterial(material, color, depthFraction);
+        return material;
+    }
+
+    private static void ApplyCorridorDepthMaterial(
+        StandardMaterial3D material,
+        Color color,
+        float depthFraction)
+    {
+        var brightness = Mathf.Lerp(0.94f, 0.38f, Mathf.Clamp(depthFraction, 0f, 1f));
+        var tinted = new Color(
+            color.R * brightness,
+            color.G * brightness,
+            color.B * brightness,
+            1f);
+        material.AlbedoColor = tinted;
+        material.Transparency = BaseMaterial3D.TransparencyEnum.Disabled;
+        material.ShadingMode = BaseMaterial3D.ShadingModeEnum.PerPixel;
+        material.Roughness = 0.86f;
+        material.Metallic = 0.02f;
+        material.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+        material.EmissionEnabled = true;
+        material.Emission = tinted;
+        material.EmissionEnergyMultiplier = Mathf.Lerp(0.18f, 0.06f, depthFraction);
+        material.NoDepthTest = false;
+        // StandardMaterial3D exposes per-pixel shading plus emission/roughness without a custom
+        // shader, while each wall band keeps its own depth value.
+        // Source: https://docs.godotengine.org/en/4.7/classes/class_standardmaterial3d.html
+    }
+
+    private static StandardMaterial3D BuildCueMaterial(Color color, float alpha)
+    {
+        var tinted = new Color(color.R, color.G, color.B, alpha);
+        return new StandardMaterial3D
+        {
+            AlbedoColor = tinted,
+            Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+            CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+            EmissionEnabled = true,
+            Emission = new Color(color.R, color.G, color.B, 1f),
+            EmissionEnergyMultiplier = 0.55f,
+            NoDepthTest = false,
+        };
     }
 
     private void BuildFineRailIfFocused(IReadOnlyList<TunnelCorridorLayout.TunnelTrackSlot> window)
@@ -316,8 +607,12 @@ internal sealed partial class TunnelPresentationBinder
         if (_corridorsRoot is null || coarseSpanTicks <= 0)
             return;
 
-        foreach (var (node, tick) in _frameNodes)
+        foreach (var binding in _frameBindings)
         {
+            if (binding.MountGeneration != _generation)
+                continue;
+            var node = binding.Root;
+            var tick = binding.RequestedTick;
             if (!GodotObject.IsInstanceValid(node))
                 continue;
 
@@ -368,7 +663,6 @@ internal sealed partial class TunnelPresentationBinder
         if (rebuildFrameRequests)
         {
             _pendingCorridorRebuild = false;
-            _filmstrip.Supersede();
             RebuildCorridors();
         }
         else
@@ -393,17 +687,26 @@ internal sealed partial class TunnelPresentationBinder
         if (_ctl is null)
             return;
 
-        foreach (var (node, descriptor, isFocused) in _corridorNodes)
+        foreach (var binding in _corridorNodes)
         {
+            var node = binding.Node;
             if (!GodotObject.IsInstanceValid(node))
                 continue;
 
             var active = TunnelTrackActivity.IsActive(
-                descriptor, tick, _ctl.GeosphereSchedule, _ctl.AtmosphereSchedule);
-            var color = isFocused
+                binding.Descriptor, tick, _ctl.GeosphereSchedule, _ctl.AtmosphereSchedule);
+            var color = binding.IsFocused
                 ? CorridorFocusColor
                 : (active ? CorridorActiveColor : CorridorInactiveColor);
-            node.MaterialOverride = BuildUnlitMaterial(color);
+            if (node.MaterialOverride is StandardMaterial3D material
+                && GodotObject.IsInstanceValid(material))
+            {
+                ApplyCorridorDepthMaterial(material, color, binding.DepthFraction);
+            }
+            else
+            {
+                node.MaterialOverride = BuildCorridorDepthMaterial(color, binding.DepthFraction);
+            }
         }
     }
 
@@ -427,7 +730,6 @@ internal sealed partial class TunnelPresentationBinder
             }
 
             _pendingCorridorRebuild = false;
-            _filmstrip.Supersede();
             RebuildCorridors();
         }).CallDeferred();
     }

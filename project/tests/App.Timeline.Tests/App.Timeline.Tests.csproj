@@ -26,6 +26,7 @@
     <Compile Include="..\..\plugins\App.Timeline.Seam\FilmstripTextureCacheKey.cs" Link="FilmstripTextureCacheKey.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\IFilmstripFrameSink.cs" Link="IFilmstripFrameSink.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelCorridorLayout.cs" Link="TunnelCorridorLayout.cs" />
+    <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelCorridorFilmstripPolicy.cs" Link="TunnelCorridorFilmstripPolicy.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelScrubMapper.cs" Link="TunnelScrubMapper.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelRayHitMapper.cs" Link="TunnelRayHitMapper.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelTrackActivity.cs" Link="TunnelTrackActivity.cs" />
