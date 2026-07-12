@@ -16,7 +16,6 @@ internal sealed partial class TunnelPresentationBinder
     private static readonly Color CurrentPlaneCueColor = new(0.52f, 0.88f, 0.84f);
     private static readonly Color AxialCueColor = new(0.35f, 0.62f, 0.78f);
     private const double CorridorGapDeg = 2.0;
-    private const int CorridorDepthBands = 4;
 
     private sealed record TunnelFrameBinding(
         long RequestedTick,
@@ -148,13 +147,18 @@ internal sealed partial class TunnelPresentationBinder
         var start = centerAngle - (CorridorSpanDegrees / 2.0) + (CorridorGapDeg / 2.0);
         var span = Math.Max(0.0, CorridorSpanDegrees - CorridorGapDeg);
 
-        for (var depthBand = 0; depthBand < CorridorDepthBands; depthBand++)
+        var depthBands = TunnelCorridorDepthPolicy.Plan(
+            TunnelCameraFraming.CurrentPlaneZ,
+            TunnelCameraFraming.ThroatZ);
+        for (var depthBand = 0; depthBand < depthBands.Count; depthBand++)
         {
-            var nearFraction = depthBand / (float)CorridorDepthBands;
-            var farFraction = (depthBand + 1f) / CorridorDepthBands;
-            var nearZ = Mathf.Lerp(MouthZ, ThroatZ, nearFraction);
-            var farZ = Mathf.Lerp(MouthZ, ThroatZ, farFraction);
-            var wallMesh = BuildCylinderSectorMesh(start, span, CorridorSurfaceRadius, nearZ, farZ);
+            var band = depthBands[depthBand];
+            var wallMesh = BuildCylinderSectorMesh(
+                start,
+                span,
+                CorridorSurfaceRadius,
+                band.NearZ,
+                band.FarZ);
             if (wallMesh is null)
                 continue;
 
@@ -162,10 +166,14 @@ internal sealed partial class TunnelPresentationBinder
             {
                 Name = $"Corridor_{SafeNodeName(slot.Descriptor.SphereId)}_{SafeNodeName(slot.Descriptor.LayerId)}_Depth{depthBand}",
                 Mesh = wallMesh,
-                MaterialOverride = BuildCorridorDepthMaterial(color, nearFraction),
+                MaterialOverride = BuildCorridorDepthMaterial(color, band.DepthFraction),
             };
             _corridorsRoot!.AddChild(wall);
-            _corridorNodes.Add(new CorridorWallBinding(wall, slot.Descriptor, slot.IsFocused, nearFraction));
+            _corridorNodes.Add(new CorridorWallBinding(
+                wall,
+                slot.Descriptor,
+                slot.IsFocused,
+                band.DepthFraction));
         }
 
         var labelRad = Mathf.DegToRad((float)centerAngle);
@@ -497,11 +505,11 @@ internal sealed partial class TunnelPresentationBinder
         Color color,
         float depthFraction)
     {
-        var brightness = Mathf.Lerp(0.94f, 0.38f, Mathf.Clamp(depthFraction, 0f, 1f));
+        var tone = TunnelCorridorDepthPolicy.ToneAt(depthFraction);
         var tinted = new Color(
-            color.R * brightness,
-            color.G * brightness,
-            color.B * brightness,
+            color.R * tone.Brightness,
+            color.G * tone.Brightness,
+            color.B * tone.Brightness,
             1f);
         material.AlbedoColor = tinted;
         material.Transparency = BaseMaterial3D.TransparencyEnum.Disabled;
@@ -509,12 +517,13 @@ internal sealed partial class TunnelPresentationBinder
         material.Roughness = 0.86f;
         material.Metallic = 0.02f;
         material.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
-        material.EmissionEnabled = true;
-        material.Emission = tinted;
-        material.EmissionEnergyMultiplier = Mathf.Lerp(0.18f, 0.06f, depthFraction);
+        material.EmissionEnabled = tone.EmissionEnabled;
+        material.Emission = Colors.Black;
+        material.EmissionEnergyMultiplier = 0f;
         material.NoDepthTest = false;
-        // StandardMaterial3D exposes per-pixel shading plus emission/roughness without a custom
-        // shader, while each wall band keeps its own depth value.
+        // StandardMaterial3D exposes per-pixel lighting/roughness without a custom shader. Walls
+        // deliberately do not self-illuminate: light falloff and the continuous shell must carry
+        // the curvature/depth read while each wall band keeps its own value.
         // Source: https://docs.godotengine.org/en/4.7/classes/class_standardmaterial3d.html
     }
 
