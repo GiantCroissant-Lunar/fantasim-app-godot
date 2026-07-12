@@ -34,8 +34,8 @@
     <PackageVersion Include="GiantCroissant.CrosscutFoundation.Config.Env" Version="0.2.2" />
     <PackageVersion Include="GiantCroissant.CrosscutFoundation.Config.Env.ServiceArchi" Version="0.2.2" />
     <PackageVersion Include="GiantCroissant.CrosscutFoundation.Config.ServiceArchi" Version="0.2.2" />
-    <PackageVersion Include="BoomHud.Foundation" Version="0.1.18" />
-    <PackageVersion Include="BoomHud.Godot.Runtime" Version="0.1.18" />
+    <PackageVersion Include="BoomHud.Foundation" Version="0.1.47" />
+    <PackageVersion Include="BoomHud.Godot.Runtime" Version="0.1.47" />
     <PackageVersion Include="UnifyEcs.Core" Version="0.1.1" />
     <PackageVersion Include="UnifyEcs.Runtime.Arch" Version="0.1.1" />
     <!-- Activity ledger persistence (LiteDB-backed document store). Also backs the resident

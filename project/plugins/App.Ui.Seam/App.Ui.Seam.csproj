@@ -14,8 +14,8 @@
     <ProjectReference Include="..\App.Command\App.Command.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="BoomHud.Foundation" Version="0.1.18" />
-    <PackageReference Include="BoomHud.Godot.Runtime" Version="0.1.18" />
+    <PackageReference Include="BoomHud.Foundation" Version="0.1.47" />
+    <PackageReference Include="BoomHud.Godot.Runtime" Version="0.1.47" />
     <PackageReference Include="Microsoft.Msagl" Version="1.1.6" />
     <PackageReference Include="GiantCroissant.ServiceArchi.Contracts" Version="0.1.1" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.1" />

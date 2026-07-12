@@ -44,6 +44,6 @@ public sealed class PresentationDocumentLoaderTests
             embeddedResourceSuffix: ".Presentation.activity.presentation.json");
 
         Assert.Contains("\"surfaceId\": \"activity\"", text, StringComparison.Ordinal);
-        Assert.Contains("\"activityTemplates\"", text, StringComparison.Ordinal);
+        Assert.Contains("\"catalogId\": \"boomhud.runtime.basic.v1\"", text, StringComparison.Ordinal);
     }
 }

@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.Json.Nodes;
+using BoomHud.Abstractions.Runtime;
 using FantaSim.App.Activity;
 using FantaSim.App.Ui;
 using FantaSim.App.Ui.Activity;
@@ -38,14 +40,22 @@ public sealed class ActivityViewSourceTests
         Assert.Equal("boomhud.runtime.basic.v1", document.CatalogId);
         Assert.Equal("root", document.Root.Id);
         Assert.Equal("container", document.Root.Type);
-        Assert.Contains(document.Root.Children, child => child.Id == "activity-title");
+        Assert.NotNull(FindById(document.Root, "activity-title"));
 
-        var refresh = document.Root.Children.Single(child => child.Id == "activity-refresh");
-        Assert.Equal("button", refresh.Type);
+        // The card list lives inside a scroll wrapper (Slice A1) so it can grow past the viewport.
+        var scroll = FindById(document.Root, "activity-scroll");
+        Assert.NotNull(scroll);
+        Assert.Equal("scroll", scroll!.Type);
+
+        // Refresh/Hide are nested under the toolbar, not direct root children.
+        var refresh = FindById(document.Root, "activity-refresh");
+        Assert.NotNull(refresh);
+        Assert.Equal("button", refresh!.Type);
         Assert.Contains(refresh.Actions, action => action.Command == "refresh");
 
-        var hide = document.Root.Children.Single(child => child.Id == "activity-hide");
-        Assert.Equal("button", hide.Type);
+        var hide = FindById(document.Root, "activity-hide");
+        Assert.NotNull(hide);
+        Assert.Equal("button", hide!.Type);
         Assert.Contains(hide.Actions, action => action.Command == "hide");
     }
 
@@ -74,10 +84,8 @@ public sealed class ActivityViewSourceTests
         var source = new ActivityViewSource(ledger, bus: null, TemplateJson);
 
         var document = source.BuildDocument();
-        var text = string.Join("\n", document.Root.Children
-            .Select(child => child.Properties.TryGetValue("text", out var value)
-                ? value.Literal?.GetValue<string>() ?? string.Empty
-                : string.Empty));
+        // Detail is carried on each card's tooltip (and inline when expanded); collect both.
+        var text = CollectText(document.Root, includeTooltip: true);
 
         Assert.Contains("external-tool.inspect", text);
         Assert.Contains("tool: VPLanet Earth Output", text);
@@ -124,12 +132,10 @@ public sealed class ActivityViewSourceTests
         var source = new ActivityViewSource(ledger, bus: null, TemplateJson);
 
         var document = source.BuildDocument();
-        var text = string.Join("\n", document.Root.Children
-            .Select(child => child.Properties.TryGetValue("text", out var value)
-                ? value.Literal?.GetValue<string>() ?? string.Empty
-                : string.Empty));
+        var text = CollectText(document.Root, includeTooltip: true);
 
-        Assert.Contains("user 1 / system 1", text);
+        // Title now summarizes counts as "<n> recent - <c> cmd - <f> failed".
+        Assert.Contains("2 recent", text);
         Assert.Contains("ui.graph.run", text);
         Assert.Contains("run: run-1", text);
         Assert.Contains("recipe: text-to-3d", text);
@@ -191,30 +197,104 @@ public sealed class ActivityViewSourceTests
 
         var document = source.BuildDocument();
 
-        var rows = document.DataModel!["rows"]!.AsArray();
-        var commandRows = rows
-            .Select(row => row!.AsObject())
-            .Where(row => row.ContainsKey("command"))
-            .ToArray();
-        Assert.Equal(2, commandRows.Length);
-        var resultRow = commandRows.First(row => row["command"]!["ok"] is not null);
-        var requestRow = commandRows.First(row => row["command"]!["ok"] is null);
+        // Each command entry is its own card panel keyed by EntryId.
+        Assert.NotNull(FindById(document.Root, "activity-card-cmd-req"));
+        Assert.NotNull(FindById(document.Root, "activity-card-cmd-res"));
 
-        Assert.Equal("Orchestrate world", requestRow["command"]!["descriptorTitle"]!.GetValue<string>());
-        Assert.Equal("world.orchestrate", requestRow["command"]!["command"]!.GetValue<string>());
-        Assert.Equal("{\"command\":\"world.refresh\"}", requestRow["command"]!["payloadJson"]!.GetValue<string>());
-        Assert.True(resultRow["command"]!["ok"]!.GetValue<bool>());
-        Assert.Equal("cmd-req", resultRow["command"]!["causationId"]!.GetValue<string>());
+        // The request card is a "cmd", the result card a "res"; kind badges carry those tags.
+        var badgeText = CollectByType(document.Root, "badge");
+        Assert.Contains("cmd", badgeText);
+        Assert.Contains("res", badgeText);
 
-        var text = string.Join("\n", document.Root.Children
-            .Select(child => child.Properties.TryGetValue("text", out var value)
-                ? value.Literal?.GetValue<string>() ?? string.Empty
-                : string.Empty));
-
+        var text = CollectText(document.Root, includeTooltip: true);
         Assert.Contains("Orchestrate world", text);
         Assert.Contains("Delegates to the active orchestrator.", text);
-        Assert.Contains("status: ok", text);
-        Assert.Contains("status: requested", text);
+        Assert.Contains("world.orchestrate", text);
+        // Request status pill/outcome is "requested"; result outcome is "ok".
+        Assert.Contains("requested", text);
+        Assert.Contains("outcome: ok", text);
+    }
+
+    [Fact]
+    public void Dispatch_TogglesInlineDetailRowsForEntry()
+    {
+        var ledger = new FakeLedger(new ActivityEntry(
+            EntryId: "entry-x",
+            Kind: ActivityEntryKind.UiOperation,
+            Timestamp: new DateTimeOffset(2026, 6, 24, 13, 0, 0, TimeSpan.Zero),
+            Actor: new ActivityActor("user", "godot"),
+            Name: "ui.graph.run",
+            Category: "node-graph",
+            PayloadJson: new JsonObject { ["runId"] = "run-1", ["recipe"] = "text-to-3d" }.ToJsonString(),
+            Outcome: "run requested"));
+        var source = new ActivityViewSource(ledger, bus: null, TemplateJson);
+
+        // Collapsed: detail is only on the tooltip, never as a visible label.
+        var collapsed = CollectText(source.BuildDocument().Root, includeTooltip: false);
+        Assert.DoesNotContain("run: run-1", collapsed);
+
+        // Expand the entry — its detail now renders as inline label rows.
+        source.Dispatch("toggle:entry-x", componentId: null);
+        var expanded = CollectText(source.BuildDocument().Root, includeTooltip: false);
+        Assert.Contains("run: run-1", expanded);
+        Assert.Contains("recipe: text-to-3d", expanded);
+
+        // Toggle again — back to collapsed.
+        source.Dispatch("toggle:entry-x", componentId: null);
+        var recollapsed = CollectText(source.BuildDocument().Root, includeTooltip: false);
+        Assert.DoesNotContain("run: run-1", recollapsed);
+    }
+
+    // ----- tree helpers (the document is a nested RuntimeComponentNode tree) -----
+
+    private static RuntimeComponentNode? FindById(RuntimeComponentNode node, string id)
+    {
+        if (node.Id == id)
+            return node;
+        foreach (var child in node.Children)
+            if (FindById(child, id) is { } found)
+                return found;
+        return null;
+    }
+
+    private static string CollectText(RuntimeComponentNode node, bool includeTooltip)
+    {
+        var builder = new StringBuilder();
+        Collect(node);
+        return builder.ToString();
+
+        void Collect(RuntimeComponentNode current)
+        {
+            Append(current, "text");
+            if (includeTooltip)
+                Append(current, "tooltip");
+            foreach (var child in current.Children)
+                Collect(child);
+        }
+
+        void Append(RuntimeComponentNode current, string property)
+        {
+            if (current.Properties.TryGetValue(property, out var value)
+                && value.Literal?.GetValue<string>() is { } literal)
+                builder.Append(literal).Append('\n');
+        }
+    }
+
+    private static string CollectByType(RuntimeComponentNode node, string type)
+    {
+        var builder = new StringBuilder();
+        Collect(node);
+        return builder.ToString();
+
+        void Collect(RuntimeComponentNode current)
+        {
+            if (current.Type == type
+                && current.Properties.TryGetValue("text", out var value)
+                && value.Literal?.GetValue<string>() is { } literal)
+                builder.Append(literal).Append('\n');
+            foreach (var child in current.Children)
+                Collect(child);
+        }
     }
 
     private sealed class FakeLedger : LedgerService

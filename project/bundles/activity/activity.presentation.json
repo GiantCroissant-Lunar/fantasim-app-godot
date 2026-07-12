@@ -68,15 +68,21 @@
         ]
       },
       {
-        "id": "activity-rows",
-        "type": "container",
-        "layout": {
-          "type": "vertical",
-          "gap": 6
-        },
+        "id": "activity-scroll",
+        "type": "scroll",
         "children": [
           {
-            "slot": "activityRows"
+            "id": "activity-rows",
+            "type": "container",
+            "layout": {
+              "type": "vertical",
+              "gap": 6
+            },
+            "children": [
+              {
+                "slot": "activityRows"
+              }
+            ]
           }
         ]
       }

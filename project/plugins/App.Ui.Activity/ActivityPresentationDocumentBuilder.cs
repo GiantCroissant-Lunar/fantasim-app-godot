@@ -11,30 +11,30 @@ namespace FantaSim.App.Ui.Activity;
 
 /// <summary>
 /// Builds the activity-ledger runtime surface as a list of BoomHud "cards": each ledger entry becomes
-/// an <c>item</c>-variant <c>panel</c> holding a header row (kind badge · name · time) and a meta row of
-/// status pills, instead of a flat stack of indented labels. The versatile vocabulary (panel / badge /
-/// container variants) is already in the <c>boomhud.runtime.basic.v1</c> catalog and the resident theme;
-/// this builder just opts the activity surface into it.
+/// an <c>item</c>-variant <c>panel</c> holding a header row (chevron toggle · kind badge · name · time)
+/// and a meta row of status pills, instead of a flat stack of indented labels. The versatile vocabulary
+/// (panel / badge / container variants) is already in the <c>boomhud.runtime.basic.v1</c> catalog and
+/// the resident theme; this builder just opts the activity surface into it.
 ///
-/// The BoomHud renderer path has no scroll container (that lived only in the old hand-authored shell
-/// scene), so only the newest <see cref="MaxCards"/> entries are rendered as cards; the remainder is
-/// reported honestly in a footer line rather than silently dropped. Full per-entry detail lives in each
-/// card's tooltip.
+/// ALL provided entries render as cards (the caller caps how many it fetches); the activity bundle's
+/// <c>scroll</c> wrapper (Slice A1) gives the card list room to grow beyond the viewport. Each card can
+/// be expanded (chevron toggle, dispatches <c>toggle:{entryId}</c>) to show its detail inline — the same
+/// fields as the tooltip, one per line. Cards are keyed by <see cref="ActivityEntry.EntryId"/> (not the
+/// loop index) so identity is stable across re-renders as new entries arrive.
 /// </summary>
 internal static class ActivityPresentationDocumentBuilder
 {
-    private const int MaxCards = 15;
-
     public static RuntimeSurfaceDocument Build(
         string templateJson,
         IReadOnlyList<ActivityEntry> entries,
         bool ledgerAvailable,
-        int revision)
+        int revision,
+        IReadOnlySet<string> expanded)
     {
         if (string.IsNullOrWhiteSpace(templateJson))
             throw new InvalidOperationException("Activity presentation template is empty.");
 
-        var rows = BuildRows(entries, ledgerAvailable);
+        var rows = BuildRows(entries, ledgerAvailable, expanded);
 
         var placeholders = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -55,14 +55,13 @@ internal static class ActivityPresentationDocumentBuilder
         if (!ledgerAvailable)
             return "Activity ledger  -  unavailable";
 
-        var shown = Math.Min(MaxCards, entries.Count);
         var commandCount = entries.Count(entry =>
             entry.Kind is ActivityEntryKind.DomainCommand or ActivityEntryKind.CommandResult);
         var failureCount = entries.Count(IsFailure);
-        return $"Activity ledger  -  {shown} of {entries.Count} recent  -  {commandCount} cmd  -  {failureCount} failed";
+        return $"Activity ledger  -  {entries.Count} recent  -  {commandCount} cmd  -  {failureCount} failed";
     }
 
-    private static JsonArray BuildRows(IReadOnlyList<ActivityEntry> entries, bool ledgerAvailable)
+    private static JsonArray BuildRows(IReadOnlyList<ActivityEntry> entries, bool ledgerAvailable, IReadOnlySet<string> expanded)
     {
         var rows = new JsonArray();
 
@@ -81,33 +80,30 @@ internal static class ActivityPresentationDocumentBuilder
             return rows;
         }
 
-        var shown = Math.Min(MaxCards, entries.Count);
-        for (var index = 0; index < shown; index++)
-            rows.Add(BuildCard(index, entries[index]));
-
-        if (entries.Count > shown)
-            rows.Add(InfoLabel(
-                "activity-more",
-                $"+ {entries.Count - shown} earlier entries (scrolling not yet available in card view)",
-                "muted"));
+        foreach (var entry in entries)
+            rows.Add(BuildCard(entry, expanded));
 
         return rows;
     }
 
-    // A ledger entry as a card: item-variant panel > [ header row, optional descriptor line, meta pills ].
-    private static JsonObject BuildCard(int index, ActivityEntry entry)
+    // A ledger entry as a card: item-variant panel > [ header row, optional descriptor line, meta pills,
+    // optional expanded detail rows ]. Keyed by EntryId (not the loop index) so identity — and therefore
+    // the expanded-set lookup and toggle command — stays stable as new entries arrive at the head.
+    private static JsonObject BuildCard(ActivityEntry entry, IReadOnlySet<string> expanded)
     {
-        var id = $"activity-card-{index}";
+        var id = $"activity-card-{entry.EntryId}";
         var tooltip = BuildTooltip(entry);
+        var isExpanded = expanded.Contains(entry.EntryId);
 
-        // Header packs left — kind · name · time — with a trailing spacer absorbing the slack, so the
-        // time never gets pushed to (and clipped at) the panel's right edge.
+        // Header packs left — toggle · kind · name · time — with a trailing spacer absorbing the slack,
+        // so the time never gets pushed to (and clipped at) the panel's right edge.
         var header = Node(
             $"{id}-header",
             "container",
             layout: Layout("horizontal", gap: 8, align: "center"),
             children: new JsonArray
             {
+                ToggleButton($"{id}-toggle", isExpanded ? ChevronExpanded : ChevronCollapsed, $"toggle:{entry.EntryId}"),
                 Badge($"{id}-kind", KindTag(entry.Kind).Trim(), KindVariant(entry)),
                 Label($"{id}-name", Truncate(entry.Name, 46)),
                 Label($"{id}-time", entry.Timestamp.ToLocalTime().ToString("HH:mm:ss"), variant: "muted"),
@@ -124,12 +120,40 @@ internal static class ActivityPresentationDocumentBuilder
         if (meta is not null)
             children.Add(meta);
 
+        if (isExpanded)
+            AppendExpandedDetail(children, id, entry);
+
         var properties = new JsonObject { ["variant"] = Val("item") };
         if (!string.IsNullOrWhiteSpace(tooltip))
             properties["tooltip"] = Val(tooltip);
 
         return Node(id, "panel", properties: properties, layout: Layout("vertical", gap: 4), children: children);
     }
+
+    // Expanded-card detail: the same fields as the tooltip, each on its own truncated line instead of
+    // joined into one tooltip blob. Truncated to ~72 chars — NormalizeLabels (resident ViewRenderer)
+    // disables label wrapping, so un-truncated long text would blow out the card width.
+    private const int DetailLineMaxChars = 72;
+
+    private static void AppendExpandedDetail(JsonArray children, string id, ActivityEntry entry)
+    {
+        var index = 0;
+
+        var descriptorDescription = ReadDescriptorDescription(entry);
+        if (!string.IsNullOrWhiteSpace(descriptorDescription))
+            children.Add(DetailLabel(id, index++, Truncate(descriptorDescription!, DetailLineMaxChars), "muted"));
+
+        foreach (var part in FormatPayloadDetailParts(entry))
+            children.Add(DetailLabel(id, index++, Truncate(part, DetailLineMaxChars), "muted"));
+
+        if (!string.IsNullOrWhiteSpace(entry.Error))
+            children.Add(DetailLabel(id, index++, Truncate($"error: {entry.Error}", DetailLineMaxChars), "danger"));
+        else if (!string.IsNullOrWhiteSpace(entry.Outcome))
+            children.Add(DetailLabel(id, index++, Truncate($"outcome: {entry.Outcome}", DetailLineMaxChars), "muted"));
+    }
+
+    private static JsonObject DetailLabel(string cardId, int index, string text, string variant)
+        => Label($"{cardId}-detail-{index}", text, variant: variant);
 
     private static JsonObject? BuildMetaRow(string id, ActivityEntry entry)
     {
@@ -156,17 +180,26 @@ internal static class ActivityPresentationDocumentBuilder
 
     // ----- component-node construction (RuntimeComponentNode JSON shape) -----
 
+    // ASCII fallback for the expand/collapse glyph: the resident ViewRenderer.NormalizeLabels pass only
+    // touches Label controls (font/wrap overrides), not Button text, so this doesn't inherit that theming
+    // — but a geometric-shape glyph (▾/▸) is not guaranteed present in every font, and this surface can't
+    // be visually spot-checked from here, so stick to characters certain to render.
+    private const string ChevronExpanded = "-";
+    private const string ChevronCollapsed = "+";
+
     private static JsonObject Node(
         string id,
         string type,
         JsonObject? properties = null,
         JsonObject? layout = null,
-        JsonArray? children = null)
+        JsonArray? children = null,
+        JsonArray? actions = null)
     {
         var node = new JsonObject { ["id"] = id, ["type"] = type };
         if (layout is not null) node["layout"] = layout;
         if (properties is not null) node["properties"] = properties;
         if (children is not null) node["children"] = children;
+        if (actions is not null) node["actions"] = actions;
         return node;
     }
 
@@ -193,6 +226,16 @@ internal static class ActivityPresentationDocumentBuilder
 
     private static JsonObject InfoLabel(string id, string text, string variant)
         => Label(id, text, variant);
+
+    private static JsonObject ToggleButton(string id, string text, string command)
+        => Node(
+            id,
+            "button",
+            properties: new JsonObject { ["text"] = Val(text) },
+            actions: new JsonArray
+            {
+                new JsonObject { ["event"] = "pressed", ["command"] = command },
+            });
 
     // ----- entry → presentation mapping -----
 
@@ -241,19 +284,19 @@ internal static class ActivityPresentationDocumentBuilder
     private static string? ReadDescriptorTitle(ActivityEntry entry)
         => TryReadCommandCard(entry) is { } card ? ReadString(card, "descriptorTitle") : null;
 
+    private static string? ReadDescriptorDescription(ActivityEntry entry)
+        => TryReadCommandCard(entry) is { } card ? ReadString(card, "descriptorDescription") : null;
+
     private static string BuildTooltip(ActivityEntry entry)
     {
         var lines = new List<string> { FormatEntry(entry) };
 
-        if (TryReadCommandCard(entry) is { } card)
-        {
-            var title = ReadString(card, "descriptorTitle");
-            if (!string.IsNullOrWhiteSpace(title))
-                lines.Add(title);
-            var description = ReadString(card, "descriptorDescription");
-            if (!string.IsNullOrWhiteSpace(description))
-                lines.Add(description);
-        }
+        var descriptorTitle = ReadDescriptorTitle(entry);
+        if (!string.IsNullOrWhiteSpace(descriptorTitle))
+            lines.Add(descriptorTitle!);
+        var descriptorDescription = ReadDescriptorDescription(entry);
+        if (!string.IsNullOrWhiteSpace(descriptorDescription))
+            lines.Add(descriptorDescription!);
 
         var details = FormatPayloadDetails(entry);
         if (!string.IsNullOrWhiteSpace(details))
@@ -306,17 +349,26 @@ internal static class ActivityPresentationDocumentBuilder
         return $"{time}  [{KindTag(entry.Kind)}]  {entry.Name}  -  {actor}{category}";
     }
 
+    // Joined form for the tooltip (one line: "key: value  -  key: value  -  ..."). The expanded card
+    // detail wants the same parts un-joined (one label per line), so both read from
+    // <see cref="FormatPayloadDetailParts"/>.
     private static string? FormatPayloadDetails(ActivityEntry entry)
     {
+        var parts = FormatPayloadDetailParts(entry);
+        return parts.Count == 0 ? null : string.Join("  -  ", parts);
+    }
+
+    private static List<string> FormatPayloadDetailParts(ActivityEntry entry)
+    {
+        var parts = new List<string>();
         if (string.IsNullOrWhiteSpace(entry.PayloadJson))
-            return null;
+            return parts;
 
         try
         {
             if (JsonNode.Parse(entry.PayloadJson) is not JsonObject payload)
-                return null;
+                return parts;
 
-            var parts = new List<string>();
             foreach (var key in DetailKeys)
             {
                 var value = ReadString(payload, key);
@@ -333,11 +385,11 @@ internal static class ActivityPresentationDocumentBuilder
             if (ReadInt(payload, "activeScenes") is { } activeScenes)
                 parts.Add($"active scenes: {activeScenes}");
 
-            return parts.Count == 0 ? null : string.Join("  -  ", parts);
+            return parts;
         }
         catch (JsonException)
         {
-            return null;
+            return parts;
         }
     }
 

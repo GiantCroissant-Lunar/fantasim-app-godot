@@ -30,6 +30,10 @@ public sealed class ViewRenderer : IDisposable
             Catalog = RuntimeSurfaceCatalog.Basic,
             ActionHandler = new RuntimeSurfaceActionHandler(OnAction),
             Theme = BuildTheme(),
+            // Activity renders up to 60 cards; a card can expand to ~20+ inline detail rows. Worst case
+            // (all expanded, dense payloads) approaches ~2100 nodes, so keep comfortable headroom above
+            // the 512 default — otherwise a heavy render trips the validator and blanks the whole surface.
+            ValidatorOptions = new RuntimeSurfaceValidatorOptions { MaxNodeCount = 4096 },
         });
         _shellBinder = new PresentationShellBinder(logger);
     }

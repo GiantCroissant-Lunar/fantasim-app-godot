@@ -17,7 +17,7 @@
     <!-- Roslyn emit for TestViewSourceFactory (mirrors App.Resource.Tests). -->
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" />
     <!-- RuntimeSurfaceDocument via BoomHud.Abstractions.Runtime (transitive via BoomHud.Foundation). -->
-    <PackageReference Include="BoomHud.Foundation" Version="0.1.18" />
+    <PackageReference Include="BoomHud.Foundation" Version="0.1.47" />
     <!-- ILogger for ReloadPolicy ctor. -->
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.1" />
   </ItemGroup>

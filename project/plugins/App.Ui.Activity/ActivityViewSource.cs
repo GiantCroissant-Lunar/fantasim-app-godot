@@ -30,6 +30,7 @@ public sealed class ActivityViewSource : IViewSource, IDisposable
     private readonly IMessageBus? _bus;
     private readonly IDisposable? _entrySubscription;
     private readonly string _templateJson;
+    private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
     private int _revision;
     private bool _disposed;
 
@@ -56,11 +57,20 @@ public sealed class ActivityViewSource : IViewSource, IDisposable
             _templateJson,
             entries,
             ledgerAvailable: _ledger is not null,
-            revision: ++_revision);
+            revision: ++_revision,
+            expanded: _expanded);
     }
 
     public void Dispatch(string action, string? componentId)
     {
+        if (action.StartsWith("toggle:", StringComparison.Ordinal))
+        {
+            var key = action["toggle:".Length..];
+            if (!_expanded.Remove(key)) _expanded.Add(key);
+            Changed?.Invoke();
+            return;
+        }
+
         switch (action)
         {
             case "refresh":
