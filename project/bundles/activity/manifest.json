@@ -3,11 +3,7 @@
   "displayName": "Activity Ledger",
   "version": "0.1.0",
   "pluginAssembly": "FantaSim.App.Ui.Activity.dll",
-  "scenes": [
-    "scenes/activity_panel.tscn"
-  ],
   "metadata": {
-    "bundleType": "ui-view",
-    "uiScene": "scenes/activity_panel.tscn"
+    "bundleType": "ui-view"
   }
 }

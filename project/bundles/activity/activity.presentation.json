@@ -6,7 +6,8 @@
     "id": "root",
     "type": "container",
     "layout": {
-      "type": "vertical"
+      "type": "vertical",
+      "gap": 8
     },
     "children": [
       {
@@ -15,227 +16,70 @@
         "properties": {
           "text": {
             "literal": "${activity.title}"
+          },
+          "variant": {
+            "literal": "title"
           }
         }
       },
       {
-        "id": "activity-refresh",
-        "type": "button",
-        "properties": {
-          "text": {
-            "literal": "Refresh"
-          }
+        "id": "activity-toolbar",
+        "type": "container",
+        "layout": {
+          "type": "horizontal",
+          "gap": 8,
+          "align": "center"
         },
-        "actions": [
+        "children": [
           {
-            "event": "pressed",
-            "command": "refresh"
+            "id": "activity-refresh",
+            "type": "button",
+            "properties": {
+              "text": {
+                "literal": "Refresh"
+              }
+            },
+            "actions": [
+              {
+                "event": "pressed",
+                "command": "refresh"
+              }
+            ]
+          },
+          {
+            "id": "activity-hide",
+            "type": "button",
+            "properties": {
+              "text": {
+                "literal": "Hide"
+              }
+            },
+            "actions": [
+              {
+                "event": "pressed",
+                "command": "hide"
+              }
+            ]
+          },
+          {
+            "id": "activity-toolbar-spacer",
+            "type": "spacer"
           }
         ]
       },
       {
-        "id": "activity-spacer-top",
-        "type": "label",
-        "properties": {
-          "text": {
-            "literal": ""
-          }
-        }
-      },
-      {
         "id": "activity-rows",
-        "type": "slot",
-        "slot": "activityRows"
-      },
-      {
-        "id": "activity-spacer-bottom",
-        "type": "label",
-        "properties": {
-          "text": {
-            "literal": ""
-          }
-        }
-      },
-      {
-        "id": "activity-hide",
-        "type": "button",
-        "properties": {
-          "text": {
-            "literal": "Hide"
-          }
+        "type": "container",
+        "layout": {
+          "type": "vertical",
+          "gap": 6
         },
-        "actions": [
+        "children": [
           {
-            "event": "pressed",
-            "command": "hide"
+            "slot": "activityRows"
           }
         ]
       }
     ]
-  },
-  "shellBindings": [
-    {
-      "kind": "text",
-      "node": "ActivityTitle",
-      "path": "title"
-    },
-    {
-      "kind": "command",
-      "node": "ActivityRefresh",
-      "command": "refresh"
-    },
-    {
-      "kind": "command",
-      "node": "ActivityHide",
-      "command": "hide"
-    },
-    {
-      "kind": "list",
-      "node": "ActivityRows",
-      "path": "rows",
-      "lines": [
-        {
-          "path": "text",
-          "style": "normal",
-          "skipEmpty": true
-        },
-        {
-          "path": "command.descriptorTitle",
-          "prefix": "        ",
-          "skipEmpty": true
-        },
-        {
-          "path": "command.descriptorDescription",
-          "prefix": "        ",
-          "style": "muted",
-          "skipEmpty": true
-        },
-        {
-          "path": "command.category",
-          "prefix": "        category: ",
-          "style": "muted",
-          "skipEmpty": true
-        },
-        {
-          "path": "command.actorKind",
-          "prefix": "        actor: ",
-          "style": "muted",
-          "skipEmpty": true
-        },
-        {
-          "path": "command.ok",
-          "prefix": "        ok: ",
-          "style": "muted",
-          "skipEmpty": true
-        },
-        {
-          "path": "command.errorType",
-          "prefix": "        error type: ",
-          "style": "error",
-          "skipEmpty": true
-        },
-        {
-          "path": "detail",
-          "prefix": "        ",
-          "style": "muted",
-          "skipEmpty": true
-        },
-        {
-          "path": "error",
-          "prefix": "        error: ",
-          "style": "error",
-          "skipEmpty": true
-        },
-        {
-          "path": "outcome",
-          "prefix": "        outcome: ",
-          "style": "muted",
-          "skipEmpty": true
-        }
-      ]
-    }
-  ],
-  "activityTemplates": {
-    "unavailable": {
-      "id": "activity-unavailable",
-      "type": "label",
-      "properties": {
-        "text": {
-          "literal": "   (activity ledger unavailable)"
-        }
-      }
-    },
-    "empty": {
-      "id": "activity-empty",
-      "type": "label",
-      "properties": {
-        "text": {
-          "literal": "   (no activity recorded yet - entries appear as commands are dispatched)"
-        }
-      }
-    },
-    "entry": {
-      "id": "activity-entry-${row.id}",
-      "type": "label",
-      "properties": {
-        "text": {
-          "literal": "${row.text}"
-        }
-      }
-    },
-    "detail": {
-      "id": "activity-entry-${row.id}-detail",
-      "type": "label",
-      "properties": {
-        "text": {
-          "literal": "        ${row.detail}"
-        }
-      }
-    },
-    "error": {
-      "id": "activity-entry-${row.id}-error",
-      "type": "label",
-      "properties": {
-        "text": {
-          "literal": "        error: ${row.error}"
-        }
-      }
-    },
-    "outcome": {
-      "id": "activity-entry-${row.id}-outcome",
-      "type": "label",
-      "properties": {
-        "text": {
-          "literal": "        outcome: ${row.outcome}"
-        }
-      }
-    },
-    "commandTitle": {
-      "id": "activity-entry-${row.id}-cmd-title",
-      "type": "label",
-      "properties": {
-        "text": {
-          "literal": "        ${row.commandTitle}"
-        }
-      }
-    },
-    "commandDescription": {
-      "id": "activity-entry-${row.id}-cmd-desc",
-      "type": "label",
-      "properties": {
-        "text": {
-          "literal": "        ${row.commandDescription}"
-        }
-      }
-    },
-    "commandStatus": {
-      "id": "activity-entry-${row.id}-cmd-status",
-      "type": "label",
-      "properties": {
-        "text": {
-          "literal": "        status: ${row.commandStatus}"
-        }
-      }
-    }
   }
 }
