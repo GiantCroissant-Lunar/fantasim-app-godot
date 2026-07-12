@@ -1,0 +1,38 @@
+      Bundle loaded: iii from /private/tmp/fantasim-asymmetric-cockpit-gate-src-29cfce5/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/iii.pck
+      Bundle loaded: stage from /private/tmp/fantasim-asymmetric-cockpit-gate-src-29cfce5/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/stage.pck
+      Bundle loaded: world from /private/tmp/fantasim-asymmetric-cockpit-gate-src-29cfce5/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/world.pck
+      Bundle loaded: assist from /private/tmp/fantasim-asymmetric-cockpit-gate-src-29cfce5/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/assist.pck
+      Bundle loaded: timeline from /private/tmp/fantasim-asymmetric-cockpit-gate-src-29cfce5/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/timeline.pck
+      Bundle loaded: activity from /private/tmp/fantasim-asymmetric-cockpit-gate-src-29cfce5/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/activity.pck
+      scene-tier pck changed: dispatching resource.reload_bundle for 'assist'.
+      Bundle unloaded: activity
+      Bundle loaded: activity from /private/tmp/fantasim-asymmetric-cockpit-gate-src-29cfce5/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/activity.pck
+      Bundle unloaded: iii
+      Bundle loaded: iii from /private/tmp/fantasim-asymmetric-cockpit-gate-src-29cfce5/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/iii.pck
+      Bundle unloaded: world
+      Hot-reload: old ALC collected for bundle activity
+      Bundle loaded: world from /private/tmp/fantasim-asymmetric-cockpit-gate-src-29cfce5/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/world.pck
+      Bundle unloaded: assist
+      Bundle loaded: assist from /private/tmp/fantasim-asymmetric-cockpit-gate-src-29cfce5/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/assist.pck
+      resource.reload_bundle: reloaded 'assist'.
+      scene-tier pck changed: dispatching resource.reload_bundle for 'stage'.
+      Bundle unloaded: timeline
+      Bundle unloaded: assist
+      Bundle unloaded: stage
+      Bundle loaded: stage from /private/tmp/fantasim-asymmetric-cockpit-gate-src-29cfce5/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/stage.pck
+      Bundle loaded: timeline from /private/tmp/fantasim-asymmetric-cockpit-gate-src-29cfce5/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/timeline.pck
+      Bundle loaded: assist from /private/tmp/fantasim-asymmetric-cockpit-gate-src-29cfce5/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/assist.pck
+      resource.reload_bundle: reloaded 'stage'.
+      scene-tier pck changed: dispatching resource.reload_bundle for 'timeline'.
+      Bundle unloaded: timeline
+      Bundle loaded: timeline from /private/tmp/fantasim-asymmetric-cockpit-gate-src-29cfce5/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/timeline.pck
+      resource.reload_bundle: reloaded 'timeline'.
+      Hot-reload: old ALC collected for bundle world
+      Hot-reload: old ALC collected for bundle timeline
+      Hot-reload: old ALC collected for bundle timeline
+      Hot-reload: old ALC collected for bundle assist
+      Hot-reload: old ALC collected for bundle stage
+      Hot-reload: old ALC collected for bundle assist
+      Bundle unloaded: world
+      Bundle loaded: world from /private/tmp/fantasim-asymmetric-cockpit-gate-src-29cfce5/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/world.pck
+      Hot-reload: old ALC collected for bundle world

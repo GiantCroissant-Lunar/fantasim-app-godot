@@ -1,0 +1,117 @@
+{
+  "app": "fantasim",
+  "commands": [
+    {
+      "category": "camera",
+      "description": "Reports the live camera-rig state: real camera position/current, phantom host, manager autoload, and every registered pcam's addon-visible state. Diagnostic; no side effects.",
+      "id": "camera.debug",
+      "paramsSchema": null,
+      "title": "Camera rig introspection"
+    },
+    {
+      "category": "camera",
+      "description": "Sets the default globe orbit framing. Payload: {\"yawDeg\":N,\"pitchDeg\":N,\"distance\":N}. All fields optional; pitch clamps to +/-85 and distance clamps to [1.5,8.0].",
+      "id": "camera.orbit",
+      "paramsSchema": null,
+      "title": "Orbit globe camera"
+    },
+    {
+      "category": "pipeline",
+      "description": "Executes the text to 3D iii pipeline graph.",
+      "id": "pipeline.run_text_to_3d",
+      "paramsSchema": null,
+      "title": "Run text to 3D"
+    },
+    {
+      "category": "world",
+      "description": "Re-reads the track-pipeline and declared-layers json assets and rebuilds the layer-track registry, preserving the archive overlay.",
+      "id": "registry.reload",
+      "paramsSchema": null,
+      "title": "Reload layer-track registry"
+    },
+    {
+      "category": "render",
+      "description": "Activates the planet cutaway wedge. Payload: {\"azimuthDeg\":N,\"widthDeg\":N}. Width 0 clears the cutaway. Default: {\"azimuthDeg\":0,\"widthDeg\":0} (clear).",
+      "id": "render.cutaway",
+      "paramsSchema": null,
+      "title": "Cutaway wedge"
+    },
+    {
+      "category": "render",
+      "description": "Activates the exploded solid-crust view (per-plate watertight slabs translated radially along their centroid direction). Payload: {\"factor\":N} where N in [0,1]. Factor 0 = assembled solid crust (thickness/side walls visible at the silhouette, no translation); factor 1 = maximum radial explode. Default: {\"factor\":0.0} (assembled).",
+      "id": "render.exploded",
+      "paramsSchema": null,
+      "title": "Exploded solid crust"
+    },
+    {
+      "category": "render",
+      "description": "Toggles the mantle x-ray view (ghosted crust + cold/warm convection isosurfaces). Payload: {\"enabled\":true|false}. Default: {\"enabled\":true}.",
+      "id": "render.mantle",
+      "paramsSchema": null,
+      "title": "Mantle x-ray view"
+    },
+    {
+      "category": "render",
+      "description": "Captures the main viewport to a PNG. Payload: {\"path\":\"<absolute or user:// path>\"}. Default: user://screenshots/<UTC yyyyMMdd-HHmmss>.png.",
+      "id": "render.screenshot",
+      "paramsSchema": null,
+      "title": "Capture screenshot"
+    },
+    {
+      "category": "resource",
+      "description": "Unloads and hot-reloads a collectible bundle's ALC by id. Payload: {\"bundleId\":\"stage|assist|timeline\"}.",
+      "id": "resource.reload_bundle",
+      "paramsSchema": null,
+      "title": "Reload bundle"
+    },
+    {
+      "category": "timeline",
+      "description": "Moves the timeline playhead to a tick through the active timeline service. Payload: {\"tick\":123,\"origin\":\"standard|scrubPreview|scrubCommit\"}. 'origin' is optional (case-insensitive, default \"standard\").",
+      "id": "timeline.seek",
+      "paramsSchema": null,
+      "title": "Seek timeline"
+    },
+    {
+      "category": "timeline",
+      "description": "Selects the active layer track and updates the bound world-generation graph.",
+      "id": "timeline.select_layer",
+      "paramsSchema": null,
+      "title": "Select timeline layer"
+    },
+    {
+      "category": "timeline",
+      "description": "Archives or restores one layer track in the layer-track registry. The underlying declared/discovered data is never deleted. Payload: {\"sphereId\":\"geosphere\",\"layerId\":\"geosphere.crust\",\"archived\":true}.",
+      "id": "timeline.set_track_archived",
+      "paramsSchema": null,
+      "title": "Archive/restore a layer track"
+    },
+    {
+      "category": "timeline",
+      "description": "Toggles a layer's membership in the stacked active set (D5). Payload: {\"sphereId\":\"geosphere\",\"layerId\":\"geosphere.crust\"}. Several layers may be active at once.",
+      "id": "timeline.toggle_layer",
+      "paramsSchema": null,
+      "title": "Toggle timeline layer"
+    },
+    {
+      "category": "timeline",
+      "description": "Enables/disables the 3D tunnel timeline. Payload: {\"enabled\":true}.",
+      "id": "timeline.tunnel_view",
+      "paramsSchema": null,
+      "title": "Toggle tunnel view"
+    },
+    {
+      "category": "orchestration",
+      "description": "Delegates a command request to the active IWorldOrchestration (LocalOrchestrator by default).",
+      "id": "world.orchestrate",
+      "paramsSchema": null,
+      "title": "Orchestrate world"
+    },
+    {
+      "category": "world",
+      "description": "Executes a compiled App.NodeGraph world-generation graph through registered node providers.",
+      "id": "world.run_generation_graph",
+      "paramsSchema": null,
+      "title": "Run world generation graph"
+    }
+  ]
+}

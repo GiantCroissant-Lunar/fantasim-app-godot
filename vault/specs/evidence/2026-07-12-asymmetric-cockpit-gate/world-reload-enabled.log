@@ -1,0 +1,66 @@
+info: World.PlanetPresentation[0]
+      Planet presentation released before resource Reload: world
+info: World.TunnelPresentation[0]
+      Tunnel presentation released before resource Reload: world
+info: TimelinePlugin[0]
+      TimelinePlugin: world runtime changing; timeline binding severed.
+warn: Timeline.Face[0]
+      No active timeline face context found.
+info: WorldPlugin[0]
+      WorldPlugin: shutdown started.
+info: WorldPlugin[0]
+      WorldPlugin: unregistered world.run_generation_graph and registry.reload
+info: WorldPlugin[0]
+      WorldPlugin: shutdown completed.
+warn: Timeline.Face[0]
+      No active timeline face context found.
+info: PresentationPlugin[0]
+      PresentationPlugin: shutdown completed.
+warn: Timeline.Face[0]
+      No active timeline face context found.
+info: BundleHost[0]
+      Hot-reload: cleared shared System.Text.Json reflection caches on unload of world (pooled CachingContexts no longer root collectible types).
+info: BundleHost[0]
+      Bundle unloaded: world
+warn: Timeline.Face[0]
+      No active timeline face context found.
+info: BundleHost[0]
+      Bundle plugin extracted: world assembly=FantaSim.App.World.dll dir=/var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6407-025aca38eec64ef1a4e0550a8c1d7168/world/17 dataFiles=3
+info: PresentationPlugin[0]
+      PresentationPlugin: IPlanetPresentation registered.
+info: PresentationPlugin[0]
+      PresentationPlugin: ITunnelPresentation registered.
+info: HostComposition.World[0]
+      [Host] registered: World
+info: HostComposition.World[0]
+      [Host] World detail: crust function provider registered
+warn: Timeline.Face[0]
+      No active timeline face context found.
+warn: Timeline.Face[0]
+      No active timeline face context found.
+info: WorldPlugin[0]
+      WorldPlugin: layer-track registry registered.
+info: WorldPlugin[0]
+      WorldPlugin: registered world.run_generation_graph and registry.reload
+info: WorldPlugin[0]
+      WorldPlugin: automatic crust generation armed (window=5,000,000, graphRevision=1)
+info: BundleHost[0]
+      Bundle loaded: world from /private/tmp/fantasim-asymmetric-cockpit-gate-src-29cfce5/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/world.pck
+info: Host[0]
+      world bundle reloaded; presentation rebind scheduled.
+info: TimelinePlugin[0]
+      TimelinePlugin: IService registered.
+info: ViewRenderer[activity][0]
+      BoomHud scene generated for activity: user://boomhud-surfaces/activity.tscn
+info: World.PlanetPresentation[0]
+      Planet plate surface bound: view=World, subdivision=adaptive, plates=1, triangles=25718, meshVertices=77154, scale=3.72677996249965E-05, trueScale=1.5696123057604772E-07, amplification=237.4331514108527x, frequency=4.
+info: World.PlanetPresentation[0]
+      Planet presentation mounted under stage Environment: planet=app:main:L0:world:default, plates=0, cells=5120, productLayers=0, revision=0.
+info: ViewRenderer[activity][0]
+      BoomHud scene generated for activity: user://boomhud-surfaces/activity.tscn
+info: ViewRenderer[activity][0]
+      View renderer bound to activity.
+info: World.TunnelPresentation[0]
+      Tunnel presentation prepared hidden under stage Environment.
+info: BundleHost[0]
+      Hot-reload: old ALC collected for bundle world
