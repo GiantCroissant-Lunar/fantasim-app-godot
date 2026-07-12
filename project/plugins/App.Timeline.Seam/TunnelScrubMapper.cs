@@ -52,6 +52,21 @@ public static class TunnelScrubMapper
     }
 
     /// <summary>
+    /// Returns the deterministic visual phase for a canonical tick within one unit period. A full
+    /// positive period returns to zero; negative ticks wrap into the same clockwise-negative range.
+    /// </summary>
+    public static double CanonicalPhaseDegrees(long tick, long unitTicks)
+    {
+        if (unitTicks <= 0L)
+            return 0d;
+
+        var remainder = tick % unitTicks;
+        if (remainder < 0L)
+            remainder += unitTicks;
+        return -360d * remainder / unitTicks;
+    }
+
+    /// <summary>
     /// Maps an accumulated signed clockwise angle to a clamped target tick. The mapping is
     /// <c>pressTick + RoundAwayFromZero(accumulatedDegrees / 360 * kb.UnitTicks)</c>, rounded exactly
     /// once before clamping to <c>[0, max(0, maxTick)]</c>. Non-finite angles throw; pathological

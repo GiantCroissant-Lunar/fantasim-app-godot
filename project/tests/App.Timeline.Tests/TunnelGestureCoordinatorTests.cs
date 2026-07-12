@@ -76,19 +76,34 @@ public sealed class TunnelGestureCoordinatorTests
     }
 
     [Fact]
-    public void Press_InnerRing_IsHandledEvenWhenInactive()
+    public void Press_InnerRing_WhenInactive_IsUnhandledAndOwnsNothing()
     {
         var coord = new TunnelGestureCoordinator();
         var inactiveBinding = TunnelFinePreviewMapper.Bind(Descriptor(), isActive: false, GlobalFallback);
 
         var update = coord.Press(TunnelHitRegion.InnerRing, Context(binding: inactiveBinding));
 
-        Assert.True(update.Handled);
-        Assert.Equal(TunnelGestureKind.InnerRing, update.Gesture);
+        Assert.False(update.Handled);
+        Assert.Equal(TunnelGestureKind.None, update.Gesture);
+        Assert.False(coord.OwnsGesture);
+        Assert.Equal(TunnelGestureKind.None, coord.ActiveGesture);
+        Assert.Null(update.FinePreview);
+    }
+
+    [Fact]
+    public void Press_InnerRing_WithNoFocusedTrack_IsUnhandledAndOuterRemainsAvailable()
+    {
+        var coord = new TunnelGestureCoordinator();
+        var noTrack = TunnelFinePreviewMapper.Bind(null, isActive: false, GlobalFallback);
+
+        var inner = coord.Press(TunnelHitRegion.InnerRing, Context(binding: noTrack));
+        var outer = coord.Press(TunnelHitRegion.OuterRing, Context(binding: noTrack));
+
+        Assert.False(inner.Handled);
+        Assert.Equal(TunnelGestureKind.None, inner.Gesture);
+        Assert.True(outer.Handled);
+        Assert.Equal(TunnelGestureKind.OuterRing, outer.Gesture);
         Assert.True(coord.OwnsGesture);
-        // Inactive binding yields a centered/inert preview.
-        Assert.NotNull(update.FinePreview);
-        Assert.Equal(0.0, update.FinePreview!.Value.AccumulatedDegrees, precision: 6);
     }
 
     [Fact]

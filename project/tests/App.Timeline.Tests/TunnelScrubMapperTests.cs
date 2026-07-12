@@ -34,6 +34,44 @@ public sealed class TunnelScrubMapperTests
         Assert.Equal(expected.UnitTicks, rung.UnitTicks);
     }
 
+    // ---- CanonicalPhaseDegrees ----
+
+    [Theory]
+    [InlineData(0L, 1_000L, 0.0)]
+    [InlineData(250L, 1_000L, -90.0)]
+    [InlineData(1_000L, 1_000L, 0.0)]
+    [InlineData(2_250L, 1_000L, -90.0)]
+    [InlineData(-250L, 1_000L, -270.0)]
+    public void CanonicalPhaseDegrees_TracksCanonicalTickModuloUnit(
+        long tick,
+        long unitTicks,
+        double expectedDegrees)
+    {
+        Assert.Equal(
+            expectedDegrees,
+            TunnelScrubMapper.CanonicalPhaseDegrees(tick, unitTicks),
+            precision: 9);
+    }
+
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(-1L)]
+    public void CanonicalPhaseDegrees_NonPositiveUnit_IsIdentity(long unitTicks)
+    {
+        Assert.Equal(0.0, TunnelScrubMapper.CanonicalPhaseDegrees(123L, unitTicks));
+    }
+
+    [Fact]
+    public void CanonicalPhaseDegrees_ExternalSeekBackToZero_ClearsPriorPose()
+    {
+        var prior = TunnelScrubMapper.CanonicalPhaseDegrees(500L, 1_000L);
+
+        var afterSeek = TunnelScrubMapper.CanonicalPhaseDegrees(0L, 1_000L);
+
+        Assert.Equal(-180.0, prior, precision: 9);
+        Assert.Equal(0.0, afterSeek, precision: 9);
+    }
+
     // ---- MapOuterAngleToTick ----
 
     [Fact]

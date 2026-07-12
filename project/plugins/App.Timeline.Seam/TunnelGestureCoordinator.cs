@@ -86,6 +86,8 @@ public sealed class TunnelGestureCoordinator
     {
         if (_ownsGesture)
             return Unhandled();
+        if (hitRegion == TunnelHitRegion.InnerRing && !context.FineBinding.CanAdjust)
+            return Unhandled();
 
         var kind = MapHitToGesture(hitRegion);
         if (kind == TunnelGestureKind.None)
