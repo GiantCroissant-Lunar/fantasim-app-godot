@@ -68,6 +68,9 @@ public sealed class TunnelInstrumentContractTests
             "project/plugins/App.Presentation/Tunnel/TunnelPresentationBinder.Input.cs"));
         var binder = File.ReadAllText(ProjectFile(
             "project/plugins/App.Presentation/Tunnel/TunnelPresentationBinder.cs"));
+        var host = File.ReadAllText(ProjectFile("project/hosts/complete-app/Host.cs"));
+        var timelineFace = File.ReadAllText(ProjectFile(
+            "project/plugins/App.Timeline.Seam/TimelineFace.cs"));
 
         Assert.Contains("new SphereMesh", rings, StringComparison.Ordinal);
         Assert.Contains("new SnapshotSphereMaterial", rings, StringComparison.Ordinal);
@@ -118,6 +121,10 @@ public sealed class TunnelInstrumentContractTests
             && lossSequence > modeOwnerLookup
             && failSafeDisable > lossSequence,
             "Tunnel loss must route through the HUD-before-geometry sequence.");
+        Assert.Contains("RegisterOwned<ITunnelModeOwner>", host, StringComparison.Ordinal);
+        Assert.Contains("new ResidentTunnelModeOwner", host, StringComparison.Ordinal);
+        Assert.Contains("TimelineFace.TryRestoreSafeHud()", host, StringComparison.Ordinal);
+        Assert.Contains("face.Visible = true;", timelineFace, StringComparison.Ordinal);
 
         var timelineBranch = binder.IndexOf("if (timelineChanging)", runtimeApplyMethod, StringComparison.Ordinal);
         Assert.True(timelineBranch >= 0, "Timeline runtime-changing branch is missing.");

@@ -34,5 +34,6 @@
     <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelFineSamplePolicy.cs" Link="TunnelFineSamplePolicy.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelFineRequestScheduler.cs" Link="TunnelFineRequestScheduler.cs" />
     <Compile Include="..\..\plugins\App.Timeline.Seam\TunnelGestureCoordinator.cs" Link="TunnelGestureCoordinator.cs" />
+    <Compile Include="..\..\plugins\App.Timeline.Seam\ResidentTunnelModeOwner.cs" Link="ResidentTunnelModeOwner.cs" />
   </ItemGroup>
 </Project>

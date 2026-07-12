@@ -80,9 +80,23 @@ public partial class TimelineFace : Control, ITimelineFace
     /// the registry.
     /// </summary>
     public static IRegistry? ResidentRegistry { get; private set; }
+    private static WeakReference<TimelineFace>? _activeFace;
 
     public static void SetResidentRegistry(IRegistry registry)
         => ResidentRegistry = registry ?? throw new ArgumentNullException(nameof(registry));
+
+    public static bool TryRestoreSafeHud()
+    {
+        if (_activeFace?.TryGetTarget(out var face) != true
+            || !GodotObject.IsInstanceValid(face)
+            || !face.IsInsideTree())
+        {
+            return false;
+        }
+
+        face.Visible = true;
+        return true;
+    }
 
     public TimelineFace()
     {
@@ -131,7 +145,10 @@ public partial class TimelineFace : Control, ITimelineFace
     }
 
     public override void _Ready()
-        => BindResidentContext(forceProxyBind: false);
+    {
+        _activeFace = new WeakReference<TimelineFace>(this);
+        BindResidentContext(forceProxyBind: false);
+    }
 
     public override void _Process(double delta)
     {
@@ -335,6 +352,8 @@ public partial class TimelineFace : Control, ITimelineFace
 
     public override void _ExitTree()
     {
+        if (_activeFace?.TryGetTarget(out var activeFace) == true && ReferenceEquals(activeFace, this))
+            _activeFace = null;
         _filmstrip.Supersede();
         _scrubDragging = false;
         _scrubCoalescer.Cancel();

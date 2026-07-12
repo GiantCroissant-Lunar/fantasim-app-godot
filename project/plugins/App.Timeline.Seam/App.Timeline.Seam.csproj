@@ -20,6 +20,7 @@
   <ItemGroup>
     <!-- T1 contract (IService, DTOs, TimelineViewSnapshot, ITimelineFace, UI model helpers). -->
     <ProjectReference Include="..\..\contracts\App.Timeline\App.Timeline.csproj" />
+    <ProjectReference Include="..\..\contracts\App.Presentation\App.Presentation.csproj" />
     <!-- App.World contracts for ITimelineController + SphereRegimeSchedule (the face resolves
          the controller from the registry passed at construction). -->
     <ProjectReference Include="..\..\contracts\App.World\App.World.csproj" />

@@ -37,6 +37,7 @@ public partial class Host : Node
     // _planetPresentation lifecycle site exactly (severed on RuntimeChanging, resolved+rebound in
     // BindPlanetPresentation, nulled on teardown) so the tunnel binder never pins the old world ALC.
     private ITunnelPresentation? _tunnelPresentation;
+    private IDisposable? _tunnelModeOwnerRegistration;
     private FantaSim.App.Resource.IService? _resource;
     private IRenderCompositionHandle? _renderComposition;
     private ICameraCompositionHandle? _cameraComposition;
@@ -91,6 +92,19 @@ public partial class Host : Node
         CommandComposition.ComposeCommand(ctx);
         RegisterPresentationOptions(ctx.Registry);
         TimelineFace.SetResidentRegistry(ctx.Registry);
+        _tunnelModeOwnerRegistration = ctx.Registry.RegisterOwned<ITunnelModeOwner>(
+            new ResidentTunnelModeOwner(() =>
+            {
+                var appliedToFace = TimelineFace.TryRestoreSafeHud();
+                _log.LogInformation(
+                    "timeline HUD safety phase completed before tunnel teardown; faceApplied={FaceApplied}.",
+                    appliedToFace);
+            }),
+            new ServiceRegistration
+            {
+                Tags = new[] { "resident", "timeline", "tunnel-mode-owner" },
+                Description = "resident HUD-before-tunnel-loss coordinator"
+            });
         IiiComposition.ComposeIii(ctx, tree, this);
         GpuComposition.ComposeGpu(ctx);
         GpuShaderComposition.ComposeGpuShader(ctx);
@@ -816,6 +830,8 @@ public partial class Host : Node
 
             _sceneTierPckWatcher?.Dispose();
             _sceneTierPckWatcher = null;
+            _tunnelModeOwnerRegistration?.Dispose();
+            _tunnelModeOwnerRegistration = null;
             // The world bundle's PresentationPlugin owns binder disposal (runs in the plugin-host
             // teardown inside _composition.Dispose()); the host only drops its handle.
             _planetPresentation = null;

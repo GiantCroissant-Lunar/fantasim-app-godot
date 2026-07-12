@@ -45,16 +45,18 @@ public sealed class TimelinePluginTests
     {
         var registry = NewRegistry();
         registry.Register<ITimelineController>(new FakeTimelineController());
+        var residentModeOwner = new FakeTunnelModeOwner();
+        registry.Register<ITunnelModeOwner>(residentModeOwner);
         var proxy = new FakeFaceProxy();
 
         var plugin = new TimelinePlugin(() => proxy);
         await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
-        Assert.NotNull(registry.TryGet<ITunnelModeOwner>());
+        Assert.Same(residentModeOwner, registry.TryGet<ITunnelModeOwner>());
         await plugin.ShutdownAsync();
 
         Assert.Null(registry.TryGet<FantaSim.App.Timeline.IService>());
         Assert.Null(registry.TryGet<ITimelineFaceContext>());
-        Assert.Null(registry.TryGet<ITunnelModeOwner>());
+        Assert.Same(residentModeOwner, registry.TryGet<ITunnelModeOwner>());
         Assert.Equal(1, proxy.RebindResidentContextCalls);
         Assert.Equal(1, proxy.UnbindCrossTargetCalls);
     }
@@ -117,14 +119,6 @@ public sealed class TimelinePluginTests
         await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
         Assert.Same(controller, registry.TryGet<ITimelineFaceContext>()?.Controller);
         Assert.False(proxy.HudVisible);
-
-        var modeOwner = Assert.IsAssignableFrom<ITunnelModeOwner>(registry.TryGet<ITunnelModeOwner>());
-        modeOwner.PrepareForTunnelLoss(TunnelModeEvent.WorldChanging);
-
-        Assert.True(proxy.HudVisible);
-        Assert.Equal(1L, proxy.HudState.ModeEpoch);
-        Assert.True(tunnel.IsEnabled);
-        Assert.Equal(0, tunnel.TrySetEnabledCalls);
 
         resource.RaiseRuntimeChanging("world", ResourceRuntimeOperation.Reload);
 
@@ -443,6 +437,14 @@ public sealed class TimelinePluginTests
         }
 
         public void Dispose() { }
+    }
+
+    private sealed class FakeTunnelModeOwner : ITunnelModeOwner
+    {
+        public int PrepareCalls { get; private set; }
+
+        public void PrepareForTunnelLoss(TunnelModeEvent lossEvent)
+            => PrepareCalls++;
     }
 
     private sealed class FakeResourceService : FantaSim.App.Resource.IService
