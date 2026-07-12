@@ -126,6 +126,10 @@ public sealed class TunnelInstrumentContractTests
         Assert.Contains("TimelineFace.TryApplyResidentHudSafety(state)", host, StringComparison.Ordinal);
         Assert.Contains("TryGet<ITunnelModeOwner>()?.CurrentHudSafety", timelineFace, StringComparison.Ordinal);
         Assert.Contains("incomingVisible: state.Visible", timelineFace, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "if (e.Operation != FantaSim.App.Resource.ResourceRuntimeOperation.Reload)",
+            host,
+            StringComparison.Ordinal);
 
         var timelineBranch = binder.IndexOf("if (timelineChanging)", runtimeApplyMethod, StringComparison.Ordinal);
         Assert.True(timelineBranch >= 0, "Timeline runtime-changing branch is missing.");

@@ -161,14 +161,11 @@ public partial class Host : Node
 
     private void OnResourceRuntimeChanging(object? sender, FantaSim.App.Resource.ResourceRuntimeChangingEventArgs e)
     {
-        if (e.Operation != FantaSim.App.Resource.ResourceRuntimeOperation.Reload)
-            return;
-
         if (string.Equals(e.BundleId, "world", StringComparison.OrdinalIgnoreCase))
         {
-            // Sever every resident->bundle reference BEFORE the old ALC unloads: the render-ingress
-            // delegates, the camera orbit target, and the host's contract handle all point at
-            // objects typed in the outgoing world ALC.
+            // Reload, Unload, and UnloadAll all remove the current generation. Sever every
+            // resident->bundle reference BEFORE that old ALC unloads: render-ingress delegates,
+            // camera orbit target, and host contract handles all point into the outgoing world.
             _worldReloadPending = true;
             _renderComposition?.SetCutawayTarget(null);
             _renderComposition?.SetExplodedTarget(null);
