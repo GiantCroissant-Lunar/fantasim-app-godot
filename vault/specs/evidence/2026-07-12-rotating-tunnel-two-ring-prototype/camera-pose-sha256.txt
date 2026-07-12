@@ -1,0 +1,9 @@
+8df879df85632815edf167c8ed32be34e02ec7f0973af1af2d6840cb45e16ad0  /tmp/fantasim-two-ring-final/inner-after-move-pose.json
+8df879df85632815edf167c8ed32be34e02ec7f0973af1af2d6840cb45e16ad0  /tmp/fantasim-two-ring-final/inner-after-release-pose.json
+8df879df85632815edf167c8ed32be34e02ec7f0973af1af2d6840cb45e16ad0  /tmp/fantasim-two-ring-final/inner-before-pose.json
+8df879df85632815edf167c8ed32be34e02ec7f0973af1af2d6840cb45e16ad0  /tmp/fantasim-two-ring-final/outer-after-move-pose.json
+8df879df85632815edf167c8ed32be34e02ec7f0973af1af2d6840cb45e16ad0  /tmp/fantasim-two-ring-final/outer-after-release-pose.json
+8df879df85632815edf167c8ed32be34e02ec7f0973af1af2d6840cb45e16ad0  /tmp/fantasim-two-ring-final/outer-before-pose.json
+8df879df85632815edf167c8ed32be34e02ec7f0973af1af2d6840cb45e16ad0  /tmp/fantasim-two-ring-final/wall-after-move-pose.json
+8df879df85632815edf167c8ed32be34e02ec7f0973af1af2d6840cb45e16ad0  /tmp/fantasim-two-ring-final/wall-after-release-pose.json
+8df879df85632815edf167c8ed32be34e02ec7f0973af1af2d6840cb45e16ad0  /tmp/fantasim-two-ring-final/wall-before-pose.json

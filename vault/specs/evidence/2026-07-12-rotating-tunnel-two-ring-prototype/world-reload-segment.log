@@ -1,0 +1,58 @@
+info: FantaSim.App.Command.Clients.InProcessClient[0]
+      Dispatching command resource.reload_bundle
+info: World.PlanetPresentation[0]
+      Planet presentation released before resource Reload: world
+info: World.TunnelPresentation[0]
+      Tunnel presentation released before resource Reload: world
+warn: Timeline.Face[0]
+      No active timeline face context found.
+info: TimelinePlugin[0]
+      TimelinePlugin: world runtime changing; timeline binding severed.
+info: WorldPlugin[0]
+      WorldPlugin: shutdown started.
+info: WorldPlugin[0]
+      WorldPlugin: unregistered world.run_generation_graph and registry.reload
+info: WorldPlugin[0]
+      WorldPlugin: shutdown completed.
+info: PresentationPlugin[0]
+      PresentationPlugin: shutdown completed.
+info: BundleHost[0]
+      Hot-reload: evicted 2 collectible-keyed MessagePack resolver cache entries on unload of world: FantaSim.World.Fields.Stream, FantaSim.World.TruthStream.Core
+info: BundleHost[0]
+      Hot-reload: cleared shared System.Text.Json reflection caches on unload of world (pooled CachingContexts no longer root collectible types).
+info: BundleHost[0]
+      Bundle unloaded: world
+info: BundleHost[0]
+      Bundle plugin extracted: world assembly=FantaSim.App.World.dll dir=/var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/5307-e0dad721dd1946f581833dc12979ec7d/world/6 dataFiles=3
+info: PresentationPlugin[0]
+      PresentationPlugin: IPlanetPresentation registered.
+info: PresentationPlugin[0]
+      PresentationPlugin: ITunnelPresentation registered.
+info: HostComposition.World[0]
+      [Host] registered: World
+info: HostComposition.World[0]
+      [Host] World detail: crust function provider registered
+info: WorldPlugin[0]
+      WorldPlugin: layer-track registry registered.
+info: WorldPlugin[0]
+      WorldPlugin: registered world.run_generation_graph and registry.reload
+info: WorldPlugin[0]
+      WorldPlugin: automatic crust generation armed (window=5,000,000, graphRevision=1)
+info: BundleHost[0]
+      Bundle loaded: world from /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/world.pck
+info: Host[0]
+      world bundle reloaded; presentation rebind scheduled.
+warn: Timeline.Face[0]
+      No active timeline face context found.
+info: TimelinePlugin[0]
+      TimelinePlugin: IService registered.
+info: HostComposition.Command[0]
+      resource.reload_bundle: reloaded 'world'.
+info: World.PlanetPresentation[0]
+      Planet plate surface bound: view=World, subdivision=adaptive, plates=1, triangles=25718, meshVertices=77154, scale=3.72677996249965E-05, trueScale=1.5696123057604772E-07, amplification=237.4331514108527x, frequency=4.
+info: World.PlanetPresentation[0]
+      Planet presentation mounted under stage Environment: planet=app:main:L0:world:default, plates=0, cells=5120, productLayers=0, revision=0.
+info: World.TunnelPresentation[0]
+      Tunnel presentation mounted under stage Environment (visible=False).
+info: BundleHost[0]
+      Hot-reload: old ALC collected for bundle world

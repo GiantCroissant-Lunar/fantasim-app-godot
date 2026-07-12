@@ -1,7 +1,8 @@
 # Rotating tunnel two-ring prototype — implementation plan
 
-> **Status:** APPROVED FOR EXECUTION — the user approved the governing design on 2026-07-12 and
-> explicitly requested implementation through OpenCode `zai-coding-plan/glm-5.2`.
+> **Status:** COMPLETED — implemented through OpenCode `zai-coding-plan/glm-5.2`, independently
+> corrected and reviewed, and accepted by the exported-app evidence gate on 2026-07-12. Evidence:
+> [`../specs/evidence/2026-07-12-rotating-tunnel-two-ring-prototype/README.md`](../specs/evidence/2026-07-12-rotating-tunnel-two-ring-prototype/README.md).
 >
 > **For the implementing agent:** execute tasks in order. For every behavioral task, add the named
 > tests first, run the focused command and observe the intended RED, then add the minimum production

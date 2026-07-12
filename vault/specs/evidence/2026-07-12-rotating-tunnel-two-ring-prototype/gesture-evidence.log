@@ -1,0 +1,10 @@
+      tunnel gesture ownership: kind=Wall pointer=(1015.31244, 190.15672) button=Left handled=True
+      tunnel wall gesture: phase=motion focusBefore=0 stepDelta=4 focusAfter=4 snappedDegrees=120
+      tunnel wall gesture: phase=release focusBefore=0 stepDelta=4 focusAfter=4 snappedDegrees=120
+      tunnel gesture ownership: kind=OuterRing pointer=(1280.9858, 411.34793) button=Left handled=True
+      tunnel outer gesture: phase=motion pressTick=60000000 accumulatedDegrees=44.93015423815734 unitSymbol=kb rawTickQuantity=12480598.39948815 roundedTargetTick=72480598 clampedTargetTick=72480598 origin=ScrubPreview
+      tunnel outer gesture: phase=commit pressTick=60000000 accumulatedDegrees=44.93015423815734 unitSymbol=kb rawTickQuantity=12480598.39948815 roundedTargetTick=72480598 clampedTargetTick=72480598 origin=ScrubCommit
+      tunnel gesture ownership: kind=InnerRing pointer=(1252.2188, 408.5266) button=Left handled=True
+      tunnel inner gesture: phase=press sphereId=geosphere layerId=geosphere.stagnant-lid rung=ka active=True accumulatedDegrees=0 rawTickQuantity=0 cursorZ=-7 authoritativeTick=72480598 mutated=false
+      tunnel inner gesture: phase=motion sphereId=geosphere layerId=geosphere.stagnant-lid rung=ka active=True accumulatedDegrees=45.11128591734666 rawTickQuantity=12530.912754818519 cursorZ=-7.3132728188704625 authoritativeTick=72480598 mutated=false
+      tunnel inner gesture: phase=release sphereId=geosphere layerId=geosphere.stagnant-lid rung=ka active=True accumulatedDegrees=45.11128591734666 rawTickQuantity=12530.912754818519 cursorZ=-7.3132728188704625 authoritativeTick=72480598 mutated=false
