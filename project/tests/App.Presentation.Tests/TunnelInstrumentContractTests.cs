@@ -9,13 +9,15 @@ namespace App.Presentation.Tests;
 public sealed class TunnelInstrumentContractTests
 {
     [Fact]
-    public void Node_plan_places_rotating_roots_and_stationary_readouts_under_camera_local_instrument()
+    public void Node_plan_places_rotating_roots_and_stationary_readouts_under_mount_axis_instrument()
     {
         var plan = TunnelInstrumentContract.NodePlan;
 
         Assert.Collection(
             plan,
-            node => AssertNode(node, "InstrumentRoot", "TunnelCamera"),
+            // Part B: the instrument roots to the mount and is centered on the tunnel axis, so the
+            // rings encircle the throat as tunnel geometry rather than riding the camera as a dial.
+            node => AssertNode(node, "InstrumentRoot", "TunnelMount"),
             node => AssertNode(node, "OuterRotationRoot", "InstrumentRoot"),
             node => AssertNode(node, "InnerRotationRoot", "InstrumentRoot"),
             node => AssertNode(node, "ReadoutRoot", "InstrumentRoot"),
@@ -226,14 +228,15 @@ public sealed class TunnelInstrumentContractTests
     [Fact]
     public void Local_ray_intersects_the_same_zero_plane_used_by_instrument_geometry()
     {
+        // Point chosen to land in the (enlarged, axis-centered) outer ring band but not the inner.
         var success = TunnelInstrumentHitPolicy.TryIntersectPlane(
-            new TunnelInstrumentPoint3(0.7, -0.1, -2.0),
-            new TunnelInstrumentPoint3(0.7, -0.1, 2.0),
+            new TunnelInstrumentPoint3(2.35, 0.0, -2.0),
+            new TunnelInstrumentPoint3(2.35, 0.0, 2.0),
             out var point);
 
         Assert.True(success);
-        Assert.Equal(0.7, point.X, precision: 8);
-        Assert.Equal(-0.1, point.Y, precision: 8);
+        Assert.Equal(2.35, point.X, precision: 8);
+        Assert.Equal(0.0, point.Y, precision: 8);
         Assert.Equal(TunnelInstrumentContract.GeometryPlaneZ, point.Z, precision: 8);
         Assert.True(TunnelInstrumentHitPolicy.IsInBand(
             point,

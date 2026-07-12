@@ -27,7 +27,10 @@ internal static class TunnelCameraFraming
     internal const float CurrentPlaneZ = -5.0f;
     internal const float ThroatZ = -20.0f;
     internal const float TimelineDepth = CurrentPlaneZ - ThroatZ;
-    internal const float FieldOfViewDegrees = 60.0f;
+    // Slice-1 Part B pulls the camera back from the mouth so the axis-concentric rings read as a
+    // full pair encircling the tunnel (vs the prior inside-the-mouth planet-large framing). Widened
+    // FOV frames both rings; the exact pull-back / FOV are the user's eye-tune.
+    internal const float FieldOfViewDegrees = 74.0f;
     internal const float RadialClearance = 0.5f;
     internal const float PlanetClearance = 0.25f;
     internal const float NearClip = 0.05f;
@@ -39,16 +42,22 @@ internal static class TunnelCameraFraming
     internal const float NearInteriorLipZ = -4.5f;
     internal const int NearInteriorLipCueCount = 3;
 
-    // The approved -1.8 X seed put the real radius-4.94 focus anchor just outside X=0.12 at 16:10.
-    // Moving camera and target together to -2.0 preserves the near-axial view and all clearances.
-    internal static readonly Vector3 LocalPosition = new(-2.0f, 0.6f, -0.8f);
-    internal static readonly Vector3 LocalTarget = new(-2.0f, 0.0f, -7.0f);
+    // Part B framing (round 2, user eye-tune): rings shrunk ~25% and the camera pulled part-way
+    // back in so the planet and corridors read larger while the ring pair still fully encircles the
+    // throat. Slight -X asymmetry retained from the cockpit look. Candidates for further tuning:
+    // pull-in Z, FOV, ring radii.
+    internal static readonly Vector3 LocalPosition = new(-0.25f, 0.25f, 2.9f);
+    internal static readonly Vector3 LocalTarget = new(0.0f, 0.0f, -6.0f);
 
-    internal static readonly Vector3 InstrumentLocalAnchor = new(-2.2f, 0.0f, -4.0f);
-    internal const float InnerRingInnerRadius = 0.38f;
-    internal const float InnerRingOuterRadius = 0.52f;
-    internal const float OuterRingInnerRadius = 0.64f;
-    internal const float OuterRingOuterRadius = 0.82f;
+    // The instrument is parented to the mount (not the camera) and centered on the tunnel axis, so
+    // the rings encircle the throat instead of sitting as a corner dial. Anchor Z sits in front of
+    // the camera; radii ring the planet (visual radius ~2.06) — the ring plane is nearer the camera
+    // than the planet, so it projects larger even at a smaller raw radius.
+    internal static readonly Vector3 InstrumentLocalAnchor = new(0.0f, 0.0f, -1.0f);
+    internal const float InnerRingInnerRadius = 1.70f;
+    internal const float InnerRingOuterRadius = 1.90f;
+    internal const float OuterRingInnerRadius = 2.20f;
+    internal const float OuterRingOuterRadius = 2.45f;
 
     internal static Vector3 NearInteriorLipCuePoint(int index)
     {

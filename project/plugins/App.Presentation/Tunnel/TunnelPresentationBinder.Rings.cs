@@ -18,8 +18,10 @@ internal readonly record struct TunnelInspectionLensSettings(
 internal static class TunnelInspectionLensContract
 {
     internal static TunnelInspectionLensSettings Settings => new(
+        // Beside the (enlarged, axis-centered) outer ring so the fine-inspection preview does not
+        // occlude the dials — X sits just outside OuterRingOuterRadius.
         Label: "inspection",
-        LocalPosition: new NumericsVector3(1.35f, 0f, 0.03f),
+        LocalPosition: new NumericsVector3(2.85f, 0f, 0.03f),
         Radius: 0.48f);
 }
 
@@ -43,7 +45,7 @@ internal static class TunnelInstrumentContract
     internal static IReadOnlyList<TunnelInstrumentNodePlan> NodePlan { get; } =
         Array.AsReadOnly(new[]
         {
-            new TunnelInstrumentNodePlan(InstrumentRootName, "TunnelCamera"),
+            new TunnelInstrumentNodePlan(InstrumentRootName, "TunnelMount"),
             new TunnelInstrumentNodePlan(OuterRotationRootName, InstrumentRootName),
             new TunnelInstrumentNodePlan(InnerRotationRootName, InstrumentRootName),
             new TunnelInstrumentNodePlan(ReadoutRootName, InstrumentRootName),
@@ -98,13 +100,16 @@ internal sealed partial class TunnelPresentationBinder
 
     private bool EnsureInstrumentHierarchy()
     {
-        var camera = _tunnelCamera;
-        if (camera is null || !GodotObject.IsInstanceValid(camera) || !camera.IsInsideTree())
+        // Part B: the instrument is parented to the mount and centered on the tunnel axis so the
+        // rings encircle the throat as tunnel geometry, rather than riding the camera as a corner
+        // dial. Readout labels stay billboarded (face the camera) regardless of parent.
+        var mount = _mount;
+        if (mount is null || !GodotObject.IsInstanceValid(mount) || !mount.IsInsideTree())
             return false;
 
         if (_instrumentRoot is null || !GodotObject.IsInstanceValid(_instrumentRoot))
             _instrumentRoot = new Node3D { Name = TunnelInstrumentContract.InstrumentRootName };
-        EnsureInstrumentParent(camera, _instrumentRoot);
+        EnsureInstrumentParent(mount, _instrumentRoot);
 
         _instrumentRoot.Position = ToGodot(TunnelInstrumentContract.LocalAnchor);
         _instrumentRoot.Rotation = Vector3.Zero;

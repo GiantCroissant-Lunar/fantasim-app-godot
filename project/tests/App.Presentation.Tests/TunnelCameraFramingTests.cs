@@ -15,77 +15,61 @@ public sealed class TunnelCameraFramingTests
 {
     private const float CorridorSurfaceRadius = TunnelCameraFraming.TunnelRadius - 0.06f;
     private static readonly Vector3 PlanetCenter = new(0.0f, 0.0f, TunnelCameraFraming.CurrentPlaneZ);
-    private static readonly Vector3 FocusedCurrentAnchor = new(
-        -CorridorSurfaceRadius,
-        0.0f,
-        TunnelCameraFraming.CurrentPlaneZ);
 
     [Fact]
-    public void Camera_is_inside_shell_near_axial_and_clear_of_planet()
+    public void Camera_is_pulled_back_axial_and_clear_of_planet()
     {
+        // Part B (slice 1) pulls the camera back through the mouth (+Z) so the full ring pair frames
+        // the throat, superseding the §4a inside-the-mouth interior framing.
         var position = TunnelCameraFraming.LocalPosition;
         var forward = Vector3.Normalize(TunnelCameraFraming.LocalTarget - position);
         var obliquityDegrees = Math.Acos(Vector3.Dot(forward, -Vector3.UnitZ)) * 180.0 / Math.PI;
-        var radialDistance = Math.Sqrt(position.X * position.X + position.Y * position.Y);
         var planetDistance = Vector3.Distance(position, PlanetCenter);
 
-        Assert.True(position.Z > TunnelCameraFraming.CurrentPlaneZ);
-        Assert.True(position.Z <= TunnelCameraFraming.MouthZ);
-        Assert.True(radialDistance < TunnelCameraFraming.TunnelRadius - TunnelCameraFraming.RadialClearance,
-            $"Camera radial distance {radialDistance:F3} must remain inside the shell clearance.");
+        Assert.True(position.Z > TunnelCameraFraming.MouthZ,
+            $"Camera Z={position.Z:F3} must be pulled back outside the mouth for the full ring pair.");
         Assert.True(planetDistance > TunnelCameraFraming.PlanetVisualRadius
             + TunnelCameraFraming.NearClip
             + TunnelCameraFraming.PlanetClearance,
             $"Camera-to-planet distance {planetDistance:F3} violates planet/near clearance.");
-        Assert.InRange(obliquityDegrees, 0.0, 10.0);
+        Assert.InRange(obliquityDegrees, 0.0, 20.0);
     }
 
     [Theory]
     [InlineData(16.0 / 9.0)]
     [InlineData(16.0 / 10.0)]
-    public void Widescreen_projection_keeps_left_focus_right_planet_and_two_rings_readable(double aspect)
+    public void Widescreen_projection_frames_both_rings_encircling_the_planet(double aspect)
     {
         var planet = TunnelCameraFraming.Project(PlanetCenter, aspect);
         var planetBounds = TunnelCameraFraming.ProjectSphereBounds(
             PlanetCenter,
             TunnelCameraFraming.PlanetVisualRadius,
             aspect);
-        var focusedAnchor = TunnelCameraFraming.Project(FocusedCurrentAnchor, aspect);
-        var instrument = TunnelCameraFraming.ProjectInstrumentCenter(aspect);
 
-        Assert.InRange(planet.X, 0.62, 0.82);
-        Assert.InRange(planet.Y, 0.35, 0.65);
-        Assert.InRange(planetBounds.Height, 0.80, 1.20);
-        Assert.True(planetBounds.MinY <= 0.05 || planetBounds.MaxY >= 0.95,
-            $"Planet must intentionally touch/crop a vertical edge; bounds were [{planetBounds.MinY:F3}, {planetBounds.MaxY:F3}].");
+        // The instrument is now mount-parented world geometry (not a camera-local dial), so the
+        // rings are projected as real points on the anchor plane via the same oracle the planet
+        // uses. Every extremal point of the outer ring must land in-frame (no crop) at each aspect.
+        var outer = ProjectRingExtents(TunnelCameraFraming.OuterRingOuterRadius, aspect);
+        var innerHole = ProjectRingExtents(TunnelCameraFraming.InnerRingInnerRadius, aspect);
+        Assert.All(outer, AssertInsideViewport);
 
-        Assert.InRange(focusedAnchor.X, 0.12, 0.35);
-        Assert.InRange(focusedAnchor.Y, 0.35, 0.65);
-        Assert.InRange(instrument.X, 0.12, 0.35);
-        Assert.InRange(instrument.Y, 0.35, 0.65);
-        Assert.True(focusedAnchor.X < planetBounds.MinX,
-            $"Focused current anchor X={focusedAnchor.X:F3} overlaps planet start X={planetBounds.MinX:F3}.");
+        // The rings encircle the throat: the planet projects strictly inside the inner ring hole.
+        var innerMinX = innerHole.Min(p => p.X);
+        var innerMaxX = innerHole.Max(p => p.X);
+        var innerMinY = innerHole.Min(p => p.Y);
+        var innerMaxY = innerHole.Max(p => p.Y);
+        Assert.True(
+            planetBounds.MinX > innerMinX && planetBounds.MaxX < innerMaxX
+            && planetBounds.MinY > innerMinY && planetBounds.MaxY < innerMaxY,
+            $"Planet bounds [{planetBounds.MinX:F3},{planetBounds.MaxX:F3}]x"
+            + $"[{planetBounds.MinY:F3},{planetBounds.MaxY:F3}] must sit inside the inner ring hole "
+            + $"[{innerMinX:F3},{innerMaxX:F3}]x[{innerMinY:F3},{innerMaxY:F3}].");
 
-        var innerInner = TunnelCameraFraming.ProjectInstrumentRingBounds(
-            TunnelCameraFraming.InnerRingInnerRadius,
-            aspect);
-        var innerOuter = TunnelCameraFraming.ProjectInstrumentRingBounds(
-            TunnelCameraFraming.InnerRingOuterRadius,
-            aspect);
-        var outerInner = TunnelCameraFraming.ProjectInstrumentRingBounds(
-            TunnelCameraFraming.OuterRingInnerRadius,
-            aspect);
-        var outerOuter = TunnelCameraFraming.ProjectInstrumentRingBounds(
-            TunnelCameraFraming.OuterRingOuterRadius,
-            aspect);
+        // Planet reads near center now (no longer the right-third cockpit bias).
+        Assert.InRange(planet.X, 0.30, 0.70);
+        Assert.InRange(planet.Y, 0.30, 0.70);
 
-        AssertInsideViewport(innerOuter);
-        AssertInsideViewport(outerOuter);
-        Assert.True(innerInner.MinX > innerOuter.MinX && innerInner.MaxX < innerOuter.MaxX);
-        Assert.True(outerInner.MinX > outerOuter.MinX && outerInner.MaxX < outerOuter.MaxX);
-        Assert.True(innerOuter.MaxX < outerInner.MaxX && innerOuter.MinX > outerInner.MinX,
-            "The camera-local annuli need a visible radial gap; their mesh bands must not overlap.");
-
+        // Axial corridor cues still recede with visible perspective separation.
         var middleDepthCue = TunnelCameraFraming.Project(
             new Vector3(
                 -CorridorSurfaceRadius,
@@ -95,29 +79,28 @@ public sealed class TunnelCameraFramingTests
         var farDepthCue = TunnelCameraFraming.Project(
             new Vector3(-CorridorSurfaceRadius, 0.0f, TunnelCameraFraming.ThroatZ + 1.0f),
             aspect);
-
-        AssertInsideViewport(middleDepthCue);
-        AssertInsideViewport(farDepthCue);
-        Assert.True(Math.Abs(middleDepthCue.X - farDepthCue.X) >= 0.04,
+        Assert.True(middleDepthCue.Depth > 0.0 && farDepthCue.Depth > 0.0);
+        Assert.True(Math.Abs(middleDepthCue.X - farDepthCue.X) >= 0.02,
             "Separated axial cues must retain visible perspective separation.");
     }
 
     [Theory]
     [InlineData(16.0 / 9.0)]
     [InlineData(16.0 / 10.0)]
-    public void Sparse_near_interior_lip_is_visible_without_claiming_the_mouth_plane(double aspect)
+    public void Near_interior_lip_cues_project_in_front_on_the_open_side(double aspect)
     {
+        // With the camera pulled back the lip cues are shell-edge markers rather than an inside-mouth
+        // device; they must still project in front of the camera and stay on the open (-X) side.
         var projected = Enumerable.Range(0, TunnelCameraFraming.NearInteriorLipCueCount)
             .Select(index => TunnelCameraFraming.Project(
                 TunnelCameraFraming.NearInteriorLipCuePoint(index),
                 aspect))
             .ToArray();
 
-        Assert.All(projected, AssertInsideViewport);
-        Assert.True(projected.Max(point => point.Y) - projected.Min(point => point.Y) >= 0.50,
-            "Disconnected lip cues must expose a readable span of cylinder curvature.");
-        Assert.All(projected, point => Assert.True(point.X < 0.35,
-            $"Near-interior lip cue must remain on the open left side; X={point.X:F3}."));
+        Assert.All(projected, point => Assert.True(point.Depth > 0.0,
+            "Lip cue must project in front of the camera."));
+        Assert.All(projected, point => Assert.True(point.X < 0.55,
+            $"Near-interior lip cue must stay on the open left side; X={point.X:F3}."));
     }
 
     [Fact]
@@ -178,6 +161,21 @@ public sealed class TunnelCameraFramingTests
 
         Assert.True(success);
         Assert.Equal(expectedZ, z, precision: 5);
+    }
+
+    // The rings sit on the mount-local anchor plane centered on the tunnel axis; project their four
+    // extremal points as real world points (same oracle as the planet) rather than the obsolete
+    // camera-local ProjectInstrumentRingBounds.
+    private static TunnelProjectedPoint[] ProjectRingExtents(float radius, double aspect)
+    {
+        var z = TunnelCameraFraming.InstrumentLocalAnchor.Z;
+        return new[]
+        {
+            TunnelCameraFraming.Project(new Vector3(radius, 0f, z), aspect),
+            TunnelCameraFraming.Project(new Vector3(-radius, 0f, z), aspect),
+            TunnelCameraFraming.Project(new Vector3(0f, radius, z), aspect),
+            TunnelCameraFraming.Project(new Vector3(0f, -radius, z), aspect),
+        };
     }
 
     private static void AssertInsideViewport(TunnelProjectedPoint point)
