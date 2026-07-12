@@ -202,4 +202,87 @@ public sealed class TunnelRayHitMapperTests
         Assert.False(hit);
         Assert.Equal(default, point);
     }
+
+    // ---- TryIntersectSphere (planet occlusion) ----
+
+    [Fact]
+    public void TryIntersectSphere_ForwardHit_ReturnsNearSurfacePoint()
+    {
+        // Ray from the interior camera down the axis toward the planet centered at (0,0,-5) r=2.
+        var ray = new TunnelRay3(new TunnelPoint3(0, 0, 0), new TunnelPoint3(0, 0, -1));
+
+        var hit = TunnelRayHitMapper.TryIntersectSphere(
+            ray, new TunnelPoint3(0, 0, -5), radius: 2.0, out var point);
+
+        Assert.True(hit);
+        // Near surface is the mouth-facing pole at z = -3 (center -5 + radius 2).
+        Assert.Equal(0.0, point.X, precision: 9);
+        Assert.Equal(0.0, point.Y, precision: 9);
+        Assert.Equal(-3.0, point.Z, precision: 9);
+    }
+
+    [Fact]
+    public void TryIntersectSphere_OriginInsideSphere_ReturnsForwardExitPoint()
+    {
+        // Origin inside the sphere: the near root is behind, so the far (exit) root is returned.
+        var ray = new TunnelRay3(new TunnelPoint3(0, 0, -5), new TunnelPoint3(0, 0, -1));
+
+        var hit = TunnelRayHitMapper.TryIntersectSphere(
+            ray, new TunnelPoint3(0, 0, -5), radius: 2.0, out var point);
+
+        Assert.True(hit);
+        Assert.Equal(-7.0, point.Z, precision: 9);
+    }
+
+    [Fact]
+    public void TryIntersectSphere_Miss_ReturnsFalse()
+    {
+        // Ray parallel to the axis but offset beyond the radius never meets the sphere.
+        var ray = new TunnelRay3(new TunnelPoint3(5, 0, 0), new TunnelPoint3(0, 0, -1));
+
+        var hit = TunnelRayHitMapper.TryIntersectSphere(
+            ray, new TunnelPoint3(0, 0, -5), radius: 2.0, out var point);
+
+        Assert.False(hit);
+        Assert.Equal(default, point);
+    }
+
+    [Fact]
+    public void TryIntersectSphere_SphereBehindRay_ReturnsFalse()
+    {
+        // Both roots negative (sphere entirely behind the origin): no forward hit.
+        var ray = new TunnelRay3(new TunnelPoint3(0, 0, 0), new TunnelPoint3(0, 0, -1));
+
+        var hit = TunnelRayHitMapper.TryIntersectSphere(
+            ray, new TunnelPoint3(0, 0, 5), radius: 2.0, out var point);
+
+        Assert.False(hit);
+        Assert.Equal(default, point);
+    }
+
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(-1.0)]
+    [InlineData(double.NaN)]
+    public void TryIntersectSphere_NonPositiveOrNonFiniteRadius_ReturnsFalse(double radius)
+    {
+        var ray = new TunnelRay3(new TunnelPoint3(0, 0, 0), new TunnelPoint3(0, 0, -1));
+
+        var hit = TunnelRayHitMapper.TryIntersectSphere(
+            ray, new TunnelPoint3(0, 0, -5), radius, out var point);
+
+        Assert.False(hit);
+        Assert.Equal(default, point);
+    }
+
+    [Fact]
+    public void TryIntersectSphere_DegenerateDirection_ReturnsFalse()
+    {
+        var ray = new TunnelRay3(new TunnelPoint3(0, 0, 0), new TunnelPoint3(0, 0, 0));
+
+        var hit = TunnelRayHitMapper.TryIntersectSphere(
+            ray, new TunnelPoint3(0, 0, -5), radius: 2.0, out _);
+
+        Assert.False(hit);
+    }
 }

@@ -112,6 +112,67 @@ public static class TunnelRayHitMapper
         return false;
     }
 
+    /// <summary>
+    /// Intersects <paramref name="ray"/> with the sphere centered at <paramref name="center"/> of
+    /// <paramref name="radius"/> and returns the nearest forward (t&gt;=0) hit point. Used to reject a
+    /// wall pick the opaque planet body occludes. Rejects non-positive/non-finite radius, a
+    /// degenerate (zero-length) direction, non-finite input, and a sphere entirely behind the ray.
+    /// </summary>
+    public static bool TryIntersectSphere(
+        TunnelRay3 ray,
+        TunnelPoint3 center,
+        double radius,
+        out TunnelPoint3 point)
+    {
+        point = default;
+        if (!IsFiniteRay(ray) || !IsFinitePoint(center))
+            return false;
+        if (!(radius > 0.0) || !double.IsFinite(radius))
+            return false;
+
+        var mx = ray.Origin.X - center.X;
+        var my = ray.Origin.Y - center.Y;
+        var mz = ray.Origin.Z - center.Z;
+        var dx = ray.Direction.X;
+        var dy = ray.Direction.Y;
+        var dz = ray.Direction.Z;
+
+        var a = dx * dx + dy * dy + dz * dz;
+        if (a < ParallelEpsilon || !double.IsFinite(a))
+            return false;
+
+        var b = 2.0 * (mx * dx + my * dy + mz * dz);
+        var c = mx * mx + my * my + mz * mz - radius * radius;
+        var discriminant = b * b - 4.0 * a * c;
+        if (!double.IsFinite(discriminant) || discriminant < 0.0)
+            return false;
+
+        var sqrtD = Math.Sqrt(discriminant);
+        var inv2a = 1.0 / (2.0 * a);
+        if (!double.IsFinite(sqrtD) || !double.IsFinite(inv2a))
+            return false;
+
+        var tNear = (-b - sqrtD) * inv2a;
+        var tFar = (-b + sqrtD) * inv2a;
+        if (!double.IsFinite(tNear) || !double.IsFinite(tFar))
+            return false;
+        if (tNear > tFar)
+            (tNear, tFar) = (tFar, tNear);
+
+        var t = tNear >= 0.0 ? tNear : tFar;
+        if (t < 0.0)
+            return false;
+
+        var x = ray.Origin.X + t * dx;
+        var y = ray.Origin.Y + t * dy;
+        var z = ray.Origin.Z + t * dz;
+        if (!double.IsFinite(x) || !double.IsFinite(y) || !double.IsFinite(z))
+            return false;
+
+        point = new TunnelPoint3(x, y, z);
+        return true;
+    }
+
     private static bool TryAcceptRoot(
         TunnelRay3 ray, double t, double throatZ, double mouthZ, out TunnelPoint3 point)
     {
