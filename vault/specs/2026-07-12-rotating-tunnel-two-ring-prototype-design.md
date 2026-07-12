@@ -1,7 +1,8 @@
 # Rotating tunnel two-ring prototype design
 
-**Status:** APPROVED — user approval received 2026-07-12 after three internal adversarial cycles;
-cross-model review skipped during automatic goal continuation  
+**Status:** APPROVED, §4 camera/globe placement AMENDED 2026-07-12 by direct user eye verdict
+(see §4a) — the spectator-oblique camera and far-throat globe of the first prototype round are
+superseded; the interaction contract (§3, §5, §6) stands  
 **Date:** 2026-07-12  
 **Supersedes for this prototype:** the flat-annulus rendering and single current-ring interaction in
 `2026-07-11-tunnel-timeline-design.md` / `2026-07-11-tunnel-slice1-plan.md`
@@ -132,6 +133,26 @@ and interaction correction, not another camera-framing round.
   and far throat visibly separate in the evidence screenshot.
 - Geometry must remain readable from that oblique view without relying on disabled depth testing or
   coplanar draw order.
+
+## 4a. Amendment 2026-07-12 — interior view, planet large at center (user eye verdict)
+
+The user judged the round-one result directly: the oblique outside-the-mouth camera and the
+far-throat globe do not read as the intended tunnel timeline. The product view is the INNER view:
+
+- The camera sits at/near the mouth ON the tunnel axis looking down the depth axis — an occupant
+  of the tunnel, not a spectator of a cylinder object. The §1 oblique-evidence screenshot remains
+  valid as diagnostic evidence but is no longer the product framing.
+- The globe is the world at the CURRENT tick, so it sits at the current-tick plane near the mouth
+  (consistent with §4's own "base time maps to the mouth"), close to the camera and reading LARGE
+  at the center of the view — not parked at the far throat.
+- The two control rings render as concentric dials around the planet (radii well inside the wall
+  radius, on planes near the globe), matching the original ring-control direction. Ring hit-test
+  planes/radii move with the visuals.
+- While the tunnel view is enabled, the 2D timeline HUD is HIDDEN; it returns when the tunnel is
+  disabled. Every enable path (command, F9) flows through the `timeline.tunnel_view` command so
+  the timeline plugin can own that visibility.
+- Exact constants (camera pose, globe plane, ring radii/planes) are eye-iterated via world-bundle
+  hot-reload; the values in code are the record.
 
 ## 5. Interaction state machine
 

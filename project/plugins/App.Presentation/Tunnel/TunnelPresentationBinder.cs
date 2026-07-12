@@ -18,14 +18,22 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
     private const string WorldBundleId = "world";
     private static readonly NodePath StageEnvironmentPath = new("Environment");
 
-    private const float TunnelRadius = 8.0f;
-    private const float TunnelDepth = 14.0f;
+    private const float TunnelRadius = 5.0f;
+    private const float TunnelDepth = 20.0f;
     private const float MouthZ = 0.0f;
     private const float ThroatZ = -TunnelDepth;
-    private const float InnerRingInnerRadius = 8.15f;
-    private const float InnerRingOuterRadius = 8.85f;
-    private const float OuterRingInnerRadius = 9.05f;
-    private const float OuterRingOuterRadius = 10.0f;
+    // Interior-view framing (design §4a): the globe sits at the current-tick plane near the mouth
+    // (NOT the far throat) so it reads large at screen center from the occupant camera; the two
+    // dial rings are concentric around it on a plane BETWEEN camera and globe (never occluded by
+    // the planet body, whose visual radius is ~2 with relief/atmosphere). Wall radius/depth are
+    // sized so corridors are actually visible from inside (wall enters the FOV from about
+    // -7 · Z toward the throat). Ring hit-testing must use the same plane/radii (Input.cs).
+    private const float GlobePlaneZ = -5.0f;
+    private const float RingPlaneZ = -3.0f;
+    private const float InnerRingInnerRadius = 1.7f;
+    private const float InnerRingOuterRadius = 2.05f;
+    private const float OuterRingInnerRadius = 2.45f;
+    private const float OuterRingOuterRadius = 2.9f;
     private const float CorridorSurfaceRadius = TunnelRadius - 0.06f;
     private const double CorridorSpanDegrees = 24.0;
     private const int FilmstripFramesPerCorridor = 4;
@@ -257,7 +265,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
             return;
         }
 
-        _mount.GlobalPosition = body.GlobalPosition + Vector3.Back * TunnelDepth;
+        _mount.GlobalPosition = body.GlobalPosition + Vector3.Back * -GlobePlaneZ;
         _mount.GlobalBasis = Basis.Identity;
     }
 

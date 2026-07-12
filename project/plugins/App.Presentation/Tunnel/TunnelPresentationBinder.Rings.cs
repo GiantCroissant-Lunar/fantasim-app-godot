@@ -58,7 +58,7 @@ internal sealed partial class TunnelPresentationBinder
         ClearChildren(_innerRingRoot!);
 
         var outerMesh = BuildPlanarAnnulusSectorMesh(
-            0.0, 360.0, OuterRingInnerRadius, OuterRingOuterRadius, MouthZ);
+            0.0, 360.0, OuterRingInnerRadius, OuterRingOuterRadius, RingPlaneZ);
         if (outerMesh is not null)
         {
             var outer = new MeshInstance3D
@@ -75,7 +75,7 @@ internal sealed partial class TunnelPresentationBinder
 
         var innerColor = _fineBinding.CanAdjust ? InnerRingColor : InnerRingInactiveColor;
         var innerMesh = BuildPlanarAnnulusSectorMesh(
-            0.0, 360.0, InnerRingInnerRadius, InnerRingOuterRadius, MouthZ);
+            0.0, 360.0, InnerRingInnerRadius, InnerRingOuterRadius, RingPlaneZ);
         if (innerMesh is not null)
         {
             _innerRingMesh = new MeshInstance3D
@@ -104,7 +104,7 @@ internal sealed partial class TunnelPresentationBinder
         {
             Name = "OuterLabel",
             Text = outerText,
-            Position = new Vector3(0f, OuterRingOuterRadius + 0.8f, 0.1f),
+            Position = new Vector3(0f, OuterRingOuterRadius + 0.5f, RingPlaneZ + 0.1f),
             Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
             FontSize = 28,
             Modulate = new Color(0.85f, 0.90f, 0.95f, 0.92f),
@@ -118,7 +118,7 @@ internal sealed partial class TunnelPresentationBinder
         {
             Name = "InnerLabel",
             Text = innerText,
-            Position = new Vector3(0f, -(InnerRingOuterRadius + 0.8f), 0.1f),
+            Position = new Vector3(0f, -(InnerRingOuterRadius + 0.5f), RingPlaneZ + 0.1f),
             Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
             FontSize = 24,
             Modulate = new Color(0.92f, 0.94f, 0.97f, 0.92f),
@@ -209,7 +209,7 @@ internal sealed partial class TunnelPresentationBinder
     private static MeshInstance3D BuildAsymmetricMarker(Color color, float outerRadius)
     {
         var markerMesh = BuildPlanarAnnulusSectorMesh(
-            -8.0, 16.0, outerRadius - 0.38f, outerRadius - 0.08f, MouthZ + 0.02f);
+            -8.0, 16.0, outerRadius - 0.18f, outerRadius - 0.04f, RingPlaneZ + 0.02f);
         return new MeshInstance3D
         {
             Name = "RingMarker",
