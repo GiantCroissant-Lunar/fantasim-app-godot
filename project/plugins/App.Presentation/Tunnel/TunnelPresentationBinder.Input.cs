@@ -146,6 +146,13 @@ internal sealed partial class TunnelPresentationBinder
                 return HandleOwnedRelease(released);
             case InputEventMouseMotion motion when _gestureOwned:
                 return HandleOwnedMotion(motion);
+            case InputEventMouseButton { ButtonIndex: MouseButton.WheelUp, Pressed: true }:
+                // Consume so the wheel zooms the tunnel's planet, not the (hidden) globe camera.
+                AdjustPlanetZoom(+1);
+                return true;
+            case InputEventMouseButton { ButtonIndex: MouseButton.WheelDown, Pressed: true }:
+                AdjustPlanetZoom(-1);
+                return true;
             case InputEventKey { Pressed: true, Echo: false, Keycode: Key.F9 }:
                 RouteTunnelToggleThroughCommand();
                 return true;

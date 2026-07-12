@@ -58,6 +58,11 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
     private TunnelFinePreview _finePreview;
     private bool _pendingCorridorRebuild;
 
+    // Planet zoom: a tunnel-local scale multiplier on the SHARED stage planet body, captured on
+    // first apply and restored on disable/teardown so the globe view never inherits a scaled body.
+    private float _planetZoomScale = TunnelPlanetZoom.DefaultScale;
+    private Vector3? _planetOriginalScale;
+
     public TunnelPresentationBinder(
         IRegistry registry,
         IBundleSceneRegistry sceneRegistry,
@@ -197,6 +202,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         CancelF9CommandWork(reason);
         _filmstrip.Supersede();
         _filmstrip.CancelInFlight();
+        RestorePlanetZoom();
         if (_mount is not null && GodotObject.IsInstanceValid(_mount))
             _mount.Visible = false;
         RestorePreviousCamera();
@@ -315,7 +321,39 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         _mount.GlobalPosition = body.GlobalPosition
             + Vector3.Back * -TunnelCameraFraming.CurrentPlaneZ;
         _mount.GlobalBasis = Basis.Identity;
+        ApplyPlanetZoom();
         return true;
+    }
+
+    // Scroll-wheel step (direction > 0 = larger planet). Multiplicative, clamped in the seam helper.
+    internal void AdjustPlanetZoom(int direction)
+    {
+        _planetZoomScale = TunnelPlanetZoom.Step(_planetZoomScale, direction);
+        ApplyPlanetZoom();
+    }
+
+    private void ApplyPlanetZoom()
+    {
+        var body = _planetBodyProvider();
+        if (body is null || !GodotObject.IsInstanceValid(body))
+            return;
+
+        // Capture the body's real scale on first touch of this binder generation. A world reload
+        // frees the old body and re-mounts; the next apply re-captures from the fresh body.
+        _planetOriginalScale ??= body.Scale;
+        body.Scale = _planetOriginalScale.Value * _planetZoomScale;
+    }
+
+    private void RestorePlanetZoom()
+    {
+        var body = _planetBodyProvider();
+        if (_planetOriginalScale is { } original
+            && body is not null && GodotObject.IsInstanceValid(body))
+        {
+            body.Scale = original;
+        }
+        _planetOriginalScale = null;
+        _planetZoomScale = TunnelPlanetZoom.DefaultScale;
     }
 
     private void ScheduleStagePreparationRetry(int expectedGeneration, Node3D? stageEnvironment)

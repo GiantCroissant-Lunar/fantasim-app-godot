@@ -183,24 +183,7 @@ internal sealed partial class TunnelPresentationBinder
                 band.DepthFraction));
         }
 
-        var labelRad = Mathf.DegToRad((float)centerAngle);
-        var labelPos = new Vector3(
-            Mathf.Cos(labelRad) * (CorridorSurfaceRadius - 0.3f),
-            Mathf.Sin(labelRad) * (CorridorSurfaceRadius - 0.3f),
-            (float)TunnelCorridorFilmstripPolicy.TrackIdentityLabelZ(
-                TunnelCameraFraming.CurrentPlaneZ));
-        var label = new Label3D
-        {
-            Name = "CorridorLabel",
-            Text = slot.Descriptor.DisplayName,
-            Position = labelPos,
-            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
-            FontSize = 22,
-            Modulate = new Color(0.92f, 0.94f, 0.97f, 0.92f),
-            OutlineModulate = new Color(0f, 0f, 0f, 0.65f),
-            NoDepthTest = false,
-        };
-        _corridorsRoot!.AddChild(label);
+        BuildCorridorHeader(slot.Descriptor, centerAngle, isActive, slot.IsFocused);
 
         BuildCurrentPlaneCue(slot.Descriptor, centerAngle, color);
 
@@ -213,6 +196,56 @@ internal sealed partial class TunnelPresentationBinder
                 coarseUnitTicks,
                 samplePlans,
                 gen);
+    }
+
+    // Per-corridor header mirroring the normal 2D track header (name + state), plus the canonical
+    // display rung on a sub-line. Active/inactive is color-coded like the 2D header's style-swap;
+    // the focused corridor's title is tinted. Two billboarded Label3Ds stacked vertically.
+    private void BuildCorridorHeader(
+        LayerTrackDescriptor descriptor, double centerAngleDeg, bool isActive, bool isFocused)
+    {
+        if (_corridorsRoot is null)
+            return;
+
+        var header = TunnelCorridorHeader.Build(descriptor, isActive);
+        var rad = Mathf.DegToRad((float)centerAngleDeg);
+        var headZ = (float)TunnelCorridorFilmstripPolicy.TrackIdentityLabelZ(
+            TunnelCameraFraming.CurrentPlaneZ);
+        var basePos = new Vector3(
+            Mathf.Cos(rad) * (CorridorSurfaceRadius - 0.3f),
+            Mathf.Sin(rad) * (CorridorSurfaceRadius - 0.3f),
+            headZ);
+
+        var titleColor = isFocused
+            ? new Color(1.0f, 0.98f, 0.85f, 0.98f)
+            : (isActive ? new Color(0.92f, 0.94f, 0.97f, 0.94f) : new Color(0.62f, 0.63f, 0.68f, 0.85f));
+        var subtitleColor = isActive
+            ? new Color(0.72f, 0.86f, 0.78f, 0.90f)
+            : new Color(0.55f, 0.56f, 0.60f, 0.80f);
+
+        _corridorsRoot!.AddChild(new Label3D
+        {
+            Name = "CorridorHeaderTitle",
+            Text = header.Title,
+            Position = basePos + new Vector3(0f, 0.22f, 0f),
+            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            FontSize = 22,
+            Modulate = titleColor,
+            OutlineModulate = new Color(0f, 0f, 0f, 0.70f),
+            NoDepthTest = false,
+        });
+
+        _corridorsRoot!.AddChild(new Label3D
+        {
+            Name = "CorridorHeaderSubtitle",
+            Text = header.Subtitle,
+            Position = basePos - new Vector3(0f, 0.22f, 0f),
+            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            FontSize = 14,
+            Modulate = subtitleColor,
+            OutlineModulate = new Color(0f, 0f, 0f, 0.60f),
+            NoDepthTest = false,
+        });
     }
 
     private void BuildFilmstripFrames(
