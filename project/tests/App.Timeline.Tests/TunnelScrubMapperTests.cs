@@ -62,6 +62,20 @@ public sealed class TunnelScrubMapperTests
     }
 
     [Fact]
+    public void CanonicalPhaseDegrees_UsesTheRealRoundedKbPeriodConsumedByProduction()
+    {
+        var unitTicks = TimelineModel.SpanTicksForRung(Kb(), units: 1);
+
+        Assert.Equal(100_000_000L, unitTicks);
+        Assert.Equal(-180.0,
+            TunnelScrubMapper.CanonicalPhaseDegrees(50_000_000L, unitTicks),
+            precision: 9);
+        Assert.Equal(0.0,
+            TunnelScrubMapper.CanonicalPhaseDegrees(100_000_000L, unitTicks),
+            precision: 9);
+    }
+
+    [Fact]
     public void CanonicalPhaseDegrees_ExternalSeekBackToZero_ClearsPriorPose()
     {
         var prior = TunnelScrubMapper.CanonicalPhaseDegrees(500L, 1_000L);
