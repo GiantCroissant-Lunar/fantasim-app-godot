@@ -9,16 +9,14 @@ public sealed class TunnelFineEmphasisPolicyTests
     [InlineData(false, false)]
     [InlineData(false, true)]
     [InlineData(true, true)]
-    public void Normal_or_focused_spheres_keep_neutral_modulation(
+    public void Normal_or_focused_spheres_keep_full_color_and_value(
         bool inspectionActive,
         bool focused)
     {
         var tone = TunnelFineEmphasisPolicy.Resolve(inspectionActive, focused);
 
-        Assert.Equal(1f, tone.Red);
-        Assert.Equal(1f, tone.Green);
-        Assert.Equal(1f, tone.Blue);
-        Assert.Equal(1f, tone.Alpha);
+        Assert.Equal(1f, tone.Saturation);
+        Assert.Equal(1f, tone.Value);
     }
 
     [Fact]
@@ -28,9 +26,7 @@ public sealed class TunnelFineEmphasisPolicyTests
             inspectionActive: true,
             focused: false);
 
-        Assert.Equal(tone.Red, tone.Green);
-        Assert.Equal(tone.Green, tone.Blue);
-        Assert.InRange(tone.Red, 0.30f, 0.60f);
-        Assert.Equal(1f, tone.Alpha);
+        Assert.Equal(0f, tone.Saturation);
+        Assert.InRange(tone.Value, 0.30f, 0.60f);
     }
 }

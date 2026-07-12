@@ -1,5 +1,7 @@
 using FantaSim.App.Presentation.Tunnel;
 using Godot;
+using System.IO;
+using System.Runtime.CompilerServices;
 using Xunit;
 
 namespace App.Presentation.Tests;
@@ -43,6 +45,92 @@ public sealed class TunnelInstrumentContractTests
         Assert.Equal(TunnelCameraFraming.FieldOfViewDegrees, settings.FieldOfViewDegrees);
         Assert.Equal(TunnelCameraFraming.NearClip, settings.NearClip);
         Assert.Equal(Camera3D.KeepAspectEnum.Height, settings.KeepAspect);
+    }
+
+    [Fact]
+    public void Inspection_lens_is_a_distinct_stationary_sphere_beside_the_dials()
+    {
+        var lens = TunnelInspectionLensContract.Settings;
+
+        Assert.Equal("inspection", lens.Label);
+        Assert.InRange(lens.Radius, 0.40f, 0.60f);
+        Assert.True(lens.LocalPosition.X > TunnelInstrumentContract.OuterRingOuterRadius);
+        Assert.Equal(0f, lens.LocalPosition.Y);
+        Assert.True(lens.LocalPosition.Z >= 0f);
+    }
+
+    [Fact]
+    public void Production_lens_and_reset_path_consume_the_contract()
+    {
+        var rings = File.ReadAllText(ProjectFile(
+            "project/plugins/App.Presentation/Tunnel/TunnelPresentationBinder.Rings.cs"));
+        var input = File.ReadAllText(ProjectFile(
+            "project/plugins/App.Presentation/Tunnel/TunnelPresentationBinder.Input.cs"));
+        var binder = File.ReadAllText(ProjectFile(
+            "project/plugins/App.Presentation/Tunnel/TunnelPresentationBinder.cs"));
+
+        Assert.Contains("new SphereMesh", rings, StringComparison.Ordinal);
+        Assert.Contains("new SnapshotSphereMaterial", rings, StringComparison.Ordinal);
+        Assert.Contains("new SnapshotSphereFilmstripSink", rings, StringComparison.Ordinal);
+        Assert.Contains("TunnelInspectionLensContract.Settings", rings, StringComparison.Ordinal);
+        Assert.Contains("_filmstrip.CancelFineRequests();", input, StringComparison.Ordinal);
+        Assert.Contains("ClearInspectionLens();", input, StringComparison.Ordinal);
+        Assert.Contains("ApplyFineFrameEmphasis(inspectionActive: false);", input, StringComparison.Ordinal);
+        var rebindStart = binder.IndexOf("public void Rebind()", StringComparison.Ordinal);
+        Assert.True(rebindStart >= 0, "Tunnel binder Rebind entry point is missing.");
+        var rebindCancel = binder.IndexOf(
+            "CancelTunnelGesture(\"rebind\");",
+            rebindStart,
+            StringComparison.Ordinal);
+        var rebindReset = binder.IndexOf(
+            "ResetFinePreview(TunnelFineResetReason.BaseTimeChanged);",
+            rebindStart,
+            StringComparison.Ordinal);
+        var controllerLookup = binder.IndexOf(
+            "var controller = _registry.TryGet<ITimelineController>();",
+            rebindStart,
+            StringComparison.Ordinal);
+        Assert.True(rebindCancel > rebindStart && rebindReset > rebindCancel && controllerLookup > rebindReset,
+            "Rebind must cancel gesture ownership and released fine work before resolving lifecycle dependencies.");
+
+        var timelineBranch = binder.IndexOf(
+            "string.Equals(args.BundleId, TimelineBundleId",
+            StringComparison.Ordinal);
+        Assert.True(timelineBranch >= 0, "Timeline runtime-changing branch is missing.");
+        var timelineCancel = binder.IndexOf(
+            "CancelTunnelGesture(\"timeline_reload\");",
+            timelineBranch,
+            StringComparison.Ordinal);
+        var timelineReturn = binder.IndexOf("return;", timelineBranch, StringComparison.Ordinal);
+        Assert.True(timelineCancel > timelineBranch && timelineReturn > timelineCancel,
+            "Timeline reload must relinquish any owned gesture before preserving the tunnel mount.");
+    }
+
+    [Fact]
+    public void Snapshot_spheres_use_true_luminance_desaturation_without_replacing_cached_textures()
+    {
+        var material = File.ReadAllText(ProjectFile(
+            "project/plugins/App.Presentation/Tunnel/SnapshotSphereMaterial.cs"));
+        var sink = File.ReadAllText(ProjectFile(
+            "project/plugins/App.Presentation/Tunnel/SnapshotSphereFilmstripSink.cs"));
+
+        Assert.Contains("uniform sampler2D albedo_texture : source_color", material, StringComparison.Ordinal);
+        Assert.Contains("dot(color, vec3(0.2126, 0.7152, 0.0722))", material, StringComparison.Ordinal);
+        Assert.Contains("mix(vec3(luminance), color, saturation)", material, StringComparison.Ordinal);
+        Assert.Contains("SetTexture(frame.Texture)", sink, StringComparison.Ordinal);
+        Assert.DoesNotContain("AlbedoColor", sink, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Fine_lens_sink_rechecks_live_binder_and_graph_state_at_apply_time()
+    {
+        var input = File.ReadAllText(ProjectFile(
+            "project/plugins/App.Presentation/Tunnel/TunnelPresentationBinder.Input.cs"));
+
+        Assert.Contains("private sealed class GuardedFineInspectionSink", input, StringComparison.Ordinal);
+        Assert.Contains("TunnelFineApplyPolicy.CanApply", input, StringComparison.Ordinal);
+        Assert.Contains("CurrentGraphRevision: currentGraphRevision.Value", input, StringComparison.Ordinal);
+        Assert.Contains("new GuardedFineInspectionSink", input, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -113,5 +201,14 @@ public sealed class TunnelInstrumentContractTests
     {
         Assert.Equal(name, node.Name);
         Assert.Equal(parentName, node.ParentName);
+    }
+
+    private static string ProjectFile(
+        string relativePath,
+        [CallerFilePath] string testSourcePath = "")
+    {
+        var testDirectory = Path.GetDirectoryName(testSourcePath)
+            ?? throw new InvalidOperationException("Test source directory unavailable.");
+        return Path.GetFullPath(Path.Combine(testDirectory, "..", "..", "..", relativePath));
     }
 }

@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using FantaSim.App.Timeline;
 using FantaSim.App.Timeline.Seam;
+using FantaSim.App.World;
 using FantaSim.App.World.Composition;
 using Godot;
 using Microsoft.Extensions.Logging;
@@ -67,9 +68,62 @@ internal sealed partial class TunnelPresentationBinder
     private bool _applyingOuterScrubAction;
     private long _gesturePressTick;
     private int _gestureFocusBefore = -1;
+    private long _fineEpoch;
+    private long? _fineBucket;
+    private bool _fineInspectionActive;
     private readonly object _f9CommandGate = new();
     private CancellationTokenSource? _f9CommandCts;
     private long _lastF9ModeEpoch = -1L;
+
+    /// <summary>
+    /// Rechecks binder-owned lifecycle and truth state at the actual texture write. This wraps both
+    /// the controller's synchronous cache-hit path and its deferred provider-completion path.
+    /// </summary>
+    private sealed class GuardedFineInspectionSink : IFilmstripFrameSink
+    {
+        private readonly TunnelPresentationBinder _owner;
+        private readonly SnapshotSphereFilmstripSink _inner;
+        private readonly int _generation;
+        private readonly long _epoch;
+        private readonly long _bucket;
+        private readonly int _graphRevision;
+        private readonly string _sphereId;
+        private readonly string _layerId;
+
+        internal GuardedFineInspectionSink(
+            TunnelPresentationBinder owner,
+            SnapshotSphereFilmstripSink inner,
+            LayerFilmstripPreviewRequest request,
+            int generation,
+            long epoch,
+            long bucket)
+        {
+            _owner = owner;
+            _inner = inner;
+            _generation = generation;
+            _epoch = epoch;
+            _bucket = bucket;
+            _graphRevision = request.GraphRevision;
+            _sphereId = request.SphereId;
+            _layerId = request.LayerId;
+        }
+
+        public bool IsAlive
+            => _inner.IsAlive
+               && _owner.CanApplyFineFrame(
+                   _generation,
+                   _epoch,
+                   _bucket,
+                   _graphRevision,
+                   _sphereId,
+                   _layerId);
+
+        public void SetFrame(FilmstripFramePayload frame)
+        {
+            if (IsAlive)
+                _inner.SetFrame(frame);
+        }
+    }
 
     private bool HandleInputEvent(InputEvent @event)
     {
@@ -287,6 +341,9 @@ internal sealed partial class TunnelPresentationBinder
         if (!TryGetLocalPointerAngle(press.Position, out var pointerAngle))
             return false;
 
+        if (hit == TunnelHitRegion.InnerRing && _fineInspectionActive)
+            ResetFinePreview(TunnelFineResetReason.BaseTimeChanged);
+
         var context = BuildPressContext();
         var update = _coordinator.Press(hit, context);
         if (!update.Handled)
@@ -344,6 +401,7 @@ internal sealed partial class TunnelPresentationBinder
                 {
                     _finePreview = preview;
                     UpdateInnerRingVisual(_fineBinding, preview);
+                    UpdateFineInspection(preview);
                     LogInnerGesture("motion", preview);
                 }
                 break;
@@ -397,6 +455,7 @@ internal sealed partial class TunnelPresentationBinder
                 {
                     _finePreview = preview;
                     UpdateInnerRingVisual(_fineBinding, preview);
+                    UpdateFineInspection(preview);
                     LogInnerGesture("release", preview);
                 }
                 break;
@@ -407,9 +466,9 @@ internal sealed partial class TunnelPresentationBinder
                     if (_corridorsRoot is not null && GodotObject.IsInstanceValid(_corridorsRoot))
                         _corridorsRoot.RotationDegrees = Vector3.Zero;
 
+                    ResetFinePreview(TunnelFineResetReason.FocusChanged);
                     _focusIndex = snap.FocusIndex;
                     RebuildCorridors();
-                    ResetFinePreview(TunnelFineResetReason.FocusChanged);
                     LogWallRelease(focusBefore, snap);
                 }
                 break;
@@ -566,11 +625,122 @@ internal sealed partial class TunnelPresentationBinder
 
     private void ResetFinePreview(TunnelFineResetReason reason)
     {
+        ClearFineInspectionResources();
         var reset = _coordinator.ResetFinePreview(reason, _fineBinding, FineRailCenterZ, FineRailHalfLength);
         if (reset.FinePreview is { } preview)
         {
             _finePreview = preview;
             UpdateInnerRingVisual(_fineBinding, preview);
+        }
+    }
+
+    private void UpdateFineInspection(TunnelFinePreview preview)
+    {
+        var descriptor = preview.Binding.Descriptor;
+        var rung = preview.Binding.Rung;
+        if (!preview.Binding.CanAdjust
+            || descriptor is null
+            || rung is null
+            || preview.RawTickQuantity == 0d)
+        {
+            ClearFineInspectionResources();
+            return;
+        }
+
+        _fineInspectionActive = true;
+        ApplyFineFrameEmphasis(inspectionActive: true);
+        var sample = TunnelFineSamplePolicy.Map(
+            _gesturePressTick,
+            _ctl?.MaxTick ?? 0L,
+            preview.RawTickQuantity,
+            descriptor.Content.CadenceTicks,
+            _fineBucket);
+        if (!sample.TextureChanged)
+            return;
+
+        _fineBucket = sample.Bucket;
+        var sink = EnsureInspectionLens();
+        if (sink is null)
+            return;
+
+        var graphRevision = ResolveGraphRevision();
+        if (graphRevision is not > 0)
+            return;
+
+        var request = new LayerFilmstripPreviewRequest(
+            descriptor.SphereId,
+            descriptor.LayerId,
+            sample.SampleTick,
+            rung.Symbol,
+            graphRevision.Value,
+            TimelineFilmstrip.ThumbnailWidth,
+            TimelineFilmstrip.ThumbnailHeight);
+        var guardedSink = new GuardedFineInspectionSink(
+            this,
+            sink,
+            request,
+            _generation,
+            _fineEpoch,
+            sample.Bucket);
+        _filmstrip.RequestFineTexture(
+            request,
+            mountGeneration: _generation,
+            fineEpoch: _fineEpoch,
+            bucket: sample.Bucket,
+            guardedSink);
+    }
+
+    private bool CanApplyFineFrame(
+        int expectedGeneration,
+        long expectedEpoch,
+        long expectedBucket,
+        int expectedGraphRevision,
+        string expectedSphereId,
+        string expectedLayerId)
+    {
+        var currentGraphRevision = ResolveGraphRevision();
+        var focused = TunnelCorridorLayout.ResolveFocusedTrack(_sourceTracks, _focusIndex);
+        return currentGraphRevision is > 0
+            && TunnelFineApplyPolicy.CanApply(new TunnelFineApplyReadiness(
+                BinderAlive: !_disposed && !_tearingDown && _enabled && _fineInspectionActive,
+                ExpectedGeneration: expectedGeneration,
+                CurrentGeneration: _generation,
+                ExpectedEpoch: expectedEpoch,
+                CurrentEpoch: _fineEpoch,
+                ExpectedBucket: expectedBucket,
+                CurrentBucket: _fineBucket,
+                ExpectedGraphRevision: expectedGraphRevision,
+                CurrentGraphRevision: currentGraphRevision.Value,
+                ExpectedSphereId: expectedSphereId,
+                CurrentSphereId: focused?.SphereId,
+                ExpectedLayerId: expectedLayerId,
+                CurrentLayerId: focused?.LayerId));
+    }
+
+    private void ClearFineInspectionResources()
+    {
+        _fineEpoch = _fineEpoch == long.MaxValue ? long.MaxValue : _fineEpoch + 1L;
+        _fineInspectionActive = false;
+        _fineBucket = null;
+        _filmstrip.CancelFineRequests();
+        ApplyFineFrameEmphasis(inspectionActive: false);
+        ClearInspectionLens();
+    }
+
+    private void ApplyFineFrameEmphasis(bool inspectionActive)
+    {
+        var focused = TunnelCorridorLayout.ResolveFocusedTrack(_sourceTracks, _focusIndex);
+        foreach (var binding in _frameBindings)
+        {
+            if (binding.MountGeneration != _generation
+                || !binding.Material.IsAlive)
+                continue;
+
+            var isFocused = focused is not null
+                && string.Equals(binding.Descriptor.SphereId, focused.SphereId, StringComparison.Ordinal)
+                && string.Equals(binding.Descriptor.LayerId, focused.LayerId, StringComparison.Ordinal);
+            var tone = TunnelFineEmphasisPolicy.Resolve(inspectionActive, isFocused);
+            binding.Material.SetEmphasis(tone);
         }
     }
 

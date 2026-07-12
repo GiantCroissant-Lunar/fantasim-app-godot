@@ -22,7 +22,7 @@ internal sealed partial class TunnelPresentationBinder
         long RequestedTick,
         LayerTrackDescriptor Descriptor,
         Node3D Root,
-        StandardMaterial3D Material,
+        SnapshotSphereMaterial Material,
         MeshInstance3D Sphere,
         Node3D Unavailable,
         SnapshotSphereFilmstripSink Sink,
@@ -74,6 +74,9 @@ internal sealed partial class TunnelPresentationBinder
         if (_disposed || _mount is null || !GodotObject.IsInstanceValid(_mount) || _ctl is null)
             return;
 
+        // Every ordinary rebuild supersedes presentation-only inspection before replacing the
+        // sphere/material bindings that its focus and emphasis guards reference.
+        ResetFinePreview(TunnelFineResetReason.BaseTimeChanged);
         _pendingCorridorRebuild = false;
         EnsureCorridorsRoot();
         ReleaseFrameBindings(supersedeWaiters: true);
@@ -228,14 +231,7 @@ internal sealed partial class TunnelPresentationBinder
                 Name = $"Frame_{SafeNodeName(descriptor.SphereId)}_{SafeNodeName(descriptor.LayerId)}_{fs.Index}_{fs.Tick}",
                 Position = frameCenter,
             };
-            var material = new StandardMaterial3D
-            {
-                AlbedoColor = Colors.White,
-                ShadingMode = BaseMaterial3D.ShadingModeEnum.PerPixel,
-                Roughness = 0.72f,
-                Metallic = 0.02f,
-                Transparency = BaseMaterial3D.TransparencyEnum.Disabled,
-            };
+            var material = new SnapshotSphereMaterial();
             var sphere = new MeshInstance3D
             {
                 Name = "SnapshotSphere",
@@ -246,7 +242,7 @@ internal sealed partial class TunnelPresentationBinder
                     RadialSegments = 32,
                     Rings = 16,
                 },
-                MaterialOverride = material,
+                MaterialOverride = material.Material,
             };
             frameRoot.AddChild(sphere);
 
@@ -324,15 +320,13 @@ internal sealed partial class TunnelPresentationBinder
         {
             // Snapshot materials are intentionally per-sphere; detach the shared immutable texture
             // before releasing the material so the controller cache remains its sole owner.
-            if (GodotObject.IsInstanceValid(binding.Material))
-                binding.Material.AlbedoTexture = null;
+            binding.Material.SetTexture(null);
             if (GodotObject.IsInstanceValid(binding.Sphere))
             {
                 binding.Sphere.MaterialOverride = null;
                 binding.Sphere.Mesh = null;
             }
-            if (GodotObject.IsInstanceValid(binding.Material))
-                binding.Material.Dispose();
+            binding.Material.Dispose();
 
             if (!GodotObject.IsInstanceValid(binding.Root))
                 continue;
@@ -653,6 +647,7 @@ internal sealed partial class TunnelPresentationBinder
         if (_disposed || _tearingDown || _ctl is null)
             return;
 
+        ResetFinePreview(TunnelFineResetReason.BaseTimeChanged);
         UpdateInnerBinding(_generation);
         UpdateCorridorActivityStyles(tick);
         UpdateInnerControlVisuals();
@@ -759,9 +754,9 @@ internal sealed partial class TunnelPresentationBinder
             return;
 
         CancelTunnelGesture("registry_changed");
+        ResetFinePreview(TunnelFineResetReason.FocusChanged);
         _filmstrip.Supersede();
         ResolveSourceTracks();
         RebuildCorridors();
-        ResetFinePreview(TunnelFineResetReason.FocusChanged);
     }
 }

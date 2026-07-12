@@ -91,6 +91,11 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         if (_disposed || _tearingDown)
             return;
 
+        // Rebind advances the mount generation even when the controller instance is unchanged.
+        // Relinquish any press ownership before resetting released fine inspection so neither an
+        // outer commit nor inner accumulated motion can span the lifecycle boundary.
+        CancelTunnelGesture("rebind");
+        ResetFinePreview(TunnelFineResetReason.BaseTimeChanged);
         var controller = _registry.TryGet<ITimelineController>();
         if (controller is null)
         {
@@ -455,7 +460,8 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         if (string.Equals(args.BundleId, TimelineBundleId, StringComparison.OrdinalIgnoreCase))
         {
             // The tunnel and world geometry remain live across a timeline-only reload. Drop only
-            // command work that captured the outgoing timeline bundle's command service.
+            // gesture/command work that captured the outgoing timeline bundle's state or services.
+            CancelTunnelGesture("timeline_reload");
             CancelF9CommandWork("timeline_reload");
             ResetF9ModeEpoch();
             return;
@@ -665,17 +671,31 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         shellRoot = new Node3D { Name = "DarkShell" };
         _mount.AddChild(shellRoot);
 
-        var shellMesh = BuildCylinderSectorMesh(0.0, 360.0, TunnelRadius, MouthZ, ThroatZ, angularStepDeg: 6.0);
-        if (shellMesh is null)
-            return;
-
-        var shell = new MeshInstance3D
+        var bands = TunnelShellDepthPolicy.Plan(MouthZ, ThroatZ);
+        for (var index = 0; index < bands.Count; index++)
         {
-            Name = "Shell",
-            Mesh = shellMesh,
-            MaterialOverride = BuildUnlitMaterial(new Color(0.04f, 0.05f, 0.07f)),
-        };
-        shellRoot.AddChild(shell);
+            var band = bands[index];
+            var shellMesh = BuildCylinderSectorMesh(
+                0.0,
+                360.0,
+                TunnelRadius,
+                band.NearZ,
+                band.FarZ,
+                angularStepDeg: 6.0);
+            if (shellMesh is null)
+                continue;
+
+            shellRoot.AddChild(new MeshInstance3D
+            {
+                // EnsureMounted's validity gate resolves the first band by this stable path.
+                Name = index == 0 ? "Shell" : $"ShellDepth{index}",
+                Mesh = shellMesh,
+                MaterialOverride = BuildUnlitMaterial(new Color(
+                    band.Value * 0.82f,
+                    band.Value * 0.91f,
+                    band.Value)),
+            });
+        }
     }
 
     private static ArrayMesh BuildMeshFromArrays(List<Vector3> vertices, List<Vector3> normals, List<Vector2> uvs)

@@ -10,6 +10,19 @@ namespace FantaSim.App.Presentation.Tunnel;
 
 internal readonly record struct TunnelInstrumentNodePlan(string Name, string ParentName);
 
+internal readonly record struct TunnelInspectionLensSettings(
+    string Label,
+    NumericsVector3 LocalPosition,
+    float Radius);
+
+internal static class TunnelInspectionLensContract
+{
+    internal static TunnelInspectionLensSettings Settings => new(
+        Label: "inspection",
+        LocalPosition: new NumericsVector3(1.35f, 0f, 0.03f),
+        Radius: 0.48f);
+}
+
 /// <summary>
 /// Godot-free, testable contract for the camera-local cockpit instrument. Production consumes these
 /// names, transforms, radii, phase, and status strings directly; the node plan documents the exact
@@ -79,6 +92,9 @@ internal sealed partial class TunnelPresentationBinder
     private Label3D? _statusLabel;
     private MeshInstance3D? _innerRingMesh;
     private MeshInstance3D? _innerRingMarker;
+    private MeshInstance3D? _inspectionLensSphere;
+    private SnapshotSphereMaterial? _inspectionLensMaterial;
+    private SnapshotSphereFilmstripSink? _inspectionLensSink;
 
     private bool EnsureInstrumentHierarchy()
     {
@@ -109,12 +125,14 @@ internal sealed partial class TunnelPresentationBinder
         if (_inspectionLensRoot is null || !GodotObject.IsInstanceValid(_inspectionLensRoot))
             _inspectionLensRoot = new Node3D { Name = TunnelInstrumentContract.InspectionLensRootName };
         EnsureInstrumentParent(_readoutRoot, _inspectionLensRoot);
+        _inspectionLensRoot.Position = ToGodot(TunnelInspectionLensContract.Settings.LocalPosition);
 
         return true;
     }
 
     private void ClearRingRoots()
     {
+        ClearInspectionLens();
         var instrumentRoot = _instrumentRoot;
         _instrumentRoot = null;
         _outerRingRoot = null;
@@ -126,6 +144,9 @@ internal sealed partial class TunnelPresentationBinder
         _statusLabel = null;
         _innerRingMesh = null;
         _innerRingMarker = null;
+        _inspectionLensSphere = null;
+        _inspectionLensMaterial = null;
+        _inspectionLensSink = null;
 
         if (instrumentRoot is null || !GodotObject.IsInstanceValid(instrumentRoot))
             return;
@@ -188,6 +209,101 @@ internal sealed partial class TunnelPresentationBinder
         }
 
         UpdateOuterRingVisualForTick(_ctl?.Tick ?? 0L);
+    }
+
+    private SnapshotSphereFilmstripSink? EnsureInspectionLens()
+    {
+        if (!EnsureInstrumentHierarchy()
+            || _inspectionLensRoot is null
+            || !GodotObject.IsInstanceValid(_inspectionLensRoot))
+            return null;
+
+        if (_inspectionLensSink is not null
+            && _inspectionLensSphere is not null
+            && GodotObject.IsInstanceValid(_inspectionLensSphere)
+            && _inspectionLensMaterial is not null
+            && _inspectionLensMaterial.IsAlive)
+        {
+            _inspectionLensRoot.Visible = true;
+            return _inspectionLensSink;
+        }
+
+        ClearInspectionLens();
+        var settings = TunnelInspectionLensContract.Settings;
+        _inspectionLensRoot.Visible = true;
+
+        _inspectionLensMaterial = new SnapshotSphereMaterial();
+        _inspectionLensSphere = new MeshInstance3D
+        {
+            Name = "InspectionSphere",
+            Mesh = new SphereMesh
+            {
+                Radius = settings.Radius,
+                Height = settings.Radius * 2f,
+                RadialSegments = 40,
+                Rings = 24,
+            },
+            MaterialOverride = _inspectionLensMaterial.Material,
+        };
+        _inspectionLensRoot.AddChild(_inspectionLensSphere);
+
+        var unavailable = new Node3D { Name = "InspectionUnavailable" };
+        unavailable.AddChild(new Label3D
+        {
+            Text = "preview unavailable",
+            Position = new Vector3(0f, 0f, 0.04f),
+            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            FontSize = 12,
+            Modulate = new Color(0.74f, 0.76f, 0.79f, 0.94f),
+            OutlineModulate = new Color(0f, 0f, 0f, 0.72f),
+            NoDepthTest = true,
+        });
+        _inspectionLensRoot.AddChild(unavailable);
+
+        _inspectionLensRoot.AddChild(new Label3D
+        {
+            Name = "InspectionLabel",
+            Text = settings.Label,
+            Position = new Vector3(0f, -(settings.Radius + 0.22f), 0.02f),
+            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            FontSize = 16,
+            Modulate = new Color(0.82f, 0.90f, 0.96f, 0.94f),
+            OutlineModulate = new Color(0f, 0f, 0f, 0.72f),
+            NoDepthTest = true,
+        });
+        _inspectionLensRoot.AddChild(new MeshInstance3D
+        {
+            Name = "InspectionTether",
+            Position = new Vector3(-(settings.Radius + 0.24f), 0f, -0.01f),
+            Mesh = new BoxMesh { Size = new Vector3(0.44f, 0.025f, 0.025f) },
+            MaterialOverride = BuildUnlitMaterial(new Color(0.35f, 0.62f, 0.78f), 0.58f),
+        });
+
+        _inspectionLensSink = new SnapshotSphereFilmstripSink(
+            _inspectionLensSphere,
+            _inspectionLensMaterial,
+            unavailable);
+        return _inspectionLensSink;
+    }
+
+    private void ClearInspectionLens()
+    {
+        _inspectionLensSink = null;
+        if (_inspectionLensSphere is not null
+            && GodotObject.IsInstanceValid(_inspectionLensSphere))
+        {
+            _inspectionLensSphere.MaterialOverride = null;
+            _inspectionLensSphere.Mesh = null;
+        }
+        _inspectionLensSphere = null;
+
+        _inspectionLensMaterial?.Dispose();
+        _inspectionLensMaterial = null;
+
+        if (_inspectionLensRoot is null || !GodotObject.IsInstanceValid(_inspectionLensRoot))
+            return;
+        ClearChildren(_inspectionLensRoot);
+        _inspectionLensRoot.Visible = false;
     }
 
     private void UpdateRingLabels()
@@ -334,9 +450,9 @@ internal sealed partial class TunnelPresentationBinder
 
         var color = _fineBinding.CanAdjust ? InnerRingColor : InnerRingInactiveColor;
         if (_innerRingMesh is not null && GodotObject.IsInstanceValid(_innerRingMesh))
-            _innerRingMesh.MaterialOverride = BuildUnlitMaterial(color);
+            ApplyUnlitRingColor(_innerRingMesh, color);
         if (_innerRingMarker is not null && GodotObject.IsInstanceValid(_innerRingMarker))
-            _innerRingMarker.MaterialOverride = BuildUnlitMaterial(Brighten(color));
+            ApplyUnlitRingColor(_innerRingMarker, Brighten(color));
 
         UpdateInnerRingVisual(_fineBinding, _finePreview);
     }
@@ -361,6 +477,19 @@ internal sealed partial class TunnelPresentationBinder
             Math.Min(1f, color.R + 0.3f),
             Math.Min(1f, color.G + 0.3f),
             Math.Min(1f, color.B + 0.3f));
+
+    private static void ApplyUnlitRingColor(MeshInstance3D node, Color color)
+    {
+        if (node.MaterialOverride is StandardMaterial3D material
+            && GodotObject.IsInstanceValid(material))
+        {
+            material.AlbedoColor = color;
+            material.Emission = color;
+            return;
+        }
+
+        node.MaterialOverride = BuildUnlitMaterial(color);
+    }
 
     private static MeshInstance3D BuildAsymmetricMarker(Color color, float outerRadius)
     {
