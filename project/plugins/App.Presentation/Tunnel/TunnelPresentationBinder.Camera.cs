@@ -1,7 +1,25 @@
 using Godot;
 using Microsoft.Extensions.Logging;
+using NumericsVector3 = System.Numerics.Vector3;
 
 namespace FantaSim.App.Presentation.Tunnel;
+
+internal readonly record struct TunnelCameraRuntimeSettings(
+    NumericsVector3 LocalPosition,
+    NumericsVector3 LocalTarget,
+    float FieldOfViewDegrees,
+    float NearClip,
+    Camera3D.KeepAspectEnum KeepAspect);
+
+internal static class TunnelCameraRuntimeContract
+{
+    internal static TunnelCameraRuntimeSettings Settings => new(
+        TunnelCameraFraming.LocalPosition,
+        TunnelCameraFraming.LocalTarget,
+        TunnelCameraFraming.FieldOfViewDegrees,
+        TunnelCameraFraming.NearClip,
+        Camera3D.KeepAspectEnum.Height);
+}
 
 internal sealed partial class TunnelPresentationBinder
 {
@@ -13,17 +31,33 @@ internal sealed partial class TunnelPresentationBinder
         if (_mount is null)
             return;
 
+        var settings = TunnelCameraRuntimeContract.Settings;
         if (_tunnelCamera is null || !GodotObject.IsInstanceValid(_tunnelCamera))
         {
             _tunnelCamera = new Camera3D
             {
                 Name = "TunnelCamera",
-                Position = TunnelCameraLocalPosition,
-                Fov = TunnelCameraFovDeg,
+                Position = ToGodot(settings.LocalPosition),
+                Fov = settings.FieldOfViewDegrees,
+                Near = settings.NearClip,
+                KeepAspect = settings.KeepAspect,
+                Projection = Camera3D.ProjectionType.Perspective,
             };
             _mount.AddChild(_tunnelCamera);
-            _tunnelCamera.LookAt(_mount.ToGlobal(TunnelCameraLocalTarget), Vector3.Up);
         }
+
+        // Godot 4.7 locks the selected FOV axis through KeepAspect and defines ProjectRay* in
+        // world space. Keeping this camera policy explicit makes the tested widescreen projection
+        // and the instrument-local picking inverse agree.
+        // Sources:
+        // https://docs.godotengine.org/en/4.7/classes/class_camera3d.html#class-camera3d-property-keep-aspect
+        // https://docs.godotengine.org/en/4.7/classes/class_camera3d.html#class-camera3d-method-project-ray-origin
+        _tunnelCamera.Position = ToGodot(settings.LocalPosition);
+        _tunnelCamera.Fov = settings.FieldOfViewDegrees;
+        _tunnelCamera.Near = settings.NearClip;
+        _tunnelCamera.KeepAspect = settings.KeepAspect;
+        _tunnelCamera.Projection = Camera3D.ProjectionType.Perspective;
+        _tunnelCamera.LookAt(_mount.ToGlobal(ToGodot(settings.LocalTarget)), Vector3.Up);
     }
 
     private void ActivateTunnelCamera()
@@ -63,4 +97,7 @@ internal sealed partial class TunnelPresentationBinder
     {
         _tunnelCamera = null;
     }
+
+    private static Vector3 ToGodot(NumericsVector3 value)
+        => new(value.X, value.Y, value.Z);
 }

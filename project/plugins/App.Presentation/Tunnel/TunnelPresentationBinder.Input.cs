@@ -11,6 +11,50 @@ using CommandService = FantaSim.App.Command.IService;
 
 namespace FantaSim.App.Presentation.Tunnel;
 
+internal readonly record struct TunnelInstrumentPoint3(double X, double Y, double Z);
+
+/// <summary>
+/// Pure camera-local picking seam. Godot supplies world-space ProjectRay* endpoints; production
+/// transforms them through InstrumentRoot.GlobalTransform.AffineInverse before calling this policy.
+/// </summary>
+internal static class TunnelInstrumentHitPolicy
+{
+    private const double ParallelEpsilon = 1e-9;
+
+    internal static bool TryIntersectPlane(
+        TunnelInstrumentPoint3 origin,
+        TunnelInstrumentPoint3 end,
+        out TunnelInstrumentPoint3 point)
+    {
+        point = default;
+        var directionX = end.X - origin.X;
+        var directionY = end.Y - origin.Y;
+        var directionZ = end.Z - origin.Z;
+        if (Math.Abs(directionZ) <= ParallelEpsilon)
+            return false;
+
+        var t = (TunnelInstrumentContract.GeometryPlaneZ - origin.Z) / directionZ;
+        if (t < 0d)
+            return false;
+
+        point = new TunnelInstrumentPoint3(
+            origin.X + (directionX * t),
+            origin.Y + (directionY * t),
+            origin.Z + (directionZ * t));
+        return true;
+    }
+
+    internal static bool IsInBand(TunnelInstrumentPoint3 point, float innerRadius, float outerRadius)
+    {
+        if (innerRadius < 0f || outerRadius < innerRadius)
+            return false;
+
+        var radiusSquared = (point.X * point.X) + (point.Y * point.Y);
+        return radiusSquared >= innerRadius * innerRadius
+            && radiusSquared <= outerRadius * outerRadius;
+    }
+}
+
 internal sealed partial class TunnelPresentationBinder
 {
     // Mirrors TimelinePlugin.TunnelViewCommandId (project/plugins/App.Timeline/TimelinePlugin.cs).
@@ -364,7 +408,6 @@ internal sealed partial class TunnelPresentationBinder
                         _corridorsRoot.RotationDegrees = Vector3.Zero;
 
                     _focusIndex = snap.FocusIndex;
-                    _filmstrip.Supersede();
                     RebuildCorridors();
                     ResetFinePreview(TunnelFineResetReason.FocusChanged);
                     LogWallRelease(focusBefore, snap);
@@ -390,45 +433,29 @@ internal sealed partial class TunnelPresentationBinder
     private bool TryResolveHit(Vector2 screenPosition, out TunnelHitRegion hit)
     {
         hit = TunnelHitRegion.None;
-        if (_mount is null || !GodotObject.IsInstanceValid(_mount))
+        var camera = _tunnelCamera;
+        if (camera is null || !GodotObject.IsInstanceValid(camera) || !camera.Current)
             return false;
 
-        var camera = _inputRelay?.GetViewport()?.GetCamera3D();
-        if (camera is null)
+        if (!TryProjectToInstrumentPlane(screenPosition, camera, out var instrumentPoint))
             return false;
 
-        var outerHit = TryProjectToRingPlaneBand(screenPosition, camera, OuterRingInnerRadius, OuterRingOuterRadius);
-        var innerHit = TryProjectToRingPlaneBand(screenPosition, camera, InnerRingInnerRadius, InnerRingOuterRadius);
+        var projected = new TunnelInstrumentPoint3(
+            instrumentPoint.X,
+            instrumentPoint.Y,
+            instrumentPoint.Z);
+        var outerHit = TunnelInstrumentHitPolicy.IsInBand(
+            projected,
+            TunnelInstrumentContract.OuterRingInnerRadius,
+            TunnelInstrumentContract.OuterRingOuterRadius);
+        var innerHit = TunnelInstrumentHitPolicy.IsInBand(
+            projected,
+            TunnelInstrumentContract.InnerRingInnerRadius,
+            TunnelInstrumentContract.InnerRingOuterRadius);
         var wallHit = TryIntersectTunnelWall(screenPosition, camera);
 
         hit = TunnelScrubMapper.ResolveHitRegion(outerHit, innerHit, wallHit);
         return hit != TunnelHitRegion.None;
-    }
-
-    // Ring hit-testing happens on the RING plane (design §4a: the dials sit between camera and
-    // globe, no longer on the mouth plane) -- the plane here must always match Rings.cs visuals.
-    private bool TryProjectToRingPlaneBand(Vector2 screenPosition, Camera3D camera, float innerR, float outerR)
-    {
-        var mount = _mount;
-        if (mount is null || !GodotObject.IsInstanceValid(mount))
-            return false;
-
-        var rayOrigin = camera.ProjectRayOrigin(screenPosition);
-        var rayDir = camera.ProjectRayNormal(screenPosition);
-
-        var inv = mount.GlobalTransform.AffineInverse();
-        var localOrigin = inv * rayOrigin;
-        var localDir = inv.Basis * rayDir;
-
-        var ray = new TunnelRay3(
-            new TunnelPoint3(localOrigin.X, localOrigin.Y, localOrigin.Z),
-            new TunnelPoint3(localDir.X, localDir.Y, localDir.Z));
-
-        if (!TunnelRayHitMapper.TryIntersectMouthPlane(ray, RingPlaneZ, out var point))
-            return false;
-
-        var radius = Math.Sqrt(point.X * point.X + point.Y * point.Y);
-        return radius >= innerR && radius <= outerR;
     }
 
     private bool TryIntersectTunnelWall(Vector2 screenPosition, Camera3D camera)
@@ -454,39 +481,43 @@ internal sealed partial class TunnelPresentationBinder
     private bool TryGetLocalPointerAngle(Vector2 screenPosition, out double angleDegrees)
     {
         angleDegrees = 0d;
-        var camera = _inputRelay?.GetViewport()?.GetCamera3D();
-        if (camera is null || _mount is null)
+        var camera = _tunnelCamera;
+        if (camera is null || !GodotObject.IsInstanceValid(camera) || !camera.Current)
             return false;
 
-        if (!TryProjectToRingPlane(screenPosition, camera, out var localPoint))
+        if (!TryProjectToInstrumentPlane(screenPosition, camera, out var localPoint))
             return false;
 
         angleDegrees = Math.Atan2(localPoint.Y, localPoint.X) * 180.0 / Math.PI;
         return double.IsFinite(angleDegrees);
     }
 
-    private bool TryProjectToRingPlane(Vector2 screenPosition, Camera3D camera, out Vector3 localPoint)
+    private bool TryProjectToInstrumentPlane(
+        Vector2 screenPosition,
+        Camera3D camera,
+        out Vector3 instrumentPoint)
     {
-        localPoint = Vector3.Zero;
-        var mount = _mount;
-        if (mount is null || !GodotObject.IsInstanceValid(mount))
+        instrumentPoint = Vector3.Zero;
+        var instrumentRoot = _instrumentRoot;
+        if (instrumentRoot is null || !GodotObject.IsInstanceValid(instrumentRoot))
             return false;
 
-        var rayOrigin = camera.ProjectRayOrigin(screenPosition);
-        var rayDir = camera.ProjectRayNormal(screenPosition);
-
-        var inv = mount.GlobalTransform.AffineInverse();
-        var lo = inv * rayOrigin;
-        var ld = inv.Basis * rayDir;
-
-        var ray = new TunnelRay3(
-            new TunnelPoint3(lo.X, lo.Y, lo.Z),
-            new TunnelPoint3(ld.X, ld.Y, ld.Z));
-
-        if (!TunnelRayHitMapper.TryIntersectMouthPlane(ray, RingPlaneZ, out var point))
+        // Camera3D.ProjectRayOrigin/Normal return a world-space picking ray. Transform both
+        // endpoints into the camera-local InstrumentRoot and intersect its Z=0 geometry plane.
+        // Source:
+        // https://docs.godotengine.org/en/4.7/classes/class_camera3d.html#class-camera3d-method-project-ray-origin
+        var rayOriginGlobal = camera.ProjectRayOrigin(screenPosition);
+        var rayEndGlobal = rayOriginGlobal + camera.ProjectRayNormal(screenPosition) * 1000f;
+        var inverse = instrumentRoot.GlobalTransform.AffineInverse();
+        var origin = inverse * rayOriginGlobal;
+        var end = inverse * rayEndGlobal;
+        if (!TunnelInstrumentHitPolicy.TryIntersectPlane(
+                new TunnelInstrumentPoint3(origin.X, origin.Y, origin.Z),
+                new TunnelInstrumentPoint3(end.X, end.Y, end.Z),
+                out var point))
             return false;
 
-        localPoint = new Vector3((float)point.X, (float)point.Y, (float)point.Z);
+        instrumentPoint = new Vector3((float)point.X, (float)point.Y, (float)point.Z);
         return true;
     }
 
@@ -528,10 +559,7 @@ internal sealed partial class TunnelPresentationBinder
 
         if (_corridorsRoot is not null && GodotObject.IsInstanceValid(_corridorsRoot))
             _corridorsRoot.RotationDegrees = Vector3.Zero;
-        if (_outerRingRoot is not null && GodotObject.IsInstanceValid(_outerRingRoot))
-            _outerRingRoot.RotationDegrees = Vector3.Zero;
-        if (_outerLabel is not null && GodotObject.IsInstanceValid(_outerLabel))
-            _outerLabel.Text = BuildOuterLabelText();
+        UpdateOuterRingVisualForTick(_ctl?.Tick ?? 0L);
 
         ResetFinePreview(TunnelFineResetReason.BaseTimeChanged);
     }

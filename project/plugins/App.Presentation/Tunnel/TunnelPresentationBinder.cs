@@ -19,38 +19,14 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
     private const string TimelineBundleId = "timeline";
     private static readonly NodePath StageEnvironmentPath = new("Environment");
 
-    private const float TunnelRadius = 5.0f;
-    private const float TunnelDepth = 20.0f;
-    private const float MouthZ = 0.0f;
-    private const float ThroatZ = -TunnelDepth;
-    // Interior-view framing (design §4a): the globe sits at the current-tick plane near the mouth
-    // (NOT the far throat) so it reads large at screen center from the occupant camera; the two
-    // dial rings are concentric around it on a plane BETWEEN camera and globe (never occluded by
-    // the planet body, whose visual radius is ~2 with relief/atmosphere). Wall radius/depth are
-    // sized so corridors are actually visible from inside (wall enters the FOV from about
-    // -7 · Z toward the throat). Ring hit-testing must use the same plane/radii (Input.cs).
-    private const float GlobePlaneZ = -5.0f;
-    private const float RingPlaneZ = -3.0f;
-    private const float InnerRingInnerRadius = 1.7f;
-    private const float InnerRingOuterRadius = 2.05f;
-    private const float OuterRingInnerRadius = 2.45f;
-    private const float OuterRingOuterRadius = 2.9f;
+    private const float TunnelRadius = TunnelCameraFraming.TunnelRadius;
+    private const float MouthZ = TunnelCameraFraming.MouthZ;
+    private const float ThroatZ = TunnelCameraFraming.ThroatZ;
+    private const float TunnelDepth = MouthZ - ThroatZ;
     private const float CorridorSurfaceRadius = TunnelRadius - 0.06f;
     private const double CorridorSpanDegrees = 24.0;
-    private const int FilmstripFramesPerCorridor = 4;
     private const float FineRailCenterZ = -TunnelDepth / 2.0f;
     private const float FineRailHalfLength = 2.5f;
-    private const float TunnelCameraFovDeg = TunnelCameraFraming.FieldOfViewDegrees;
-
-    private static readonly Vector3 TunnelCameraLocalPosition = new(
-        TunnelCameraFraming.LocalPosition.X,
-        TunnelCameraFraming.LocalPosition.Y,
-        TunnelCameraFraming.LocalPosition.Z);
-    private static readonly Vector3 TunnelCameraLocalTarget = new(
-        TunnelCameraFraming.LocalTarget.X,
-        TunnelCameraFraming.LocalTarget.Y,
-        TunnelCameraFraming.LocalTarget.Z);
-
     private readonly IRegistry _registry;
     private readonly IBundleSceneRegistry _sceneRegistry;
     private readonly ResourceService _resource;
@@ -324,7 +300,10 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
             || !GodotObject.IsInstanceValid(body) || !body.IsInsideTree())
             return false;
 
-        _mount.GlobalPosition = body.GlobalPosition + Vector3.Back * -GlobePlaneZ;
+        // Mount translation makes the bound planet's real center land on the one canonical current
+        // plane in tunnel-local space; corridor samples consume the same framing constant.
+        _mount.GlobalPosition = body.GlobalPosition
+            + Vector3.Back * -TunnelCameraFraming.CurrentPlaneZ;
         _mount.GlobalBasis = Basis.Identity;
         return true;
     }
@@ -413,9 +392,22 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
             }
         }
 
-        _focusIndex = _focusIndex < 0
-            ? TunnelCorridorLayout.InitialFocusIndex(nextTracks.Count)
-            : TunnelCorridorLayout.NormalizeFocusIndex(_focusIndex, nextTracks.Count);
+        var activityFlags = new bool[nextTracks.Count];
+        if (_ctl is not null)
+        {
+            for (var i = 0; i < nextTracks.Count; i++)
+            {
+                activityFlags[i] = TunnelTrackActivity.IsActive(
+                    nextTracks[i],
+                    _ctl.Tick,
+                    _ctl.GeosphereSchedule,
+                    _ctl.AtmosphereSchedule);
+            }
+        }
+
+        // Only an absent focused identity selects from activity. A retained identity stays locked
+        // through later tick/activity changes so playback cannot auto-jump the user's wall focus.
+        _focusIndex = TunnelCorridorLayout.InitialFocusIndex(nextTracks, activityFlags);
     }
 
     private void BindController(ITimelineController? controller)
