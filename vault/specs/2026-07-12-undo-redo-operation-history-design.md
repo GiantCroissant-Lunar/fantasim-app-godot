@@ -1,9 +1,10 @@
 # Undo / redo — reversible operation history (concept lock)
 
-**Status:** concept-lock DRAFT, 2026-07-12. Scope pre-approved by the user (activity/agent-UI arc
-follow-up). This is **doubt-driven territory** (truth-stream invariants) — the decisions marked
-*(PROPOSED — review)* must survive an adversarial review before any code stands (see the last section).
-Spec-before-code: no implementation until this is accepted.
+**Status:** concept-lock DRAFT — **NOT ACCEPTED; revision required.** 2026-07-12. Scope pre-approved
+(activity/agent-UI arc follow-up), but the fresh-context adversarial review below (doubt-driven gate)
+found the two-axis *framing* sound and the *concretization* unbuildable against the real command
+surface. **Do not write a plan or code against this draft** — see "Doubt-driven review outcome". The
+body from here to that section is the reviewed draft, kept for the record with its flaws intact.
 
 **Grounding (read):** [`planet-domain-station-map`](../architecture/planet-domain-station-map.md) (the
 truth-stream constitution), `project/contracts/App.Command/CommandTypes.cs` (command records),
@@ -170,3 +171,62 @@ BEFORE Slice 1 code:
 - Cross-session or persisted undo.
 - Undoing external side effects (published messages, files written, bundles installed) — those are
   Irreversible barriers.
+
+## Doubt-driven review outcome (2026-07-12) — revise before any plan
+
+A fresh-context adversarial review, grounded in the **real** registered-command surface, found the
+two-axis *framing* sound but the *concretization* unbuildable. Load-bearing corrections (with the
+anchors the review cited):
+
+- **The "reversible input command" class is essentially empty today.** The draft's flagship examples are
+  fictional or not reversible: `world.setSpinRate` **doesn't exist** — spin rate is a generation option
+  (`WorldGenerationRenderOptions.SpinRateRadiansPerMegaAnnum`) that only changes via **full regeneration**
+  (Irreversible; invalidates `_globeReconstructorKey`, `App.World/Services/Service.cs:1294`);
+  `view.show/hide` and activity `toggle` are **not commands** (direct `IViewService.ShowAsync`
+  / local dispatch + bus publish, never through the dispatcher); `timeline.select_layer` is **tick-gated**
+  (throws if the layer isn't active at `controller.Tick`, `App.Timeline/TimelinePlugin.cs:328`) — so undo
+  and the scrub are **coupled, not independent**, for that op. → **Slice 1 as written is not buildable.**
+- **Invariant #3 is factually wrong — the dispatcher does not serialize.** `ImmediateMainThreadDispatcher`
+  runs `action()` inline (`App.Command/Providers/IMainThreadDispatcher.cs:13`); the real ingress runs
+  handlers concurrently (HttpTransport threadpool → `RemoteBridgeNode`, ≤16 fire-and-forget async
+  handlers/frame). Async handlers interleave → check-then-act races on the stack and **stale pre-state
+  across `await`**. Needs a genuine serialization / re-entrancy guard.
+- **Reversibility is not statically checkable.** Handlers acquire effects via runtime `registry.TryGet<T>()`
+  (a "reversible" handler can `TryGet<IMessageBus>().Publish(...)`; the scan sees only `TryGet<T>`).
+  Enforcement must be **runtime capability confinement** (a restricted registry facade that denies
+  truth-write/bus/IO resolution and throws if touched), not a P1-style static scan.
+- **Silent-corruption path.** Command results use **two-level `Ok`** (transport `Ok=true` = "didn't
+  throw"; domain success lives in `ResultJson`). A failed inverse (e.g. "binder not mounted — world bundle
+  unloaded") reads as success → undo pops the stack without restoring state. View/camera targets are
+  **write-only** (`Action<…>`, no getter) → no pre-state to capture. The reversible contract needs a typed
+  success signal **and** read-back APIs.
+- **Ledger-linkage gap + multi-actor.** `CommandRequest` has **no `CausationId`** field
+  (`App.Command/CommandTypes.cs:12`), so an external undo service can't say "I invert entry X"; every
+  command emits **two** ledger entries (request+result). CLI + UI + agent share one ledger/stack — a
+  global stack means the user's Undo silently reverses the **agent's** last action. Decide per-actor vs
+  global; add `CommandRequest.CausationId` or drop "the ledger reflects the stack".
+- **Compound self-contradiction.** "Any irreversible child ⇒ barrier" contradicts "reverse-composite
+  atomicity" for a mixed compound; once `resource.reload_bundle`'s irreversible cascade (ALC unload +
+  SceneFlow Exit/Enter) has run, no inverse can retract it and captured delegates go stale. → **Any
+  irreversible child ⇒ barrier, full stop**; delete the atomic-reverse-composite claim. No compound
+  transaction primitive exists (`CausationId` is audit metadata, not a boundary).
+- **The natural undo candidates are exactly what the taxonomy forbids.** `timeline.set_track_archived`
+  (archive/restore — the most intuitively-undoable op) does **synchronous `File.WriteAllText`** and
+  persists across restart (`App.World.Composition/LayerTrackRegistryService.cs:70`) → Irreversible by
+  invariant #1. `camera.orbit` / globe drag is the same continuous-navigation class as the scrub the spec
+  carves out. The "reversible = no I/O" line cuts through the middle of the natural undo set.
+- **Unanswered UX (blocks the value).** Undo dispatches its inverse **as a command**, which appends its
+  own request+result entries to the **persisted, user-visible** ledger — undo **grows** the visible
+  history instead of retracting the undone op. *What does the user see when they undo?* Must be answered
+  before building.
+- **Kept:** inverse-as-**data** (`CommandRequest`, not a closure) is right — it respects the ALC-pin
+  discipline (closures over bundle types pin collectible ALCs). Add a bundle-generation guard so a stale
+  inverse (command unregistered across a reload) is invalidated, not silently re-run.
+
+**Verdict:** two-axis separation survives; the concretization does not. There is no cheap first slice —
+shipping undo means first building a **reversible-command substrate** (serialization/re-entrancy guard,
+runtime capability confinement, read-back + typed success, `CommandRequest.CausationId`, ledger-visibility
+UX). This is a much larger lift than the approved scope assumed. **Strategic fork is the user's** —
+(A) build the substrate (multi-slice; slice 1 *builds the reversible path*, not a retrofit), (B) narrow
+hard to a single purpose-built tick-independent reversible toggle, or (C) defer until the command surface
+grows real reversible inputs and spend the session on higher-ROI work.
