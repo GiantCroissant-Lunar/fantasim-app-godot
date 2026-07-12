@@ -141,6 +141,19 @@ public partial class TimelineFace : Control, ITimelineFace
         ApplyScrubAction(_scrubCoalescer.ConsumeFrame());
     }
 
+    public void SetHudVisible(bool visible)
+    {
+        // Same off-thread marshal as RebindResidentContext: Control.Visible is main-thread-only,
+        // and the tunnel-view command can reach this face from the ingress path.
+        if (OS.GetThreadCallerId() == OS.GetMainThreadId())
+        {
+            Visible = visible;
+            return;
+        }
+
+        Callable.From(() => Visible = visible).CallDeferred();
+    }
+
     public void RebindResidentContext()
     {
         // TimelinePlugin raises this from the resource watcher's thread-pool thread; the bind

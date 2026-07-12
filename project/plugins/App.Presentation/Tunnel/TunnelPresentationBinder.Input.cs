@@ -1,14 +1,22 @@
 using System;
+using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using FantaSim.App.Timeline;
 using FantaSim.App.Timeline.Seam;
 using FantaSim.App.World.Composition;
 using Godot;
 using Microsoft.Extensions.Logging;
+using CommandService = FantaSim.App.Command.IService;
 
 namespace FantaSim.App.Presentation.Tunnel;
 
 internal sealed partial class TunnelPresentationBinder
 {
+    // Mirrors TimelinePlugin.TunnelViewCommandId (project/plugins/App.Timeline/TimelinePlugin.cs).
+    // Duplicated rather than referenced: that const is internal to the timeline bundle, a
+    // different collectible ALC than this world-bundle binder.
+    private const string TunnelViewCommandId = "timeline.tunnel_view";
+
     private readonly TunnelGestureCoordinator _coordinator = new();
     private bool _gestureOwned;
     private bool _applyingOuterScrubAction;
@@ -29,11 +37,79 @@ internal sealed partial class TunnelPresentationBinder
             case InputEventMouseMotion motion when _gestureOwned:
                 return HandleOwnedMotion(motion);
             case InputEventKey { Pressed: true, Echo: false, Keycode: Key.F9 }:
-                SetEnabled(!IsEnabled);
+                RouteTunnelToggleThroughCommand();
                 return true;
             default:
                 return false;
         }
+    }
+
+    // F9 no longer flips this binder directly: every enable path (command, F9) must flow through
+    // timeline.tunnel_view so TimelinePlugin can own the 2D HUD visibility that rides along with
+    // it (vault/specs/2026-07-12-rotating-tunnel-two-ring-prototype-design.md §4a). Resolved at
+    // press time, never cached -- the command service lives in the timeline bundle's collectible
+    // ALC and may reload independently of this binder, same discipline as every other
+    // _registry.TryGet call here.
+    private void RouteTunnelToggleThroughCommand()
+    {
+        var desired = !IsEnabled;
+        var commandService = _registry.TryGet<CommandService>();
+        if (commandService is null)
+        {
+            _log.LogInformation(
+                "tunnel F9: command service unavailable; falling back to direct SetEnabled(enabled={Enabled}).",
+                desired);
+            SetEnabled(desired);
+            return;
+        }
+
+        var payload = new JsonObject { ["enabled"] = desired }.ToJsonString();
+        var request = new FantaSim.App.Command.CommandRequest(
+            Command: TunnelViewCommandId,
+            PayloadJson: payload,
+            ActorKind: "user",
+            ActorId: "godot-f9");
+
+        // Fire-and-forget: input events run synchronously on the main thread and must not await.
+        // RunTunnelToggleCommandAsync owns every failure/fault path below so nothing goes
+        // unobserved.
+        _ = RunTunnelToggleCommandAsync(commandService, request, desired);
+    }
+
+    private async Task RunTunnelToggleCommandAsync(
+        CommandService commandService,
+        FantaSim.App.Command.CommandRequest request,
+        bool desired)
+    {
+        try
+        {
+            var result = await commandService.ExecuteAsync(request).ConfigureAwait(false);
+            if (result.Ok)
+            {
+                _log.LogInformation(
+                    "tunnel F9: routed through {CommandId} (enabled={Enabled}).",
+                    TunnelViewCommandId, desired);
+                return;
+            }
+
+            _log.LogWarning(
+                "tunnel F9: {CommandId} reported failure ({Error}); falling back to direct SetEnabled.",
+                TunnelViewCommandId, result.Error?.Message ?? "unknown error");
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex,
+                "tunnel F9: {CommandId} faulted; falling back to direct SetEnabled.",
+                TunnelViewCommandId);
+        }
+
+        // The command bundle (or its await) may resume off the main thread; SetEnabled touches
+        // Godot nodes and must run on it -- same CallDeferred discipline as
+        // TimelineFace.RebindResidentContext.
+        if (OS.GetThreadCallerId() == OS.GetMainThreadId())
+            SetEnabled(desired);
+        else
+            Callable.From(() => SetEnabled(desired)).CallDeferred();
     }
 
     private void ConsumeTunnelFrame(double delta)
@@ -213,15 +289,17 @@ internal sealed partial class TunnelPresentationBinder
         if (camera is null)
             return false;
 
-        var outerHit = TryProjectToMouthPlaneBand(screenPosition, camera, OuterRingInnerRadius, OuterRingOuterRadius);
-        var innerHit = TryProjectToMouthPlaneBand(screenPosition, camera, InnerRingInnerRadius, InnerRingOuterRadius);
+        var outerHit = TryProjectToRingPlaneBand(screenPosition, camera, OuterRingInnerRadius, OuterRingOuterRadius);
+        var innerHit = TryProjectToRingPlaneBand(screenPosition, camera, InnerRingInnerRadius, InnerRingOuterRadius);
         var wallHit = TryIntersectTunnelWall(screenPosition, camera);
 
         hit = TunnelScrubMapper.ResolveHitRegion(outerHit, innerHit, wallHit);
         return hit != TunnelHitRegion.None;
     }
 
-    private bool TryProjectToMouthPlaneBand(Vector2 screenPosition, Camera3D camera, float innerR, float outerR)
+    // Ring hit-testing happens on the RING plane (design §4a: the dials sit between camera and
+    // globe, no longer on the mouth plane) -- the plane here must always match Rings.cs visuals.
+    private bool TryProjectToRingPlaneBand(Vector2 screenPosition, Camera3D camera, float innerR, float outerR)
     {
         var mount = _mount;
         if (mount is null || !GodotObject.IsInstanceValid(mount))
@@ -238,7 +316,7 @@ internal sealed partial class TunnelPresentationBinder
             new TunnelPoint3(localOrigin.X, localOrigin.Y, localOrigin.Z),
             new TunnelPoint3(localDir.X, localDir.Y, localDir.Z));
 
-        if (!TunnelRayHitMapper.TryIntersectMouthPlane(ray, MouthZ, out var point))
+        if (!TunnelRayHitMapper.TryIntersectMouthPlane(ray, RingPlaneZ, out var point))
             return false;
 
         var radius = Math.Sqrt(point.X * point.X + point.Y * point.Y);
@@ -272,14 +350,14 @@ internal sealed partial class TunnelPresentationBinder
         if (camera is null || _mount is null)
             return false;
 
-        if (!TryProjectToMouthPlaneGlobal(screenPosition, camera, out var localPoint))
+        if (!TryProjectToRingPlane(screenPosition, camera, out var localPoint))
             return false;
 
         angleDegrees = Math.Atan2(localPoint.Y, localPoint.X) * 180.0 / Math.PI;
         return double.IsFinite(angleDegrees);
     }
 
-    private bool TryProjectToMouthPlaneGlobal(Vector2 screenPosition, Camera3D camera, out Vector3 localPoint)
+    private bool TryProjectToRingPlane(Vector2 screenPosition, Camera3D camera, out Vector3 localPoint)
     {
         localPoint = Vector3.Zero;
         var mount = _mount;
@@ -297,7 +375,7 @@ internal sealed partial class TunnelPresentationBinder
             new TunnelPoint3(lo.X, lo.Y, lo.Z),
             new TunnelPoint3(ld.X, ld.Y, ld.Z));
 
-        if (!TunnelRayHitMapper.TryIntersectMouthPlane(ray, MouthZ, out var point))
+        if (!TunnelRayHitMapper.TryIntersectMouthPlane(ray, RingPlaneZ, out var point))
             return false;
 
         localPoint = new Vector3((float)point.X, (float)point.Y, (float)point.Z);

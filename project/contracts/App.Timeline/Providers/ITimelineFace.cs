@@ -48,4 +48,14 @@ public interface ITimelineFace
     /// </summary>
     [CrossDelegate]
     void ApplyView(TimelineViewSnapshot snapshot);
+
+    /// <summary>
+    /// Show or hide the whole 2D timeline HUD. Owned by the tunnel-view product rule (rotating
+    /// tunnel design §4a): while the 3D tunnel timeline is enabled the 2D HUD is hidden, and it
+    /// returns when the tunnel is disabled. The face may marshal onto the main thread if called
+    /// off-thread. Visibility is presentation-only state — playback/tick accounting continue
+    /// unaffected while hidden.
+    /// </summary>
+    [CrossDelegate]
+    void SetHudVisible(bool visible);
 }

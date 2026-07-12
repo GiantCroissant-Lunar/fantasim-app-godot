@@ -31,6 +31,12 @@
          bundle resolves the SAME resident copy — never a bundled duplicate. -->
     <ProjectReference Include="..\..\contracts\App.Timeline\App.Timeline.csproj" />
     <ProjectReference Include="..\App.Timeline.Seam\App.Timeline.Seam.csproj" />
+    <!-- F9 tunnel-view routing (timeline.tunnel_view command, 2026-07-12): the binder needs
+         App.Command's IService/CommandRequest to route through the command instead of flipping
+         itself directly. App.Command is a PERMANENT resident-floor assembly in
+         shared-assembly-policy.json exactMatches, so this resolves as a shared reference, never a
+         bundled duplicate. Verify with the stager's dual-copy check (G37 discipline). -->
+    <ProjectReference Include="..\..\contracts\App.Command\App.Command.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions">

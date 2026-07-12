@@ -162,6 +162,8 @@ public sealed class TimelinePluginTests
         public void Pause() => Target?.Pause();
         public void SeekTo(long tick) => Target?.SeekTo(tick);
         public void ApplyView(TimelineViewSnapshot snapshot) => Target?.ApplyView(snapshot);
+        public bool HudVisible = true;
+        public void SetHudVisible(bool visible) { HudVisible = visible; Target?.SetHudVisible(visible); }
     }
 
     private sealed class FakeCommandService : FantaSim.App.Command.IService

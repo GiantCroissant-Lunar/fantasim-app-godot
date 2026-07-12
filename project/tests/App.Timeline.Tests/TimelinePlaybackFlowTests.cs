@@ -27,6 +27,8 @@ public class TimelinePlaybackFlowTests
         public void Pause() => PauseCalls++;
         public void SeekTo(long tick) { SeekCalls++; LastSeekTick = tick; }
         public void ApplyView(TimelineViewSnapshot snapshot) { ApplyViewCalls++; LastSnapshot = snapshot; }
+        public bool HudVisible = true;
+        public void SetHudVisible(bool visible) => HudVisible = visible;
     }
 
     private static (Service svc, FakeFace face) Build(long maxTick = 120_000_000)

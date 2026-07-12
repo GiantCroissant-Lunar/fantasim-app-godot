@@ -203,9 +203,20 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
 
         RegisterTimelineCommands(controller, timelineService);
 
+        // World reloads reset the tunnel binder to disabled (slice-1 residue) and this compose
+        // reruns on every world rebind -- re-deriving HUD visibility here keeps the 2D face and
+        // the 3D tunnel consistent across reloads (rotating-tunnel design §4a).
+        ApplyHudVisibilityFromTunnelState();
+
         _worldRebindPending = false;
         _log?.LogInformation("TimelinePlugin: IService registered.");
         return true;
+    }
+
+    private void ApplyHudVisibilityFromTunnelState()
+    {
+        var tunnelEnabled = _registry?.TryGet<FantaSim.App.Presentation.ITunnelPresentation>()?.IsEnabled ?? false;
+        _faceProxy?.SetHudVisible(!tunnelEnabled);
     }
 
     private void SeverTimelineService(bool unbindProxy)
@@ -392,6 +403,10 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
                 // bundle) and may reload independently after this command registered.
                 var tunnel = _registry?.TryGet<FantaSim.App.Presentation.ITunnelPresentation>();
                 tunnel?.SetEnabled(enabled);
+                // The 2D HUD hides while the tunnel view is on (design §4a). Derived from the
+                // tunnel's EFFECTIVE state, not the requested one, so a missing/failed tunnel
+                // never strands the HUD hidden.
+                _faceProxy?.SetHudVisible(!(tunnel?.IsEnabled ?? false));
                 return Task.FromResult<string?>(new JsonObject
                 {
                     ["ok"] = tunnel is not null,
