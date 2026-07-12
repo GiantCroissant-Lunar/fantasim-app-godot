@@ -98,21 +98,31 @@ public sealed class TimelinePluginTests
     }
 
     [Fact]
-    public async Task WorldRuntimeChangingSeversFaceContextButKeepsProxyForRebind()
+    public async Task WorldRuntimeChangingShowsHudAndLeavesGeometryTeardownToWorldBinder()
     {
         var registry = NewRegistry();
         var resource = new FakeResourceService { WorldLoaded = true };
         var controller = new FakeTimelineController();
         var proxy = new FakeFaceProxy();
+        var tunnel = new FakeTunnelPresentation(
+            enabled => new TunnelActivationResult(enabled, enabled, string.Empty),
+            initiallyEnabled: true);
         registry.Register<FantaSim.App.Resource.IService>(resource);
         registry.Register<ITimelineController>(controller);
+        registry.Register<ITunnelPresentation>(tunnel);
 
         var plugin = new TimelinePlugin(() => proxy);
         await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
         Assert.Same(controller, registry.TryGet<ITimelineFaceContext>()?.Controller);
+        Assert.False(proxy.HudVisible);
 
         resource.RaiseRuntimeChanging("world", ResourceRuntimeOperation.Reload);
 
+        // The watcher raises this event off the Godot main thread. Timeline owns the HUD; the
+        // world-bundle binder observes the same event and owns main-thread geometry/camera teardown.
+        Assert.True(tunnel.IsEnabled);
+        Assert.Equal(0, tunnel.TrySetEnabledCalls);
+        Assert.True(proxy.HudVisible);
         Assert.Null(registry.TryGet<ITimelineFaceContext>());
         Assert.Null(registry.TryGet<FantaSim.App.Timeline.IService>());
         Assert.Equal(1, controller.UnregisterPlaybackCalls);
@@ -147,7 +157,7 @@ public sealed class TimelinePluginTests
     }
 
     [Fact]
-    public async Task StageRuntimeChangingShowsHudDisablesTunnelAndRetainsTimelineBinding()
+    public async Task StageRuntimeChangingShowsHudAndLeavesGeometryTeardownToWorldBinder()
     {
         var registry = NewRegistry();
         var resource = new FakeResourceService { WorldLoaded = true };
@@ -164,8 +174,8 @@ public sealed class TimelinePluginTests
 
         resource.RaiseRuntimeChanging("stage", ResourceRuntimeOperation.Reload);
 
-        Assert.False(tunnel.IsEnabled);
-        Assert.Equal(1, tunnel.TrySetEnabledCalls);
+        Assert.True(tunnel.IsEnabled);
+        Assert.Equal(0, tunnel.TrySetEnabledCalls);
         Assert.True(proxy.HudVisible);
         Assert.Equal(1L, proxy.HudState.ModeEpoch);
         Assert.NotNull(registry.TryGet<ITimelineFaceContext>());

@@ -478,11 +478,13 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             var lossDecision = TunnelModePolicy.Decide(lossEvent, tunnel?.IsEnabled ?? false, _modeEpoch);
             _modeEpoch = lossDecision.ModeEpoch;
             ApplyHudState(new TimelineHudState(lossDecision.HudVisible, lossDecision.ModeEpoch));
-            tunnel?.TrySetEnabled(false);
 
             if (stageChanging)
             {
-                _log?.LogInformation("TimelinePlugin: stage runtime changing; tunnel disabled and timeline binding retained.");
+                // RuntimeChanging may originate on the resource watcher's thread-pool thread.
+                // Timeline owns HUD state; the world-owned binder observes the same event and
+                // performs geometry/camera teardown on Godot's main thread.
+                _log?.LogInformation("TimelinePlugin: stage runtime changing; safe HUD restored and timeline binding retained.");
                 return;
             }
 

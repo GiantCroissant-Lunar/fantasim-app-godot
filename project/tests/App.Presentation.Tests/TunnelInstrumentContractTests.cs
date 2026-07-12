@@ -93,9 +93,19 @@ public sealed class TunnelInstrumentContractTests
         Assert.True(rebindCancel > rebindStart && rebindReset > rebindCancel && controllerLookup > rebindReset,
             "Rebind must cancel gesture ownership and released fine work before resolving lifecycle dependencies.");
 
-        var timelineBranch = binder.IndexOf(
-            "string.Equals(args.BundleId, TimelineBundleId",
+        var runtimeGate = binder.IndexOf("TunnelRuntimeChangeThreadGate.Run(", StringComparison.Ordinal);
+        var runtimeApply = binder.IndexOf(
+            "applyOnMainThread: () => ApplyResourceRuntimeChangingOnMainThread(",
+            runtimeGate,
             StringComparison.Ordinal);
+        var runtimeApplyMethod = binder.IndexOf(
+            "private void ApplyResourceRuntimeChangingOnMainThread(",
+            runtimeApply,
+            StringComparison.Ordinal);
+        Assert.True(runtimeGate >= 0 && runtimeApply > runtimeGate && runtimeApplyMethod > runtimeApply,
+            "Runtime-changing scene mutations must pass through the blocking main-thread gate.");
+
+        var timelineBranch = binder.IndexOf("if (timelineChanging)", runtimeApplyMethod, StringComparison.Ordinal);
         Assert.True(timelineBranch >= 0, "Timeline runtime-changing branch is missing.");
         var timelineCancel = binder.IndexOf(
             "CancelTunnelGesture(\"timeline_reload\");",

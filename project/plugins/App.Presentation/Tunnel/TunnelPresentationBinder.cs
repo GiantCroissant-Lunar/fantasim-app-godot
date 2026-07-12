@@ -457,25 +457,44 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
 
     private void OnResourceRuntimeChanging(object? sender, ResourceRuntimeChangingEventArgs args)
     {
-        if (string.Equals(args.BundleId, TimelineBundleId, StringComparison.OrdinalIgnoreCase))
+        var timelineChanging = string.Equals(args.BundleId, TimelineBundleId, StringComparison.OrdinalIgnoreCase);
+        var worldChanging = string.Equals(args.BundleId, WorldBundleId, StringComparison.OrdinalIgnoreCase);
+        var stageChanging = string.Equals(args.BundleId, StageBundleId, StringComparison.OrdinalIgnoreCase);
+        if (!timelineChanging && !worldChanging && !stageChanging)
+            return;
+
+        TunnelRuntimeChangeThreadGate.Run(
+            isMainThread: static () => OS.GetThreadCallerId() == OS.GetMainThreadId(),
+            deferToMainThread: action => Callable.From(action).CallDeferred(),
+            applyOnMainThread: () => ApplyResourceRuntimeChangingOnMainThread(
+                args,
+                timelineChanging,
+                worldChanging,
+                stageChanging));
+    }
+
+    private void ApplyResourceRuntimeChangingOnMainThread(
+        ResourceRuntimeChangingEventArgs args,
+        bool timelineChanging,
+        bool worldChanging,
+        bool stageChanging)
+    {
+        if (timelineChanging)
         {
-            // The tunnel and world geometry remain live across a timeline-only reload. Drop only
-            // gesture/command work that captured the outgoing timeline bundle's state or services.
+            // The tunnel and world geometry remain live across a timeline-only reload. Relinquish
+            // the current gesture at the lifecycle boundary and drop command work that captured
+            // the outgoing timeline bundle's service, without disabling the effective tunnel.
             CancelTunnelGesture("timeline_reload");
             CancelF9CommandWork("timeline_reload");
             ResetF9ModeEpoch();
             return;
         }
 
-        var worldChanging = string.Equals(args.BundleId, WorldBundleId, StringComparison.OrdinalIgnoreCase);
-        var stageChanging = string.Equals(args.BundleId, StageBundleId, StringComparison.OrdinalIgnoreCase);
-        if (!worldChanging && !stageChanging)
-            return;
-
         _tearingDown = true;
         _generation++;
+        var teardownReason = stageChanging ? "stage_teardown" : "world_teardown";
         DisconnectStagePreparationRetry();
-        FailSafeDisable(stageChanging ? "stage_teardown" : "world_teardown", TunnelFineResetReason.BundleTeardown);
+        FailSafeDisable(teardownReason, TunnelFineResetReason.BundleTeardown);
         SeverManagedInputCallbacks();
         if (worldChanging)
         {
@@ -486,9 +505,11 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
             _focusIndex = -1;
         }
         _worldRuntimeReload.MarkRuntimeChanging();
-        var detached = DetachMountState();
-        Callable.From(() => CleanupDetachedMount(detached)).CallDeferred();
-        _log.LogInformation("Tunnel presentation released before resource {Operation}: {BundleId}", args.Operation, args.BundleId);
+        CleanupDetachedMount(DetachMountState());
+        _log.LogInformation(
+            "Tunnel presentation released before resource {Operation}: {BundleId}",
+            args.Operation,
+            args.BundleId);
     }
 
     private void OnResourceRuntimeChanged(object? sender, EventArgs args)
