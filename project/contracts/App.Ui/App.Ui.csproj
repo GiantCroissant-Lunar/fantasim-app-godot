@@ -9,6 +9,11 @@
     <CompilerVisibleProperty Include="ServiceArchiTier" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The A2UI payload contract, retrievable at runtime via A2uiSurfaceSchema.Json. -->
+    <EmbeddedResource Include="Presentation/Schemas/a2ui-surface.schema.json"
+                      LogicalName="FantaSim.App.Ui.a2ui-surface.schema.json" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="BoomHud.Foundation" />
     <PackageReference Include="GiantCroissant.PluginArchi.Extensibility.Abstractions" />
     <PackageReference Include="GiantCroissant.ServiceArchi.Contracts" />

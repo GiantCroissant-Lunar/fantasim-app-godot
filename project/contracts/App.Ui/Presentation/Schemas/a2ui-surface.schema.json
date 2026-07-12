@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.fantasim.local/ui/a2ui-surface.schema.json",
+  "title": "A2UI Surface (fantasim activity detail)",
+  "description": "The A2UI adjacency-list UI payload an agent emits (e.g. via the `activity.emit_detail` command) to render a detail card. A flat map of components keyed by id, children referenced by id — LLM-friendly to generate and stream. `A2uiPresentationNormalizer` folds this into a BoomHud RuntimeComponentNode tree, which the `RuntimeSurfaceValidator` then guards against the `basic` catalog. This schema encodes BOTH layers: emit a payload that validates here and it will normalize AND render. Component `type`s, and each type's allowed properties and action events, are HARD-constrained to the catalog. `variant` VALUES are a soft, theme-resolved vocabulary (unknown variants fall back to default styling, they do not fail) — so `variant` is a free string here, with the recognized values documented on `$defs/variant`.",
+  "type": "object",
+  "required": ["root", "components"],
+  "additionalProperties": false,
+  "properties": {
+    "root": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Component id of the subtree root. Must be a key in `components`."
+    },
+    "components": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 256,
+      "description": "Flat adjacency list: component id -> component. The graph reachable from `root` via `children` must be acyclic, each id reached at most once, and at most 24 levels deep. Unreachable entries are ignored.",
+      "additionalProperties": { "$ref": "#/$defs/component" }
+    }
+  },
+  "$defs": {
+    "component": {
+      "type": "object",
+      "required": ["type"],
+      "description": "One UI component. `type` selects the catalog spec; that spec fixes which properties and action events are allowed (unknown ones are rejected). Structural keys `layout` and `children` are allowed on every type.",
+      "properties": {
+        "type": {
+          "description": "Catalog component type. `nodeGraph` is intentionally NOT emittable via A2UI (its `wires` data cannot be expressed in the flat form) — build node graphs through the canonical runtime surface instead.",
+          "enum": [
+            "container",
+            "scroll",
+            "panel",
+            "label",
+            "badge",
+            "button",
+            "progressBar",
+            "list",
+            "spacer"
+          ]
+        },
+        "layout": { "$ref": "#/$defs/layout" },
+        "children": {
+          "type": "array",
+          "description": "Child component ids (resolved against `components`). Renders for `container`/`panel`/`scroll`; leaf components (`label`, `badge`, `spacer`, `progressBar`) and `list` (which uses `items`) normally omit it.",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "container" } } },
+          "then": { "properties": {
+            "variant": { "$ref": "#/$defs/variant" },
+            "tooltip": { "type": "string" },
+            "visible": { "type": "boolean" },
+            "enabled": { "type": "boolean" }
+          } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "scroll" } } },
+          "then": { "properties": {
+            "variant": { "$ref": "#/$defs/variant" },
+            "tooltip": { "type": "string" },
+            "visible": { "type": "boolean" },
+            "enabled": { "type": "boolean" }
+          } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "panel" } } },
+          "then": { "properties": {
+            "title": { "type": "string" },
+            "variant": { "$ref": "#/$defs/variant" },
+            "tooltip": { "type": "string" },
+            "visible": { "type": "boolean" },
+            "enabled": { "type": "boolean" }
+          } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "label" } } },
+          "then": { "properties": {
+            "text": { "type": "string" },
+            "variant": { "$ref": "#/$defs/variant" },
+            "tooltip": { "type": "string" },
+            "visible": { "type": "boolean" },
+            "enabled": { "type": "boolean" }
+          } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "badge" } } },
+          "then": { "properties": {
+            "text": { "type": "string" },
+            "variant": { "$ref": "#/$defs/variant" },
+            "tooltip": { "type": "string" },
+            "visible": { "type": "boolean" },
+            "enabled": { "type": "boolean" }
+          } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "button" } } },
+          "then": { "properties": {
+            "text": { "type": "string" },
+            "variant": { "$ref": "#/$defs/variant" },
+            "tooltip": { "type": "string" },
+            "visible": { "type": "boolean" },
+            "enabled": { "type": "boolean" },
+            "actions": { "$ref": "#/$defs/actions_pressed" }
+          } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "progressBar" } } },
+          "then": { "properties": {
+            "value": { "type": "number" },
+            "minimum": { "type": "number" },
+            "maximum": { "type": "number" },
+            "label": { "type": "string" },
+            "variant": { "$ref": "#/$defs/variant" },
+            "tooltip": { "type": "string" },
+            "visible": { "type": "boolean" },
+            "enabled": { "type": "boolean" }
+          } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "list" } } },
+          "then": { "properties": {
+            "items": {
+              "type": "array",
+              "description": "List rows. Strings, or objects the theme renders."
+            },
+            "selectedItem": { "type": "string" },
+            "emptyText": { "type": "string" },
+            "variant": { "$ref": "#/$defs/variant" },
+            "tooltip": { "type": "string" },
+            "visible": { "type": "boolean" },
+            "enabled": { "type": "boolean" },
+            "actions": { "$ref": "#/$defs/actions_selected" }
+          } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "spacer" } } },
+          "then": { "properties": {
+            "size": { "type": "number" },
+            "visible": { "type": "boolean" }
+          } }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "layout": {
+      "description": "Either a shorthand string (becomes `{ \"type\": <string> }`) or a layout object. Common `type` values: `vertical`, `horizontal`.",
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": { "type": "string" },
+            "gap": { "type": "number" },
+            "align": { "type": "string" },
+            "justify": { "type": "string" },
+            "width": { "type": "number" },
+            "height": { "type": "number" },
+            "minWidth": { "type": "number" },
+            "minHeight": { "type": "number" },
+            "maxWidth": { "type": "number" },
+            "maxHeight": { "type": "number" },
+            "padding": { "type": "number" }
+          }
+        }
+      ]
+    },
+    "variant": {
+      "type": "string",
+      "description": "Theme style variant. Resolved by the active theme at render time; an unrecognized value falls back to default styling (it does NOT fail validation), which is why this is a free string rather than an enum. Recognized values in the current theme:",
+      "examples": [
+        "title",
+        "sectionTitle",
+        "muted",
+        "item",
+        "section",
+        "surface",
+        "info",
+        "success",
+        "warning",
+        "danger",
+        "neutral"
+      ]
+    },
+    "action": {
+      "type": "object",
+      "required": ["event", "command"],
+      "additionalProperties": false,
+      "properties": {
+        "event": { "type": "string", "minLength": 1 },
+        "command": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Command id dispatched through the ingress when the event fires."
+        },
+        "payload": {
+          "type": "object",
+          "description": "Optional command payload."
+        }
+      }
+    },
+    "actions_pressed": {
+      "type": "array",
+      "description": "Button actions. The only allowed event is `pressed`.",
+      "items": {
+        "allOf": [{ "$ref": "#/$defs/action" }],
+        "properties": { "event": { "const": "pressed" } }
+      }
+    },
+    "actions_selected": {
+      "type": "array",
+      "description": "List actions. The only allowed event is `selected`.",
+      "items": {
+        "allOf": [{ "$ref": "#/$defs/action" }],
+        "properties": { "event": { "const": "selected" } }
+      }
+    }
+  },
+  "examples": [
+    {
+      "root": "d",
+      "components": {
+        "d": { "type": "container", "layout": "vertical", "children": ["hdr", "meta", "conf"] },
+        "hdr": { "type": "label", "text": "Tectonic analysis complete", "variant": "title" },
+        "meta": { "type": "container", "layout": "horizontal", "children": ["p1", "p2"] },
+        "p1": { "type": "badge", "text": "plates: 3", "variant": "info" },
+        "p2": { "type": "badge", "text": "ready", "variant": "success" },
+        "conf": { "type": "progressBar", "label": "confidence", "value": 0.82, "minimum": 0, "maximum": 1, "variant": "success" }
+      }
+    },
+    {
+      "root": "only",
+      "components": {
+        "only": { "type": "label", "text": "Hello" }
+      }
+    }
+  ]
+}

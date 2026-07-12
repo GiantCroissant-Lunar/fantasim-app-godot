@@ -94,3 +94,37 @@ in hand-authored shell `.tscn`s; see [[fantasim-boomhud-card-ui-pattern]]).
 3. Does A1's `scroll` primitive belong in `boomhud.runtime.basic.v1`, or a new catalog version?
 4. Undo authority: ledger-as-authority vs `App.Command`-owned stack the ledger reflects (deferred to
    the undo spec).
+
+## Delivered — A2UI payload schema (2026-07-12)
+
+The constrained A2UI vocabulary is now published as a real JSON Schema so an agent can validate a
+payload **before** emitting it (the first handover follow-up):
+
+- **File:** `project/contracts/App.Ui/Presentation/Schemas/a2ui-surface.schema.json` (draft 2020-12,
+  `$id: https://schemas.fantasim.local/ui/a2ui-surface.schema.json`). Embedded in the
+  `FantaSim.App.Ui.Contracts` assembly and retrievable at runtime via
+  `A2uiSurfaceSchema.Json` — a host can hand it to an agent on request.
+- **Fidelity (schema-valid ⟹ normalizes AND renders).** The schema encodes *both* layers of the real
+  contract, taken from the live `RuntimeSurfaceCatalog.Basic`, not a hand-copied list:
+  - **Component `type`** — hard `enum` of the catalog types **minus `nodeGraph`** (its essential
+    `wires` data can't be expressed in the flat form, so an emitted one is degenerate — build node
+    graphs through the canonical surface). Answers open-question #1: the normalizer *is* the T4P
+    adapter; agents keep the flat form.
+  - **Properties per type** — hard per-type allow-list = the catalog's `Properties ∪ BindableProperties`
+    (mirrors `RuntimeSurfaceValidator`, which accepts a static property if it is in either set),
+    enforced with `if/then` + `unevaluatedProperties: false`.
+  - **Action events per type** — hard (`button` → `pressed`, `list` → `selected`); other types forbid
+    `actions`.
+  - **`variant` values — intentionally a free string, not an enum.** Variants are theme-resolved at
+    render time; an unknown one falls back to default styling and does **not** fail validation, so a
+    hard enum would wrongly reject renderable payloads. The recognized values are documented on the
+    `variant` `$def`.
+- **Drift guard (`A2uiSurfaceSchemaTests`, in `App.Ui.Tests`).** No JSON-Schema engine ships offline,
+  so instead of evaluating the schema the tests couple its declared vocabulary *directly to the live
+  catalog* (type enum, per-type property sets, per-type event enums) and push every schema `example`
+  through the real normalize→validate pipeline. Catalog gains/loses a type, property, or event without a
+  schema update ⇒ a test fails. **102/102 `App.Ui.Tests` green.**
+- **Author-side semantic check.** A one-off `jsonschema` (draft 2020-12) run confirmed the schema
+  evaluates as intended — meta-schema valid; both examples + 5 valid edge cases accepted; 12 should-fail
+  payloads all rejected (incl. `text` on a container, `enabled` on a spacer, wrong event on a button,
+  extra key in an action). Script kept in this session's scratchpad (not CI — CI is .NET/offline).
