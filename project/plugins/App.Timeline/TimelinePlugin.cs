@@ -437,10 +437,13 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
                         ? new TunnelActivationResult(enabled, false, "tunnel presentation unavailable")
                         : tunnel.TrySetEnabled(enabled);
 
-                    if (enabled
+                    var activationSuperseded = enabled
                         && result.EffectiveEnabled
-                        && capturedSafetyEpoch is { } safetyEpoch
-                        && _modeOwner?.TryReleaseHudSafety(safetyEpoch) != true)
+                        && (_resource?.IsRuntimeChangeInProgress("world") == true
+                            || _resource?.IsRuntimeChangeInProgress("stage") == true
+                            || (capturedSafetyEpoch is { } safetyEpoch
+                                && _modeOwner?.TryReleaseHudSafety(safetyEpoch) != true));
+                    if (activationSuperseded)
                     {
                         tunnel?.TrySetEnabled(false);
                         result = new TunnelActivationResult(

@@ -23,7 +23,7 @@ public sealed class PlanetPresentationReloadGateTests
         gate.MarkRuntimeChanging();
         Assert.True(gate.TryScheduleDeferredAttempt());
 
-        gate.CompleteDeferredAttempt();
+        Assert.True(gate.CompleteDeferredAttempt(runtimeChangeInProgress: false));
 
         Assert.True(gate.IsPending);
         Assert.True(gate.TryScheduleDeferredAttempt());
@@ -35,7 +35,7 @@ public sealed class PlanetPresentationReloadGateTests
         var gate = new PlanetPresentationReloadGate();
         gate.MarkRuntimeChanging();
         Assert.True(gate.TryScheduleDeferredAttempt());
-        gate.CompleteDeferredAttempt();
+        Assert.True(gate.CompleteDeferredAttempt(runtimeChangeInProgress: false));
 
         gate.MarkMounted();
 
@@ -52,11 +52,30 @@ public sealed class PlanetPresentationReloadGateTests
         Assert.True(gate.TryScheduleDeferredAttempt());
         Assert.False(gate.TryScheduleDeferredAttempt());
 
-        gate.CompleteDeferredAttempt();
+        Assert.True(gate.CompleteDeferredAttempt(runtimeChangeInProgress: false));
         Assert.True(gate.IsPending);
         Assert.True(gate.TryScheduleDeferredAttempt());
 
         gate.MarkMounted();
         Assert.False(gate.IsPending);
+    }
+
+    [Fact]
+    public void ConcurrentStageReloadsMountOnlyAfterTheFinalCountClears()
+    {
+        var gate = new PlanetPresentationReloadGate();
+        gate.MarkRuntimeChanging();
+        gate.MarkRuntimeChanging();
+
+        Assert.True(gate.TryScheduleDeferredAttempt());
+        Assert.False(gate.CompleteDeferredAttempt(runtimeChangeInProgress: true));
+        Assert.True(gate.IsPending);
+
+        Assert.True(gate.TryScheduleDeferredAttempt());
+        Assert.True(gate.CompleteDeferredAttempt(runtimeChangeInProgress: false));
+        gate.MarkMounted();
+
+        Assert.False(gate.IsPending);
+        Assert.False(gate.TryScheduleDeferredAttempt());
     }
 }

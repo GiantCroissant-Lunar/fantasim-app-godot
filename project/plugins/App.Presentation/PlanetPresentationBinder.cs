@@ -726,8 +726,11 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
 
     private void TryRebindAfterWorldRuntimeChange()
     {
-        _worldRuntimeReload.CompleteDeferredAttempt();
-        if (_disposed || !_worldRuntimeReload.IsPending
+        var runtimeChangeInProgress = _resource.IsRuntimeChangeInProgress(WorldBundleId)
+            || _resource.IsRuntimeChangeInProgress(StageBundleId);
+        if (!_worldRuntimeReload.CompleteDeferredAttempt(runtimeChangeInProgress)
+            || _disposed
+            || !_worldRuntimeReload.IsPending
             || !_resource.IsLoaded(WorldBundleId)
             || !_resource.IsLoaded(StageBundleId))
             return;

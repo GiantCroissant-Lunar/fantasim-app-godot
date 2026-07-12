@@ -260,7 +260,24 @@ public sealed class Service : IService
     private void OnRuntimeChanging(string bundleId, ResourceRuntimeOperation operation)
         => RuntimeChanging?.Invoke(this, new ResourceRuntimeChangingEventArgs(bundleId, operation));
 
-    private void OnRuntimeChanged() => RuntimeChanged?.Invoke(this, EventArgs.Empty);
+    private void OnRuntimeChanged()
+    {
+        Exception? firstFailure = null;
+        foreach (var subscriber in RuntimeChanged?.GetInvocationList() ?? Array.Empty<Delegate>())
+        {
+            try
+            {
+                ((EventHandler)subscriber)(this, EventArgs.Empty);
+            }
+            catch (Exception ex)
+            {
+                firstFailure ??= ex;
+                _logger.LogError(ex, "Resource RuntimeChanged subscriber failed; continuing completion fan-out.");
+            }
+        }
+
+        Rethrow(firstFailure);
+    }
 
     private string? ResolveLoadedBundleId(string path)
     {

@@ -278,6 +278,41 @@ public sealed class TimelinePluginTests
     }
 
     [Fact]
+    public async Task EnableThatOverlapsResourceBeginFailsEvenBeforeLossCallbackAdvancesSafety()
+    {
+        var registry = NewRegistry();
+        var commands = new FakeCommandService();
+        var proxy = new FakeFaceProxy();
+        var modeOwner = new FakeTunnelModeOwner();
+        var resource = new FakeResourceService { WorldLoaded = true };
+        var tunnel = new FakeTunnelPresentation(enabled =>
+        {
+            if (enabled)
+                resource.BeginWithoutNotification("world");
+            return new TunnelActivationResult(enabled, enabled, string.Empty);
+        });
+        registry.Register<FantaSim.App.Command.IService>(commands);
+        registry.Register<FantaSim.App.Resource.IService>(resource);
+        registry.Register<ITimelineController>(new FakeTimelineController());
+        registry.Register<ITunnelPresentation>(tunnel);
+        registry.Register<ITunnelModeOwner>(modeOwner);
+
+        var plugin = new TimelinePlugin(() => proxy);
+        await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+
+        var result = await commands.ExecuteAsync(new CommandRequest(
+            TimelinePlugin.TunnelViewCommandId,
+            new JsonObject { ["enabled"] = true }.ToJsonString()));
+        var payload = JsonNode.Parse(result.ResultJson!)!.AsObject();
+
+        Assert.False(payload["effective"]!.GetValue<bool>());
+        Assert.Equal("tunnel activation superseded by resource loss", payload["failureReason"]!.GetValue<string>());
+        Assert.False(tunnel.IsEnabled);
+        Assert.Equal(2, tunnel.TrySetEnabledCalls);
+        Assert.True(proxy.HudVisible);
+    }
+
+    [Fact]
     public async Task TunnelCommand_FailedEnableLeavesHudVisibleAndReportsReason()
     {
         var registry = NewRegistry();
@@ -523,6 +558,7 @@ public sealed class TimelinePluginTests
 
     private sealed class FakeResourceService : FantaSim.App.Resource.IService
     {
+        private readonly HashSet<string> _runtimeChanges = new(StringComparer.OrdinalIgnoreCase);
         public bool WorldLoaded { get; set; }
         public event EventHandler<ResourceRuntimeChangingEventArgs>? RuntimeChanging;
         public event EventHandler? RuntimeChanged;
@@ -530,7 +566,9 @@ public sealed class TimelinePluginTests
         public bool IsLoaded(string id)
             => string.Equals(id, "world", StringComparison.Ordinal) && WorldLoaded;
 
-        public bool IsRuntimeChangeInProgress(string id) => false;
+        public bool IsRuntimeChangeInProgress(string id) => _runtimeChanges.Contains(id);
+
+        public void BeginWithoutNotification(string id) => _runtimeChanges.Add(id);
 
         public void RaiseRuntimeChanging(string bundleId, ResourceRuntimeOperation operation)
             => RuntimeChanging?.Invoke(this, new ResourceRuntimeChangingEventArgs(bundleId, operation));

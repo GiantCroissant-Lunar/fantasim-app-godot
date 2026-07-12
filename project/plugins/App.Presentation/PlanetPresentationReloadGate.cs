@@ -22,9 +22,10 @@ internal sealed class PlanetPresentationReloadGate
         return true;
     }
 
-    public void CompleteDeferredAttempt()
+    public bool CompleteDeferredAttempt(bool runtimeChangeInProgress)
     {
         _scheduled = false;
+        return _pending && !runtimeChangeInProgress;
     }
 
     public void MarkMounted()

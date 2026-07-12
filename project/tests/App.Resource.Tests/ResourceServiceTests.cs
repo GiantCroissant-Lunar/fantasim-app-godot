@@ -186,6 +186,24 @@ public sealed class ResourceServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CompletionNotifiesLaterSubscribersWhenAnEarlierSubscriberThrows()
+    {
+        var service = NewService(
+            new FakeDirectoryResolver(_resourcesDir),
+            new SuccessfulReloadProvider());
+        var laterSubscriberObservedClearState = false;
+        service.RuntimeChanged += (_, _) => throw new InvalidOperationException("first completion failed");
+        service.RuntimeChanged += (_, _) =>
+            laterSubscriberObservedClearState = !service.IsRuntimeChangeInProgress("world");
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ReloadAsync("world"));
+
+        Assert.Equal("first completion failed", error.Message);
+        Assert.True(laterSubscriberObservedClearState);
+        Assert.False(service.IsRuntimeChangeInProgress("world"));
+    }
+
+    [Fact]
     public async Task UnrelatedBundleCompletionCannotClearWorldState()
     {
         var provider = new PerBundleGatedProvider("world", "timeline");
@@ -282,6 +300,12 @@ public sealed class ResourceServiceTests : IDisposable
             ReloadEntered.TrySetResult();
             await ReleaseReload.Task.WaitAsync(cancellationToken);
         }
+    }
+
+    private sealed class SuccessfulReloadProvider : FakeProvider
+    {
+        public override Task ReloadAsync(string id, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 
     private sealed class CountingReloadProvider : FakeProvider

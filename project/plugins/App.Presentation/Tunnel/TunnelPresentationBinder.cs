@@ -532,8 +532,11 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
 
     private void TryRebindAfterWorldRuntimeChange(int expectedGeneration)
     {
-        _worldRuntimeReload.CompleteDeferredAttempt();
-        if (_disposed || expectedGeneration != _generation
+        var runtimeChangeInProgress = _resource.IsRuntimeChangeInProgress(WorldBundleId)
+            || _resource.IsRuntimeChangeInProgress(StageBundleId);
+        if (!_worldRuntimeReload.CompleteDeferredAttempt(runtimeChangeInProgress)
+            || _disposed
+            || expectedGeneration != _generation
             || !_worldRuntimeReload.IsPending
             || !_resource.IsLoaded(WorldBundleId)
             || !_resource.IsLoaded(StageBundleId))

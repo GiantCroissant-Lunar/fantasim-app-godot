@@ -224,6 +224,16 @@ public partial class Host : Node
         var registry = _composition.Bootstrap.Registry;
         Callable.From(() =>
         {
+            var resource = registry.TryGet<FantaSim.App.Resource.IService>();
+            if (resource?.IsRuntimeChangeInProgress("world") == true
+                || resource?.IsRuntimeChangeInProgress("stage") == true)
+            {
+                // A later operation began after RuntimeChanged scheduled this callback. Keep the
+                // recovery armed; its final completion will schedule a bind to the latest nodes.
+                _worldReloadPending = true;
+                return;
+            }
+
             BindPlanetPresentation(registry);
         }).CallDeferred();
         _log.LogInformation("world bundle reloaded; presentation rebind scheduled.");

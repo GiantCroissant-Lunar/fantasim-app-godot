@@ -68,6 +68,8 @@ public sealed class TunnelInstrumentContractTests
             "project/plugins/App.Presentation/Tunnel/TunnelPresentationBinder.Input.cs"));
         var binder = File.ReadAllText(ProjectFile(
             "project/plugins/App.Presentation/Tunnel/TunnelPresentationBinder.cs"));
+        var planetBinder = File.ReadAllText(ProjectFile(
+            "project/plugins/App.Presentation/PlanetPresentationBinder.cs"));
         var host = File.ReadAllText(ProjectFile("project/hosts/complete-app/Host.cs"));
         var timelineFace = File.ReadAllText(ProjectFile(
             "project/plugins/App.Timeline.Seam/TimelineFace.cs"));
@@ -130,6 +132,24 @@ public sealed class TunnelInstrumentContractTests
             "if (e.Operation != FantaSim.App.Resource.ResourceRuntimeOperation.Reload)",
             host,
             StringComparison.Ordinal);
+        Assert.Contains("_resource.IsRuntimeChangeInProgress(WorldBundleId)", binder, StringComparison.Ordinal);
+        Assert.Contains("_resource.IsRuntimeChangeInProgress(StageBundleId)", binder, StringComparison.Ordinal);
+        Assert.Contains("_resource.IsRuntimeChangeInProgress(WorldBundleId)", planetBinder, StringComparison.Ordinal);
+        Assert.Contains("_resource.IsRuntimeChangeInProgress(StageBundleId)", planetBinder, StringComparison.Ordinal);
+
+        var worldReloadHandler = host.IndexOf("private void HandleWorldBundleReloaded()", StringComparison.Ordinal);
+        var deferredRebind = host.IndexOf("Callable.From(() =>", worldReloadHandler, StringComparison.Ordinal);
+        var executionGuard = host.IndexOf(
+            "IsRuntimeChangeInProgress(\"world\")",
+            deferredRebind,
+            StringComparison.Ordinal);
+        var bindPlanet = host.IndexOf("BindPlanetPresentation(registry);", deferredRebind, StringComparison.Ordinal);
+        Assert.True(
+            worldReloadHandler >= 0
+            && deferredRebind > worldReloadHandler
+            && executionGuard > deferredRebind
+            && bindPlanet > executionGuard,
+            "Deferred host rebind must recheck authoritative world state at execution time.");
 
         var timelineBranch = binder.IndexOf("if (timelineChanging)", runtimeApplyMethod, StringComparison.Ordinal);
         Assert.True(timelineBranch >= 0, "Timeline runtime-changing branch is missing.");
