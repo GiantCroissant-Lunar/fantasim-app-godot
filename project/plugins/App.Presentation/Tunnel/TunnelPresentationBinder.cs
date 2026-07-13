@@ -8,6 +8,7 @@ using FantaSim.App.World.Composition;
 using Godot;
 using Microsoft.Extensions.Logging;
 using ServiceArchi.Contracts;
+using NumericsVector3 = System.Numerics.Vector3;
 using ResourceService = FantaSim.App.Resource.IService;
 
 namespace FantaSim.App.Presentation.Tunnel;
@@ -58,10 +59,8 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
     private TunnelFinePreview _finePreview;
     private bool _pendingCorridorRebuild;
 
-    // Planet zoom: a tunnel-local scale multiplier on the SHARED stage planet body, captured on
-    // first apply and restored on disable/teardown so the globe view never inherits a scaled body.
-    private float _planetZoomScale = TunnelPlanetZoom.DefaultScale;
-    private Vector3? _planetOriginalScale;
+    // Planet zoom state is owned by the Godot-free input policy: scale is captured on effective
+    // enable and restored on disable/teardown so the globe view never inherits a tunnel zoom.
 
     public TunnelPresentationBinder(
         IRegistry registry,
@@ -182,6 +181,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
             return new TunnelActivationResult(true, false, "tunnel camera activation failed");
         }
         _enabled = true;
+        CapturePlanetZoom();
         if (_builtOnce && _ctl is not null)
         {
             var outsideRequestWindow = !_hasRequestedFrameWindow
@@ -203,6 +203,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         _filmstrip.Supersede();
         _filmstrip.CancelInFlight();
         RestorePlanetZoom();
+        _inputPolicy.OnTunnelDisabled();
         if (_mount is not null && GodotObject.IsInstanceValid(_mount))
             _mount.Visible = false;
         RestorePreviousCamera();
@@ -325,11 +326,22 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         return true;
     }
 
+    private void CapturePlanetZoom()
+    {
+        var body = _planetBodyProvider();
+        if (body is null || !GodotObject.IsInstanceValid(body))
+            return;
+
+        // Effective enable is the only moment the shared planet body's original scale may be
+        // captured. Hidden preparation (mount created but _enabled == false) never calls this, so
+        // a stale snapshot cannot survive across globe/tunnel mode switches.
+        _inputPolicy.OnTunnelEnabled(new NumericsVector3(body.Scale.X, body.Scale.Y, body.Scale.Z));
+    }
+
     // Scroll-wheel step (direction > 0 = larger planet). Multiplicative, clamped in the seam helper.
     internal void AdjustPlanetZoom(int direction)
     {
-        _planetZoomScale = TunnelPlanetZoom.Step(_planetZoomScale, direction);
-        ApplyPlanetZoom();
+        HandleWheel(direction);
     }
 
     private void ApplyPlanetZoom()
@@ -338,22 +350,29 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         if (body is null || !GodotObject.IsInstanceValid(body))
             return;
 
-        // Capture the body's real scale on first touch of this binder generation. A world reload
-        // frees the old body and re-mounts; the next apply re-captures from the fresh body.
-        _planetOriginalScale ??= body.Scale;
-        body.Scale = _planetOriginalScale.Value * _planetZoomScale;
+        var originalScale = _inputPolicy.OriginalScale;
+        if (!originalScale.HasValue)
+            return;
+
+        var zoom = _inputPolicy.CurrentZoomScale;
+        body.Scale = new Vector3(
+            originalScale.Value.X * zoom,
+            originalScale.Value.Y * zoom,
+            originalScale.Value.Z * zoom);
     }
 
     private void RestorePlanetZoom()
     {
         var body = _planetBodyProvider();
-        if (_planetOriginalScale is { } original
+        var originalScale = _inputPolicy.OriginalScale;
+        if (originalScale.HasValue
             && body is not null && GodotObject.IsInstanceValid(body))
         {
-            body.Scale = original;
+            body.Scale = new Vector3(
+                originalScale.Value.X,
+                originalScale.Value.Y,
+                originalScale.Value.Z);
         }
-        _planetOriginalScale = null;
-        _planetZoomScale = TunnelPlanetZoom.DefaultScale;
     }
 
     private void ScheduleStagePreparationRetry(int expectedGeneration, Node3D? stageEnvironment)

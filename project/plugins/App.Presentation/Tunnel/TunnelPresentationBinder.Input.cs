@@ -8,6 +8,7 @@ using FantaSim.App.World;
 using FantaSim.App.World.Composition;
 using Godot;
 using Microsoft.Extensions.Logging;
+using NumericsVector3 = System.Numerics.Vector3;
 using CommandService = FantaSim.App.Command.IService;
 
 namespace FantaSim.App.Presentation.Tunnel;
@@ -56,6 +57,47 @@ internal static class TunnelInstrumentHitPolicy
     }
 }
 
+/// <summary>
+/// Godot-free input/zoom ownership policy for the tunnel view. Decides whether wheel input is
+/// consumed for planet zoom, tracks the original shared-planet scale across enable/disable, and
+/// ensures hidden preparation never establishes a stale scale snapshot. The production binder
+/// consumes this result and applies it on the main thread.
+/// </summary>
+internal sealed class TunnelInputPolicy
+{
+    private bool _enabled;
+
+    public TunnelInputPolicy(bool enabled)
+    {
+        _enabled = enabled;
+    }
+
+    public NumericsVector3? OriginalScale { get; private set; }
+    public float CurrentZoomScale { get; private set; } = TunnelPlanetZoom.DefaultScale;
+
+    public void OnTunnelEnabled(NumericsVector3 originalScale)
+    {
+        OriginalScale ??= originalScale;
+    }
+
+    public void OnTunnelDisabled()
+    {
+        OriginalScale = null;
+        CurrentZoomScale = TunnelPlanetZoom.DefaultScale;
+    }
+
+    public TunnelWheelResult HandleWheel(int direction)
+    {
+        if (!_enabled)
+            return new TunnelWheelResult(Handled: false, AdjustZoom: false, RequestedZoomScale: CurrentZoomScale);
+
+        CurrentZoomScale = TunnelPlanetZoom.Step(CurrentZoomScale, direction);
+        return new TunnelWheelResult(Handled: true, AdjustZoom: true, RequestedZoomScale: CurrentZoomScale);
+    }
+}
+
+internal readonly record struct TunnelWheelResult(bool Handled, bool AdjustZoom, float RequestedZoomScale);
+
 internal sealed partial class TunnelPresentationBinder
 {
     // Mirrors TimelinePlugin.TunnelViewCommandId (project/plugins/App.Timeline/TimelinePlugin.cs).
@@ -64,6 +106,7 @@ internal sealed partial class TunnelPresentationBinder
     private const string TunnelViewCommandId = "timeline.tunnel_view";
 
     private readonly TunnelGestureCoordinator _coordinator = new();
+    private readonly TunnelInputPolicy _inputPolicy = new(enabled: false);
     private bool _gestureOwned;
     private bool _applyingOuterScrubAction;
     private long _gesturePressTick;
@@ -125,6 +168,14 @@ internal sealed partial class TunnelPresentationBinder
         }
     }
 
+    private bool HandleWheel(int direction)
+    {
+        var result = _inputPolicy.HandleWheel(direction);
+        if (result.AdjustZoom)
+            ApplyPlanetZoom();
+        return result.Handled;
+    }
+
     private bool HandleInputEvent(InputEvent @event)
     {
         if (_disposed)
@@ -146,13 +197,10 @@ internal sealed partial class TunnelPresentationBinder
                 return HandleOwnedRelease(released);
             case InputEventMouseMotion motion when _gestureOwned:
                 return HandleOwnedMotion(motion);
-            case InputEventMouseButton { ButtonIndex: MouseButton.WheelUp, Pressed: true }:
-                // Consume so the wheel zooms the tunnel's planet, not the (hidden) globe camera.
-                AdjustPlanetZoom(+1);
-                return true;
-            case InputEventMouseButton { ButtonIndex: MouseButton.WheelDown, Pressed: true }:
-                AdjustPlanetZoom(-1);
-                return true;
+        case InputEventMouseButton { ButtonIndex: MouseButton.WheelUp, Pressed: true }:
+            return HandleWheel(+1);
+        case InputEventMouseButton { ButtonIndex: MouseButton.WheelDown, Pressed: true }:
+            return HandleWheel(-1);
             case InputEventKey { Pressed: true, Echo: false, Keycode: Key.F9 }:
                 RouteTunnelToggleThroughCommand();
                 return true;
