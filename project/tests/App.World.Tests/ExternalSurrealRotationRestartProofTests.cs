@@ -143,7 +143,7 @@ public sealed class ExternalSurrealRotationRestartProofTests
     private static void AssertRecoveredProvider(WorldHistoryCoordinator history)
     {
         var provider = Service.BuildRotationProvider(
-            history,
+            history.GetActiveRotationProjection(OnsetTick),
             Array.Empty<FantaSim.Geosphere.Plate.Topology.Plate>(),
             OnsetTick);
 
