@@ -16,6 +16,7 @@ public sealed class CrustProductCacheRecordTests
         Frequency: 4,
         SpinRateRadiansPerMegaAnnum: 0.0035,
         GraphRevision: 1,
+        RotationAuthorityDigest: "generated:v1",
         SnapshotTick: 105_000_000L,
         SchemaVersion: CrustProductCacheSchema.SchemaVersion,
         AppVersionStamp: "test-stamp",
@@ -40,6 +41,7 @@ public sealed class CrustProductCacheRecordTests
         Assert.Equal(record.Frequency, decoded.Frequency);
         Assert.Equal(record.SpinRateRadiansPerMegaAnnum, decoded.SpinRateRadiansPerMegaAnnum);
         Assert.Equal(record.GraphRevision, decoded.GraphRevision);
+        Assert.Equal(record.RotationAuthorityDigest, decoded.RotationAuthorityDigest);
         Assert.Equal(record.SnapshotTick, decoded.SnapshotTick);
         Assert.Equal(record.SchemaVersion, decoded.SchemaVersion);
         Assert.Equal(record.AppVersionStamp, decoded.AppVersionStamp);
@@ -50,27 +52,28 @@ public sealed class CrustProductCacheRecordTests
     [Fact]
     public void ComposeDocumentId_with_identical_fields_is_stable()
     {
-        var id1 = CrustProductCacheSchema.ComposeDocumentId(7, 4, 0.0035, 1, 105_000_000L, 1, "stamp-a");
-        var id2 = CrustProductCacheSchema.ComposeDocumentId(7, 4, 0.0035, 1, 105_000_000L, 1, "stamp-a");
+        var id1 = CrustProductCacheSchema.ComposeDocumentId(7, 4, 0.0035, 1, "generated:v1", 105_000_000L, 2, "stamp-a");
+        var id2 = CrustProductCacheSchema.ComposeDocumentId(7, 4, 0.0035, 1, "generated:v1", 105_000_000L, 2, "stamp-a");
 
         Assert.Equal(id1, id2);
     }
 
     [Theory]
-    [InlineData(8, 4, 0.0035, 1, 105_000_000L, 1, "stamp-a")]      // different Seed
-    [InlineData(7, 3, 0.0035, 1, 105_000_000L, 1, "stamp-a")]      // different Frequency
-    [InlineData(7, 4, 0.005, 1, 105_000_000L, 1, "stamp-a")]       // different SpinRate
-    [InlineData(7, 4, 0.0035, 2, 105_000_000L, 1, "stamp-a")]      // different GraphRevision
-    [InlineData(7, 4, 0.0035, 1, 110_000_000L, 1, "stamp-a")]      // different SnapshotTick
-    [InlineData(7, 4, 0.0035, 1, 105_000_000L, 2, "stamp-a")]      // different SchemaVersion
-    [InlineData(7, 4, 0.0035, 1, 105_000_000L, 1, "stamp-b")]      // different AppVersionStamp
+    [InlineData(8, 4, 0.0035, 1, "generated:v1", 105_000_000L, 2, "stamp-a")]      // different Seed
+    [InlineData(7, 3, 0.0035, 1, "generated:v1", 105_000_000L, 2, "stamp-a")]      // different Frequency
+    [InlineData(7, 4, 0.005, 1, "generated:v1", 105_000_000L, 2, "stamp-a")]       // different SpinRate
+    [InlineData(7, 4, 0.0035, 2, "generated:v1", 105_000_000L, 2, "stamp-a")]      // different GraphRevision
+    [InlineData(7, 4, 0.0035, 1, "imported:cursor", 105_000_000L, 2, "stamp-a")]    // different rotation authority
+    [InlineData(7, 4, 0.0035, 1, "generated:v1", 110_000_000L, 2, "stamp-a")]      // different SnapshotTick
+    [InlineData(7, 4, 0.0035, 1, "generated:v1", 105_000_000L, 3, "stamp-a")]      // different SchemaVersion
+    [InlineData(7, 4, 0.0035, 1, "generated:v1", 105_000_000L, 2, "stamp-b")]      // different AppVersionStamp
     public void ComposeDocumentId_changes_when_any_key_or_invalidation_field_changes(
-        int seed, int frequency, double spinRate, int graphRevision, long snapshotTick,
+        int seed, int frequency, double spinRate, int graphRevision, string rotationAuthorityDigest, long snapshotTick,
         int schemaVersion, string appVersionStamp)
     {
-        var baseline = CrustProductCacheSchema.ComposeDocumentId(7, 4, 0.0035, 1, 105_000_000L, 1, "stamp-a");
+        var baseline = CrustProductCacheSchema.ComposeDocumentId(7, 4, 0.0035, 1, "generated:v1", 105_000_000L, 2, "stamp-a");
         var varied = CrustProductCacheSchema.ComposeDocumentId(
-            seed, frequency, spinRate, graphRevision, snapshotTick, schemaVersion, appVersionStamp);
+            seed, frequency, spinRate, graphRevision, rotationAuthorityDigest, snapshotTick, schemaVersion, appVersionStamp);
 
         Assert.NotEqual(baseline, varied);
     }

@@ -35,4 +35,9 @@ internal sealed class GeneratedEulerPoleRotationProvider : IPlateRotationProvide
         double angleRad = pole.AngularRate * delta;
         return Quaternion.FromAxisAngle(pole.Axis.Normalize(), angleRad);
     }
+
+    public EulerPole InstantaneousPoleAt(int plateId, long tick)
+        => _polesByPlate.TryGetValue(plateId, out var pole)
+            ? pole
+            : new EulerPole(new Vector3D(0.0, 0.0, 1.0), 0.0);
 }

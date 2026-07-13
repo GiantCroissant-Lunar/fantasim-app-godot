@@ -17,6 +17,7 @@ using FantaSim.World.Fields;
 using FantaSim.World.TruthStream;
 using Microsoft.Extensions.Logging;
 using UnifyCell;
+using UnifyGeometry.Spherical;
 
 namespace FantaSim.App.World.Crust;
 
@@ -197,19 +198,86 @@ internal static class WorldCrustMaterializer
 
         var tessellation = spec.CreateTessellation();
         var topology = PlateTopologyBuilder.Build(tessellation, spec.Plates);
-        var result = await CrustPipeline.RunAsync(
+        Func<long, IReadOnlyDictionary<(int PlateA, int PlateB), BoundaryType>>? boundaryTypesAtTick =
+            spec.RotationProvider is null
+                ? null
+                : tick => ClassifyBoundaryTypesAt(
+                    tessellation,
+                    topology,
+                    spec.Plates,
+                    spec.RotationProvider,
+                    tick);
+        var result = await RunPipelineAsync(
+            spec,
+            tessellation,
+            boundaryTypesAtTick,
+            cancellationToken).ConfigureAwait(false);
+
+        return new WorldCrustMaterialization(spec, tessellation, topology, result);
+    }
+
+    // One isolated engine-version seam: generated motion preserves the historical RunAsync ABI;
+    // an imported authority supplies explicit boundary semantics through the named provider API.
+    private static Task<CrustEvolutionResult> RunPipelineAsync(
+        WorldCrustRunSpec spec,
+        GeodesicSphereTessellation tessellation,
+        Func<long, IReadOnlyDictionary<(int PlateA, int PlateB), BoundaryType>>? boundaryTypesAtTick,
+        CancellationToken cancellationToken)
+    {
+        if (boundaryTypesAtTick is null)
+        {
+            return CrustPipeline.RunAsync(
+                tessellation,
+                spec.Plates,
+                spec.Recipe,
+                startTick: spec.StartTick,
+                endTick: spec.EndTick,
+                snapshotTicks: spec.SnapshotTicks,
+                rates: spec.Rates,
+                rotationReferenceTick: spec.RotationReferenceTick,
+                patchRecipe: spec.PatchRecipe,
+                ct: cancellationToken);
+        }
+
+        return CrustPipeline.RunWithBoundaryTypesAsync(
             tessellation,
             spec.Plates,
             spec.Recipe,
             startTick: spec.StartTick,
             endTick: spec.EndTick,
+            boundaryTypesAtTick,
             snapshotTicks: spec.SnapshotTicks,
             rates: spec.Rates,
             rotationReferenceTick: spec.RotationReferenceTick,
             patchRecipe: spec.PatchRecipe,
-            ct: cancellationToken).ConfigureAwait(false);
+            ct: cancellationToken);
+    }
 
-        return new WorldCrustMaterialization(spec, tessellation, topology, result);
+    private static IReadOnlyDictionary<(int PlateA, int PlateB), BoundaryType> ClassifyBoundaryTypesAt(
+        GeodesicSphereTessellation tessellation,
+        PlateTopology topology,
+        IReadOnlyList<Plate> plates,
+        IPlateRotationProvider rotationProvider,
+        long tick)
+    {
+        var positions = new Dictionary<int, UnifyMaths.Vector3D>(tessellation.CellCount);
+        for (int cell = 0; cell < tessellation.CellCount; cell++)
+        {
+            var center = tessellation
+                .GetCenter(new GeodesicCoord(cell, tessellation.Frequency))
+                .ToVector3D();
+            int plateId = topology.Assignment[cell];
+            positions[cell] = rotationProvider.RotationFromOnsetTo(plateId, tick).Rotate(center);
+        }
+
+        var poles = plates.ToDictionary(
+            plate => plate.PlateId,
+            plate => rotationProvider.InstantaneousPoleAt(plate.PlateId, tick));
+        return PlateTopologyBuilder
+            .ClassifyBoundariesFromKinematics(tessellation, topology, positions, poles)
+            .ToDictionary(
+                boundary => (boundary.PlateA, boundary.PlateB),
+                boundary => boundary.Type);
     }
 
     /// <summary>
@@ -224,6 +292,7 @@ internal static class WorldCrustMaterializer
         int frequency,
         double spinRateRadiansPerMegaAnnum,
         int graphRevision,
+        string rotationAuthorityDigest,
         long snapshotTick)
     {
         ArgumentNullException.ThrowIfNull(materialization);
@@ -254,7 +323,8 @@ internal static class WorldCrustMaterializer
             CrustProductCacheSchema.SchemaVersion,
             CrustProductCacheSchema.CurrentAppVersionStamp,
             cellStates,
-            features);
+            features,
+            rotationAuthorityDigest);
     }
 
     /// <summary>

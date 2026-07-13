@@ -21,8 +21,9 @@ scale/framing and does not alter canonical history.
 ## Locked acceptance behavior
 
 - In zero-noise real-pipeline, category-specific fixtures: mountain cells are at least 750 m above
-  the same real state's no-orogeny/no-profile counterfactual; active volcanic-arc cells are at least
-  750 m above the same real state's profile-disabled counterfactual; trench cells are at least 750 m
+  the same real state's no-orogeny/no-profile counterfactual; cells classified `VolcanicArc` from
+  transported volcanic state are at least 750 m above the same real state's profile-disabled
+  counterfactual; trench cells are at least 750 m
   below zero profiles; and ridge flanks are at least 300 m above zero profiles. These gates need not
   co-occur in one snapshot or tessellation frequency. Fault gets no feature-enum uplift beyond the
   configured transform profile. `BoundaryProfileParameters.Zero` is not a valid mountain baseline
@@ -44,7 +45,8 @@ scale/framing and does not alter canonical history.
 - `project/tests/App.Presentation.Tests/PlateSurfaceReliefFabricTests.cs`
 
 Use formation-specific causal counterfactuals: mountain removes orogenic pressure and profiles;
-active volcanic arc disables its profile (and volcanic state when that state term is the subject);
+a transported `VolcanicArc` feature disables its profile (and volcanic state when that state term
+is the subject); the feature label alone is not evidence of current active overriding-arc adjacency;
 trench and ridge disable profiles. With noise disabled, assert mountain/volcanic target cells gain
 at least 750 m, trench cells lose at least 750 m, and ridge flanks gain at least 300 m. Category
 fixtures may use different real ticks/frequencies when the deterministic seed does not make all
@@ -63,10 +65,12 @@ trench residual-profile assertion that `Ridged == false`, deterministic-repeat a
 - `project/tests/App.World.Tests/PlateFrameSamplerSmoothnessTests.cs`
 - `project/tests/App.World.Tests/MotionGateTests.cs`
 
-At arbitrary playhead ticks, read the governing `products.SnapshotTick` feature map and transport
-its feature records through the same plate-frame mapping as crust state. Do not query
-`FeaturesByTick` with the arbitrary playhead tick. Add an onset+2,500,000 non-snapshot test that
-retains a non-empty feature set and keeps feature cells aligned with the moved plate frame.
+At arbitrary playhead ticks, read the governing `products.SnapshotTick` material state and transport
+it through the exact source-cell plate-frame mapping. Re-derive features from that transported state
+plus the current Eulerian assignment/typed boundaries; do not advect topology-bound trench/ridge/fault
+markers as material labels and do not query `FeaturesByTick` with the arbitrary playhead tick. Add an
+onset+2,500,000 non-snapshot test that matches every public fraction/feature to an independently
+sampled source cell and keeps topology-bound features incident to the current matching frontier.
 
 ## Task 3: GREEN bounded residual fabric without duplicate uplift
 

@@ -1,4 +1,5 @@
 using FantaSim.App.World.Composition;
+using FantaSim.App.World.Crust;
 using FantaSim.App.World.Dto;
 using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Globe;
@@ -350,27 +351,120 @@ public sealed class MotionGateTests
     }
 
     [Fact]
-    public void Non_snapshot_playhead_retains_governing_snapshot_features()
+    public async Task Non_snapshot_playhead_matches_exact_source_transport_and_current_topology()
     {
+        const int frequency = 2;
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
-        long snapshotTick = onsetTick + 5_000_000L;
         long nonSnapshotTick = onsetTick + 2_500_000L;
+        var options = WorldGenerationRenderOptions.Default with { TessellationFrequency = frequency };
+        var schedule = SphereRegimeScheduleDefaults.GeosphereFor(onsetTick);
+        var mobilePlate = Assert.IsType<SphereRegime>(schedule.RegimeAt(nonSnapshotTick));
+        long snapshotTick = Assert.IsType<long>(CrustSnapshotTickSeries.ForRegime(
+                mobilePlate,
+                CrustSnapshotTickSeries.DefaultSpacingTicks,
+                onsetTick + Service.MobilePlateWindowTicks)
+            .SelectSnapshotForPlayhead(nonSnapshotTick));
+        Assert.NotEqual(snapshotTick, nonSnapshotTick);
+
+        var materialization = await WorldCrustMaterializer.MaterializeAsync(
+            WorldCrustRunSpec.ForPresentation(options, onsetTick, snapshotTick));
+        var snapshotState = materialization.Result.StateByTick[snapshotTick];
+        var stateAtQueryTick = new Dictionary<long, IReadOnlyDictionary<int, FantaSim.Geosphere.Crust.CellCrustState>>
+        {
+            [nonSnapshotTick] = snapshotState,
+        };
+        var roster = OnsetRoster.Build(options.Seed, onsetTick, frequency, options.SpinRateRadiansPerMegaAnnum);
+        var reconstructor = GlobeReconstructor.FromOnsetRoster(
+            roster,
+            onsetTick,
+            schedule,
+            frequency);
+        var currentGlobe = reconstructor.BuildGlobeAt(nonSnapshotTick);
+        var currentArcs = reconstructor.BuildBoundaryArcsAt(nonSnapshotTick);
+        var currentAssignment = currentGlobe.Cells.ToDictionary(cell => cell.CellId, cell => cell.PlateId);
+        var sampler = new PlateFrameSampler(
+            materialization.Tessellation,
+            materialization.Result.Plates,
+            materialization.Topology,
+            onsetTick);
+        var sourceByTarget = sampler.SampleSourceAssignmentAt(
+            nonSnapshotTick,
+            stateAtQueryTick,
+            currentAssignment);
+        var expectedState = sampler.SampleAt(nonSnapshotTick, stateAtQueryTick, currentAssignment);
+        var expectedFeatures = sampler.SampleFeaturesAt(currentGlobe, expectedState, currentArcs);
 
         using var service = new Service(new ServiceRegistry());
+        var document = service.GetPlanetPresentationAsync(nonSnapshotTick, frequency);
 
-        var snapshotDoc = service.GetPlanetPresentationAsync(snapshotTick);
-        var nonSnapshotDoc = service.GetPlanetPresentationAsync(nonSnapshotTick);
+        Assert.NotNull(document.GlobeSnapshot);
+        Assert.NotNull(document.ContinentalFractionByCell);
+        Assert.NotNull(document.CellFeatures);
+        Assert.Equal(
+            currentGlobe.Cells.Select(cell => cell.PlateId),
+            document.GlobeSnapshot!.Cells.Select(cell => cell.PlateId));
+        Assert.Equal(currentGlobe.CellCount, sourceByTarget.Count);
+        Assert.Equal(currentGlobe.CellCount, expectedState.Count);
+        Assert.Equal(currentGlobe.CellCount, document.ContinentalFractionByCell!.Count);
+        Assert.Equal(currentGlobe.CellCount, document.CellFeatures!.Count);
 
-        Assert.NotNull(snapshotDoc.CellFeatures);
-        Assert.NotNull(nonSnapshotDoc.CellFeatures);
+        foreach (int targetCell in Enumerable.Range(0, currentGlobe.CellCount))
+        {
+            int sourceCell = sourceByTarget[targetCell];
+            var sampled = expectedState[targetCell];
+            Assert.Equal(sampled.ContinentalFraction, document.ContinentalFractionByCell[targetCell], 12);
 
-        int snapshotFeatureCount = snapshotDoc.CellFeatures!.Count(f => f.Kind != 0);
-        int nonSnapshotFeatureCount = nonSnapshotDoc.CellFeatures!.Count(f => f.Kind != 0);
+            if (sourceCell >= 0)
+            {
+                var source = snapshotState[sourceCell];
+                Assert.Equal(sourceCell, sampled.CellId);
+                Assert.Equal(source.ContinentalFraction, sampled.ContinentalFraction, 12);
+                Assert.Equal(source.OrogenicPressure, sampled.OrogenicPressure, 12);
+                Assert.Equal(source.VolcanicActivity, sampled.VolcanicActivity, 12);
+                Assert.Equal(source.CrustAgeTicks, sampled.CrustAgeTicks);
+            }
 
-        Assert.True(snapshotFeatureCount > 0,
-            "snapshot tick must have tectonic feature cells");
+            var expectedFeature = expectedFeatures.TryGetValue(targetCell, out var feature)
+                ? CrustFeatureContractMapper.ToCellFeature(feature)
+                : default;
+            Assert.Equal(expectedFeature, document.CellFeatures[targetCell]);
+        }
+
+        int nonSnapshotFeatureCount = document.CellFeatures.Count(feature => feature.Kind != 0);
         Assert.True(nonSnapshotFeatureCount > 0,
-            $"non-snapshot tick {nonSnapshotTick} must retain transported features from governing snapshot; got {nonSnapshotFeatureCount} feature cells");
+            $"non-snapshot tick {nonSnapshotTick} must retain features re-derived from transported state and current topology");
+
+        var currentKindByPair = currentArcs
+            .GroupBy(arc => (arc.PlateA, arc.PlateB))
+            .ToDictionary(group => group.Key, group => group.First().Kind);
+        for (int cell = 0; cell < document.CellFeatures.Count; cell++)
+        {
+            PlateBoundaryKind? expectedBoundaryKind = document.CellFeatures[cell].Kind switch
+            {
+                3 => PlateBoundaryKind.Convergent, // Trench.
+                4 => PlateBoundaryKind.Divergent,  // Ridge.
+                5 => PlateBoundaryKind.Transform,  // Fault.
+                _ => null,
+            };
+            if (expectedBoundaryKind is null)
+                continue;
+
+            int plate = currentAssignment[cell];
+            bool incidentToExpectedCurrentBoundary = materialization.Tessellation.Space
+                .Neighbors(new GeodesicCoord(cell, frequency))
+                .Any(neighbor =>
+                {
+                    int otherPlate = currentAssignment[neighbor.FaceIndex];
+                    if (otherPlate == plate)
+                        return false;
+                    var pair = (Math.Min(plate, otherPlate), Math.Max(plate, otherPlate));
+                    return currentKindByPair.TryGetValue(pair, out var kind)
+                        && kind == expectedBoundaryKind.Value;
+                });
+            Assert.True(
+                incidentToExpectedCurrentBoundary,
+                $"topology-bound feature cell {cell} must touch a current {expectedBoundaryKind} plate frontier");
+        }
     }
 
     private static void AssertSetEqual(IEnumerable<int> expected, IReadOnlySet<int> actual)

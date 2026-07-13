@@ -1,5 +1,6 @@
 using System.Globalization;
 using FantaSim.Geosphere.Plate.Reconstruction;
+using FantaSim.Geosphere.Plate.Topology;
 using FantaSim.World.Contracts.Units;
 using UnifyMaths;
 
@@ -23,6 +24,7 @@ namespace FantaSim.App.World.Crust;
 /// </remarks>
 internal sealed class MaterializedRotationProvider : IPlateRotationProvider
 {
+    private const long KinematicsSampleTicks = 1_000L;
     private readonly RotationModel _model;
     private readonly long _onsetTick;
     private readonly Dictionary<int, string> _plateIdMap;
@@ -62,6 +64,36 @@ internal sealed class MaterializedRotationProvider : IPlateRotationProvider
         var absolute = _model.Circuit.ReconstructOrientation(authoredId, new TimeCode(timeMa));
         return absolute * _onsetInverse[plateId];
     }
+
+    public EulerPole InstantaneousPoleAt(int plateId, long tick)
+    {
+        if (!_plateIdMap.ContainsKey(plateId))
+            return StationaryPole();
+
+        var current = RotationFromOnsetTo(plateId, tick);
+        var next = RotationFromOnsetTo(plateId, checked(tick + KinematicsSampleTicks));
+        var delta = (next * current.Inverse()).Normalize();
+
+        // q and -q encode the same rotation. Select the short representative before extracting
+        // angle so interpolation sign choices cannot turn a tiny step into an almost-2π velocity.
+        if (delta.W < 0.0)
+            delta = new Quaternion(-delta.X, -delta.Y, -delta.Z, -delta.W);
+
+        double vectorLength = Math.Sqrt(
+            delta.X * delta.X + delta.Y * delta.Y + delta.Z * delta.Z);
+        if (vectorLength < 1e-15)
+            return StationaryPole();
+
+        var axis = new Vector3D(
+            delta.X / vectorLength,
+            delta.Y / vectorLength,
+            delta.Z / vectorLength);
+        double angle = 2.0 * Math.Atan2(vectorLength, Math.Clamp(delta.W, 0.0, 1.0));
+        return new EulerPole(axis, angle / KinematicsSampleTicks);
+    }
+
+    private static EulerPole StationaryPole()
+        => new(new Vector3D(0.0, 0.0, 1.0), 0.0);
 
     private static bool TryNormalizePlateId(string id, out int parsed)
     {

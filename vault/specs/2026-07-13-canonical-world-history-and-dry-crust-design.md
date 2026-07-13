@@ -57,7 +57,7 @@ world replay. The parser version and raw artifact digest are recorded by the imp
 event; the normalized semantic events are execution truth. Reprocessing the same bytes with a
 new parser creates a new branch. This removes the ambiguity of two competing truths.
 
-## 2. Current evidence and gaps
+## 2. Current implementation evidence and remaining gaps
 
 The engine repo already contains the real `.rot` path:
 
@@ -69,10 +69,13 @@ RotParser
   -> RotationModel / PlateCircuit
 ```
 
-The app does not use it. `App.World.Services.Service.BuildRotationProvider` reparses raw text and
-constructs `ImportedRotationProvider` directly. `WorldRuntime.RunGeneration` only appends a generic
-`world.generation` event and explicitly defers materialization. The application therefore has a
-working engine path and a separate app bypass.
+The app now uses that path. `WorldHistoryCoordinator` commits the prepared/plate/bound selection,
+recovers the exact bound cursor, and materializes the provider from committed truth.
+`Service.BuildRotationProvider` consumes the coordinator projection and neither reparses raw text
+nor constructs the retired direct imported provider. The selected provider drives globe ownership,
+current boundary kinds, crust deposits/features, material transport, and the presentation document.
+Generated motion remains the explicit default authority rather than a fallback hidden inside the
+import path.
 
 Other established facts:
 
@@ -83,12 +86,17 @@ Other established facts:
   store would violate that boundary.
 - The existing API reads from a starting sequence but cannot read through a historical cursor,
   verify a cursor hash, or compose branch ancestry.
-- Current crust state already distinguishes mountain, volcanic arc, trench, ridge, and fault.
-  Presentation code currently permits procedural relief to dominate or give a trench positive
-  ridged detail, so a screenshot alone is not proof of tectonic relief.
-- `WorldRuntime` was introduced by commit `0345466` on 2026-06-19 as an internal world-library
-  composition seam. No linked agent-memory record explains a prior rename request. The present
-  rename is justified by its target responsibility, not invented historical intent.
+- Current crust state distinguishes mountain, volcanic arc, trench, ridge, and fault. Signed broad
+  relief is now carried by `CellElevations`; bounded procedural fabric cannot dominate it and a
+  trench cannot select positive ridged detail. A screenshot remains a visual gate, not the causal
+  proof; quantitative counterfactual and final-mesh tests are authoritative.
+- The old `WorldRuntime`/`IWorldRuntime`/factory/test names have been replaced by
+  `WorldHistoryCoordinator` counterparts. The class now owns history import, recovery,
+  materialization, authority identity, and query coordination; exported-app runtime remains the
+  broader process and is no longer conflated with this responsibility.
+- Remaining architecture gaps are the canonical dense-artifact store, branch compositor,
+  cross-domain committed manifests, and a mantle-first generated solver. Existing persisted crust
+  products remain disposable fail-soft caches.
 
 ## 3. Canonical references without breaking the hash envelope
 
@@ -408,13 +416,49 @@ Procedural noise is secondary residual fabric: at most 250 m peak amplitude and 
 the smallest mandatory 800 m tectonic profile signal. Noise-disabled tests prove the signs from the
 real pipeline before any screenshot is accepted. Tests trace the same engine-derived feature cells
 through the production presentation document and finalized mesh after height lens and displacement
-cap. Non-snapshot playhead ticks must transport the governing snapshot's feature records through the
-same plate frame instead of returning an empty feature array.
+cap. Non-snapshot playhead ticks transport the governing snapshot's material state through an exact
+target-to-source mapping, then re-derive features from that transported state and the current
+Eulerian topology. Trench/ridge/fault markers therefore stay on current boundaries instead of being
+advected as material labels. A field-driven `VolcanicArc` label alone is transported-state
+classification, not proof of current overriding-boundary adjacency; an “active arc” claim also
+asserts current convergent, non-collision, overriding-side topology.
 
 Visual target: the gray, faceted, rocky reference supplied on 2026-07-13—mountains, trenches, and
 volcanic structures visible without hydrology or biome color. Hydrology and biome presentation stay
 disabled for this gate. The planet has independent zoom, may grow beyond the instrument-ring aperture,
 and tunnel rings remain thin enough not to frame it as a bounded token.
+
+### 7.4 Adopted authority, frame, and cache doctrine
+
+The application-side vertical slice uses one atomic rotation projection:
+
+```text
+committed selection cursor
+  -> RotationAuthorityIdentity + IPlateRotationProvider
+  -> globe ownership/current kinematics
+  -> crust boundary deposits + feature derivation
+  -> per-tick material sampling + signed presentation
+```
+
+Imported identity is the SHA-256 digest of the canonical length-framed bound-cursor encoding;
+generated identity is the stable `generated:v1`. Both the globe-reconstructor cache and the crust
+product cache include this identity. Persisted crust cache schema v2 stores and verifies it, but the
+record remains a disposable projection and never becomes canonical history.
+
+Frame use is explicit and intentionally different by domain:
+
+- The visible globe is Eulerian: fixed world tessellation cells are reassigned from rotated seeds,
+  and current boundary kinds are classified from that ownership on the same fixed world centers
+  plus current instantaneous poles. Rotating newly assigned centers again is forbidden double
+  motion.
+- Crust evolution is Lagrangian: onset topology remains fixed while each original material-cell
+  center is rotated by its onset plate; current instantaneous poles classify deposits/features.
+- Arbitrary playhead sampling carries exact source material into target cells, then combines it
+  with current Eulerian topology as described in section 7.3.
+- Mantle forcing is currently an inverse projection from visible plate boundaries, not a canonical
+  mantle-first solver. Edge-local visual records are coalesced only through exact shared endpoints,
+  stop at junctions, never bridge disconnected components, and are chunked into bounded forcing
+  segments. A future mantle-first producer emits canonical states/events under section 6.2.
 
 ## 8. Acceptance gates
 
@@ -447,14 +491,16 @@ and tunnel rings remain thin enough not to frame it as a bounded token.
 
 ### 8.2 Crust tests
 
-- With noise disabled, real-pipeline mountain and volcanic cells are at least 750 m above their
-  zero-profile baseline, trench cells at least 750 m below, and ridge flanks at least 300 m above.
+- With noise disabled, a real-pipeline mountain is at least 750 m above the same state's
+  no-orogeny/no-profile counterfactual; a topology-verified active overriding volcanic arc is at
+  least 750 m above its profile-disabled baseline; a current subducting trench is at least 750 m
+  below zero profiles; and a current divergent ridge is at least 300 m above zero profiles.
 - A trench never receives the positive ridged-detail branch.
 - Finalized mesh vertices preserve those directions after the lens/cap and stay deterministic.
 - Residual noise is no more than 250 m and no more than one third of the smallest mandatory
   tectonic profile signal.
-- A non-snapshot playhead retains transported feature data; the mandatory deterministic fixture
-  fails unless mountain, trench, and volcanic cells are all present.
+- A non-snapshot playhead exactly matches the independently sampled target-to-source material map,
+  current globe ownership, public fractions/features, and current topology-bound marker kinds.
 - Existing watertight plate-surface and adaptive-subdivision tests remain green.
 
 ### 8.3 Exported-app visual gate

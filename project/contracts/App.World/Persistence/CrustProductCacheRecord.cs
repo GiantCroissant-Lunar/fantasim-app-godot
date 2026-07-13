@@ -6,9 +6,9 @@ namespace FantaSim.App.World.Persistence;
 
 /// <summary>
 /// Cross-session persisted crust-product cache entry (2026-07-11 persistence slice 1,
-/// vault/specs/2026-07-11-surrealdb-persistence-slice1-design.md §4.1). Carries the same five
+/// vault/specs/2026-07-11-surrealdb-persistence-slice1-design.md §4.1). Carries the same six
 /// world-identity key fields as the in-memory <c>Service.CrustProductCacheKey</c> (Seed, Frequency,
-/// SpinRateRadiansPerMegaAnnum, GraphRevision, SnapshotTick, landed a904de0) plus the two
+/// SpinRateRadiansPerMegaAnnum, GraphRevision, RotationAuthorityDigest, SnapshotTick) plus the two
 /// invalidation stamps (§5): <see cref="SchemaVersion"/> (bumped by hand on DTO/tick-scale-constant
 /// changes) and <see cref="AppVersionStamp"/> (the writing build's Module Version ID — see
 /// <see cref="CrustProductCacheSchema.CurrentAppVersionStamp"/> for why MVID and not an assembly
@@ -38,7 +38,8 @@ public sealed record CrustProductCacheRecord(
     [property: Key(5)] int SchemaVersion,
     [property: Key(6)] string AppVersionStamp,
     [property: Key(7)] IReadOnlyList<CellCrustStateRecord> CellStates,
-    [property: Key(8)] IReadOnlyList<CrustFeatureRecord> Features);
+    [property: Key(8)] IReadOnlyList<CrustFeatureRecord> Features,
+    [property: Key(9)] string RotationAuthorityDigest);
 
 /// <summary>
 /// One cell's accumulated crust state at the snapshot tick. Mirrors fantasim-world's
@@ -81,7 +82,7 @@ public static class CrustProductCacheSchema
     /// document id, so old rows simply stop being requested — fail-soft miss, never a
     /// deserialization crash on boot.
     /// </summary>
-    public const int SchemaVersion = 1;
+    public const int SchemaVersion = 2;
 
     /// <summary>
     /// The running build's Module Version ID (a fresh GUID the compiler stamps on every
@@ -102,22 +103,25 @@ public static class CrustProductCacheSchema
 
     /// <summary>
     /// Deterministic document id: every key field the in-memory <c>Service.CrustProductCacheKey</c>
-    /// carries (Seed, Frequency, SpinRateRadiansPerMegaAnnum, GraphRevision, SnapshotTick) plus both
-    /// invalidation stamps, composed once so a SchemaVersion bump or app rebuild produces a
-    /// different id rather than requiring a separate post-fetch version check (spec §4.1/§5).
+    /// carries (Seed, Frequency, SpinRateRadiansPerMegaAnnum, GraphRevision,
+    /// RotationAuthorityDigest, SnapshotTick) plus both invalidation stamps, composed once so a
+    /// schema-version bump, authority switch, or app rebuild produces a different id rather than
+    /// requiring a separate post-fetch version check (spec §4.1/§5).
     /// </summary>
     public static string ComposeDocumentId(
         int seed,
         int frequency,
         double spinRateRadiansPerMegaAnnum,
         int graphRevision,
+        string rotationAuthorityDigest,
         long snapshotTick,
         int schemaVersion,
         string appVersionStamp)
     {
         ArgumentNullException.ThrowIfNull(appVersionStamp);
+        ArgumentException.ThrowIfNullOrWhiteSpace(rotationAuthorityDigest);
         return FormattableString.Invariant(
-            $"{seed}:{frequency}:{spinRateRadiansPerMegaAnnum:R}:{graphRevision}:{snapshotTick}:{schemaVersion}:{appVersionStamp}");
+            $"{seed}:{frequency}:{spinRateRadiansPerMegaAnnum:R}:{graphRevision}:{rotationAuthorityDigest}:{snapshotTick}:{schemaVersion}:{appVersionStamp}");
     }
 
     public static byte[] Encode(CrustProductCacheRecord record)

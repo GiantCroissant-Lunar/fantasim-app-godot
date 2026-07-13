@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using FantaSim.App.World;
 using FantaSim.App.World.Dto;
 using FantaSim.Geosphere.Asthenosphere.Convection;
@@ -64,7 +65,7 @@ public static class MantleHistoryAdapter
         if (arcs is null || arcs.Count == 0)
             return PlateBoundaryHistory.Empty;
 
-        var segments = new List<BoundarySegmentHistory>();
+        var forcingArcs = new Dictionary<BoundaryGroupKey, List<IReadOnlyList<GlobeVec3>>>();
         foreach (var arc in arcs)
         {
             var kind = MapKind(arc.Kind);
@@ -75,10 +76,204 @@ public static class MantleHistoryAdapter
             if (points is null || points.Count < 2)
                 continue;
 
-            AppendChunkedSegments(points, kind.Value, plateOnsetTick, relativeRateRadPerTick, segments);
+            var key = new BoundaryGroupKey(
+                System.Math.Min(arc.PlateA, arc.PlateB),
+                System.Math.Max(arc.PlateA, arc.PlateB),
+                kind.Value);
+            if (!forcingArcs.TryGetValue(key, out var group))
+            {
+                group = new List<IReadOnlyList<GlobeVec3>>();
+                forcingArcs.Add(key, group);
+            }
+            group.Add(points);
+        }
+
+        var segments = new List<BoundarySegmentHistory>();
+        foreach (var group in forcingArcs
+                     .OrderBy(entry => entry.Key.PlateA)
+                     .ThenBy(entry => entry.Key.PlateB)
+                     .ThenBy(entry => entry.Key.Kind))
+        {
+            foreach (var polyline in CoalesceConnectedArcs(group.Value))
+            {
+                AppendChunkedSegments(
+                    polyline,
+                    group.Key.Kind,
+                    plateOnsetTick,
+                    relativeRateRadPerTick,
+                    segments);
+            }
         }
 
         return new PlateBoundaryHistory(segments);
+    }
+
+    /// <summary>
+    /// Recovers mantle-scale boundary polylines from the presentation seam's edge-local records.
+    /// Only records with an exactly shared tessellation endpoint are joined, so equal plate-pair
+    /// metadata can never bridge disconnected frontier components. Degree-two vertices continue a
+    /// chain; a junction (degree other than two) terminates it so unrelated branches are not paired
+    /// through an arbitrary turn. Input order and per-record orientation do not affect the result.
+    /// </summary>
+    private static IReadOnlyList<IReadOnlyList<GlobeVec3>> CoalesceConnectedArcs(
+        IReadOnlyList<IReadOnlyList<GlobeVec3>> source)
+    {
+        var edges = source
+            .Where(points => points.Count >= 2 && points[0] != points[^1])
+            .Select(points => new BoundaryEdge(points, points[0], points[^1]))
+            .ToArray();
+        if (edges.Length == 0)
+            return System.Array.Empty<IReadOnlyList<GlobeVec3>>();
+        if (edges.Length == 1)
+            return new[] { edges[0].Points };
+
+        var incidentByEndpoint = new Dictionary<GlobeVec3, List<int>>();
+        for (int edgeIndex = 0; edgeIndex < edges.Length; edgeIndex++)
+        {
+            AddIncident(incidentByEndpoint, edges[edgeIndex].Start, edgeIndex);
+            AddIncident(incidentByEndpoint, edges[edgeIndex].End, edgeIndex);
+        }
+
+        var orderedEdges = Enumerable.Range(0, edges.Length).ToList();
+        orderedEdges.Sort((left, right) => CompareEdges(edges[left], edges[right]));
+
+        var visited = new bool[edges.Length];
+        var result = new List<IReadOnlyList<GlobeVec3>>(edges.Length);
+
+        // Open paths and paths ending at a junction. Stopping at degree != 2 prevents an arbitrary
+        // branch-to-branch shortcut from becoming one mantle segment.
+        foreach (int edgeIndex in orderedEdges)
+        {
+            if (visited[edgeIndex])
+                continue;
+            var edge = edges[edgeIndex];
+            int startDegree = incidentByEndpoint[edge.Start].Count;
+            int endDegree = incidentByEndpoint[edge.End].Count;
+            if (startDegree == 2 && endDegree == 2)
+                continue; // Closed degree-two component; handled below.
+
+            var start = SelectStart(edge, startDegree, endDegree);
+            result.Add(WalkPath(edgeIndex, start, edges, incidentByEndpoint, visited));
+        }
+
+        // Any remaining component is a closed degree-two loop. Pick a stable edge and endpoint;
+        // WalkPath returns the repeated start endpoint so the chunker can preserve the closure.
+        foreach (int edgeIndex in orderedEdges)
+        {
+            if (visited[edgeIndex])
+                continue;
+            var edge = edges[edgeIndex];
+            var start = ComparePoints(edge.Start, edge.End) <= 0 ? edge.Start : edge.End;
+            result.Add(WalkPath(edgeIndex, start, edges, incidentByEndpoint, visited));
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<GlobeVec3> WalkPath(
+        int firstEdgeIndex,
+        GlobeVec3 start,
+        IReadOnlyList<BoundaryEdge> edges,
+        IReadOnlyDictionary<GlobeVec3, List<int>> incidentByEndpoint,
+        bool[] visited)
+    {
+        var points = new List<GlobeVec3>();
+        int edgeIndex = firstEdgeIndex;
+        var current = start;
+
+        while (!visited[edgeIndex])
+        {
+            var edge = edges[edgeIndex];
+            bool forward = edge.Start == current;
+            var next = forward ? edge.End : edge.Start;
+            AppendOriented(points, edge.Points, forward);
+            visited[edgeIndex] = true;
+
+            var incident = incidentByEndpoint[next];
+            if (incident.Count != 2)
+                break;
+
+            int nextEdge = -1;
+            foreach (int candidate in incident)
+            {
+                if (visited[candidate])
+                    continue;
+                if (nextEdge < 0 || CompareEdges(edges[candidate], edges[nextEdge]) < 0)
+                    nextEdge = candidate;
+            }
+            if (nextEdge < 0)
+                break;
+
+            current = next;
+            edgeIndex = nextEdge;
+        }
+
+        return points;
+    }
+
+    private static void AppendOriented(
+        List<GlobeVec3> destination,
+        IReadOnlyList<GlobeVec3> source,
+        bool forward)
+    {
+        if (forward)
+        {
+            for (int i = 0; i < source.Count; i++)
+            {
+                if (destination.Count == 0 || destination[^1] != source[i])
+                    destination.Add(source[i]);
+            }
+            return;
+        }
+
+        for (int i = source.Count - 1; i >= 0; i--)
+        {
+            if (destination.Count == 0 || destination[^1] != source[i])
+                destination.Add(source[i]);
+        }
+    }
+
+    private static GlobeVec3 SelectStart(BoundaryEdge edge, int startDegree, int endDegree)
+    {
+        if (startDegree != 2 && endDegree == 2)
+            return edge.Start;
+        if (endDegree != 2 && startDegree == 2)
+            return edge.End;
+        return ComparePoints(edge.Start, edge.End) <= 0 ? edge.Start : edge.End;
+    }
+
+    private static void AddIncident(
+        Dictionary<GlobeVec3, List<int>> incidentByEndpoint,
+        GlobeVec3 endpoint,
+        int edgeIndex)
+    {
+        if (!incidentByEndpoint.TryGetValue(endpoint, out var incident))
+        {
+            incident = new List<int>();
+            incidentByEndpoint.Add(endpoint, incident);
+        }
+        incident.Add(edgeIndex);
+    }
+
+    private static int CompareEdges(BoundaryEdge left, BoundaryEdge right)
+    {
+        var leftMin = ComparePoints(left.Start, left.End) <= 0 ? left.Start : left.End;
+        var rightMin = ComparePoints(right.Start, right.End) <= 0 ? right.Start : right.End;
+        int comparison = ComparePoints(leftMin, rightMin);
+        if (comparison != 0)
+            return comparison;
+
+        var leftMax = leftMin == left.Start ? left.End : left.Start;
+        var rightMax = rightMin == right.Start ? right.End : right.Start;
+        return ComparePoints(leftMax, rightMax);
+    }
+
+    private static int ComparePoints(GlobeVec3 left, GlobeVec3 right)
+    {
+        int comparison = left.X.CompareTo(right.X);
+        if (comparison != 0) return comparison;
+        comparison = left.Y.CompareTo(right.Y);
+        return comparison != 0 ? comparison : left.Z.CompareTo(right.Z);
     }
 
     /// <summary>Walks the arc polyline emitting the longest spans whose endpoints stay within the
@@ -90,6 +285,29 @@ public static class MantleHistoryAdapter
         double relativeRateRadPerTick,
         List<BoundarySegmentHistory> segments)
     {
+        if (points.Count > 2 && points[0] == points[^1])
+        {
+            // A closed boundary whose total diameter is below the angular cap would otherwise be
+            // reduced to one degenerate start==end segment. Split it at its farthest sampled point
+            // and chunk both halves, preserving the complete loop without an antipodal shortcut.
+            var origin = ToUnitVector3D(points[0]);
+            int split = 1;
+            double lowestDot = Vector3D.Dot(origin, ToUnitVector3D(points[split]));
+            for (int i = 2; i < points.Count - 1; i++)
+            {
+                double dot = Vector3D.Dot(origin, ToUnitVector3D(points[i]));
+                if (dot < lowestDot)
+                {
+                    lowestDot = dot;
+                    split = i;
+                }
+            }
+
+            AppendChunkedSegments(points.Take(split + 1).ToArray(), kind, plateOnsetTick, relativeRateRadPerTick, segments);
+            AppendChunkedSegments(points.Skip(split).ToArray(), kind, plateOnsetTick, relativeRateRadPerTick, segments);
+            return;
+        }
+
         int start = 0;
         while (start < points.Count - 1)
         {
@@ -141,4 +359,11 @@ public static class MantleHistoryAdapter
         double dz = a.Z - b.Z;
         return (dx * dx + dy * dy + dz * dz) < 1e-18;
     }
+
+    private readonly record struct BoundaryGroupKey(int PlateA, int PlateB, PlateHistoryKind Kind);
+
+    private sealed record BoundaryEdge(
+        IReadOnlyList<GlobeVec3> Points,
+        GlobeVec3 Start,
+        GlobeVec3 End);
 }

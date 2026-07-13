@@ -225,9 +225,13 @@ public sealed class PlateFrameSampler
     /// <summary>
     /// Re-derives the engine feature map in the current Eulerian boundary frame from the already
     /// transported material state. Accumulated orogenic/volcanic fields therefore move with their
-    /// material, while trench/ridge/fault markers and arc eligibility come from the current plate
-    /// assignment and current typed boundaries. This avoids advecting topology-bound markers away
-    /// from the boundary that gives them meaning.
+    /// material, while trench/ridge/fault markers and continent-collision arc exclusion come from
+    /// the current plate assignment and current typed boundaries. A <c>VolcanicArc</c> label here is
+    /// the engine's field-driven classification (transported volcanic activity on continental-leaning
+    /// crust, not blocked by current collision/trench priority); by itself it does not prove that the
+    /// cell currently lies on the overriding side of an active convergent boundary. This avoids
+    /// advecting topology-bound markers away from the boundary that gives them meaning without
+    /// overstating the transported volcanic label.
     /// </summary>
     public IReadOnlyDictionary<int, CrustFeature> SampleFeaturesAt(
         WorldGlobeSnapshot currentGlobe,

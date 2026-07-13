@@ -15,6 +15,9 @@ namespace FantaSim.App.World.Topography;
 public static class CellBoundaryField
 {
     private const double SharedVertexDotTolerance = 1e-10;
+    private const double TransformPhaseSpanPoints = 256.0;
+    private static readonly Vector3D TransformPhaseAxis =
+        new Vector3D(1.0, Math.Sqrt(2.0), Math.Sqrt(3.0)).Normalize();
 
     /// <summary>
     /// One <see cref="CellBoundarySample"/> per cell (indexed by cell order in <paramref name="cells"/>).
@@ -50,7 +53,7 @@ public static class CellBoundaryField
             if (arcs.Count == 0)
             {
                 result[c] = new CellBoundarySample(Found: false, 0.0, PlateBoundaryKind.Inactive,
-                    0, cell.PlateId, -1, -1, null, IsCollision: false);
+                    0, 0.0, cell.PlateId, -1, -1, null, IsCollision: false);
                 continue;
             }
 
@@ -68,22 +71,38 @@ public static class CellBoundaryField
                 // Production arcs are edge-local: when their endpoints are the two endpoints of
                 // one of this triangular cell's edges, the finite cell footprint touches that
                 // boundary exactly. Prefer that topological fact over centroid proximity so an
-                // unrelated nearby segment cannot steal the sample. At a junction two incident
-                // edges can both be exact zero-distance ties; this one-sample field deliberately
-                // uses the stable input arc order as its tie-break (pinned by a junction test).
+                // unrelated nearby segment cannot steal the sample. At a junction multiple
+                // incident edges can be exact zero-distance ties; resolve them semantically and
+                // independently of input order: Convergent > Divergent > Transform > Inactive,
+                // then normalized plate pair, then stable endpoint geometry.
                 if (ArcMatchesCellEdge(cell, arcs[a].Points))
                 {
-                    bestArc = a;
-                    bestPoint = NearestPointIndex(centroid, arcVecs[a], out bestDot);
-                    bestArcIsCellEdge = true;
-                    break;
+                    int candidatePoint = NearestPointIndex(centroid, arcVecs[a], out double candidateDot);
+                    if (!bestArcIsCellEdge || CompareArcPriority(arcs[a], arcs[bestArc]) < 0)
+                    {
+                        bestArc = a;
+                        bestPoint = candidatePoint;
+                        bestDot = candidateDot;
+                        bestArcIsCellEdge = true;
+                    }
+                    continue;
                 }
+
+                if (bestArcIsCellEdge)
+                    continue;
 
                 var vecs = arcVecs[a];
                 for (int i = 0; i < vecs.Length; i++)
                 {
                     double dot = Vector3D.Dot(centroid, vecs[i]);
-                    if (dot > bestDot) { bestDot = dot; bestArc = a; bestPoint = i; }
+                    if (dot > bestDot + 1e-15
+                        || (Math.Abs(dot - bestDot) <= 1e-15
+                            && (bestArc < 0 || CompareArcPriority(arcs[a], arcs[bestArc]) < 0)))
+                    {
+                        bestDot = dot;
+                        bestArc = a;
+                        bestPoint = i;
+                    }
                 }
             }
 
@@ -91,7 +110,7 @@ public static class CellBoundaryField
             {
                 // Interior cell (no boundary of its own plate nearby): no profile contribution.
                 result[c] = new CellBoundarySample(Found: false, 0.0, PlateBoundaryKind.Inactive,
-                    0, cell.PlateId, -1, -1, null, IsCollision: false);
+                    0, 0.0, cell.PlateId, -1, -1, null, IsCollision: false);
                 continue;
             }
 
@@ -134,6 +153,9 @@ public static class CellBoundaryField
                 signed,
                 arc.Kind,
                 bestPoint,
+                arc.Kind == PlateBoundaryKind.Transform
+                    ? TransformPhaseCoordinate(arc, arcVecs[bestArc][bestPoint])
+                    : 0.0,
                 cell.PlateId,
                 arc.PlateA,
                 arc.PlateB,
@@ -141,6 +163,26 @@ public static class CellBoundaryField
                 isCollision);
         }
         return result;
+    }
+
+    /// <summary>
+    /// Deterministic continuous world-space pseudo-sample coordinate for transform-profile phase.
+    /// The fixed irrational axis avoids coordinate seams; normalized plate-pair offset prevents all
+    /// transform systems from sharing identical bands. Reversing or splitting an arc leaves the
+    /// coordinate at a physical point unchanged.
+    /// </summary>
+    internal static double TransformPhaseCoordinate(PlateBoundaryArc arc, Vector3D point)
+    {
+        ArgumentNullException.ThrowIfNull(arc);
+        double length = point.Length();
+        var unit = length < 1e-15 ? new Vector3D(1.0, 0.0, 0.0) : point * (1.0 / length);
+        int plateA = Math.Min(arc.PlateA, arc.PlateB);
+        int plateB = Math.Max(arc.PlateA, arc.PlateB);
+        uint pairHash = unchecked(((uint)plateA * 73_856_093u) ^ ((uint)plateB * 19_349_663u));
+        double pairOffset = pairHash % (uint)TransformPhaseSpanPoints;
+        double spatial = 0.5 * TransformPhaseSpanPoints
+            * (Math.Clamp(Vector3D.Dot(unit, TransformPhaseAxis), -1.0, 1.0) + 1.0);
+        return pairOffset + spatial;
     }
 
     private static Vector3D Centroid(GlobeCell cell)
@@ -190,6 +232,54 @@ public static class CellBoundaryField
 
     private static bool SameDirection(Vector3D a, Vector3D b) =>
         Vector3D.Dot(a, b) >= 1.0 - SharedVertexDotTolerance;
+
+    private static int CompareArcPriority(PlateBoundaryArc left, PlateBoundaryArc right)
+    {
+        int comparison = KindPriority(left.Kind).CompareTo(KindPriority(right.Kind));
+        if (comparison != 0)
+            return comparison;
+
+        int leftA = Math.Min(left.PlateA, left.PlateB);
+        int leftB = Math.Max(left.PlateA, left.PlateB);
+        int rightA = Math.Min(right.PlateA, right.PlateB);
+        int rightB = Math.Max(right.PlateA, right.PlateB);
+        comparison = leftA.CompareTo(rightA);
+        if (comparison != 0) return comparison;
+        comparison = leftB.CompareTo(rightB);
+        if (comparison != 0) return comparison;
+
+        var leftFirst = left.Points.Count > 0 ? left.Points[0] : default;
+        var leftLast = left.Points.Count > 0 ? left.Points[^1] : default;
+        var rightFirst = right.Points.Count > 0 ? right.Points[0] : default;
+        var rightLast = right.Points.Count > 0 ? right.Points[^1] : default;
+        CanonicalizeEndpoints(ref leftFirst, ref leftLast);
+        CanonicalizeEndpoints(ref rightFirst, ref rightLast);
+        comparison = ComparePoint(leftFirst, rightFirst);
+        return comparison != 0 ? comparison : ComparePoint(leftLast, rightLast);
+    }
+
+    private static int KindPriority(PlateBoundaryKind kind) => kind switch
+    {
+        PlateBoundaryKind.Convergent => 0,
+        PlateBoundaryKind.Divergent => 1,
+        PlateBoundaryKind.Transform => 2,
+        _ => 3,
+    };
+
+    private static void CanonicalizeEndpoints(ref GlobeVec3 first, ref GlobeVec3 last)
+    {
+        if (ComparePoint(first, last) <= 0)
+            return;
+        (first, last) = (last, first);
+    }
+
+    private static int ComparePoint(GlobeVec3 left, GlobeVec3 right)
+    {
+        int comparison = left.X.CompareTo(right.X);
+        if (comparison != 0) return comparison;
+        comparison = left.Y.CompareTo(right.Y);
+        return comparison != 0 ? comparison : left.Z.CompareTo(right.Z);
+    }
 
     private static Vector3D Unit(GlobeVec3 point)
     {

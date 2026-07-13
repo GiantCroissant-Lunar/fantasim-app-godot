@@ -7,7 +7,6 @@ using FantaSim.App.World.Dto;
 using FantaSim.Geosphere.Crust;
 using FantaSim.Geosphere.Plate.Topology;
 using FantaSim.World.Contracts.Units;
-using TimeDete.Time.Primitives;
 using UnifyCell;
 using UnifyGeometry.Spherical;
 using UnifyMaths;
@@ -66,6 +65,7 @@ public sealed class GlobeReconstructor
     private readonly GeodesicSphereTessellation _tessellation;
     private readonly IReadOnlyList<Plate> _plates;
     private readonly PlateTopology _topology;
+    private readonly IPlateRotationProvider _rotationProvider;
 
     // Onset/regime gating — null means "no gating" (legacy DefaultPlates path).
     // When set, ClassifyCellsAt + RunCrustFeatures + RunCrustEvolution return empty/no-op
@@ -86,6 +86,7 @@ public sealed class GlobeReconstructor
         _topology = PlateTopologyBuilder.Build(_tessellation, _plates);
         _onsetTick = 0;          // no gating — always "at/after onset"
         _regimeSchedule = null;  // no regime gating
+        _rotationProvider = new GeneratedEulerPoleRotationProvider(_plates, _onsetTick);
     }
 
     /// <summary>
@@ -120,7 +121,38 @@ public sealed class GlobeReconstructor
                 $"OnsetRoster returned no seed plates at onsetTick={onsetTick}. " +
                 "Pass a tick >= onsetTick.", nameof(onsetTick));
 
-        return new GlobeReconstructor(frequency, plates, onsetTick, regimeSchedule);
+        return new GlobeReconstructor(
+            frequency,
+            plates,
+            onsetTick,
+            regimeSchedule,
+            new GeneratedEulerPoleRotationProvider(plates, onsetTick));
+    }
+
+    /// <summary>
+    /// Canonical-authority overload used by the service after truth selection. The roster still
+    /// owns onset seeds/plate ids; all finite rotations and instantaneous kinematics come from the
+    /// selected provider.
+    /// </summary>
+    internal static GlobeReconstructor FromOnsetRoster(
+        OnsetRoster roster,
+        long onsetTick,
+        SphereRegimeSchedule regimeSchedule,
+        int frequency,
+        IPlateRotationProvider rotationProvider)
+    {
+        ArgumentNullException.ThrowIfNull(roster);
+        ArgumentNullException.ThrowIfNull(regimeSchedule);
+        ArgumentNullException.ThrowIfNull(rotationProvider);
+        if (frequency < 0) throw new ArgumentOutOfRangeException(nameof(frequency));
+
+        var plates = roster.SeedPlatesAt(onsetTick);
+        if (plates.Count == 0)
+            throw new ArgumentException(
+                $"OnsetRoster returned no seed plates at onsetTick={onsetTick}. " +
+                "Pass a tick >= onsetTick.", nameof(onsetTick));
+
+        return new GlobeReconstructor(frequency, plates, onsetTick, regimeSchedule, rotationProvider);
     }
 
     // Private constructor shared by the factory and the legacy path.
@@ -128,7 +160,8 @@ public sealed class GlobeReconstructor
         int frequency,
         IReadOnlyList<Plate> plates,
         long onsetTick,
-        SphereRegimeSchedule? regimeSchedule)
+        SphereRegimeSchedule? regimeSchedule,
+        IPlateRotationProvider rotationProvider)
     {
         _frequency = frequency;
         _tessellation = new GeodesicSphereTessellation(frequency);
@@ -136,6 +169,7 @@ public sealed class GlobeReconstructor
         _topology = PlateTopologyBuilder.Build(_tessellation, _plates);
         _onsetTick = onsetTick;
         _regimeSchedule = regimeSchedule;
+        _rotationProvider = rotationProvider ?? throw new ArgumentNullException(nameof(rotationProvider));
     }
 
     /// <summary>
@@ -201,7 +235,10 @@ public sealed class GlobeReconstructor
 
         var globePlates = new List<GlobePlate>(_plates.Count);
         foreach (var plate in _plates)
-            globePlates.Add(new GlobePlate(plate.PlateId, ToVec3(plate.Pole.Axis), plate.Pole.AngularRate));
+        {
+            var pole = _rotationProvider.InstantaneousPoleAt(plate.PlateId, _onsetTick);
+            globePlates.Add(new GlobePlate(plate.PlateId, ToVec3(pole.Axis), pole.AngularRate));
+        }
 
         long ticksPerAnchor = UnitConverter.TicksPerMegaAnnum;
         return new WorldGlobeSnapshot(
@@ -239,7 +276,10 @@ public sealed class GlobeReconstructor
 
         var globePlates = new List<GlobePlate>(_plates.Count);
         foreach (var plate in _plates)
-            globePlates.Add(new GlobePlate(plate.PlateId, ToVec3(plate.Pole.Axis), plate.Pole.AngularRate));
+        {
+            var pole = _rotationProvider.InstantaneousPoleAt(plate.PlateId, tick);
+            globePlates.Add(new GlobePlate(plate.PlateId, ToVec3(pole.Axis), pole.AngularRate));
+        }
 
         long ticksPerAnchor = UnitConverter.TicksPerMegaAnnum;
         return new WorldGlobeSnapshot(
@@ -271,9 +311,7 @@ public sealed class GlobeReconstructor
         for (int i = 0; i < plateCount; i++)
         {
             var plate = orderedPlates[i];
-            double angleRad = plate.Pole.AngularRate * delta;
-            var axis = plate.Pole.Axis.Normalize();
-            var q = Quaternion.FromAxisAngle(axis, angleRad);
+            var q = _rotationProvider.RotationFromOnsetTo(plate.PlateId, tick);
             rotatedSeeds[i] = q.Rotate(SphericalVectorInterop.ToVector3D(plate.Seed));
         }
 
@@ -302,22 +340,15 @@ public sealed class GlobeReconstructor
     }
 
     // Build a per-tick PlateTopology whose Assignment is the reassigned cell→plate map. The
-    // Boundaries/Junctions fields are left empty — they are recomputed by
-    // PlateTopologyBuilder.ClassifyBoundariesAt (which only reads topology.Assignment) and not used
-    // by the cap path. This topology is what ClassifyCellsAt and BuildBoundaryArcsAt feed into
-    // ClassifyBoundariesAt so that the cell-membership boundary and the typed arcs derive from the
-    // SAME reassigned ownership at the SAME tick.
+    // Boundaries/Junctions fields are left empty — they are recomputed from the selected authority's
+    // explicit current positions + instantaneous poles and are not used by the cap path. This
+    // topology is what ClassifyCellsAt and BuildBoundaryArcsAt feed into that classifier so the
+    // cell-membership boundary and typed arcs derive from the SAME authority at the SAME tick.
     private PlateTopology BuildReassignedTopology(long tick)
     {
         var assignment = ReassignCellsAt(tick);
         return new PlateTopology(assignment, Array.Empty<Boundary>(), Array.Empty<Junction>());
     }
-
-    // Rotation delta (canonical ticks) from the onset reference to <paramref name="tick"/>.
-    // ClassifyBoundariesAt reconstructs cell centers by rotating each cell with its (reassigned)
-    // plate's rotation at this delta — so the moved cell positions and the boundary classification
-    // agree with the reassigned membership that defined the frontier.
-    private long RotationDelta(long tick) => tick - _onsetTick;
 
     /// <summary>
     /// Tick-gated globe snapshot: returns a full N-cap globe at/after onset (when
@@ -361,13 +392,12 @@ public sealed class GlobeReconstructor
         int n = _tessellation.CellCount;
         if (!ShowsPlateFeatures(tick)) return new byte[n]; // all interior — pre-onset or non-plate regime
 
-        // Reassign cells to plates at this tick, then reclassify the reassigned boundaries from the
-        // moved cell positions (cells rotate with their reassigned plate). Both the membership and
-        // the classification derive from the same rotation, so the typed boundaries track the
-        // cell-membership frontier.
+        // Reassign fixed world cells to plates at this tick, then classify that Eulerian ownership
+        // frontier from those same fixed world positions and the authority's current poles. The
+        // seed rotations already changed WHICH plate owns each world cell; rotating each newly
+        // assigned cell again here would apply motion twice and mix Eulerian/Lagrangian frames.
         var topology = BuildReassignedTopology(tick);
-        var boundaries = PlateTopologyBuilder.ClassifyBoundariesAt(
-            _tessellation, _plates, topology, new CanonicalTick(RotationDelta(tick)));
+        var boundaries = ClassifyCurrentBoundaries(topology, tick);
         var typeByPair = new Dictionary<(int, int), BoundaryType>(boundaries.Count);
         foreach (var b in boundaries)
             typeByPair[(b.PlateA, b.PlateB)] = b.Type;
@@ -401,7 +431,7 @@ public sealed class GlobeReconstructor
 
     /// <summary>
     /// Typed plate-boundary arcs at <paramref name="tick"/>: each inter-plate boundary from the
-    /// reassigned topology (re-classified from the moved cell positions) becomes a smooth great-circle
+    /// reassigned topology (re-classified on the fixed world-cell positions) becomes a smooth great-circle
     /// polyline (<see cref="PlateBoundaryArc"/>), ready for the host seam to render. Returns an empty
     /// list before onset or in non-plate regimes (same gate as <see cref="ClassifyCellsAt"/>).
     /// </summary>
@@ -419,8 +449,7 @@ public sealed class GlobeReconstructor
         if (!ShowsPlateFeatures(tick)) return Array.Empty<PlateBoundaryArc>();
 
         var topology = BuildReassignedTopology(tick);
-        var boundaries = PlateTopologyBuilder.ClassifyBoundariesAt(
-            _tessellation, _plates, topology, new CanonicalTick(RotationDelta(tick)));
+        var boundaries = ClassifyCurrentBoundaries(topology, tick);
         var kindByPair = boundaries.ToDictionary(
             boundary => (boundary.PlateA, boundary.PlateB),
             boundary => BoundaryArcSampler.MapKind(boundary.Type));
@@ -462,6 +491,26 @@ public sealed class GlobeReconstructor
             }
         }
         return arcs;
+    }
+
+    private IReadOnlyList<Boundary> ClassifyCurrentBoundaries(PlateTopology topology, long tick)
+    {
+        var currentPositions = new Dictionary<int, Vector3D>(_tessellation.CellCount);
+        for (int cell = 0; cell < _tessellation.CellCount; cell++)
+        {
+            currentPositions[cell] = _tessellation
+                .GetCenter(new GeodesicCoord(cell, _frequency))
+                .ToVector3D();
+        }
+
+        var poles = _plates.ToDictionary(
+            plate => plate.PlateId,
+            plate => _rotationProvider.InstantaneousPoleAt(plate.PlateId, tick));
+        return PlateTopologyBuilder.ClassifyBoundariesFromKinematics(
+            _tessellation,
+            topology,
+            currentPositions,
+            poles);
     }
 
     // Finds the two shared tessellation-corner vertices for one known adjacent cell pair.

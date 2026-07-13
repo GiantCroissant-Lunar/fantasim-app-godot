@@ -111,27 +111,47 @@ modes are the meaningful compile/runtime proof).
 - The original universal default-minus-`BoundaryProfileParameters.Zero` quantitative comparator
   was causally wrong for Mountain: zero profiles intentionally retain the authoritative
   `OrogenicPressure * OrogenicGain` elevation. The accepted gate now uses formation-specific
-  counterfactuals: Mountain removes orogenic pressure and profiles; active VolcanicArc uses a real
-  profile-disabled arc baseline; Trench and Ridge use zero profiles. Thresholds remain unchanged
+  counterfactuals: Mountain removes orogenic pressure and profiles; a transported `VolcanicArc`
+  feature uses a real profile-disabled baseline; Trench and Ridge use zero profiles. The field-driven
+  `VolcanicArc` label alone does not prove current active overriding-boundary adjacency. Thresholds remain unchanged
   (mountain/volcanic +750 m, trench -750 m, ridge +300 m), and category fixtures need not co-occur.
 - The deterministic frequency-2/tick-200M public document remains the all-four lineage and visual
-  fixture. Its Mountain is proved against the no-orogeny dry-crust baseline, not by falsely claiming
-  its zero-profile delta is the mountain signal. A frequency-4/tick-200M public cell supplies the
-  separate quantitative active-volcanic-arc proof.
+  fixture. Its Mountain label is transported/state-derived rather than proof of a current collision,
+  and its zero-profile delta is not misreported as the mountain signal. A frequency-4/tick-200M
+  public cell supplies a separate quantitative active-arc proof with current overriding topology.
 - Boundary arcs are local real shared tessellation edges. An incident cell has exact zero
   footprint-to-arc distance; nonincident cells retain centroid-to-arc distance as an interior guard.
-  At a multi-edge junction, the one-sample boundary field uses stable input arc order as the exact
-  zero-distance tie-break, pinned by a junction test.
+  At a multi-edge junction, exact-distance ties resolve by semantic priority
+  Convergent &gt; Divergent &gt; Transform &gt; Inactive, then normalized plate pair and canonical
+  endpoint geometry; input order cannot change the selected sample.
 - Locked quantitative/mesh fixtures after the correction:
-  - lower frequency-2/tick-67M: Mountain 85 is +2000 m default-minus-zero and exceeds +750 m
-    versus no-orogeny/no-profile (mesh outward); VolcanicArc 144 is +48.8 m (visual lineage,
-    outward); Trench 182 is -2000 m (inward); Ridge 196 is +400 m (outward);
+  - lower frequency-2/tick-67M: Mountain 85 is a current convergent collision, is +2000 m
+    default-minus-zero, and exceeds +750 m versus no-orogeny/no-profile (mesh outward); Ridge 196
+    is current divergent and +400 m (outward). The old lower “Trench 182” fixture is retired:
+    corrected current semantics classify cell 182 as Ridge, so it cannot truthfully prove trench;
   - public frequency-2/tick-200M all-four document: Mountain 134 has a +40000 m state-derived
     signal versus no-orogeny dry crust (outward), while its default-minus-zero profile delta is
-    honestly 0; VolcanicArc 137 is +400 m (outward), Trench 40 -2000 m (inward), Ridge 224 +400 m
-    (outward);
-  - public frequency-4/tick-200M: active VolcanicArc 803 is +1336.1 m versus zero profiles and
-    remains outward in the finalized adaptive mesh.
+    honestly 0; transported VolcanicArc 137 is +400 m (outward); corrected Eulerian fixtures replace
+    old Trench 40 / Ridge 224 with current subducting Trench 4 at -2000 m and current divergent
+    Ridge 40 at +400 m;
+  - public frequency-4/tick-200M: VolcanicArc 803 is also current Convergent/non-collision on
+    overriding plate 1 (subducting plate 0), is +1336.1 m versus zero profiles, and remains outward
+    in the finalized adaptive mesh.
+- Canonical selection now drives visible and materialized behavior end to end. The coordinator
+  exposes an atomic `(RotationAuthorityIdentity, provider)` projection; imported identity hashes the
+  canonical bound cursor, and generated identity is `generated:v1`. Globe and crust cache keys plus
+  persisted crust-cache schema v2 include that identity, preventing generated/imported aliasing.
+  Imported rotation changes globe ownership/arcs, boundary deposits/features, signed elevations,
+  and exact replay after coordinator reconstruction.
+- Frame doctrine is explicit: the Eulerian globe classifies reassigned ownership on fixed world
+  centers plus current poles (a RED parity test caught the prior double rotation); Lagrangian crust
+  classifies onset-owned original centers after rotation. The non-snapshot gate now checks every
+  target cell's exact source material, public fraction/feature, current globe ownership, and current
+  topology-bound marker incidence.
+- Transform scarp phase uses a stable world-space coordinate instead of resetting per edge-local arc.
+  Mantle forcing groups normalized pair/kind records, coalesces exact endpoint-connected degree-two
+  chains, terminates at junctions, never bridges disconnected components, and reduces a real
+  frequency-4 frontier to at most one third as many forcing segments as visual forcing arcs.
 - Exact shared-edge RED was `-4.021378056e-7` rad at frequency 2 and `-5.437160815e-7` rad at
   frequency 4 under the rejected inradius subtraction. GREEN is exactly `-double.Epsilon` on the
   subducting side at both frequencies, with a same-plate far-interior contribution of exactly zero.
@@ -140,9 +160,12 @@ modes are the meaningful compile/runtime proof).
   instrument anchor `(0, 0, −1)`, inner ring 1.30..1.38 (width 0.08), outer ring 1.52..1.62
   (width 0.10). Tunnel-local reload identifiers use world-bundle wording; the resource service's
   actual `RuntimeChanged` API name is unchanged.
-- Verification after the final causal/test changes: modified World focus 63/63; full
-  `App.World.Tests` 584/584; `App.Presentation.Tests` 232/232; `App.Timeline.Tests` 339/339;
-  `git diff --check` clean. No commit or push was made.
+- Verification after the authority/frame follow-up: focused World authority/morphology 81/81;
+  full `App.World.Composition.Tests` 109/109; full `App.World.Tests` 622/622 with project references;
+  engine package closure 0.1.12 restore and full package-mode `App.World.Tests` 622/622. The prior
+  checkpoint's `App.Presentation.Tests` 232/232 and `App.Timeline.Tests` 339/339 were not rerun for
+  this World-only increment. `git diff --check` is clean; commit hashes are reported in the handoff,
+  and nothing was pushed.
 - Core changed areas: world feature mapping/transport, edge-local reconstruction and polarity,
   finite-cell boundary fields and elevation composition, bounded tectonic detail, adaptive-mesh
   integration proofs, independent tunnel zoom/framing/ring hit geometry, and their World,

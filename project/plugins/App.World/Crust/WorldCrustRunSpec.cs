@@ -31,7 +31,8 @@ internal sealed record WorldCrustRunSpec(
     double VerticalExaggeration,
     CellElevationHydrosphereMode HydrosphereMode,
     CrustPatchRecipe? PatchRecipe = null,
-    RotationSourceRecipe? RotationSource = null)
+    RotationSourceRecipe? RotationSource = null,
+    IPlateRotationProvider? RotationProvider = null)
 {
     private static readonly CrustInitRecipe DefaultContinentalRecipe = CrustInitRecipe.Continental(0, 1);
     private static readonly CrustPatchRecipe DefaultPatchRecipe = new(Seed: 0, PatchCount: 5);
@@ -105,7 +106,8 @@ internal sealed record WorldCrustRunSpec(
     public static WorldCrustRunSpec ForPresentation(
         WorldGenerationRenderOptions renderOptions,
         long onsetTick,
-        long referenceTick)
+        long referenceTick,
+        IPlateRotationProvider? rotationProvider = null)
     {
         ArgumentNullException.ThrowIfNull(renderOptions);
         if (onsetTick < 0) throw new ArgumentOutOfRangeException(nameof(onsetTick));
@@ -132,7 +134,8 @@ internal sealed record WorldCrustRunSpec(
             Rates: CreateDefaultRates(),
             BoundaryProfiles: renderOptions.BoundaryProfiles,
             VerticalExaggeration: renderOptions.VerticalExaggeration,
-            HydrosphereMode: renderOptions.HydrosphereMode);
+            HydrosphereMode: renderOptions.HydrosphereMode,
+            RotationProvider: rotationProvider);
     }
 
     public static WorldCrustRunSpec ForReconstructor(

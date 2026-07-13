@@ -143,6 +143,20 @@ public sealed class CellBoundaryFieldTests
     }
 
     [Fact]
+    public void Transform_phase_at_shared_point_is_stable_across_edge_split_orientation()
+    {
+        var west = new GlobeVec3(-1, 0, 0);
+        var firstEdge = Arc(0, 1, PlateBoundaryKind.Transform, East, North);
+        var adjacentReversedEdge = Arc(1, 0, PlateBoundaryKind.Transform, west, North);
+        var shared = new Vector3D(North.X, North.Y, North.Z);
+
+        double firstPhase = CellBoundaryField.TransformPhaseCoordinate(firstEdge, shared);
+        double adjacentPhase = CellBoundaryField.TransformPhaseCoordinate(adjacentReversedEdge, shared);
+
+        Assert.Equal(firstPhase, adjacentPhase, 12);
+    }
+
+    [Fact]
     public void Coarse_real_boundary_cell_receives_narrow_profile_while_same_plate_interior_stays_zero()
     {
         var (boundaryCell, interiorCell, arc) = RealSharedEdgeFixture(frequency: 2);
@@ -182,27 +196,38 @@ public sealed class CellBoundaryFieldTests
     }
 
     [Fact]
-    public void Junction_tie_uses_first_incident_edge_in_order()
+    public void Junction_tie_uses_semantic_priority_and_plate_pair_independent_of_input_order()
     {
         var up = new GlobeVec3(0, 0, 1);
         var junctionCell = new GlobeCell(0, 0, East, North, up);
-        var divergent = Arc(0, 1, PlateBoundaryKind.Divergent, East, North);
-        var transform = Arc(0, 2, PlateBoundaryKind.Transform, North, up);
-        var noPolarity = new Dictionary<(int, int), ConvergentBoundaryPolarity>();
+        var convergentHighPair = Arc(0, 3, PlateBoundaryKind.Convergent, East, North);
+        var convergentLowPair = Arc(0, 1, PlateBoundaryKind.Convergent, North, up);
+        var divergent = Arc(0, 2, PlateBoundaryKind.Divergent, East, North);
+        var transform = Arc(0, 4, PlateBoundaryKind.Transform, North, up);
+        var polarity = new Dictionary<(int, int), ConvergentBoundaryPolarity>
+        {
+            [(0, 1)] = new ConvergentBoundaryPolarity(0, 1, IsCollision: true),
+            [(0, 3)] = new ConvergentBoundaryPolarity(0, 3, IsCollision: true),
+        };
+        var permutations = new[]
+        {
+            new[] { transform, convergentHighPair, divergent, convergentLowPair },
+            new[] { convergentLowPair, divergent, convergentHighPair, transform },
+            new[] { divergent, transform, convergentLowPair, convergentHighPair },
+        };
 
-        var divergentFirst = CellBoundaryField.Build(
-            new[] { junctionCell },
-            new[] { divergent, transform },
-            noPolarity);
-        var transformFirst = CellBoundaryField.Build(
-            new[] { junctionCell },
-            new[] { transform, divergent },
-            noPolarity);
+        var samples = permutations
+            .Select(arcs => CellBoundaryField.Build(new[] { junctionCell }, arcs, polarity)[0])
+            .ToArray();
 
-        Assert.Equal(0.0, divergentFirst[0].SignedDistanceRad);
-        Assert.Equal(PlateBoundaryKind.Divergent, divergentFirst[0].Kind);
-        Assert.Equal(0.0, transformFirst[0].SignedDistanceRad);
-        Assert.Equal(PlateBoundaryKind.Transform, transformFirst[0].Kind);
+        Assert.All(samples, sample =>
+        {
+            Assert.Equal(0.0, sample.SignedDistanceRad);
+            Assert.Equal(PlateBoundaryKind.Convergent, sample.Kind);
+            Assert.Equal(0, sample.ArcPlateA);
+            Assert.Equal(1, sample.ArcPlateB);
+        });
+        Assert.All(samples.Skip(1), sample => Assert.Equal(samples[0], sample));
     }
 
     private static (GlobeCell BoundaryCell, GlobeCell InteriorCell, PlateBoundaryArc Arc) RealSharedEdgeFixture(

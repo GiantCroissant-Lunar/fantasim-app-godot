@@ -561,7 +561,7 @@ public sealed class Service : IService, IDisposable
         long onsetTick)
     {
         ArgumentNullException.ThrowIfNull(history);
-        return history.GetActiveRotationProvider(onsetTick)
+        return history.GetActiveRotationProjection(onsetTick).Provider
             ?? new GeneratedEulerPoleRotationProvider(plates, onsetTick);
     }
 
@@ -953,16 +953,20 @@ public sealed class Service : IService, IDisposable
             CrustSnapshotTickSeries.DefaultSpacingTicks,
             onsetTick + MobilePlateWindowTicks);
         var snapshotTick = series.SelectSnapshotForPlayhead(arcTick) ?? arcTick;
+        var rotationProjection = _history.GetActiveRotationProjection(onsetTick);
 
         // Seed + SpinRate mirror the sibling globe-reconstructor cache key (_globeReconstructorKey
         // below); GraphRevision mirrors CrustGenerationTriggerKey (CrustGenerationTriggerPolicy.cs)
         // -- a generation-graph edit must not serve a stale crust product (2026-07-11 cache-key
         // completion, vault/specs/2026-07-11-surrealdb-persistence-slice1-design.md §1.2).
+        // RotationAuthorityDigest binds the product to the exact generated/imported motion truth;
+        // changing authority cannot reuse deposits or feature semantics from the previous source.
         var key = new CrustProductCacheKey(
             renderOptions.Seed,
             renderOptions.TessellationFrequency,
             renderOptions.SpinRateRadiansPerMegaAnnum,
             graphRevision,
+            rotationProjection.Authority.Digest,
             snapshotTick);
         lock (_crustProductCacheGate)
         {
@@ -970,7 +974,11 @@ public sealed class Service : IService, IDisposable
                 return cached;
         }
 
-        var spec = WorldCrustRunSpec.ForPresentation(renderOptions, onsetTick, snapshotTick);
+        var spec = WorldCrustRunSpec.ForPresentation(
+            renderOptions,
+            onsetTick,
+            snapshotTick,
+            rotationProjection.Provider);
 
         // Cross-session probe (2026-07-11 persistence slice 1): a hit here reconstructs the
         // materialization from the persisted crust-evolution fold WITHOUT re-running
@@ -1037,6 +1045,7 @@ public sealed class Service : IService, IDisposable
             key.Frequency,
             key.SpinRateRadiansPerMegaAnnum,
             key.GraphRevision,
+            key.RotationAuthorityDigest,
             key.SnapshotTick,
             CrustProductCacheSchema.SchemaVersion,
             CrustProductCacheSchema.CurrentAppVersionStamp);
@@ -1048,6 +1057,15 @@ public sealed class Service : IService, IDisposable
                 return null;
 
             var record = CrustProductCacheSchema.Decode(blob.Data);
+            if (record.Seed != key.Seed
+                || record.Frequency != key.Frequency
+                || record.SpinRateRadiansPerMegaAnnum != key.SpinRateRadiansPerMegaAnnum
+                || record.GraphRevision != key.GraphRevision
+                || !string.Equals(record.RotationAuthorityDigest, key.RotationAuthorityDigest, StringComparison.Ordinal)
+                || record.SnapshotTick != key.SnapshotTick)
+            {
+                return null;
+            }
             return WorldCrustMaterializer.FromPersistedRecord(spec, record);
         }
         catch (Exception ex)
@@ -1069,9 +1087,11 @@ public sealed class Service : IService, IDisposable
             return;
 
         var record = WorldCrustMaterializer.ToPersistedRecord(
-            materialization, key.Seed, key.Frequency, key.SpinRateRadiansPerMegaAnnum, key.GraphRevision, key.SnapshotTick);
+            materialization, key.Seed, key.Frequency, key.SpinRateRadiansPerMegaAnnum, key.GraphRevision,
+            key.RotationAuthorityDigest, key.SnapshotTick);
         var id = CrustProductCacheSchema.ComposeDocumentId(
-            key.Seed, key.Frequency, key.SpinRateRadiansPerMegaAnnum, key.GraphRevision, key.SnapshotTick,
+            key.Seed, key.Frequency, key.SpinRateRadiansPerMegaAnnum, key.GraphRevision,
+            key.RotationAuthorityDigest, key.SnapshotTick,
             record.SchemaVersion, record.AppVersionStamp);
         var blob = new DocumentBlob(CrustProductCacheSchema.Encode(record));
 
@@ -1298,10 +1318,12 @@ public sealed class Service : IService, IDisposable
     /// Crust-product cache key. Extended 2026-07-11 (vault/specs/2026-07-11-surrealdb-persistence-
     /// slice1-design.md §1.2) to carry every world-identity dimension the render options and
     /// generation graph expose: Seed + SpinRateRadiansPerMegaAnnum mirror the sibling
-    /// <see cref="_globeReconstructorKey"/> (Seed, Frequency, SpinRate) below; GraphRevision mirrors
-    /// <c>CrustGenerationTriggerKey</c> (CrustGenerationTriggerPolicy.cs). Before this fix the key
-    /// carried only (Frequency, SnapshotTick), so two worlds differing only by Seed/SpinRate/
-    /// GraphRevision aliased onto the same cache slot. <c>internal</c> (not <c>private</c>) so
+    /// <see cref="_globeReconstructorKey"/> (Seed, Frequency, SpinRate, RotationAuthorityDigest)
+    /// below; GraphRevision mirrors <c>CrustGenerationTriggerKey</c>
+    /// (CrustGenerationTriggerPolicy.cs). RotationAuthorityDigest distinguishes the exact selected
+    /// generated/imported rotation truth. Before these fixes the key carried only (Frequency,
+    /// SnapshotTick), so worlds differing by Seed/SpinRate/GraphRevision/rotation authority could
+    /// alias onto the same cache slot. <c>internal</c> (not <c>private</c>) so
     /// App.World.Tests (InternalsVisibleTo, App.World.csproj) can assert on key equality directly.
     /// </summary>
     internal readonly record struct CrustProductCacheKey(
@@ -1309,12 +1331,13 @@ public sealed class Service : IService, IDisposable
         int Frequency,
         double SpinRateRadiansPerMegaAnnum,
         int GraphRevision,
+        string RotationAuthorityDigest,
         long SnapshotTick);
 
     private readonly record struct Rgb(byte R, byte G, byte B);
 
     private readonly object _globeReconstructorGate = new();
-    private (int Seed, int Frequency, double SpinRateRadiansPerMegaAnnum) _globeReconstructorKey;
+    private (int Seed, int Frequency, double SpinRateRadiansPerMegaAnnum, string RotationAuthorityDigest) _globeReconstructorKey;
     private OnsetRoster? _cachedGlobeRoster;
     private GlobeReconstructor? _cachedGlobeReconstructor;
 
@@ -1324,7 +1347,12 @@ public sealed class Service : IService, IDisposable
     {
         // Spin rate is part of the key: authoring the knob must rebuild the roster, not
         // serve a reconstructor seeded at the previous rate.
-        var key = (renderOptions.Seed, renderOptions.TessellationFrequency, renderOptions.SpinRateRadiansPerMegaAnnum);
+        var rotationProjection = _history.GetActiveRotationProjection(onsetTick);
+        var key = (
+            renderOptions.Seed,
+            renderOptions.TessellationFrequency,
+            renderOptions.SpinRateRadiansPerMegaAnnum,
+            rotationProjection.Authority.Digest);
         lock (_globeReconstructorGate)
         {
             if (_cachedGlobeReconstructor is null || _globeReconstructorKey != key)
@@ -1334,11 +1362,15 @@ public sealed class Service : IService, IDisposable
                     onsetTick,
                     renderOptions.TessellationFrequency,
                     renderOptions.SpinRateRadiansPerMegaAnnum);
+                var plates = _cachedGlobeRoster.SeedPlatesAt(onsetTick);
+                var rotationProvider = rotationProjection.Provider
+                    ?? new GeneratedEulerPoleRotationProvider(plates, onsetTick);
                 _cachedGlobeReconstructor = GlobeReconstructor.FromOnsetRoster(
                     _cachedGlobeRoster,
                     onsetTick,
                     SphereRegimeScheduleDefaults.GeosphereDefault,
-                    renderOptions.TessellationFrequency);
+                    renderOptions.TessellationFrequency,
+                    rotationProvider);
                 _globeReconstructorKey = key;
             }
 

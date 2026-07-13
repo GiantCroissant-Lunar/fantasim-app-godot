@@ -45,6 +45,9 @@ public static class BoundarySectionBuilder
 
         var field = CellBoundaryField.Build(globe.Cells, arcs, polarity);
         int nearestPointIndex = SelectRepresentativePointIndex(field, arc);
+        double transformPhaseCoordinate = CellBoundaryField.TransformPhaseCoordinate(
+            arc,
+            ToVector(SelectOrigin(arc)));
         double halfWidth = ResolveHalfWidth(arc.Kind, convergentPolarity.IsCollision, parameters);
 
         var samples = new BoundarySectionSample[sampleCount];
@@ -58,6 +61,7 @@ public static class BoundarySectionBuilder
                 signedDistance,
                 arc.Kind,
                 nearestPointIndex,
+                transformPhaseCoordinate,
                 cellPlateId,
                 arc.PlateA,
                 arc.PlateB,

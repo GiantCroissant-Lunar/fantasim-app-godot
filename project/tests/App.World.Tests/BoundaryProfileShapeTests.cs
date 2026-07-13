@@ -15,8 +15,8 @@ public sealed class BoundaryProfileShapeTests
 
     private static CellBoundarySample Sample(double signed, PlateBoundaryKind kind,
         int cellPlate = 0, int arcA = 0, int arcB = 1, int pointIdx = 0,
-        int? subducting = null, bool collision = false) =>
-        new(true, signed, kind, pointIdx, cellPlate, arcA, arcB, subducting, collision);
+        double transformPhaseCoordinate = 0.0, int? subducting = null, bool collision = false) =>
+        new(true, signed, kind, pointIdx, transformPhaseCoordinate, cellPlate, arcA, arcB, subducting, collision);
 
     // ── Convergent subduction (asymmetric) ────────────────────────────────────────────────────
 
@@ -125,7 +125,8 @@ public sealed class BoundaryProfileShapeTests
         double atZeroPhase = BoundaryProfileShape.Contribution(
             Sample(0.0, PlateBoundaryKind.Transform, cellPlate: 0, arcA: 0, arcB: 1, pointIdx: 0), P);
         double atHalfPeriod = BoundaryProfileShape.Contribution(
-            Sample(0.0, PlateBoundaryKind.Transform, cellPlate: 0, arcA: 0, arcB: 1, pointIdx: (int)(P.TransformScarpPeriodPoints / 2)), P);
+            Sample(0.0, PlateBoundaryKind.Transform, cellPlate: 0, arcA: 0, arcB: 1,
+                transformPhaseCoordinate: P.TransformScarpPeriodPoints / 2.0), P);
         Assert.Equal(P.TransformScarpAmplitude, atZeroPhase, 6);
         Assert.Equal(-P.TransformScarpAmplitude, atHalfPeriod, 6);
 
@@ -133,6 +134,27 @@ public sealed class BoundaryProfileShapeTests
         double beyond = BoundaryProfileShape.Contribution(
             Sample(P.TransformHalfWidthRad + 0.01, PlateBoundaryKind.Transform, cellPlate: 0, arcA: 0, arcB: 1), P);
         Assert.Equal(0.0, beyond, 9);
+    }
+
+    [Fact]
+    public void Transform_scarp_phase_does_not_reset_with_edge_local_point_index()
+    {
+        const double globalPhase = 7.25;
+        var firstEdge = Sample(
+            0.0,
+            PlateBoundaryKind.Transform,
+            pointIdx: 0,
+            transformPhaseCoordinate: globalPhase);
+        var adjacentEdge = Sample(
+            0.0,
+            PlateBoundaryKind.Transform,
+            pointIdx: 16,
+            transformPhaseCoordinate: globalPhase);
+
+        Assert.Equal(
+            BoundaryProfileShape.Contribution(firstEdge, P),
+            BoundaryProfileShape.Contribution(adjacentEdge, P),
+            12);
     }
 
     [Fact]
@@ -170,7 +192,7 @@ public sealed class BoundaryProfileShapeTests
     [Fact]
     public void Contribution_is_zero_when_not_found()
     {
-        var notFound = new CellBoundarySample(false, 0.0, PlateBoundaryKind.Convergent, 0, 0, 0, 1, null, false);
+        var notFound = new CellBoundarySample(false, 0.0, PlateBoundaryKind.Convergent, 0, 0.0, 0, 0, 1, null, false);
         Assert.Equal(0.0, BoundaryProfileShape.Contribution(notFound, P), 9);
     }
 }

@@ -36,7 +36,7 @@ public static class BoundaryProfileShape
                 ? ConvergentCollision(s.SignedDistanceRad, p)
                 : ConvergentSubduction(s.SignedDistanceRad, p),
             PlateBoundaryKind.Divergent => Divergent(s.SignedDistanceRad, p),
-            PlateBoundaryKind.Transform => Transform(s.SignedDistanceRad, s.NearestPointIndex, p),
+            PlateBoundaryKind.Transform => Transform(s.SignedDistanceRad, s.TransformPhaseCoordinate, p),
             _ => 0.0,
         };
     }
@@ -69,15 +69,16 @@ public static class BoundaryProfileShape
              + p.DivergentRiftNotchDepth * Falloff(d, p.DivergentRiftHalfWidthRad);
     }
 
-    // Narrow-band scarps oscillating along the boundary (cosine over the nearest-point index) tapering across
-    // TransformHalfWidth. Longitudinal wavelength is TransformScarpPeriodPoints (arc-sample points).
-    private static double Transform(double signed, int nearestPointIndex, in BoundaryProfileParameters p)
+    // Narrow-band scarps oscillating along the boundary (cosine over a stable world-space phase
+    // coordinate) tapering across TransformHalfWidth. The period remains expressed in the
+    // established pseudo-sample-point unit, but no longer resets for every edge-local visual arc.
+    private static double Transform(double signed, double phaseCoordinate, in BoundaryProfileParameters p)
     {
         double d = Math.Abs(signed);
         double taper = Falloff(d, p.TransformHalfWidthRad);
         if (taper == 0.0) return 0.0;
 
-        double phase = 2.0 * Math.PI * nearestPointIndex / p.TransformScarpPeriodPoints;
+        double phase = 2.0 * Math.PI * phaseCoordinate / p.TransformScarpPeriodPoints;
         return p.TransformScarpAmplitude * Math.Cos(phase) * taper;
     }
 

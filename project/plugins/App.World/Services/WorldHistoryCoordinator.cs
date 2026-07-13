@@ -1,6 +1,7 @@
 using FantaSim.App.World.Dto;
 using FantaSim.App.World.Crust;
 using FantaSim.App.World.History;
+using System.Security.Cryptography;
 using FantaSim.World.Fields;
 using FantaSim.World.Fields.Core;
 using FantaSim.World.TruthStream;
@@ -41,6 +42,7 @@ internal sealed class WorldHistoryCoordinator : IWorldHistoryCoordinator
     private readonly object _rotationStateGate = new();
     private MaterializedRotationProvider? _activeRotationProvider;
     private long _activeRotationOnsetTick;
+    private RotationAuthorityIdentity _activeRotationAuthority = RotationAuthorityIdentity.Generated;
 
     // Composed at construction. The descriptor seed is intentionally minimal here (one
     // continuous field driven by the built-in WeightedAverage reducer); Task 7 will expand the
@@ -162,6 +164,7 @@ internal sealed class WorldHistoryCoordinator : IWorldHistoryCoordinator
                 return; // A newer re-entrant selection owns both terminal truth and projection.
             _activeRotationProvider = null;
             _activeRotationOnsetTick = 0L;
+            _activeRotationAuthority = RotationAuthorityIdentity.Generated;
         }
     }
 
@@ -191,6 +194,7 @@ internal sealed class WorldHistoryCoordinator : IWorldHistoryCoordinator
                 return; // A newer re-entrant selection owns both terminal truth and projection.
             _activeRotationProvider = outcome.Provider;
             _activeRotationOnsetTick = onsetTick;
+            _activeRotationAuthority = ImportedAuthority(outcome.BoundCursor);
         }
     }
 
@@ -200,6 +204,23 @@ internal sealed class WorldHistoryCoordinator : IWorldHistoryCoordinator
             return _activeRotationProvider is not null && _activeRotationOnsetTick == onsetTick
                 ? _activeRotationProvider
                 : null;
+    }
+
+    public RotationAuthorityIdentity GetActiveRotationAuthority()
+    {
+        lock (_rotationStateGate)
+            return _activeRotationAuthority;
+    }
+
+    public RotationAuthorityProjection GetActiveRotationProjection(long onsetTick)
+    {
+        lock (_rotationStateGate)
+        {
+            var provider = _activeRotationProvider is not null && _activeRotationOnsetTick == onsetTick
+                ? _activeRotationProvider
+                : null;
+            return new RotationAuthorityProjection(_activeRotationAuthority, provider);
+        }
     }
 
     public void Dispose()
@@ -225,7 +246,17 @@ internal sealed class WorldHistoryCoordinator : IWorldHistoryCoordinator
         {
             _activeRotationProvider = recovered.Provider;
             _activeRotationOnsetTick = recovered.OnsetTick;
+            _activeRotationAuthority = ImportedAuthority(boundCursor);
         }
+    }
+
+    private static RotationAuthorityIdentity ImportedAuthority(TruthEventCursor boundCursor)
+    {
+        // Hash the canonical length-framed cursor encoding, not the raw source text or a provider
+        // object identity. The digest therefore changes whenever stream, sequence, event hash, or
+        // tick changes and is stable across coordinator reconstruction from committed truth.
+        var digest = SHA256.HashData(RotationSourceSelectionCodec.EncodeImported(boundCursor));
+        return new RotationAuthorityIdentity($"imported:v1:{Convert.ToHexString(digest)}");
     }
 
     private RotationSelectionState RecordRotationSelection(TruthEventCursor? importedBoundCursor)

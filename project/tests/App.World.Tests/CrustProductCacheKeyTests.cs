@@ -22,8 +22,9 @@ public sealed class CrustProductCacheKeyTests
         int frequency = 4,
         double spinRate = 0.02,
         int graphRevision = 1,
+        string rotationAuthorityDigest = "generated:v1",
         long snapshotTick = 105_000_000L)
-        => new(seed, frequency, spinRate, graphRevision, snapshotTick);
+        => new(seed, frequency, spinRate, graphRevision, rotationAuthorityDigest, snapshotTick);
 
     [Fact]
     public void Keys_WithIdenticalFields_AreEqual()
@@ -47,6 +48,14 @@ public sealed class CrustProductCacheKeyTests
     public void Keys_WithDifferentGraphRevision_AreNotEqual()
     {
         Assert.NotEqual(Key(graphRevision: 1), Key(graphRevision: 2));
+    }
+
+    [Fact]
+    public void Keys_WithDifferentRotationAuthorityDigest_AreNotEqual()
+    {
+        Assert.NotEqual(
+            Key(rotationAuthorityDigest: "generated:v1"),
+            Key(rotationAuthorityDigest: "imported:bound-cursor-digest"));
     }
 
     [Fact]

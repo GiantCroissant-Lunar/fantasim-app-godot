@@ -23,7 +23,22 @@ internal interface IWorldHistoryCoordinator : IDisposable
         RotationSourceRecipe recipe,
         long onsetTick);
     IPlateRotationProvider? GetActiveRotationProvider(long onsetTick);
+    RotationAuthorityIdentity GetActiveRotationAuthority();
+    RotationAuthorityProjection GetActiveRotationProjection(long onsetTick);
 }
+
+/// <summary>
+/// App-owned cache identity for the canonical rotation authority. Imported identities are derived
+/// from the exact committed bound cursor; generated authority has one stable identity.
+/// </summary>
+internal readonly record struct RotationAuthorityIdentity(string Digest)
+{
+    public static RotationAuthorityIdentity Generated { get; } = new("generated:v1");
+}
+
+internal readonly record struct RotationAuthorityProjection(
+    RotationAuthorityIdentity Authority,
+    IPlateRotationProvider? Provider);
 
 /// <summary>
 /// Selects the <see cref="IWorldHistoryCoordinator"/> implementation at construction. The real

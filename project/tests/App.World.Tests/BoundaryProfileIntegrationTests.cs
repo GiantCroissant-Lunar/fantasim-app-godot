@@ -5,6 +5,7 @@ using FantaSim.App.World;
 using FantaSim.App.Ecs.Cells;
 using FantaSim.App.Ecs.Systems;
 using FantaSim.App.World.Composition;
+using FantaSim.App.World.Crust;
 using FantaSim.App.World.Dto;
 using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Globe;
@@ -46,7 +47,47 @@ public sealed class BoundaryProfileIntegrationTests
         IReadOnlyDictionary<int, CrustFeature>? Features,
         WorldGlobeSnapshot Globe);
 
+    private sealed record CurrentFrameFixture(
+        IReadOnlyDictionary<int, CellCrustState> State,
+        IReadOnlyDictionary<int, CrustFeature> Features,
+        IReadOnlyList<CellBoundarySample> BoundaryField);
+
     private static CrustField BuildField(BoundaryProfileParameters parameters) => BuildField(parameters, FixtureFrequency);
+
+    private static CurrentFrameFixture BuildCurrentFrameFixture(int frequency, long tick)
+    {
+        long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        var options = WorldGenerationRenderOptions.Default with { TessellationFrequency = frequency };
+        var schedule = SphereRegimeScheduleDefaults.GeosphereFor(onsetTick);
+        var mobilePlate = schedule.RegimeAt(tick)!;
+        long snapshotTick = CrustSnapshotTickSeries.ForRegime(
+                mobilePlate,
+                CrustSnapshotTickSeries.DefaultSpacingTicks,
+                onsetTick + Service.MobilePlateWindowTicks)
+            .SelectSnapshotForPlayhead(tick) ?? tick;
+        var materialization = WorldCrustMaterializer.MaterializeAsync(
+                WorldCrustRunSpec.ForPresentation(options, onsetTick, snapshotTick))
+            .GetAwaiter()
+            .GetResult();
+        var roster = OnsetRoster.Build(options.Seed, onsetTick, frequency, options.SpinRateRadiansPerMegaAnnum);
+        var reconstructor = GlobeReconstructor.FromOnsetRoster(roster, onsetTick, schedule, frequency);
+        var globe = reconstructor.BuildGlobeAt(tick);
+        var arcs = reconstructor.BuildBoundaryArcsAt(tick);
+        var stateAtTick = new Dictionary<long, IReadOnlyDictionary<int, CellCrustState>>
+        {
+            [tick] = materialization.Result.StateByTick[snapshotTick],
+        };
+        var sampler = new PlateFrameSampler(
+            materialization.Tessellation,
+            materialization.Result.Plates,
+            materialization.Topology,
+            onsetTick);
+        var currentAssignment = globe.Cells.ToDictionary(cell => cell.CellId, cell => cell.PlateId);
+        var state = sampler.SampleAt(tick, stateAtTick, currentAssignment);
+        var features = sampler.SampleFeaturesAt(globe, state, arcs);
+        var polarity = ConvergentPolarity.Derive(arcs, globe.Cells, features, state);
+        return new CurrentFrameFixture(state, features, CellBoundaryField.Build(globe.Cells, arcs, polarity));
+    }
 
     private static CrustField BuildField(BoundaryProfileParameters parameters, int frequency)
     {
@@ -177,7 +218,7 @@ public sealed class BoundaryProfileIntegrationTests
     }
 
     [Fact]
-    public void Formation_specific_counterfactuals_produce_authoritative_signed_morphology()
+    public void Lower_pipeline_fixture_proves_collision_mountain_and_divergent_ridge_counterfactuals()
     {
         var def = BuildField(BoundaryProfileParameters.Default);
         var zero = BuildField(BoundaryProfileParameters.Zero);
@@ -190,14 +231,13 @@ public sealed class BoundaryProfileIntegrationTests
         Assert.True(def.Features is not null, "pipeline must produce features at this tick");
 
         var mountainCells = CellsWithFeature(def.Features, CrustFeatureKind.Mountain);
-        var volcanicCells = CellsWithFeature(def.Features, CrustFeatureKind.VolcanicArc);
-        var trenchCells = CellsWithFeature(def.Features, CrustFeatureKind.Trench);
         var ridgeCells = CellsWithFeature(def.Features, CrustFeatureKind.Ridge);
 
         Assert.Contains(85, mountainCells);
-        Assert.Contains(144, volcanicCells);
-        Assert.Contains(182, trenchCells);
         Assert.Contains(196, ridgeCells);
+        Assert.Equal(PlateBoundaryKind.Convergent, def.Field[85].Kind);
+        Assert.True(def.Field[85].IsCollision);
+        Assert.Equal(PlateBoundaryKind.Divergent, def.Field[196].Kind);
 
         var mountainState = def.State[85];
         double mountainWithoutOrogenyOrProfiles = CellElevationSystem.Derive(
@@ -211,14 +251,12 @@ public sealed class BoundaryProfileIntegrationTests
 
         Assert.True(mountainSignal >= 750.0,
             $"mountain cell 85 must gain >= 750 m versus no-orogeny/no-profile counterfactual; was {mountainSignal:F1}");
-        Assert.True(contributions[182] <= -750.0,
-            $"trench cell 182 must lose >= 750 m; was {contributions[182]:F1}");
         Assert.True(contributions[196] >= 300.0,
             $"ridge cell 196 must gain >= 300 m; was {contributions[196]:F1}");
     }
 
     [Fact]
-    public void Service_document_preserves_all_four_feature_lineages_with_causal_signed_relief()
+    public void Service_document_preserves_all_four_feature_lineages_with_signed_profile_relief()
     {
         using var service = new Service(new ServiceRegistry());
         var shaped = service.GetPlanetPresentationAsync(PublicServiceFixtureTick, PublicServiceFixtureFrequency);
@@ -237,23 +275,33 @@ public sealed class BoundaryProfileIntegrationTests
 
         Assert.Equal(TectonicFeatureKind.Mountain.ToWireByte(), shaped.CellFeatures![134].Kind);
         Assert.Equal(TectonicFeatureKind.VolcanicArc.ToWireByte(), shaped.CellFeatures[137].Kind);
-        Assert.Equal(TectonicFeatureKind.Trench.ToWireByte(), shaped.CellFeatures[40].Kind);
-        Assert.Equal(TectonicFeatureKind.Ridge.ToWireByte(), shaped.CellFeatures[224].Kind);
+        // Corrected Eulerian fixed-cell classification moved the locked topology fixtures:
+        // old Trench 40 -> current Trench 4; old Ridge 224 -> current Ridge 40.
+        Assert.Equal(TectonicFeatureKind.Trench.ToWireByte(), shaped.CellFeatures[4].Kind);
+        Assert.Equal(TectonicFeatureKind.Ridge.ToWireByte(), shaped.CellFeatures[40].Kind);
+
+        var current = BuildCurrentFrameFixture(PublicServiceFixtureFrequency, PublicServiceFixtureTick);
+        Assert.Equal(CrustFeatureKind.Trench, current.Features[4].Kind);
+        Assert.Equal(PlateBoundaryKind.Convergent, current.BoundaryField[4].Kind);
+        Assert.Equal(current.BoundaryField[4].CellPlateId, current.BoundaryField[4].SubductingPlateId);
+        Assert.False(current.BoundaryField[4].IsCollision);
+        Assert.Equal(CrustFeatureKind.Ridge, current.Features[40].Kind);
+        Assert.Equal(PlateBoundaryKind.Divergent, current.BoundaryField[40].Kind);
 
         double dryCrustBaseline = shaped.ContinentalFractionByCell![134] * CellElevationSystem.ContinentalAmp;
-        double mountainSignal = zero.CellElevations![134] - dryCrustBaseline;
-        Assert.True(mountainSignal >= 750.0,
-            $"mountain 134 must gain >= 750 m versus its no-orogeny dry-crust baseline; was {mountainSignal:F6}");
+        double stateDerivedRelief = zero.CellElevations![134] - dryCrustBaseline;
+        Assert.True(stateDerivedRelief >= 750.0,
+            $"mountain-labelled cell 134 must retain >= 750 m of state-derived relief above dry crust; was {stateDerivedRelief:F6}");
         Assert.True(shaped.CellElevations![137] - zero.CellElevations[137] > 0.0,
             $"volcanic arc 137 must rise in the all-four visual fixture; delta={shaped.CellElevations[137] - zero.CellElevations[137]:F6}");
-        Assert.True(shaped.CellElevations[40] - zero.CellElevations[40] <= -750.0,
-            $"trench 40 must lose >= 750 m; delta={shaped.CellElevations[40] - zero.CellElevations[40]:F6}");
-        Assert.True(shaped.CellElevations[224] - zero.CellElevations[224] >= 300.0,
-            $"ridge 224 must gain >= 300 m; delta={shaped.CellElevations[224] - zero.CellElevations[224]:F6}");
+        Assert.True(shaped.CellElevations[4] - zero.CellElevations[4] <= -750.0,
+            $"current subducting trench 4 must lose >= 750 m; delta={shaped.CellElevations[4] - zero.CellElevations[4]:F6}");
+        Assert.True(shaped.CellElevations[40] - zero.CellElevations[40] >= 300.0,
+            $"current divergent ridge 40 must gain >= 300 m; delta={shaped.CellElevations[40] - zero.CellElevations[40]:F6}");
     }
 
     [Fact]
-    public void Frequency_four_service_document_carries_quantitative_active_volcanic_arc_to_final_mesh()
+    public void Frequency_four_service_document_carries_active_overriding_volcanic_arc_to_final_mesh()
     {
         const int frequency = 4;
         const int volcanicCell = 803;
@@ -274,9 +322,17 @@ public sealed class BoundaryProfileIntegrationTests
         Assert.NotNull(zero.CellElevations);
         Assert.Equal(TectonicFeatureKind.VolcanicArc.ToWireByte(), shaped.CellFeatures![volcanicCell].Kind);
 
+        var current = BuildCurrentFrameFixture(frequency, PublicServiceFixtureTick);
+        Assert.Equal(CrustFeatureKind.VolcanicArc, current.Features[volcanicCell].Kind);
+        Assert.Equal(PlateBoundaryKind.Convergent, current.BoundaryField[volcanicCell].Kind);
+        Assert.False(current.BoundaryField[volcanicCell].IsCollision);
+        Assert.NotEqual(
+            current.BoundaryField[volcanicCell].SubductingPlateId,
+            current.BoundaryField[volcanicCell].CellPlateId);
+
         double volcanicSignal = shaped.CellElevations![volcanicCell] - zero.CellElevations![volcanicCell];
         Assert.True(volcanicSignal >= 750.0,
-            $"active volcanic arc {volcanicCell} must gain >= 750 m versus zero profiles; was {volcanicSignal:F6}");
+            $"active overriding volcanic arc {volcanicCell} must gain >= 750 m versus zero profiles; was {volcanicSignal:F6}");
 
         var shapedRadii = FinalMeshMeanRadiiByCell(shaped, volcanicCell);
         var baselineRadii = FinalMeshMeanRadiiByCell(zero, volcanicCell);
@@ -296,8 +352,8 @@ public sealed class BoundaryProfileIntegrationTests
                 BoundaryProfiles = BoundaryProfileParameters.Zero,
             });
 
-        var shapedRadii = FinalMeshMeanRadiiByCell(shaped, 134, 137, 40, 224);
-        var baselineRadii = FinalMeshMeanRadiiByCell(zero, 134, 137, 40, 224);
+        var shapedRadii = FinalMeshMeanRadiiByCell(shaped, 134, 137, 4, 40);
+        var baselineRadii = FinalMeshMeanRadiiByCell(zero, 134, 137, 4, 40);
         double dryCrustBaseline = shaped.ContinentalFractionByCell![134] * CellElevationSystem.ContinentalAmp;
         var mountainCounterfactualElevations = zero.CellElevations!.ToArray();
         mountainCounterfactualElevations[134] = dryCrustBaseline;
@@ -306,8 +362,8 @@ public sealed class BoundaryProfileIntegrationTests
 
         Assert.True(baselineRadii[134] - mountainCounterfactualRadii[134] > 1e-6);
         Assert.True(shapedRadii[137] - baselineRadii[137] > 1e-6);
-        Assert.True(baselineRadii[40] - shapedRadii[40] > 1e-6);
-        Assert.True(shapedRadii[224] - baselineRadii[224] > 1e-6);
+        Assert.True(baselineRadii[4] - shapedRadii[4] > 1e-6);
+        Assert.True(shapedRadii[40] - baselineRadii[40] > 1e-6);
     }
 
     private static IReadOnlyDictionary<int, double> FinalMeshMeanRadiiByCell(

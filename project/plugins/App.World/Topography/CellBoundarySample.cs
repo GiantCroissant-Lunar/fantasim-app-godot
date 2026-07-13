@@ -14,8 +14,11 @@ namespace FantaSim.App.World.Topography;
 /// convergent subduction: negative on the subducting (down-going) side, positive on the overriding side.
 /// For convergent collision, divergent, and transform: always non-negative (the profile is symmetric).</param>
 /// <param name="Kind">The nearest boundary's type (Convergent/Divergent/Transform). Inactive arcs are skipped.</param>
-/// <param name="NearestPointIndex">Index of the nearest point within the arc's polyline — drives the
-/// longitudinal scarp wavelength for transform boundaries.</param>
+/// <param name="NearestPointIndex">Index of the nearest point within the edge-local arc's polyline;
+/// retained for diagnostics and representative-section selection.</param>
+/// <param name="TransformPhaseCoordinate">Stable world-space longitudinal coordinate used by
+/// transform scarps. It is independent of edge-local point indexing, so adjacent visual edges do
+/// not restart the oscillation at phase zero.</param>
 /// <param name="CellPlateId">The owning plate id of this cell.</param>
 /// <param name="ArcPlateA">Lower plate id of the nearest arc.</param>
 /// <param name="ArcPlateB">Higher plate id of the nearest arc.</param>
@@ -27,6 +30,7 @@ public readonly record struct CellBoundarySample(
     double SignedDistanceRad,
     PlateBoundaryKind Kind,
     int NearestPointIndex,
+    double TransformPhaseCoordinate,
     int CellPlateId,
     int ArcPlateA,
     int ArcPlateB,
