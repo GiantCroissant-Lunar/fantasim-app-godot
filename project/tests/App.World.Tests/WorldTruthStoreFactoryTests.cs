@@ -1,4 +1,3 @@
-#if USE_PROJECT_REFERENCES
 using FantaSim.App.World.Services;
 using FantaSim.World.TruthStream;
 using Microsoft.Extensions.Configuration;
@@ -97,4 +96,3 @@ public sealed class WorldTruthStoreFactoryTests
         }
     }
 }
-#endif

@@ -1,18 +1,17 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Text.Json.Nodes;
 using FantaSim.App.World.Crust;
+using FantaSim.App.World.Dto;
+using FantaSim.App.World.Services;
+using ServiceArchi.Core;
 using Xunit;
 
 namespace FantaSim.App.World.Tests;
 
 public sealed class RotationSourceSeamTests
 {
-    private const string FixtureName = "four-plate-test.rot";
-
     // PLATES4: MovingPlateId TimeMa PoleLatDeg PoleLonDeg AngleDeg FixedPlateId
     private const string FourPlateRotText = @"
 1 0.0 90.0 0.0 0.0 0
@@ -122,57 +121,91 @@ public sealed class RotationSourceSeamTests
     }
 
     [Fact]
-    public void ImportedRotationProvider_parses_valid_rot_and_serves_plate_ids()
+    public void Imported_graph_request_with_malformed_source_fails_before_generation_append()
     {
-        var provider = new ImportedRotationProvider("four-plate", FourPlateRotText, onsetTick: 0L);
+        using var service = new Service(new ServiceRegistry());
+        var request = new WorldGenerationRequest(
+            WorldId: "bad-import-world",
+            GenerationSpec: "world.generate",
+            Parameters: new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["source"] = "world-generation.graph",
+                ["rotationSourceKind"] = "imported",
+                ["rotationSourcePayload"] = "1 0 90 0",
+                ["rotationSourceName"] = "bad.rot",
+            });
 
-        Assert.Equal(new[] { 1, 2, 3, 4 }, provider.ServedPlateIds.OrderBy(id => id));
+        var error = Assert.Throws<ArgumentException>(() => service.RunGenerationAsync(request));
+
+        Assert.Contains("parse issue", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.False(service.GetOverviewAsync().IsDirty);
     }
 
     [Fact]
-    public void ImportedRotationProvider_malformed_rot_throws_clear_error()
+    public void Imported_graph_request_without_payload_fails_instead_of_using_generated_fallback()
     {
-        const string malformed = "1 0.0 90.0 0.0\n2 not_a_number 0.0 5.0 0\n";
+        using var service = new Service(new ServiceRegistry());
+        var request = new WorldGenerationRequest(
+            WorldId: "missing-import-world",
+            GenerationSpec: "world.generate",
+            Parameters: new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["source"] = "world-generation.graph",
+                ["rotationSourceKind"] = "imported",
+            });
 
-        var ex = Assert.Throws<ArgumentException>(() =>
-            new ImportedRotationProvider("bad", malformed, onsetTick: 0L));
+        var error = Assert.Throws<ArgumentException>(() => service.RunGenerationAsync(request));
 
-        Assert.Contains("parse issue", ex.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("rotationSourcePayload", error.Message, StringComparison.Ordinal);
+        Assert.False(service.GetOverviewAsync().IsDirty);
     }
 
     [Fact]
-    public void ImportedRotationProvider_empty_rot_throws_clear_error()
+    public void Valid_imported_graph_request_commits_before_generation()
     {
-        var ex = Assert.Throws<ArgumentException>(() =>
-            new ImportedRotationProvider("empty", "# just a comment\n\n", onsetTick: 0L));
+        using var service = new Service(new ServiceRegistry());
+        var request = new WorldGenerationRequest(
+            WorldId: "valid-import-world",
+            GenerationSpec: "world.generate",
+            Parameters: new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["source"] = "world-generation.graph",
+                ["rotationSourceKind"] = "imported",
+                ["rotationSourcePayload"] = FourPlateRotText,
+                ["rotationSourceName"] = "four-plate-fixture.rot",
+            });
 
-        Assert.Contains("no rotations", ex.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+        var result = service.RunGenerationAsync(request);
+
+        Assert.True(result.Success);
+        Assert.True(service.GetOverviewAsync().IsDirty);
     }
 
     [Fact]
-    public void ImportedRotationProvider_unmapped_plate_returns_identity_at_onset()
+    public void Production_service_uses_coordinator_materialization_without_direct_rot_reparse()
     {
-        var provider = new ImportedRotationProvider("four-plate", FourPlateRotText, onsetTick: 0L);
-        var rotation = provider.RotationFromOnsetTo(plateId: 999, tick: 500_000L);
+        var serviceSource = File.ReadAllText(ProjectFile(
+            "project/plugins/App.World/Services/Service.cs"));
+        var coordinatorSource = File.ReadAllText(ProjectFile(
+            "project/plugins/App.World/History/RotationImportCoordinator.cs"));
 
-        Assert.Equal(UnifyMaths.Quaternion.Identity, rotation);
+        Assert.DoesNotContain("new ImportedRotationProvider", serviceSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("new RotParser", serviceSource, StringComparison.Ordinal);
+        Assert.Contains("RotationModelMaterializer.MaterializeAsync", coordinatorSource, StringComparison.Ordinal);
+        Assert.Contains("state.Payload.PlateCursor", coordinatorSource, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void FourPlateFixtureFile_is_valid_and_parses()
+    private static string ProjectFile(string relativePath)
     {
-        var text = ReadFixtureText(FixtureName);
-        var provider = new ImportedRotationProvider(FixtureName, text, onsetTick: 0L);
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            var candidate = Path.Combine(directory.FullName, relativePath);
+            if (File.Exists(candidate))
+                return candidate;
+            directory = directory.Parent;
+        }
 
-        Assert.Equal(4, provider.ServedPlateIds.Count);
-    }
-
-    private static string ReadFixtureText(string name)
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-        var dir = Path.GetDirectoryName(assembly.Location)
-            ?? throw new InvalidOperationException("Could not resolve test assembly directory.");
-        var path = Path.Combine(dir, "Fixtures", name);
-        return File.ReadAllText(path);
+        throw new FileNotFoundException($"Could not find project file '{relativePath}'.");
     }
 }

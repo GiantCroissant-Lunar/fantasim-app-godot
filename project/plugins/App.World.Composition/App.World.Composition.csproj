@@ -42,15 +42,15 @@
     <PackageReference Include="GiantCroissant.FantaSim.World.TruthStream.Contracts" />
   </ItemGroup>
   <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\Atmosphere.Genesis.Core\Atmosphere.Genesis.Core.csproj" />
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\Atmosphere\Atmosphere.csproj" />
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Shared\World.Shared.csproj" />
+    <ProjectReference Include="$(FantaSimWorldRoot)\project\plugins\Atmosphere.Genesis.Core\Atmosphere.Genesis.Core.csproj" />
+    <ProjectReference Include="$(FantaSimWorldRoot)\project\contracts\Atmosphere\Atmosphere.csproj" />
+    <ProjectReference Include="$(FantaSimWorldRoot)\project\contracts\World.Shared\World.Shared.csproj" />
     <!-- OnsetRoster: LidFractureAtOnset + ConvectionFieldGenerator + PlateTopologyMaterializer + contracts -->
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\Geosphere.Plate.Topology.Generation\Geosphere.Plate.Topology.Generation.csproj" />
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\Geosphere.Plate.Topology\Geosphere.Plate.Topology.csproj" />
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\Geosphere.Plate.Topology.Materializer\Geosphere.Plate.Topology.Materializer.csproj" />
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\Geosphere.Asthenosphere.Convection\Geosphere.Asthenosphere.Convection.csproj" />
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.TruthStream\World.TruthStream.csproj" />
+    <ProjectReference Include="$(FantaSimWorldRoot)\project\plugins\Geosphere.Plate.Topology.Generation\Geosphere.Plate.Topology.Generation.csproj" />
+    <ProjectReference Include="$(FantaSimWorldRoot)\project\contracts\Geosphere.Plate.Topology\Geosphere.Plate.Topology.csproj" />
+    <ProjectReference Include="$(FantaSimWorldRoot)\project\plugins\Geosphere.Plate.Topology.Materializer\Geosphere.Plate.Topology.Materializer.csproj" />
+    <ProjectReference Include="$(FantaSimWorldRoot)\project\plugins\Geosphere.Asthenosphere.Convection\Geosphere.Asthenosphere.Convection.csproj" />
+    <ProjectReference Include="$(FantaSimWorldRoot)\project\contracts\World.TruthStream\World.TruthStream.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

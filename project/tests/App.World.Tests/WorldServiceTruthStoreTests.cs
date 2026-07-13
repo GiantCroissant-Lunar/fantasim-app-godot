@@ -1,4 +1,3 @@
-#if USE_PROJECT_REFERENCES
 using Akka.Actor;
 using FantaSim.App.World.Dto;
 using FantaSim.App.World.Services;
@@ -150,4 +149,3 @@ public sealed class WorldServiceTruthStoreTests
         }
     }
 }
-#endif

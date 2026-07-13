@@ -1,4 +1,3 @@
-#if USE_PROJECT_REFERENCES
 using Akka.Actor;
 using FantaSim.World.TruthStream;
 using TimeDete.Time.Primitives;
@@ -42,11 +41,12 @@ internal sealed class ActorTruthEventWriter : ITruthEventWriter
         CancellationToken ct = default)
         => AskAsync<StreamHead>(AppendTruthEvents.From(stream, drafts), ct);
 
-    public async Task<StreamHead?> GetHeadAsync(TruthStreamIdentity stream, CancellationToken ct = default)
-    {
-        var result = await AskAsync<TruthHeadResult>(new GetTruthHead(stream), ct).ConfigureAwait(false);
-        return result.Head;
-    }
+    public Task<StreamHead> AppendIfHeadAsync(
+        TruthStreamIdentity stream,
+        IReadOnlyList<ITruthEventDraft> drafts,
+        StreamHead? expectedHead,
+        CancellationToken ct = default)
+        => AskAsync<StreamHead>(CasAppendTruthEvents.From(stream, drafts, expectedHead), ct);
 
     public void Dispose()
     {
@@ -73,9 +73,8 @@ internal sealed class TruthEventWriterActor : ReceiveActor
 
         ReceiveAsync<AppendTruthEvents>(message =>
             ReplyAsync(() => _store.AppendAsync(message.Stream, message.Drafts)));
-        ReceiveAsync<GetTruthHead>(message =>
-            ReplyAsync(async () => new TruthHeadResult(
-                await _store.GetHeadAsync(message.Stream).ConfigureAwait(false))));
+        ReceiveAsync<CasAppendTruthEvents>(message =>
+            ReplyAsync(() => _store.AppendIfHeadAsync(message.Stream, message.Drafts, message.ExpectedHead)));
     }
 
     private async Task ReplyAsync<T>(Func<Task<T>> operation)
@@ -104,13 +103,27 @@ internal sealed record AppendTruthEvents(
         ArgumentNullException.ThrowIfNull(drafts);
         return new AppendTruthEvents(
             stream,
-            drafts.Select(TruthEventDraftSnapshot.From).ToArray());
+            TruthEventDraftSnapshot.FromMany(drafts));
     }
 }
 
-internal sealed record GetTruthHead(TruthStreamIdentity Stream);
-
-internal sealed record TruthHeadResult(StreamHead? Head);
+internal sealed record CasAppendTruthEvents(
+    TruthStreamIdentity Stream,
+    IReadOnlyList<ITruthEventDraft> Drafts,
+    StreamHead? ExpectedHead)
+{
+    public static CasAppendTruthEvents From(
+        TruthStreamIdentity stream,
+        IReadOnlyList<ITruthEventDraft> drafts,
+        StreamHead? expectedHead)
+    {
+        ArgumentNullException.ThrowIfNull(drafts);
+        return new CasAppendTruthEvents(
+            stream,
+            TruthEventDraftSnapshot.FromMany(drafts),
+            StreamHeadSnapshot.Copy(expectedHead));
+    }
+}
 
 internal sealed record TruthEventDraftSnapshot(
     TruthStreamIdentity Stream,
@@ -129,5 +142,18 @@ internal sealed record TruthEventDraftSnapshot(
             draft.Payload.ToArray(),
             draft.Tick);
     }
+
+    public static TruthEventDraftSnapshot[] FromMany(IReadOnlyList<ITruthEventDraft> drafts)
+    {
+        ArgumentNullException.ThrowIfNull(drafts);
+        return drafts.Select(From).ToArray();
+    }
 }
-#endif
+
+internal static class StreamHeadSnapshot
+{
+    public static StreamHead? Copy(StreamHead? head)
+        => head is { } value
+            ? new StreamHead(value.Sequence, value.Hash.ToArray(), value.LastTick)
+            : null;
+}

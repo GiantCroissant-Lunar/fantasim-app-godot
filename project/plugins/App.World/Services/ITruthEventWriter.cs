@@ -1,4 +1,3 @@
-#if USE_PROJECT_REFERENCES
 using FantaSim.World.TruthStream;
 
 namespace FantaSim.App.World.Services;
@@ -10,8 +9,10 @@ internal interface ITruthEventWriter : IDisposable
         IReadOnlyList<ITruthEventDraft> drafts,
         CancellationToken ct = default);
 
-    Task<StreamHead?> GetHeadAsync(
+    Task<StreamHead> AppendIfHeadAsync(
         TruthStreamIdentity stream,
+        IReadOnlyList<ITruthEventDraft> drafts,
+        StreamHead? expectedHead,
         CancellationToken ct = default);
 }
 
@@ -28,13 +29,20 @@ internal sealed class DirectTruthEventWriter : ITruthEventWriter
         TruthStreamIdentity stream,
         IReadOnlyList<ITruthEventDraft> drafts,
         CancellationToken ct = default)
-        => _store.AppendAsync(stream, drafts, ct);
+        => _store.AppendAsync(stream, TruthEventDraftSnapshot.FromMany(drafts), ct);
 
-    public Task<StreamHead?> GetHeadAsync(TruthStreamIdentity stream, CancellationToken ct = default)
-        => _store.GetHeadAsync(stream, ct);
+    public Task<StreamHead> AppendIfHeadAsync(
+        TruthStreamIdentity stream,
+        IReadOnlyList<ITruthEventDraft> drafts,
+        StreamHead? expectedHead,
+        CancellationToken ct = default)
+        => _store.AppendIfHeadAsync(
+            stream,
+            TruthEventDraftSnapshot.FromMany(drafts),
+            StreamHeadSnapshot.Copy(expectedHead),
+            ct);
 
     public void Dispose()
     {
     }
 }
-#endif

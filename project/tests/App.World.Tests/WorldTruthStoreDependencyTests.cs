@@ -1,4 +1,3 @@
-#if USE_PROJECT_REFERENCES
 using UnifyStorage.Abstractions;
 using Xunit;
 
@@ -15,4 +14,3 @@ public sealed class WorldTruthStoreDependencyTests
         Assert.NotNull(abstractionsAssembly.GetType("UnifyStorage.Abstractions.IConditionalKeyValueStore"));
     }
 }
-#endif

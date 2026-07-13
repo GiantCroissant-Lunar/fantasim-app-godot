@@ -1,7 +1,5 @@
-#if USE_PROJECT_REFERENCES
 using Akka.Actor;
 using System.Threading;
-#endif
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
@@ -38,20 +36,18 @@ namespace FantaSim.App.World.Services;
 /// <remarks>
 /// World-lib types (FantaSim.World.Fields.*, World.TruthStream.*, World.Parameters.*) stay
 /// inside this T3 assembly and never leak through the T1 contract surface. The composition is
-/// only compiled when <c>UseProjectReferences=true</c> (the local lunar-horse feed does not yet
-/// carry FantaSim.World.* packages); the default build path uses a no-op runtime so the solution
-/// stays green without the sibling repo wired in.
+/// always compiled (USE_PROJECT_REFERENCES only selects project vs package references in the
+/// csproj, never behavioral branches here).
 /// </remarks>
 public sealed class Service : IService, IDisposable
 {
     private const string GenerationGraphSource = "world-generation.graph";
 
     private readonly IRegistry _registry;
-    private readonly IWorldRuntime _runtime;
+    private readonly IWorldHistoryCoordinator _history;
     private readonly ILogger _logger;
-#if USE_PROJECT_REFERENCES
     private readonly WorldTruthEventStoreHandle _truthStoreHandle;
-#endif
+    private readonly ITruthEventWriter _truthWriter;
     private readonly List<Action<WorldGenerationChangedEvent>> _subscribers = new();
     private readonly object _subscribersGate = new();
     private readonly object _generationProductsGate = new();
@@ -60,7 +56,6 @@ public sealed class Service : IService, IDisposable
     private IReadOnlyList<long> _cachedCrustSnapshotTicks = Array.Empty<long>();
     private readonly object _crustProductCacheGate = new();
     private readonly Dictionary<CrustProductCacheKey, CrustTickProducts> _crustProductCache = new();
-    private RotationSourceRecipe _rotationSourceRecipe = RotationSourceRecipe.Default;
 
     // Cross-session crust-product cache (2026-07-11 persistence slice 1). Resolved once at
     // construction time and reused via the instance field -- NOT re-resolved per call -- because
@@ -85,14 +80,9 @@ public sealed class Service : IService, IDisposable
     private Exception? _lastSubscriberError;
     private bool _disposed;
 
-#if USE_PROJECT_REFERENCES
     public Service(IRegistry registry, ActorSystem? actorSystem = null)
-#else
-    public Service(IRegistry registry)
-#endif
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
-#if USE_PROJECT_REFERENCES
         var config = registry.TryGet<CrosscutFoundation.Config.IService>();
         var truthStoreOptions = WorldTruthStoreOptions.FromConfig(config);
         if (truthStoreOptions.Backend == WorldTruthStoreBackend.SurrealDb && actorSystem is null)
@@ -111,7 +101,11 @@ public sealed class Service : IService, IDisposable
                     truthStoreHandle.EventStore,
                     actorName: NewTruthWriterActorName())
                 : new DirectTruthEventWriter(truthStoreHandle.EventStore);
-            _runtime = WorldRuntimeFactory.Create(registry, truthWriter);
+            _history = WorldHistoryCoordinatorFactory.Create(
+                registry,
+                truthStoreHandle.EventStore,
+                truthWriter);
+            _truthWriter = truthWriter;
             _truthStoreHandle = truthStoreHandle;
             truthWriter = null;
         }
@@ -121,9 +115,6 @@ public sealed class Service : IService, IDisposable
             truthStoreHandle.Dispose();
             throw;
         }
-#else
-        _runtime = WorldRuntimeFactory.Create(registry);
-#endif
         var loggerFactory = registry.TryGet<ILoggerFactory>();
         _logger = (loggerFactory ?? NullLoggerFactory.Instance).CreateLogger<Service>();
 
@@ -143,22 +134,22 @@ public sealed class Service : IService, IDisposable
     public Exception? LastSubscriberError => _lastSubscriberError;
 
     public WorldOverview GetOverviewAsync()
-        => _runtime.GetOverview();
+        => _history.GetOverview();
 
     public WorldFieldValues GetFieldValuesAsync(WorldFieldValuesRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return _runtime.GetFieldValues(request);
+        return _history.GetFieldValues(request);
     }
 
     public WorldScalarFieldValues GetScalarFieldValuesAsync(WorldScalarFieldValuesRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return _runtime.GetScalarFieldValues(request);
+        return _history.GetScalarFieldValues(request);
     }
 
     public WorldRenderSnapshot GetRenderSnapshotAsync()
-        => _runtime.GetRenderSnapshot();
+        => _history.GetRenderSnapshot();
 
     public WorldGenerationProductsView GetGenerationProductsAsync()
     {
@@ -196,8 +187,8 @@ public sealed class Service : IService, IDisposable
     {
         PresentationRequested?.Invoke();
         var family = WorldGenerationGraphDefaults.BuildFamily();
-        var overview = _runtime.GetOverview();
-        var renderSnapshot = _runtime.GetRenderSnapshot();
+        var overview = _history.GetOverview();
+        var renderSnapshot = _history.GetRenderSnapshot();
         var runtime = BuildPlanetPresentationRuntime(family, renderOptions, referenceTick);
         WorldGenerationProductsView products;
         IReadOnlyList<long> crustSnapshotTicks;
@@ -315,7 +306,7 @@ public sealed class Service : IService, IDisposable
             return new Dictionary<int, double>();
         }
 
-        var rotationProvider = BuildRotationProvider(products.Materialization.Result.Plates, onsetTick);
+        var rotationProvider = BuildRotationProvider(_history, products.Materialization.Result.Plates, onsetTick);
         var sampler = new PlateFrameSampler(
             products.Materialization.Tessellation,
             products.Materialization.Result.Plates,
@@ -391,7 +382,7 @@ public sealed class Service : IService, IDisposable
         var currentGlobe = reconstructor.BuildGlobeAt(request.Tick);
         cancellationToken.ThrowIfCancellationRequested();
         var currentArcs = reconstructor.BuildBoundaryArcsAt(request.Tick);
-        var rotationProvider = BuildRotationProvider(products.Materialization.Result.Plates, onsetTick);
+        var rotationProvider = BuildRotationProvider(_history, products.Materialization.Result.Plates, onsetTick);
         var sampler = new PlateFrameSampler(
             products.Materialization.Tessellation,
             products.Materialization.Result.Plates,
@@ -563,12 +554,14 @@ public sealed class Service : IService, IDisposable
         return products.Materialization.Result.StateByTick;
     }
 
-    private IPlateRotationProvider BuildRotationProvider(IReadOnlyList<TopoPlate> plates, long onsetTick)
+    internal static IPlateRotationProvider BuildRotationProvider(
+        IWorldHistoryCoordinator history,
+        IReadOnlyList<TopoPlate> plates,
+        long onsetTick)
     {
-        var recipe = _rotationSourceRecipe;
-        if (recipe is { Kind: RotationSourceKind.Imported, RotText: { } rotText })
-            return new ImportedRotationProvider(recipe.SourceName, rotText, onsetTick);
-        return new GeneratedEulerPoleRotationProvider(plates, onsetTick);
+        ArgumentNullException.ThrowIfNull(history);
+        return history.GetActiveRotationProvider(onsetTick)
+            ?? new GeneratedEulerPoleRotationProvider(plates, onsetTick);
     }
 
     public MantleIsosurfaceSet GetMantleIsosurfacesAsync(long tick)
@@ -585,7 +578,24 @@ public sealed class Service : IService, IDisposable
     public WorldGenerationResult RunGenerationAsync(WorldGenerationRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var result = _runtime.RunGeneration(request);
+        if (IsGenerationGraphRequest(request))
+        {
+            var recipe = ReadRotationSourceFromParameters(request.Parameters);
+            if (recipe.Kind == RotationSourceKind.Imported)
+            {
+                _history.ImportRotationSource(
+                    request.WorldId,
+                    ReadRotationBranchId(request.Parameters),
+                    recipe,
+                    SphereRegimeScheduleDefaults.PlateOnsetTick);
+            }
+            else
+            {
+                _history.UseGeneratedRotationSource();
+            }
+        }
+
+        var result = _history.RunGeneration(request);
         if (result.Success && IsGenerationGraphRequest(request))
             UpdateGenerationProducts(request);
         EmitGenerationChanged(new WorldGenerationChangedEvent(result.ResultWorldId, "generation", request.GenerationSpec));
@@ -629,7 +639,6 @@ public sealed class Service : IService, IDisposable
         {
             _generationProducts = ToProductsView(request, _generationProducts);
             _cachedCrustSnapshotTicks = ReadSnapshotTicks(request.Parameters);
-            _rotationSourceRecipe = ReadRotationSourceFromParameters(request.Parameters);
         }
     }
 
@@ -649,7 +658,9 @@ public sealed class Service : IService, IDisposable
         if (!parameters.TryGetValue("rotationSourcePayload", out var payloadObj) || payloadObj is not string payload
             || string.IsNullOrWhiteSpace(payload))
         {
-            return RotationSourceRecipe.Default;
+            throw new ArgumentException(
+                "Imported rotation source requires a non-empty 'rotationSourcePayload'.",
+                nameof(parameters));
         }
 
         string name = parameters.TryGetValue("rotationSourceName", out var nameObj) && nameObj is string n
@@ -658,6 +669,19 @@ public sealed class Service : IService, IDisposable
                 : "imported";
 
         return new RotationSourceRecipe(RotationSourceKind.Imported, payload, name);
+    }
+
+    private static string ReadRotationBranchId(IReadOnlyDictionary<string, object>? parameters)
+    {
+        if (parameters is not null
+            && parameters.TryGetValue("rotationSourceBranchId", out var value)
+            && value is string branchId
+            && !string.IsNullOrWhiteSpace(branchId))
+        {
+            return branchId.Trim();
+        }
+
+        return "main";
     }
 
     private static IReadOnlyList<long> ReadSnapshotTicks(IReadOnlyDictionary<string, object>? parameters)
@@ -843,7 +867,7 @@ public sealed class Service : IService, IDisposable
         }
 
         var products = GetOrBuildCrustTickProducts(renderOptions, onsetTick, arcTick, family.Revision);
-        var rotationProvider = BuildRotationProvider(products.Materialization.Result.Plates, onsetTick);
+        var rotationProvider = BuildRotationProvider(_history, products.Materialization.Result.Plates, onsetTick);
         var sampler = new PlateFrameSampler(
             products.Materialization.Tessellation,
             products.Materialization.Result.Plates,
@@ -1323,10 +1347,8 @@ public sealed class Service : IService, IDisposable
         }
     }
 
-#if USE_PROJECT_REFERENCES
     private static string NewTruthWriterActorName()
         => $"world-truth-writer-{Guid.NewGuid():N}";
-#endif
 
     private static int ReadInt(IReadOnlyDictionary<string, object> parameters, string key, int fallback)
     {
@@ -1458,13 +1480,18 @@ public sealed class Service : IService, IDisposable
 
             lock (_subscribersGate)
                 _subscribers.Clear();
-            _runtime.Dispose();
+            _history.Dispose();
         }
         finally
         {
-#if USE_PROJECT_REFERENCES
-            _truthStoreHandle.Dispose();
-#endif
+            try
+            {
+                _truthWriter.Dispose();
+            }
+            finally
+            {
+                _truthStoreHandle.Dispose();
+            }
         }
     }
 

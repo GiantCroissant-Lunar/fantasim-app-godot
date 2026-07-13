@@ -7,8 +7,11 @@ using FantaSim.App.World.Composition;
 using FantaSim.App.World.Crust;
 using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Globe;
+using FantaSim.App.World.History;
+using FantaSim.App.World.Services;
 using FantaSim.Geosphere.Crust;
 using FantaSim.World.Contracts.Units;
+using FantaSim.World.TruthStream.Core;
 using UnifyCell;
 using Xunit;
 using TopoPlate = FantaSim.Geosphere.Plate.Topology.Plate;
@@ -16,19 +19,16 @@ using TopoPlate = FantaSim.Geosphere.Plate.Topology.Plate;
 namespace FantaSim.App.World.Tests;
 
 /// <summary>
-/// P3 per-tick fraction smoothness: the <see cref="PlateFrameSampler"/> driven by an
-/// <see cref="ImportedRotationProvider"/> must produce per-cell continental fractions that drift
-/// GRADUALLY across seek ticks — not stay frozen on a multi-mega-tick plateau the way the
+/// P3 per-tick fraction smoothness: the <see cref="PlateFrameSampler"/> driven by a
+/// <see cref="MaterializedRotationProvider"/> rebuilt from committed truth must produce per-cell continental fractions that
+/// drift GRADUALLY across seek ticks — not stay frozen on a multi-mega-tick plateau the way the
 /// 5 M-tick crust-snapshot-only updates did. The state-key remap (snapshot onset material keyed
 /// at the query tick) is what lets the sampler transport material to arbitrary ticks.
 /// </summary>
 public sealed class PlateFrameSamplerSmoothnessTests
 {
-    // Covers every movable plate id of the default onset roster (ids 1..9; id 0 is left unmapped —
-    // in PLATES4 .rot, 000 is the anchor — and gets identity, which is fine: the smoothness
-    // assertions only need the MAPPED plates to move every sampled step). Before the 2026-07-07
-    // rate calibration re-fractured the default world, a four-plate fixture happened to cover the
-    // land-carrying plates; the full-coverage fixture removes that dependence on where land sits.
+    // Every movable plate id of the default onset roster. These rows are parsed once, committed
+    // through RotationImportCoordinator, and then replayed from the bound event cursor.
     private const string NinePlateRotText = @"
 1 0.0 90.0 0.0 0.0 0
 1 4.0 90.0 0.0 6.0 0
@@ -67,7 +67,7 @@ public sealed class PlateFrameSamplerSmoothnessTests
     private const long TickStep = UnitConverter.TicksPerMegaAnnum / 2; // 50k ticks = 0.5 Ma
 
     [Fact]
-    public async Task Imported_rotation_yields_per_tick_fraction_change_no_plateau()
+    public async Task Committed_imported_rotation_yields_per_tick_fraction_change_no_plateau()
     {
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
         var tessellation = new GeodesicSphereTessellation(Frequency);
@@ -79,7 +79,7 @@ public sealed class PlateFrameSamplerSmoothnessTests
         var materialization = await WorldCrustMaterializer.MaterializeAsync(spec);
         var snapshotState = materialization.Result.StateByTick[spec.SnapshotTicks[0]];
 
-        var provider = new ImportedRotationProvider("nine-plate", NinePlateRotText, onsetTick);
+        var provider = await BuildCommittedProviderAsync(onsetTick, "smoothness-a");
         var sampler = new PlateFrameSampler(
             tessellation, plates, materialization.Topology, onsetTick, provider);
 
@@ -113,7 +113,7 @@ public sealed class PlateFrameSamplerSmoothnessTests
     }
 
     [Fact]
-    public async Task Imported_rotation_fractions_at_t_and_t_plus_100k_differ()
+    public async Task Committed_imported_rotation_fractions_at_t_and_t_plus_100k_differ()
     {
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
         var tessellation = new GeodesicSphereTessellation(Frequency);
@@ -125,7 +125,7 @@ public sealed class PlateFrameSamplerSmoothnessTests
         var materialization = await WorldCrustMaterializer.MaterializeAsync(spec);
         var snapshotState = materialization.Result.StateByTick[spec.SnapshotTicks[0]];
 
-        var provider = new ImportedRotationProvider("nine-plate", NinePlateRotText, onsetTick);
+        var provider = await BuildCommittedProviderAsync(onsetTick, "smoothness-b");
         var sampler = new PlateFrameSampler(
             tessellation, plates, materialization.Topology, onsetTick, provider);
 
@@ -136,7 +136,22 @@ public sealed class PlateFrameSamplerSmoothnessTests
         var f2 = SampleFractions(sampler, snapshotState, t2);
 
         Assert.True(FractionsDiffer(f1, f2),
-            "Expected the continental fraction field to differ between ticks 1 Ma apart under imported rotation.");
+            "Expected the continental fraction field to differ between ticks 1 Ma apart under committed imported rotation.");
+    }
+
+    private static async Task<MaterializedRotationProvider> BuildCommittedProviderAsync(
+        long onsetTick,
+        string worldId)
+    {
+        var store = new InMemoryTruthEventStore();
+        using var writer = new DirectTruthEventWriter(store);
+        var outcome = await new RotationImportCoordinator(store, writer).ImportAsync(new RotationImportRequest(
+            worldId,
+            "main",
+            "nine-plate.rot",
+            System.Text.Encoding.UTF8.GetBytes(NinePlateRotText),
+            new TimeDete.Time.Primitives.CanonicalTick(onsetTick)));
+        return outcome.Provider;
     }
 
     private static IReadOnlyDictionary<int, double> SampleFractions(

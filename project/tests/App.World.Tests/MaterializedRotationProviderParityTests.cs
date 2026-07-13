@@ -1,4 +1,3 @@
-#if USE_PROJECT_REFERENCES
 using FantaSim.App.World.Crust;
 using FantaSim.Geosphere.Plate.Reconstruction;
 using FantaSim.Geosphere.Plate.Rotation;
@@ -87,4 +86,3 @@ public sealed class MaterializedRotationProviderParityTests
     private static void AssertClose(double expected, double actual)
         => Assert.InRange(actual, expected - 1e-9, expected + 1e-9);
 }
-#endif

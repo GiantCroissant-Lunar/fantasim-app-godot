@@ -60,3 +60,48 @@ accumulator saturation (input-model enhancements).
 Open product question for the next visual refinement: after judging the running view, should the
 fine ring (1) mutate shared world time, (2) create a layer-local time offset, or (3) remain a
 view-only inspection? Do not infer an answer from the current view-only behavior.
+
+## P9a app truth-stream adoption — 2026-07-13
+
+App.World now uses one history architecture in project-reference and package modes. The old
+`WorldRuntime`/stub split and raw-text playback path are gone; `WorldHistoryCoordinator` owns the
+app-side field/history projections while the service owns/disposes the injected truth reader,
+writer, and store in coordinator → writer → store order.
+
+Rotation imports use a recoverable prepare → plate CAS → bind protocol. Imported playback is
+materialized only from committed truth through the exact bound cursor. A stable app-owned
+`app:main:L0:world:rotation-bindings` stream records active authority: imported markers contain
+only the exact bound-control cursor, and generated selections have their own canonical marker.
+Dispose releases the projection without changing that durable selection. A reconstructed
+coordinator verifies the index chain, rereads the referenced prepared/bound control events, proves
+the plate prefix and batch, and rebuilds the materialized provider without raw-source reimport.
+
+The shared pre-bind/replay/reload verifier requires:
+
+- canonical prepared/bound metadata with exact bound context inputs `[preparedCursor, plateCursor]`;
+- `C.Sequence = (H0?.Sequence ?? -1) + N`, a complete hash-valid genesis→H0 prefix, and the exact
+  contiguous H0+1…C batch;
+- recomputed event hashes, canonical plate payload bytes, candidate byte equality when raw source
+  is available, the prepared ordered-draft digest, and exact terminal hash/tick C.
+
+This rejects hash-valid stale-prefix and different-batch bindings, malformed cursor contexts,
+missing index references, and earlier-prefix corruption before an immutable bound event is
+written. A bind→active-index interruption does not report success; retrying the same raw source
+converges and publishes the index. Prepared and bound control-event envelope ticks must exactly
+equal their payload onset tick.
+
+Durable selection and its in-memory provider projection share one authority gate, including
+`GetActiveRotationProvider` readers and disposal. A reader cannot cross the interval after the
+selection CAS but before its cache update, and an earlier switch rereads terminal selection before
+applying its projection so a newer re-entrant selection cannot be overwritten.
+
+The T1 boundary is enforced by a real collectible-ALC test. It recursively walks returned object
+graphs (including `DictionaryEntry` and `KeyValuePair<,>` values), rejects a negative-control
+`Dictionary<string, object>` containing a collectible service, disposes the service, and requires
+the weak ALC reference to collect. The returned world field DTO graph is resident-contract owned.
+
+Evidence: `RotationImportRecoveryTests` + `WorldHistoryBuildModeContractTests`; 26/26 focused,
+598/598 full App.World tests with `UseProjectReferences=true`, and 598/598 with
+`UseProjectReferences=false`. `dotnet tool restore` and the configured `dotnet unify-build Compile`
+gate also succeed (the current build config has no compile project groups, so the two full test
+modes are the meaningful compile/runtime proof).

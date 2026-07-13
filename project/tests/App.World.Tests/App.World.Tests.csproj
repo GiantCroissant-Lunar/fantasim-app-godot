@@ -2,13 +2,7 @@
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <IsPackable>false</IsPackable>
-    <!--
-      Catalog validation and DTO mapping tests exercise the real WorldRuntime
-      composition, which is only compiled when USE_PROJECT_REFERENCES is defined
-      (the local feed lacks FantaSim.World.* packages). The test project mirrors
-      the plugin's define so the real path is compiled here too.
-    -->
-    <DefineConstants Condition="'$(UseProjectReferences)' == 'true'">$(DefineConstants);USE_PROJECT_REFERENCES</DefineConstants>
+    <!-- The same WorldHistoryCoordinator and truth-store behavior is tested in both dependency modes. -->
   </PropertyGroup>
   <!-- NU1603: UnifyGeometry floor versions vs the 1.0.0 feed line; informational, non-fatal. -->
   <PropertyGroup>

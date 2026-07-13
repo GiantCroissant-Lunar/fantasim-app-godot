@@ -48,7 +48,7 @@
     is reducer/catalog-only; the cross-path determinism test pulls TruthStream itself.
   -->
   <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\contracts\World.Fields\World.Fields.csproj" />
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-world\project\plugins\World.Fields.Core\World.Fields.Core.csproj" />
+    <ProjectReference Include="$(FantaSimWorldRoot)\project\contracts\World.Fields\World.Fields.csproj" />
+    <ProjectReference Include="$(FantaSimWorldRoot)\project\plugins\World.Fields.Core\World.Fields.Core.csproj" />
   </ItemGroup>
 </Project>

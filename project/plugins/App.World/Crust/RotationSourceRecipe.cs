@@ -18,7 +18,9 @@ internal enum RotationSourceKind
 /// <summary>
 /// Recipe mirroring <c>CrustPatchRecipe</c>: captures the rotation-source selection from
 /// <c>world.options.rotationSource</c>. When <see cref="Kind"/> is <see cref="RotationSourceKind.Imported"/>,
-/// <see cref="RotText"/> carries the inline <c>.rot</c> payload to parse.
+/// <see cref="RotText"/> carries the inline <c>.rot</c> provenance input into the import coordinator.
+/// After prepare/plate/bind succeeds, committed semantic events and their bound cursor are playback
+/// authority; this raw recipe is not retained as a second playback path.
 /// </summary>
 internal sealed record RotationSourceRecipe(
     RotationSourceKind Kind,

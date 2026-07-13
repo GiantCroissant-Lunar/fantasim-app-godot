@@ -8,8 +8,14 @@ public record WorldOverview(
     bool IsDirty
 );
 
+/// <summary>
+/// Typed descriptor for a field value returned by <see cref="WorldFieldValues"/>. Carries the
+/// field's unit, kind, and reducer identifier as strings so the contract surface stays engine-free.
+/// </summary>
+public readonly record struct WorldFieldDescriptorDto(string Unit, string Kind, string Reducer);
+
 public record WorldFieldValues(
-    IReadOnlyDictionary<string, object> FieldValues
+    IReadOnlyDictionary<string, WorldFieldDescriptorDto> FieldValues
 );
 
 public record WorldScalarFieldValues(

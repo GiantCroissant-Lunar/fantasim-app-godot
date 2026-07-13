@@ -12,14 +12,10 @@ public static class WorldComposition
     {
         var log = ctx.LoggerFactory.CreateLogger("HostComposition.World");
         var disposables = new List<IDisposable>(2);
-#if USE_PROJECT_REFERENCES
         var actorSystem = ctx.Registry.TryGet<Akka.Actor.ActorSystem>();
         var world = new FantaSim.App.World.Services.Service(
             ctx.Registry,
             actorSystem!);
-#else
-        var world = new FantaSim.App.World.Services.Service(ctx.Registry);
-#endif
         disposables.Add(ctx.Registry.RegisterOwned<FantaSim.App.World.IService>(
             world,
             new ServiceRegistration { Tags = new[] { "world" }, Description = "World service" }));

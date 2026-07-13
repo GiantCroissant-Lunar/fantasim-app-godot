@@ -114,7 +114,7 @@ public sealed class FieldViewService : IDisposable
         }
         catch
         {
-            return new WorldFieldValues(new Dictionary<string, object>(0));
+            return new WorldFieldValues(new Dictionary<string, WorldFieldDescriptorDto>(0));
         }
     }
 

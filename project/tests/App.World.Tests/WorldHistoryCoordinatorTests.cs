@@ -1,4 +1,3 @@
-#if USE_PROJECT_REFERENCES
 using Akka.Actor;
 using FantaSim.App.Ecs;
 using FantaSim.App.World.Dto;
@@ -15,11 +14,10 @@ namespace FantaSim.App.World.Tests;
 
 /// <summary>
 /// Catalog validation and DTO mapping proof for the App.World T3 orchestrator. These tests
-/// exercise the real <see cref="WorldRuntime"/> composition path (sibling fantasim-world
-/// project refs); they only compile/run under <c>UseProjectReferences=true</c> because the
-/// local lunar-horse feed does not yet carry FantaSim.World.* packages.
+/// exercise the real <see cref="WorldHistoryCoordinator"/> composition path (sibling
+/// fantasim-world project refs).
 /// </summary>
-public class WorldRuntimeTests
+public class WorldHistoryCoordinatorTests
 {
     private static IRegistry NewRegistry() => new ServiceRegistry();
 
@@ -30,12 +28,12 @@ public class WorldRuntimeTests
     [Fact]
     public void GetOverview_reports_composed_field_count()
     {
-        // Given a registry and a WorldRuntime composed with the default seed catalog
+        // Given a registry and a WorldHistoryCoordinator composed with the default seed catalog
         var registry = NewRegistry();
-        using var runtime = new WorldRuntime(registry);
+        using var coordinator = NewCoordinator(registry);
 
         // When GetOverview is called
-        var overview = runtime.GetOverview();
+        var overview = coordinator.GetOverview();
 
         // Then the overview reports one field and a stream-key world id
         Assert.Equal(1, overview.FieldCount);
@@ -61,10 +59,10 @@ public class WorldRuntimeTests
             new FieldDescriptor(dupId, "m", WellKnownReducers.WeightedAverage, ValueKind.Continuous),
         };
 
-        // When WorldRuntime is composed with the duplicate descriptors
+        // When WorldHistoryCoordinator is composed with the duplicate descriptors
         // Then CompositeFieldCatalog throws InvalidOperationException at construction
         var ex = Assert.Throws<InvalidOperationException>(
-            () => new WorldRuntime(registry, descriptors));
+            () => NewCoordinator(registry, descriptors));
         Assert.Contains("Duplicate field id", ex.Message);
     }
 
@@ -86,10 +84,10 @@ public class WorldRuntimeTests
                 Kind: ValueKind.Continuous),
         };
 
-        // When WorldRuntime is composed
+        // When WorldHistoryCoordinator is composed
         // Then CatalogValidator throws InvalidOperationException naming the unregistered reducer
         var ex = Assert.Throws<InvalidOperationException>(
-            () => new WorldRuntime(registry, descriptors));
+            () => NewCoordinator(registry, descriptors));
         Assert.Contains("unregistered reducer", ex.Message);
     }
 
@@ -101,19 +99,19 @@ public class WorldRuntimeTests
     [Fact]
     public void RunGeneration_appends_truth_event_and_marks_world_dirty()
     {
-        // Given a composed runtime with a clean stream
+        // Given a composed coordinator with a clean stream
         var registry = NewRegistry();
-        using var runtime = new WorldRuntime(registry);
-        Assert.False(runtime.GetOverview().IsDirty);
+        using var coordinator = NewCoordinator(registry);
+        Assert.False(coordinator.GetOverview().IsDirty);
 
         // When a generation request is run
-        var result = runtime.RunGeneration(new WorldGenerationRequest(
+        var result = coordinator.RunGeneration(new WorldGenerationRequest(
             WorldId: "w1", GenerationSpec: "spec-a", Parameters: new()));
 
         // Then the result reports success and the overview now reports dirty
         Assert.True(result.Success);
         Assert.Equal("w1", result.ResultWorldId);
-        Assert.True(runtime.GetOverview().IsDirty);
+        Assert.True(coordinator.GetOverview().IsDirty);
     }
 
     // ---------------------------------------------------------------------
@@ -124,7 +122,7 @@ public class WorldRuntimeTests
     [Fact]
     public async Task RunGeneration_serializes_truth_stream_appends_through_writer_actor()
     {
-        // Given a composed runtime whose truth writes go through a dedicated actor
+        // Given a composed coordinator whose truth writes go through a dedicated actor
         var registry = NewRegistry();
         var actorSystem = ActorSystem.Create("world-truth-writer-tests");
         var truthStore = new ConcurrentAppendProbeTruthEventStore(TimeSpan.FromMilliseconds(75));
@@ -139,11 +137,15 @@ public class WorldRuntimeTests
                 truthStore,
                 actorName: $"truth-writer-{Guid.NewGuid():N}",
                 askTimeout: TimeSpan.FromSeconds(30));
-            using var runtime = new WorldRuntime(registry, descriptors: null, truthWriter);
+            using var coordinator = new WorldHistoryCoordinator(
+                registry,
+                descriptors: null,
+                truthStore,
+                truthWriter);
 
             // When multiple callers ask generation to append concurrently
             var tasks = Enumerable.Range(0, 12)
-                .Select(i => Task.Run(() => runtime.RunGeneration(new WorldGenerationRequest(
+                .Select(i => Task.Run(() => coordinator.RunGeneration(new WorldGenerationRequest(
                     WorldId: $"w{i}",
                     GenerationSpec: $"spec-{i}",
                     Parameters: new()))))
@@ -161,6 +163,40 @@ public class WorldRuntimeTests
     }
 
     [Fact]
+    public async Task Actor_truth_writer_serializes_cas_appends()
+    {
+        var actorSystem = ActorSystem.Create($"world-truth-cas-writer-tests-{Guid.NewGuid():N}");
+        var truthStore = new ConcurrentAppendProbeTruthEventStore(TimeSpan.FromMilliseconds(40));
+        try
+        {
+            using var writer = ActorTruthEventWriter.Start(
+                actorSystem,
+                truthStore,
+                actorName: $"truth-cas-writer-{Guid.NewGuid():N}",
+                askTimeout: TimeSpan.FromSeconds(30));
+            var tasks = Enumerable.Range(0, 12).Select(index =>
+            {
+                var stream = new TruthStreamIdentity($"cas-{index}", "main", 0, "world", "imports");
+                ITruthEventDraft draft = new FantaSim.App.World.Services.TruthEventDraft(
+                    stream,
+                    "world.rotation-source-prepared.v1",
+                    new byte[] { (byte)index },
+                    TimeDete.Time.Primitives.CanonicalTick.Genesis);
+                return writer.AppendIfHeadAsync(stream, new[] { draft }, expectedHead: null);
+            });
+
+            await Task.WhenAll(tasks);
+
+            Assert.Equal(12, truthStore.AppendCount);
+            Assert.Equal(1, truthStore.MaxConcurrentAppends);
+        }
+        finally
+        {
+            await actorSystem.Terminate();
+        }
+    }
+
+    [Fact]
     public void Actor_truth_writer_receive_handlers_await_store_io()
     {
         // Akka.NET ReceiveAsync suspends the actor until the handler task completes; keep
@@ -168,7 +204,8 @@ public class WorldRuntimeTests
         var source = File.ReadAllText(ProjectFile("project/plugins/App.World/Services/ActorTruthEventWriter.cs"));
 
         Assert.Contains("ReceiveAsync<AppendTruthEvents>", source);
-        Assert.Contains("ReceiveAsync<GetTruthHead>", source);
+        Assert.Contains("ReceiveAsync<CasAppendTruthEvents>", source);
+        Assert.DoesNotContain("ReceiveAsync<GetTruthHead>", source);
         Assert.DoesNotContain("_store.AppendAsync(message.Stream, message.Drafts).GetAwaiter().GetResult()", source);
         Assert.DoesNotContain("_store.GetHeadAsync(message.Stream).GetAwaiter().GetResult()", source);
     }
@@ -181,18 +218,71 @@ public class WorldRuntimeTests
     [Fact]
     public void GetFieldValues_maps_catalog_descriptors_to_dto()
     {
-        // Given a composed runtime with the default seed field "app.elevation-m"
+        // Given a composed coordinator with the default seed field "app.elevation-m"
         var registry = NewRegistry();
-        using var runtime = new WorldRuntime(registry);
+        using var coordinator = NewCoordinator(registry);
 
         // When GetFieldValues is called for a known and an unknown field id
-        var values = runtime.GetFieldValues(new WorldFieldValuesRequest(
+        var values = coordinator.GetFieldValues(new WorldFieldValuesRequest(
             WorldId: "w1",
             FieldIds: new[] { "app.elevation-m", "app.does-not-exist" }));
 
         // Then the known field is present and the unknown field is absent
         Assert.True(values.FieldValues.ContainsKey("app.elevation-m"));
         Assert.False(values.FieldValues.ContainsKey("app.does-not-exist"));
+    }
+
+    [Fact]
+    public void Dispose_does_not_dispose_injected_writer()
+    {
+        var store = new InMemoryTruthEventStore();
+        var writer = new TrackingWriter(new DirectTruthEventWriter(store));
+        var coordinator = new WorldHistoryCoordinator(NewRegistry(), descriptors: null, store, writer);
+
+        coordinator.Dispose();
+
+        Assert.False(writer.WasDisposed);
+        writer.Dispose();
+    }
+
+    private static WorldHistoryCoordinator NewCoordinator(
+        IRegistry registry,
+        IReadOnlyList<FieldDescriptor>? descriptors = null)
+    {
+        var store = new InMemoryTruthEventStore();
+        return new WorldHistoryCoordinator(
+            registry,
+            descriptors,
+            store,
+            new DirectTruthEventWriter(store));
+    }
+
+    private sealed class TrackingWriter : ITruthEventWriter
+    {
+        private readonly ITruthEventWriter _inner;
+
+        public TrackingWriter(ITruthEventWriter inner) => _inner = inner;
+
+        public bool WasDisposed { get; private set; }
+
+        public Task<StreamHead> AppendAsync(
+            TruthStreamIdentity stream,
+            IReadOnlyList<ITruthEventDraft> drafts,
+            CancellationToken ct = default)
+            => _inner.AppendAsync(stream, drafts, ct);
+
+        public Task<StreamHead> AppendIfHeadAsync(
+            TruthStreamIdentity stream,
+            IReadOnlyList<ITruthEventDraft> drafts,
+            StreamHead? expectedHead,
+            CancellationToken ct = default)
+            => _inner.AppendIfHeadAsync(stream, drafts, expectedHead, ct);
+
+        public void Dispose()
+        {
+            WasDisposed = true;
+            _inner.Dispose();
+        }
     }
 
     private sealed class ConcurrentAppendProbeTruthEventStore : ITruthEventStore
@@ -228,12 +318,23 @@ public class WorldRuntimeTests
             }
         }
 
-        public Task<StreamHead> AppendIfHeadAsync(
+        public async Task<StreamHead> AppendIfHeadAsync(
             TruthStreamIdentity stream,
             IReadOnlyList<ITruthEventDraft> drafts,
             StreamHead? expectedHead,
             CancellationToken ct = default)
-            => _inner.AppendIfHeadAsync(stream, drafts, expectedHead, ct);
+        {
+            EnterAppend();
+            try
+            {
+                await Task.Delay(_appendDelay, ct);
+                return await _inner.AppendIfHeadAsync(stream, drafts, expectedHead, ct);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeAppends);
+            }
+        }
 
         public IAsyncEnumerable<ITruthEvent> ReadAsync(
             TruthStreamIdentity stream,
@@ -273,4 +374,3 @@ public class WorldRuntimeTests
         throw new FileNotFoundException($"Could not find project file '{relativePath}'.");
     }
 }
-#endif

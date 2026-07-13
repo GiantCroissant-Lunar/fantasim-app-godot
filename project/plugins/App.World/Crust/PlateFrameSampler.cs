@@ -34,8 +34,8 @@ public sealed class PlateFrameSampler
     /// <summary>
     /// Constructs the sampler with an explicit rotation provider (P3 rotation-source seam). The
     /// default (generated) path wraps the onset plates' Euler poles via the parameterless overload;
-    /// the imported path receives an <see cref="ImportedRotationProvider"/> built from a parsed
-    /// <c>.rot</c> model. The plate list still supplies ids + onset topology; only the per-plate
+    /// the imported path receives a <c>MaterializedRotationProvider</c> built from a materialized
+    /// rotation model. The plate list still supplies ids + onset topology; only the per-plate
     /// rotation at tick is delegated.
     /// </summary>
     internal PlateFrameSampler(

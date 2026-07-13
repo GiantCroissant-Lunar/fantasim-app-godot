@@ -1,4 +1,3 @@
-#if USE_PROJECT_REFERENCES
 using System.Data.Common;
 using FantaSim.App.World.Storage.Generated.SurrealDb;
 using FantaSim.World.TruthStream;
@@ -166,4 +165,3 @@ internal static class WorldTruthEventStoreFactory
         provider.DisposeAsync().AsTask().GetAwaiter().GetResult();
     }
 }
-#endif

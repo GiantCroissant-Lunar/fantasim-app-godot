@@ -1,5 +1,7 @@
 namespace FantaSim.App.World.FieldView.ViewModels;
 
+using FantaSim.App.World.Dto;
+
 /// <summary>
 /// Immutable view model projected from <c>WorldFieldValues</c>/<c>WorldScalarFieldValues</c>.
 /// One instance per known field id; the projection refreshes these on every generation
@@ -11,11 +13,10 @@ public sealed record FieldValueViewModel
     public required string FieldId { get; init; }
 
     /// <summary>
-    /// Raw value payload from <c>WorldFieldValues.FieldValues</c>. Typed <c>object</c> because the
-    /// app-side DTO keeps field values boxed (<c>IReadOnlyDictionary&lt;string, object&gt;</c>); the
-    /// projection does not invent a tighter type than the T1 contract exposes.
+    /// Typed field descriptor from <c>WorldFieldValues.FieldValues</c> (unit, kind, reducer).
+    /// Null when the field id is not present in the world's catalog.
     /// </summary>
-    public object? Value { get; init; }
+    public WorldFieldDescriptorDto? Value { get; init; }
 
     /// <summary>Scalar value from <c>WorldScalarFieldValues</c>; null when the field is not scalar.</summary>
     public float? Scalar { get; init; }

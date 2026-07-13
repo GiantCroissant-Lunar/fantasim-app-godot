@@ -1,4 +1,3 @@
-#if USE_PROJECT_REFERENCES
 using System.Collections.Generic;
 using System.Reflection;
 using FantaSim.App.Command;
@@ -170,4 +169,3 @@ public sealed class WorldPluginCrustTriggerLateBindingTests
             => Task.FromResult(new CommandResult(Id: "fake", Ok: false, ResultJson: string.Empty, Error: null));
     }
 }
-#endif

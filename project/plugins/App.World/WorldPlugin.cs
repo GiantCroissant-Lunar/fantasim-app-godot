@@ -146,7 +146,7 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
     /// The stream-discovery provider seam (vault/plans/2026-07-10-layer-track-registry-slice2-
     /// plan.md Task 2): the engine's <c>ITruthEventStore</c> has no stream-enumeration API, so
     /// discovery is app code that already knows which streams exist, not an engine query. The one
-    /// real discoverable today is the world truth stream <c>WorldRuntime</c> writes, surfaced via
+    /// real discoverable today is the world truth stream <c>WorldHistoryCoordinator</c> writes, surfaced via
     /// <see cref="FantaSim.App.World.IService.GetOverviewAsync"/>: <see cref="WorldOverview.IsDirty"/>
     /// is true once the stream has a head (i.e. at least one event has been appended), and
     /// <see cref="WorldOverview.WorldId"/> is that stream's key. This is real data (the append-only

@@ -17,6 +17,7 @@
     <UseProjectReferences Condition="'$(UseProjectReferences)' == ''">true</UseProjectReferences>
     <PlateProjectsRoot Condition="'$(PlateProjectsRoot)' == ''">/Users/apprenticegc/Work/lunar-horse/plate-projects</PlateProjectsRoot>
     <YokanProjectsRoot Condition="'$(YokanProjectsRoot)' == ''">/Users/apprenticegc/Work/lunar-horse/yokan-projects</YokanProjectsRoot>
+    <FantaSimWorldRoot Condition="'$(FantaSimWorldRoot)' == ''">$(YokanProjectsRoot)/fantasim-world</FantaSimWorldRoot>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
