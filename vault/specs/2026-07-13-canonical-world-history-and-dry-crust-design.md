@@ -1,7 +1,7 @@
 # Canonical world history, artifact checkpoints, and dry-crust proof
 
-**Status:** design approved in conversation on 2026-07-13; written-spec review remains the
-implementation gate.
+**Status:** architecture and reviewer corrections accepted in conversation on 2026-07-13;
+review of this revised written specification remains the implementation gate.
 
 **Scope:** the architecture shared by imported real-world histories and generated
 fantasy/alien planets, plus the first app-side vertical slice that proves the architecture
@@ -101,7 +101,7 @@ Instead, new versioned domain payloads carry a common hash-covered context:
 ```text
 WorldEventContextV1
   schema version
-  producer component + semantic version + code digest
+  producer component + semantic version + reproducible release digest
   model id/version + canonical configuration digest
   input event cursors[]
   artifact references[]
@@ -122,6 +122,11 @@ Cross-stream causes reference cursors, not only `EventId` or a command `Causatio
 activity causation remain a separate UI/operations concept. World-history causal edges must be
 acyclic within one committed world step; feedback is expressed across later ticks.
 
+The release digest is a reproducible hash of a normalized producer/package manifest (component id,
+semantic version, source/package content digests, and canonical build configuration). It is never an
+assembly MVID, timestamp, machine path, or per-build binary hash. Ephemeral build-instance metadata
+belongs in logs/activity records, not the canonical event payload.
+
 ## 4. Canonical artifact protocol
 
 A canonical artifact reference records at least:
@@ -140,7 +145,9 @@ coordinate/reference frame
 
 Publication is ordered:
 
-1. Encode the artifact deterministically.
+1. Encode the artifact deterministically using an explicit schema: fixed integer field keys, sorted
+   map keys where maps cannot be avoided, stable array ordering, invariant culture, and binary
+   IEEE-754 floats (never culture-sensitive float text or anonymous-object JSON).
 2. Compute its digest and write it to temporary storage.
 3. Durably publish it at the digest address.
 4. Read back and verify the digest.
@@ -239,6 +246,16 @@ This slice proves the architecture at the existing imported-rotation seam and at
 It does not pretend the canonical artifact store, branch compositor, or mantle-driven solver is
 already implemented.
 
+Execution is split into two independently reviewable packets under the same session goal:
+
+- **P9a:** responsibility rename, both-mode production composition, imported-rotation truth
+  adoption, recovery/idempotency, and independent parity proof.
+- **P9b:** signed dry-crust geometry, planet/ring presentation adjustments, and exported-app visual
+  proof.
+
+P9a and P9b may run in separate worktrees and pass their own gates. Neither packet's success is
+substituted for the other's.
+
 ### 7.1 Responsibility-accurate rename
 
 Rename:
@@ -246,9 +263,10 @@ Rename:
 - `WorldRuntime` -> `WorldHistoryCoordinator`
 - `IWorldRuntime` -> `IWorldHistoryCoordinator`
 - `WorldRuntimeFactory` -> `WorldHistoryCoordinatorFactory`
-- `StubWorldRuntime` -> `StubWorldHistoryCoordinator`
 - `WorldRuntimeTests` -> `WorldHistoryCoordinatorTests`
 - `_runtime` fields referring to this seam -> `_history`
+
+Delete `StubWorldRuntime`; do not rename or preserve a meaningful no-op production path.
 
 The rename is not allowed to be purely mechanical. The class earns “history coordinator” by owning
 the app-side import/materialize/query workflow while the outer `Service` continues to enforce
@@ -260,6 +278,24 @@ Current DTO queries, including render snapshots, are materialized-history querie
 the coordinator for this slice. If the implementation leaves the type as only a catalog façade plus
 placeholder append, the rename fails its acceptance gate.
 
+`UseProjectReferences` may select dependency source only; it must no longer select real versus stub
+behavior. The coordinator, truth reader/writer, store factory, and import/materialization workflow
+compile in both modes:
+
+- `UseProjectReferences=true`: sibling `fantasim-world` project references;
+- `UseProjectReferences=false`: published package references for the same fields, truth-stream,
+  rotation-stream, and reconstruction closure.
+
+P9a adds/publishes any missing engine package (notably plate reconstruction) and adds the missing
+package references. Both modes run the same behavior tests. The current bundle/export tasks default
+to project references, but the exported gate must record the actual MSBuild property and prove the
+active coordinator/writer/materializer in the staged DLL and running app.
+
+While opening this seam, remove the anonymous collectible value that `GetFieldValues` currently
+returns through `IReadOnlyDictionary<string, object>`. Use a contract-owned `WorldFieldDescriptorDto`
+(or another contract/BCL-only shape) and add an ALC test proving no bundle-defined anonymous value
+escapes through `IService`.
+
 ### 7.2 Imported rotation commit/materialization path
 
 The app workflow is:
@@ -267,17 +303,24 @@ The app workflow is:
 1. Accept source name, `.rot` text/bytes, world/branch identity, and plate-onset binding.
 2. Parse once with `RotParser`.
 3. Preserve current fail-closed behavior: any parse issue rejects the import; append nothing.
-4. Use `RotationStreamImporter.ToDrafts`, then append those drafts through
-   `ITruthEventWriter`/`ActorTruthEventWriter`. Do not call `ImportAsync` with the underlying store.
-5. After the atomic plate-draft batch returns its exact head, append a versioned
+4. Append `world.rotation-source-prepared.v1` on the separate
+   `{world}:{branch}:L0:world:imports` control stream. It records source digest, parser/release
+   digest, onset tick, target plate stream, deterministic ordered-draft digest/count, and the
+   expected prior plate head. Prepared does not activate the source.
+5. Use `RotationStreamImporter.ToDrafts`, then append those drafts through a new
+   `ITruthEventWriter.AppendIfHeadAsync`/`ActorTruthEventWriter` CAS path using the prepared expected
+   head. Do not call `ImportAsync` with the underlying store.
+6. After the atomic plate-draft batch returns its exact head, append a versioned
    `world.rotation-source-bound.v1` event on a separate `{world}:{branch}:L0:world:imports`
    control stream. Its payload contains source digest, parser version, onset tick, and the
-   resulting plate-stream cursor. Only that binding activates the imported source; a crash between
-   the two appends leaves unbound plate events invisible to the app.
-6. Read the committed stream through a read-only capability and materialize `RotationModel`.
-7. Adapt the materialized total rotations to the app's onset-relative `IPlateRotationProvider`:
-   `R(t) * inverse(R(0 Ma))`, where `t = tick - onsetTick` in Ma.
-8. Store the committed stream/cursor binding in app state; raw `_rotationSourceRecipe.RotText` is no
+   resulting plate-stream cursor. Only that binding activates the imported source; a crash after
+   the plate append but before bind leaves plate events recoverable but invisible to the app.
+7. Read the committed stream through a read-only capability and materialize `RotationModel`.
+8. Adapt the materialized total rotations to the app's onset-relative `IPlateRotationProvider`:
+   `R_abs(timeMa(tick)) * inverse(R_abs(onsetMa))`. The existing playback convention pins
+   `onsetMa = 0 Ma` and maps `timeMa(tick) = TickDeltaToMegaAnnum(tick - onsetTick)`; interpolation
+   is SLERP and out-of-range samples preserve the current clamping behavior.
+9. Store the committed stream/cursor binding in app state; raw `_rotationSourceRecipe.RotText` is no
    longer the authority after commit.
 
 Do not blindly replace `ImportedRotationProvider`. Its behavior must be matched or deliberately
@@ -289,6 +332,8 @@ rejected before removal. Parity tests cover:
 - non-identity 0 Ma keyframe;
 - fixed-plate circuit composition;
 - a source whose fixed parent changes over time.
+- explicit time direction: the onset tick is identity, increasing canonical ticks sample increasing
+  Ma before present, and the expected orientation sign/order matches the current contract.
 
 If `RotationModelMaterializer` cannot represent a semantically valid GPlates case the current
 provider accepts, including a valid fixed-parent change through time, enhance the engine
@@ -303,9 +348,23 @@ source digest/onset is idempotent, while a different source is rejected with “
 until parent-cursor branch composition lands. Rotation ticks must never be appended a second time
 after a later head on the same immutable plate stream.
 
+Retry/recovery follows the control-stream state machine:
+
+- prepared + plate head still equals the expected prior head: execute the CAS append;
+- prepared + the appended event range exactly matches the deterministic ordered drafts: verify the
+  actual head and append the missing bound event;
+- bound already exists for the same source/onset/head: return idempotent success;
+- any other plate/control head: fail closed as an import conflict.
+
+This closes the crash window without re-appending ticks or treating an orphan batch as active.
+
 Existing `PlateRotationPayload` bytes remain unchanged in this slice so current codecs and event
 hashes stay stable. New import-control payloads carry `WorldEventContextV1`; a later versioned
 payload migration can add the context directly to rotation events if required.
+
+The lead session—not the implementation agent—authors the parity oracle from independently derived
+quaternion fixtures and expected values. The GLM implementation packet may consume those RED tests
+but may not define or weaken their expected results.
 
 ### 7.3 Data-driven dry crust
 
@@ -343,7 +402,15 @@ and tunnel rings remain thin enough not to frame it as a bounded token.
 - Onset-relative parity tests listed in section 7.2 pass.
 - Concurrent SurrealDB-path imports remain serialized through `ActorTruthEventWriter`; in-memory
   tests alone are insufficient evidence.
+- A forced failure between prepare, plate CAS append, and bind proves retry completes or fails
+  closed without duplicating the immutable plate events.
+- `UseProjectReferences=true` and `UseProjectReferences=false` both compile and pass the same
+  coordinator/import behavior suite; neither constructs a stub.
+- The staged/exported world bundle records its build mode and contains the active coordinator,
+  actor writer, truth reader, and rotation materializer. Runtime logs prove a real imported append
+  and materialization reached that path before the exported visual gate is accepted.
 - Existing hash-chain, serializer, field-catalog, and ALC collection tests remain green.
+- An ALC test proves `GetFieldValues` returns only shared contract/BCL value types.
 - No new top-level event-envelope field changes existing event hashes in this slice.
 
 ### 8.2 Crust tests
@@ -423,13 +490,18 @@ GLM-5.2. Their high-impact findings were reconciled as follows.
 | Event-envelope metadata change breaks hashes | Valid/actionable | Put V1 context in versioned payloads; defer envelope migration |
 | Importer/materializer do not exist | Contract misread | They exist in sibling `fantasim-world`; the real gap is app adoption |
 | `.rot` must be one huge event payload | Noise | Importer emits normalized per-rotation drafts; raw bytes use artifact protocol later |
+| Export necessarily composes the stub | Contract misread + valid risk | Current bundle defaults project refs and contains the actor path; P9a nevertheless removes the stub and proves both modes |
+| Import/bind crash can wedge immutable stream | Valid/actionable | Add prepared -> CAS plate batch -> bound state machine and recovery tests |
+| Parity oracle may share implementation bug | Valid/actionable | Lead owns independent expected values and explicit time-direction cases |
+| Anonymous field descriptor can pin ALC | Valid/actionable | Replace with contract/BCL shape and add collection/type-boundary test |
 
 ## 11. Implementation sequencing gate
 
 After the user reviews this written specification:
 
 1. write a TDD implementation plan with exact paths and RED/GREEN gates;
-2. dispatch bounded packets through OpenCode (`zai-coding-plan/glm-5.2` for implementation);
+2. dispatch P9a and P9b as bounded packets through OpenCode
+   (`zai-coding-plan/glm-5.2` for implementation);
 3. lead session reviews every diff and commits by meaningful step;
 4. run focused tests, the repository build/test workflow, and the exported-app visual/ALC gate;
 5. deposit established/disproven conclusions in the active plan and Supermemory.

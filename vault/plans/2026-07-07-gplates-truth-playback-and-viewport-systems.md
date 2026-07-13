@@ -197,11 +197,11 @@ imported 4-plate fixture (or real Cao data if downloaded), Continents view drift
 per-tick, cutaway showing conditioned convection consistent with the imposed boundaries —
 judged by the user's eye per the session-goal contract.
 
-## Wave 3 — canonical world-history adoption (approved 2026-07-13)
+## Wave 3 — canonical world-history adoption (design accepted; revised written review pending)
 
 Authority: `vault/specs/2026-07-13-canonical-world-history-and-dry-crust-design.md`.
 
-### P9 — app imported-history truth adoption + dry-crust proof
+### P9a — app imported-history truth adoption
 
 Replace the app's direct raw-text `ImportedRotationProvider` construction with the established
 engine path (`RotParser` -> `RotationStreamImporter.ToDrafts` -> actor-mediated truth append ->
@@ -210,18 +210,27 @@ parity tests. Rename the misleading `WorldRuntime` seam to `WorldHistoryCoordina
 landing the real import/materialize/query responsibility described by the spec. Do not expand the
 top-level truth-event envelope or promote `CrustProductCacheRecord` into truth.
 
-The same packet wave makes crust relief visibly and testably derive from `CellElevations` and signed
+Delete the no-op runtime path: both project-reference and package-reference builds compile and test
+the same coordinator/writer/materializer behavior. Add the recoverable prepared -> CAS plate append
+-> bound protocol, lead-owned quaternion/time-direction parity oracle, exported-runtime append proof,
+and the contract-owned replacement for the anonymous field-descriptor value. Gate: focused TDD,
+both build modes, SurrealDB actor serialization, staged bundle symbol/dependency evidence, exported
+runtime append/materialization logs, and successful ALC collection.
+
+### P9b — signed dry-crust geometry + visual proof
+
+Independently make crust relief visibly and testably derive from `CellElevations` and signed
 `CellFeatures`: mountain/volcanic/ridge positive, trench negative, noise secondary. Gate: focused
-TDD tests, full app build/tests, SurrealDB actor-writer serialization evidence, fresh exported-app
-screenshots with dry crust and runtime feature/displacement diagnostics, and successful ALC
-collection after reload. The screenshot also proves independent larger planet zoom and thinner
-tunnel rings.
+directional geometry tests, full app build/tests, fresh exported-app screenshots with dry crust and
+runtime feature/displacement diagnostics, and successful ALC collection after reload. The screenshot
+also proves independent larger planet zoom and thinner tunnel rings. P9b cannot substitute for P9a,
+and P9a cannot substitute for the user-eye P9b gate.
 
 ### P10 — checkpoint/branch/manifest foundation
 
-Follow P9 with the spec's Phase B: content-addressed canonical artifacts, bounded cursor replay and
+Follow P9a/P9b with the spec's Phase B: content-addressed canonical artifacts, bounded cursor replay and
 hash verification, parent-cursor branch ancestry, manifest visibility, and durable local offline
-storage. This is a separate falsifiable goal; P9 must not claim it landed.
+storage. This is a separate falsifiable goal; P9a/P9b must not claim it landed.
 
 ### P11 — emergent mantle -> plate -> crust events + causal tunnel
 
