@@ -694,8 +694,19 @@ public sealed class Service : IService, IDisposable
             return RotationSourceRecipe.Default;
 
         string normalized = kind.Trim().ToLowerInvariant();
-        if (normalized is not ("imported" or "rot" or "gplates"))
+        if (normalized.Length == 0)
             return RotationSourceRecipe.Default;
+
+        if (normalized is "generated" or "gen" or "default")
+            return RotationSourceRecipe.Default;
+
+        if (normalized is not ("imported" or "rot" or "gplates"))
+        {
+            throw new ArgumentException(
+                $"rotationSourceKind '{normalized}' is not recognized. "
+                + "Accepted kinds are 'generated' (or absent) and 'imported', 'rot', or 'gplates'.",
+                nameof(parameters));
+        }
 
         if (!parameters.TryGetValue("rotationSourcePayload", out var payloadObj) || payloadObj is not string payload
             || string.IsNullOrWhiteSpace(payload))
