@@ -1,7 +1,7 @@
 # Canonical world history, artifact checkpoints, and dry-crust proof
 
-**Status:** architecture and reviewer corrections accepted in conversation on 2026-07-13;
-review of this revised written specification remains the implementation gate.
+**Status:** accepted for implementation in conversation on 2026-07-13 after the architecture,
+adversarial-review corrections, and revised written specification were approved.
 
 **Scope:** the architecture shared by imported real-world histories and generated
 fantasy/alien planets, plus the first app-side vertical slice that proves the architecture
