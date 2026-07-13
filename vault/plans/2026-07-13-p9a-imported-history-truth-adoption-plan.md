@@ -57,16 +57,16 @@ Run the two focused test projects and observe the valid parent-change test fail 
 **Modify:**
 
 - `fantasim-world/project/plugins/Geosphere.Plate.Reconstruction/RotationModelMaterializer.cs`
-- `fantasim-world/project/plugins/Geosphere.Plate.Reconstruction/RotationModel.cs` if extraction from
-  the current file is useful
-- `fantasim-world/project/plugins/Geosphere.Plate.Reconstruction/PlateCircuit.cs` only if the public
-  materialized query requires a time-varying parent resolver
 
-Represent authored parent segments explicitly or materialize equivalent absolute samples. Preserve
-the current stable-parent `PlateCircuit` behavior and API. Resolve the parent applicable at query
-time, interpolate finite rotations with the existing quaternion interpolator, compose parent on the
-left, normalize, and detect time-local cycles. Do not change `PlateRotationPayloadCodec` or truth
-hashing.
+**Add:**
+
+- `fantasim-world/project/plugins/Geosphere.Plate.Reconstruction/TimeVaryingPlateCircuit.cs`
+
+Represent authored parent segments explicitly in `TimeVaryingPlateCircuit` and let `RotationModel`
+(currently declared in `RotationModelMaterializer.cs`) query it while preserving the current
+stable-parent `PlateCircuit` property/API. Resolve the parent applicable at query time, interpolate
+finite rotations with the existing quaternion interpolator, compose parent on the left, normalize,
+and detect time-local cycles. Do not change `PlateRotationPayloadCodec` or truth hashing.
 
 Run focused reconstruction/import tests, then the engine repository test target through
 `dotnet unify-build` from the directory containing `build/build.config.json` (consult the

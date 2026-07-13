@@ -65,9 +65,8 @@ Thread the combined signed sampler through the existing adaptive surface builder
 
 **Modify:**
 
-- `project/tests/App.World.Tests/WorldCrustMaterializerTests.cs` or the nearest existing materializer
-  integration test selected by CodeGraph
-- `project/tests/App.World.Tests/PlateFrameSamplerIntegrationTests.cs` if needed
+- `project/tests/App.World.Tests/WorldCrustMaterializerTests.cs`
+- `project/tests/App.World.Tests/MotionGateTests.cs`
 
 Run the real generated crust pipeline at selected ticks and locate actual cells of each available
 feature kind. Prove the returned `CellFeatures` changes signed final displacement at those cells
