@@ -20,7 +20,7 @@ internal sealed class FakeWorldService : IService
     public FantaSim.App.World.LayerFilmstripPreviewMap? GetLayerFilmstripPreview(FantaSim.App.World.LayerFilmstripPreviewRequest request, System.Threading.CancellationToken cancellationToken = default) => null;
 
     private Action<WorldGenerationChangedEvent>? _callback;
-    private Dictionary<string, object> _fieldValues = new(0);
+    private Dictionary<string, WorldFieldDescriptorDto> _fieldValues = new(0);
     private Dictionary<string, float> _scalarValues = new(0);
 
     public WorldOverview GetOverviewAsync()
@@ -76,9 +76,11 @@ internal sealed class FakeWorldService : IService
     }
 
     /// <summary>Test hook: seed the field/scalar payloads the service returns on the next read.</summary>
-    public void Seed(IReadOnlyDictionary<string, object> fieldValues, IReadOnlyDictionary<string, float> scalarValues)
+    public void Seed(
+        IReadOnlyDictionary<string, WorldFieldDescriptorDto> fieldValues,
+        IReadOnlyDictionary<string, float> scalarValues)
     {
-        _fieldValues = new Dictionary<string, object>(fieldValues);
+        _fieldValues = new Dictionary<string, WorldFieldDescriptorDto>(fieldValues);
         _scalarValues = new Dictionary<string, float>(scalarValues);
     }
 
@@ -112,6 +114,12 @@ internal sealed class FakeWorldService : IService
 
 public class FieldViewServiceTests
 {
+    private static readonly WorldFieldDescriptorDto ElevationDescriptor =
+        new(Unit: "m", Kind: "Continuous", Reducer: "world.fields.weighted-average");
+
+    private static readonly WorldFieldDescriptorDto TemperatureDescriptor =
+        new(Unit: "K", Kind: "Continuous", Reducer: "world.fields.weighted-average");
+
     // ---------------------------------------------------------------------
     // Behavior 1: After construction, the observable collection count matches
     // the seeded fields the world service reports.
@@ -122,10 +130,10 @@ public class FieldViewServiceTests
         // Given a fake world service seeded with two fields
         var world = new FakeWorldService();
         world.Seed(
-            fieldValues: new Dictionary<string, object>
+            fieldValues: new Dictionary<string, WorldFieldDescriptorDto>
             {
-                ["app.elevation-m"] = new { unit = "m" },
-                ["app.temperature-k"] = new { unit = "K" },
+                ["app.elevation-m"] = ElevationDescriptor,
+                ["app.temperature-k"] = TemperatureDescriptor,
             },
             scalarValues: new Dictionary<string, float>
             {
@@ -142,8 +150,10 @@ public class FieldViewServiceTests
         // populated for the scalar-bearing field and null for the non-scalar one
         Assert.Equal(2, projection.Fields.Count);
         var elev = Assert.Single(projection.Fields, vm => vm.FieldId == "app.elevation-m");
+        Assert.Equal(ElevationDescriptor, elev.Value);
         Assert.Equal(12.5f, elev.Scalar);
         var temp = Assert.Single(projection.Fields, vm => vm.FieldId == "app.temperature-k");
+        Assert.Equal(TemperatureDescriptor, temp.Value);
         Assert.Null(temp.Scalar);
     }
 
@@ -158,7 +168,10 @@ public class FieldViewServiceTests
         // Given a projection with one subscribed observer
         var world = new FakeWorldService();
         world.Seed(
-            fieldValues: new Dictionary<string, object> { ["app.elevation-m"] = new { unit = "m" } },
+            fieldValues: new Dictionary<string, WorldFieldDescriptorDto>
+            {
+                ["app.elevation-m"] = ElevationDescriptor,
+            },
             scalarValues: new Dictionary<string, float> { ["app.elevation-m"] = 0f });
         using var projection = new FieldViewService(
             world,
@@ -197,7 +210,10 @@ public class FieldViewServiceTests
         // Given a projection seeded with one field at value 1.0
         var world = new FakeWorldService();
         world.Seed(
-            fieldValues: new Dictionary<string, object> { ["app.elevation-m"] = new { unit = "m" } },
+            fieldValues: new Dictionary<string, WorldFieldDescriptorDto>
+            {
+                ["app.elevation-m"] = ElevationDescriptor,
+            },
             scalarValues: new Dictionary<string, float> { ["app.elevation-m"] = 1.0f });
         using var projection = new FieldViewService(
             world,
@@ -209,7 +225,10 @@ public class FieldViewServiceTests
 
         // When the world service reports a new scalar and fires a generation change
         world.Seed(
-            fieldValues: new Dictionary<string, object> { ["app.elevation-m"] = new { unit = "m" } },
+            fieldValues: new Dictionary<string, WorldFieldDescriptorDto>
+            {
+                ["app.elevation-m"] = ElevationDescriptor,
+            },
             scalarValues: new Dictionary<string, float> { ["app.elevation-m"] = 42.0f });
         world.FireGenerationChanged(new WorldGenerationChangedEvent("w1", "generation", "spec-b"));
 
@@ -231,10 +250,10 @@ public class FieldViewServiceTests
         // Given a projection configured with two field ids, both seeded
         var world = new FakeWorldService();
         world.Seed(
-            fieldValues: new Dictionary<string, object>
+            fieldValues: new Dictionary<string, WorldFieldDescriptorDto>
             {
-                ["app.elevation-m"] = new { unit = "m" },
-                ["app.temperature-k"] = new { unit = "K" },
+                ["app.elevation-m"] = ElevationDescriptor,
+                ["app.temperature-k"] = TemperatureDescriptor,
             },
             scalarValues: new Dictionary<string, float>
             {
@@ -249,7 +268,10 @@ public class FieldViewServiceTests
 
         // When the world service stops reporting temperature-k and fires a change
         world.Seed(
-            fieldValues: new Dictionary<string, object> { ["app.elevation-m"] = new { unit = "m" } },
+            fieldValues: new Dictionary<string, WorldFieldDescriptorDto>
+            {
+                ["app.elevation-m"] = ElevationDescriptor,
+            },
             scalarValues: new Dictionary<string, float> { ["app.elevation-m"] = 99f });
         world.FireGenerationChanged(new WorldGenerationChangedEvent("w1", "generation", "spec-c"));
 

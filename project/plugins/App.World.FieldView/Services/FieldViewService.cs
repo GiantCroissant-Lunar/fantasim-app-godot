@@ -137,7 +137,9 @@ public sealed class FieldViewService : IDisposable
         WorldScalarFieldValues scalarValues,
         long viewTick)
     {
-        fieldValues.FieldValues.TryGetValue(fieldId, out var raw);
+        WorldFieldDescriptorDto? raw = fieldValues.FieldValues.TryGetValue(fieldId, out var descriptor)
+            ? descriptor
+            : null;
         float? scalar = null;
         if (scalarValues.ScalarValues.TryGetValue(fieldId, out var s))
             scalar = s;

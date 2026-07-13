@@ -464,7 +464,7 @@ internal sealed class FakeWorldService : WorldService
     }
 
     public WorldFieldValues GetFieldValuesAsync(WorldFieldValuesRequest request)
-        => new(new Dictionary<string, object>(0));
+        => new(new Dictionary<string, WorldFieldDescriptorDto>(0));
 
     public WorldScalarFieldValues GetScalarFieldValuesAsync(WorldScalarFieldValuesRequest request)
         => new(new Dictionary<string, float>(0));
