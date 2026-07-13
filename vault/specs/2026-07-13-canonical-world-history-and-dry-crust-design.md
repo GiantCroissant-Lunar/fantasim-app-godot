@@ -549,6 +549,37 @@ disposal.
 
 A screenshot complements but does not replace the directional geometry tests.
 
+### 8.4 First-slice closure evidence (2026-07-13)
+
+The completed slice is recorded by commits through `d270ded` in the app and `27ff851` in
+`fantasim-world`, with the engine package closure published uniformly as `0.1.12`.
+
+- Engine: 602 tests passed; focused crust and topology suites passed 49 and 42 tests. The Unify
+  compile/pack/local-feed workflow completed without errors.
+- Integrated app: `App.World.Tests` passed 629/629 with project references and 629/629 against the
+  package closure. `App.World.Composition.Tests` passed 110/110 in both modes; Presentation and
+  Timeline passed 232/232 and 339/339. Bundle staging passed 23/23 checks.
+- Durable recovery: the external SurrealDB gate committed imported rotation history in one process,
+  stopped that process, started a distinct SurrealDB process over the same RocksDB state, and
+  recovered/materialized only through the exact bound cursor.
+- Exported runtime: the real macOS Godot export loaded the rebuilt `world.pck` and `timeline.pck`;
+  each live reload logged bundle unload, bundle load, successful command completion, and collection
+  of the old collectible ALC. The optional iii native bridge remained unavailable in this checkout,
+  but the World/Timeline runtime and remote ingress remained healthy and the visual gate completed.
+- Visual/data gate: at canonical tick `200000000` (2,000 Ma), generated dry crust completed, bound
+  as a 10-plate adaptive `HypsometricTerrain` mesh with 15,008 triangles, and rendered at 3840x1914.
+  The planet visibly exceeds the two thin rings and independently zooms from 1.35 through at least
+  1.897x (with a separate maximum-zoom capture). Hydrosphere mode is `Absent`; no hydrology or biome
+  material is active.
+
+The visual verdict is deliberately narrower than the quantitative verdict. The exported mesh reads
+as dry faceted rock with raised and depressed tectonic belts, but its current hypsometric rock ramp
+is brown rather than the first supplied reference's literal gray, and a still image does not make
+every mountain/volcanic-arc/trench/ridge category artistically unmistakable. Directional
+counterfactual and finalized-mesh tests remain the proof of those signs. More explicit category art
+is presentation refinement, not permission to replace the event/provider-driven geometry with a
+showcase fixture.
+
 ## 9. Remaining adoption roadmap
 
 ### Phase B — canonical checkpoint foundation

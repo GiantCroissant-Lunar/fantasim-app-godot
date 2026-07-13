@@ -169,6 +169,13 @@ modes are the meaningful compile/runtime proof).
 - Exact shared-edge RED was `-4.021378056e-7` rad at frequency 2 and `-5.437160815e-7` rad at
   frequency 4 under the rejected inradius subtraction. GREEN is exactly `-double.Epsilon` on the
   subducting side at both frequencies, with a same-plate far-interior contribution of exactly zero.
+- Integrated closure: World passed 629/629 in project-reference and package modes; Composition
+  passed 110/110 in both; Presentation 232/232; Timeline 339/339; engine 602/602; bundle staging
+  23/23. The exported macOS app hot-reloaded world and timeline with both old ALCs collected. At
+  tick 200,000,000 it bound a 10-plate, 15,008-triangle adaptive HypsometricTerrain crust. Fresh
+  3840x1914 captures prove the planet exceeds the thin rings and independently zooms. The current
+  dry rock ramp is brown rather than literal reference gray; per-category sign is established by
+  quantitative/final-mesh tests, while more unmistakable category art remains presentation polish.
 - Current P9b tunnel constants supersede the older prototype values above: independent default
   planet zoom 1.35 (clamp 0.35..3.0), camera `(−0.25, 0.25, 2.9)` at 74 degrees, axis-centred
   instrument anchor `(0, 0, −1)`, inner ring 1.30..1.38 (width 0.08), outer ring 1.52..1.62
