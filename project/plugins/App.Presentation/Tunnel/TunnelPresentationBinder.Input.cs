@@ -129,6 +129,18 @@ internal static class TunnelPlanetOcclusionPolicy
     }
 }
 
+/// <summary>
+/// Godot-free angle-source selector for press/motion/release. The wall carousel rotates about the
+/// tunnel axis and must be measured on the wall reference plane for both motion and release; the
+/// ring dials rotate on the instrument plane. Using different planes between motion and release
+/// injects a parallax delta into the final commit.
+/// </summary>
+internal static class TunnelPointerAngleSourcePolicy
+{
+    public static bool ShouldUseWallAngleSource(TunnelGestureKind gesture)
+        => gesture == TunnelGestureKind.Wall;
+}
+
 internal sealed partial class TunnelPresentationBinder
 {
     // Mirrors TimelinePlugin.TunnelViewCommandId (project/plugins/App.Timeline/TimelinePlugin.cs).
@@ -471,7 +483,7 @@ internal sealed partial class TunnelPresentationBinder
         if (!_gestureOwned)
             return false;
 
-        var aboutTunnelAxis = _coordinator.ActiveGesture == TunnelGestureKind.Wall;
+        var aboutTunnelAxis = TunnelPointerAngleSourcePolicy.ShouldUseWallAngleSource(_coordinator.ActiveGesture);
         if (!TryGetPointerAngle(aboutTunnelAxis, motion.Position, out var currentAngle))
             return true;
 
@@ -517,7 +529,10 @@ internal sealed partial class TunnelPresentationBinder
 
         // A release can arrive at a new position without a final motion event. Fold that last
         // pointer segment into the coordinator so the commit/snap/readout reflects the real drop.
-        if (TryGetLocalPointerAngle(release.Position, out var releaseAngle))
+        // Use the same angle source that motion used for this gesture kind: wall carousel
+        // rotation is measured on the tunnel-axis plane, rings on the instrument plane.
+        var aboutTunnelAxis = TunnelPointerAngleSourcePolicy.ShouldUseWallAngleSource(_coordinator.ActiveGesture);
+        if (TryGetPointerAngle(aboutTunnelAxis, release.Position, out var releaseAngle))
         {
             var finalDelta = TunnelScrubMapper.NormalizeClockwiseDeltaDegrees(
                 _lastPointerAngleDeg,
