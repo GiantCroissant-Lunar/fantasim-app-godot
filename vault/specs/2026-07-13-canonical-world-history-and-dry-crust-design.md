@@ -477,6 +477,18 @@ Frame use is explicit and intentionally different by domain:
   stop at junctions, never bridge disconnected components, and are chunked into bounded forcing
   segments. A future mantle-first producer emits canonical states/events under section 6.2.
 
+### 7.5 L-axis amendment (2026-07-14, user decision)
+
+The stream conventions written throughout §7 as `L0` (`{world}:{branch}:L0:geosphere:plates`,
+`{world}:{branch}:L0:world:imports`) predate a doctrine check. The locked meaning of L
+(`fantasim-world/vault/architecture/planet-stack-model.md` §2: causal write-authority —
+L3 stellar, **L2 world**, L1 regional, L0 local, negative micro; plate topology = L2) makes
+these world-scoped streams **L2**. Because no durable production history holds the L0
+identities (in-memory runtime; gate evidence disposable), the user chose full alignment over
+grandfathering: read every `L0` in this spec's conventions as `L2`. Executed by
+`vault/plans/2026-07-14-l-axis-doctrine-alignment-plan.md`; the branches control stream in the
+slice-2 design is L2-native from birth.
+
 ## 8. Acceptance gates
 
 ### 8.1 Architecture and import tests
