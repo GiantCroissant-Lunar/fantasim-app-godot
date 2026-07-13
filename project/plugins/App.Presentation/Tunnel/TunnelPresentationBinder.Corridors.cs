@@ -269,28 +269,30 @@ internal sealed partial class TunnelPresentationBinder
             Mathf.Sin(rad) * (CorridorSurfaceRadius - 0.3f),
             headZ);
 
+        // Headers are intentionally depth-tested off and bright/large so they identify each
+        // corridor even when the foreground rings or planet body would otherwise occlude them.
         var title = new Label3D
         {
             Name = "CorridorHeaderTitle",
             Text = header.Title,
-            Position = basePos + new Vector3(0f, 0.22f, 0f),
+            Position = basePos + new Vector3(0f, 0.24f, 0f),
             Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
-            FontSize = 22,
-            Modulate = style.TitleColor,
-            OutlineModulate = new Color(0f, 0f, 0f, 0.70f),
-            NoDepthTest = false,
+            FontSize = 28,
+            Modulate = Brighten(style.TitleColor, 0.18f),
+            OutlineModulate = new Color(0f, 0f, 0f, 0.82f),
+            NoDepthTest = true,
         };
 
         var subtitle = new Label3D
         {
             Name = "CorridorHeaderSubtitle",
             Text = header.Subtitle,
-            Position = basePos - new Vector3(0f, 0.22f, 0f),
+            Position = basePos - new Vector3(0f, 0.24f, 0f),
             Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
-            FontSize = 14,
-            Modulate = style.SubtitleColor,
-            OutlineModulate = new Color(0f, 0f, 0f, 0.60f),
-            NoDepthTest = false,
+            FontSize = 16,
+            Modulate = Brighten(style.SubtitleColor, 0.12f),
+            OutlineModulate = new Color(0f, 0f, 0f, 0.72f),
+            NoDepthTest = true,
         };
 
         _corridorsRoot!.AddChild(title);

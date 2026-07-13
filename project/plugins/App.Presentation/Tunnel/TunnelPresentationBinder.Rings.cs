@@ -61,6 +61,12 @@ internal static class TunnelInstrumentContract
     internal static float OuterRingInnerRadius => TunnelCameraFraming.OuterRingInnerRadius;
     internal static float OuterRingOuterRadius => TunnelCameraFraming.OuterRingOuterRadius;
 
+    // Readout stack Y positions are chosen to fit inside a conservative 16:9/16:10 viewport safe
+    // area when the instrument is at InstrumentLocalAnchor. See TunnelCameraFramingSafeBoundsTests.
+    internal const float OuterReadoutYOffset = 2.20f;
+    internal const float InnerReadoutYOffset = -2.00f;
+    internal const float StatusReadoutYOffset = -2.30f;
+
     internal static float CanonicalOuterRotationDegrees(long tick, long unitTicks)
         => (float)TunnelScrubMapper.CanonicalPhaseDegrees(tick, unitTicks);
 
@@ -319,15 +325,18 @@ internal sealed partial class TunnelPresentationBinder
         // Idempotent: create each readout Label3D once, then update text in place on later calls
         // (matching the in-place .Text writes in UpdateOuterRingVisual*). Reallocating three nodes
         // per call was a node-churn trap for any future per-refresh caller.
+        // Readout stack is drawn with NoDepthTest so it sits above the rings/planet. The Y
+        // offsets are chosen so the outer/inner/status labels stay inside the viewport safe area
+        // at both 16:9 and 16:10 without clipping the top/bottom edges.
         _outerLabel = EnsureReadoutLabel(
             _outerLabel,
             TunnelInstrumentContract.OuterReadoutName,
             new Vector3(
                 0f,
-                TunnelInstrumentContract.OuterRingOuterRadius + 0.24f,
+                TunnelInstrumentContract.OuterReadoutYOffset,
                 TunnelInstrumentContract.GeometryPlaneZ + 0.02f),
             fontSize: 22,
-            new Color(0.85f, 0.90f, 0.95f, 0.92f));
+            new Color(0.85f, 0.90f, 0.95f, 0.96f));
         _outerLabel.Text = BuildOuterLabelText();
 
         _innerLabel = EnsureReadoutLabel(
@@ -335,10 +344,10 @@ internal sealed partial class TunnelPresentationBinder
             TunnelInstrumentContract.InnerReadoutName,
             new Vector3(
                 0f,
-                -(TunnelInstrumentContract.OuterRingOuterRadius + 0.22f),
+                TunnelInstrumentContract.InnerReadoutYOffset,
                 TunnelInstrumentContract.GeometryPlaneZ + 0.02f),
             fontSize: 20,
-            new Color(0.92f, 0.94f, 0.97f, 0.92f));
+            new Color(0.92f, 0.94f, 0.97f, 0.96f));
         _innerLabel.Text = BuildInnerLabelText();
 
         _statusLabel = EnsureReadoutLabel(
@@ -346,10 +355,10 @@ internal sealed partial class TunnelPresentationBinder
             TunnelInstrumentContract.StatusReadoutName,
             new Vector3(
                 0f,
-                -(TunnelInstrumentContract.OuterRingOuterRadius + 0.40f),
+                TunnelInstrumentContract.StatusReadoutYOffset,
                 TunnelInstrumentContract.GeometryPlaneZ + 0.02f),
             fontSize: 18,
-            new Color(0.68f, 0.68f, 0.72f, 0.94f));
+            new Color(0.68f, 0.68f, 0.72f, 0.96f));
         _statusLabel.Text = BuildStatusLabelText();
         _statusLabel.Modulate = _fineBinding.CanAdjust
             ? new Color(0.82f, 0.92f, 0.82f, 0.94f)
@@ -481,10 +490,13 @@ internal sealed partial class TunnelPresentationBinder
     }
 
     private static Color Brighten(Color color)
+        => Brighten(color, 0.3f);
+
+    private static Color Brighten(Color color, float amount)
         => new(
-            Math.Min(1f, color.R + 0.3f),
-            Math.Min(1f, color.G + 0.3f),
-            Math.Min(1f, color.B + 0.3f));
+            Math.Min(1f, color.R + amount),
+            Math.Min(1f, color.G + amount),
+            Math.Min(1f, color.B + amount));
 
     private static void ApplyUnlitRingColor(MeshInstance3D node, Color color)
     {

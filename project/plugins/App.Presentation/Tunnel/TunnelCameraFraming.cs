@@ -118,12 +118,7 @@ internal static class TunnelCameraFraming
     internal static TunnelProjectedPoint ProjectInstrumentCenter(double aspect)
     {
         ValidateAspect(aspect);
-        var depth = -InstrumentLocalAnchor.Z;
-        var tanHalf = Math.Tan(FieldOfViewDegrees * Math.PI / 360.0);
-        return new TunnelProjectedPoint(
-            0.5 + InstrumentLocalAnchor.X / (2.0 * depth * tanHalf * aspect),
-            0.5 - InstrumentLocalAnchor.Y / (2.0 * depth * tanHalf),
-            depth);
+        return Project(InstrumentLocalAnchor, aspect);
     }
 
     internal static TunnelProjectedBounds ProjectInstrumentRingBounds(float radius, double aspect)
@@ -132,13 +127,16 @@ internal static class TunnelCameraFraming
         if (radius <= 0.0f)
             throw new ArgumentOutOfRangeException(nameof(radius));
 
-        var depth = -InstrumentLocalAnchor.Z;
-        var tanHalf = Math.Tan(FieldOfViewDegrees * Math.PI / 360.0);
+        var anchor = InstrumentLocalAnchor;
+        var tl = Project(new Vector3(anchor.X - radius, anchor.Y + radius, anchor.Z), aspect);
+        var tr = Project(new Vector3(anchor.X + radius, anchor.Y + radius, anchor.Z), aspect);
+        var bl = Project(new Vector3(anchor.X - radius, anchor.Y - radius, anchor.Z), aspect);
+        var br = Project(new Vector3(anchor.X + radius, anchor.Y - radius, anchor.Z), aspect);
         return new TunnelProjectedBounds(
-            0.5 + (InstrumentLocalAnchor.X - radius) / (2.0 * depth * tanHalf * aspect),
-            0.5 + (InstrumentLocalAnchor.X + radius) / (2.0 * depth * tanHalf * aspect),
-            0.5 - (InstrumentLocalAnchor.Y + radius) / (2.0 * depth * tanHalf),
-            0.5 - (InstrumentLocalAnchor.Y - radius) / (2.0 * depth * tanHalf));
+            Math.Min(Math.Min(tl.X, tr.X), Math.Min(bl.X, br.X)),
+            Math.Max(Math.Max(tl.X, tr.X), Math.Max(bl.X, br.X)),
+            Math.Min(Math.Min(tl.Y, bl.Y), Math.Min(tr.Y, br.Y)),
+            Math.Max(Math.Max(tl.Y, bl.Y), Math.Max(tr.Y, br.Y)));
     }
 
     internal static TunnelProjectedBounds ProjectSphereBounds(
@@ -184,6 +182,19 @@ internal static class TunnelCameraFraming
             (axisOffset * depth - root) / denominator,
             (axisOffset * depth + root) / denominator);
     }
+
+    /// <summary>
+    /// Returns true when the projected point is inside the inclusive [min,max] safe viewport
+    /// rectangle. Used by layout tests to prove readout/header positions stay in-bounds at common
+    /// aspects without relying on a live Godot viewport.
+    /// </summary>
+    internal static bool IsInSafeViewport(TunnelProjectedPoint point, double min, double max)
+        => double.IsFinite(point.X)
+            && double.IsFinite(point.Y)
+            && point.X >= min
+            && point.X <= max
+            && point.Y >= min
+            && point.Y <= max;
 
     private static void ValidateAspect(double aspect)
     {
