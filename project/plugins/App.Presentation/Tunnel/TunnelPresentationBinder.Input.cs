@@ -98,6 +98,37 @@ internal sealed class TunnelInputPolicy
 
 internal readonly record struct TunnelWheelResult(bool Handled, bool AdjustZoom, float RequestedZoomScale);
 
+/// <summary>
+/// Godot-free planet-occlusion policy for wall picking. Derives the effective visual radius from the
+/// original shared-planet scale and the tunnel zoom scale, and fails closed on non-finite/degenerate
+/// input so a bad scale cannot propagate NaN/Infinity into picking.
+/// </summary>
+internal static class TunnelPlanetOcclusionPolicy
+{
+    public static float EffectiveRadius(float originalScale, float zoomScale, float baseRadius)
+    {
+        if (!float.IsFinite(originalScale) || originalScale <= 0f)
+            originalScale = 1.0f;
+        if (!float.IsFinite(zoomScale) || zoomScale <= 0f)
+            zoomScale = TunnelPlanetZoom.DefaultScale;
+
+        return baseRadius * originalScale * zoomScale;
+    }
+
+    public static float? TryResolveEffectiveRadius(
+        NumericsVector3 originalScale,
+        float zoomScale,
+        float baseRadius)
+    {
+        var axisScale = Math.Max(originalScale.X, Math.Max(originalScale.Y, originalScale.Z));
+        if (!float.IsFinite(axisScale) || axisScale <= 0f)
+            return null;
+
+        var effective = EffectiveRadius(axisScale, zoomScale, baseRadius);
+        return float.IsFinite(effective) ? effective : null;
+    }
+}
+
 internal sealed partial class TunnelPresentationBinder
 {
     // Mirrors TimelinePlugin.TunnelViewCommandId (project/plugins/App.Timeline/TimelinePlugin.cs).
@@ -617,8 +648,17 @@ internal sealed partial class TunnelPresentationBinder
         if (!TryBuildMountLocalRay(screenPosition, camera, out var ray, out var origin))
             return false;
 
+        var effectiveRadius = _inputPolicy.OriginalScale is { } original
+            ? TunnelPlanetOcclusionPolicy.TryResolveEffectiveRadius(
+                original,
+                _inputPolicy.CurrentZoomScale,
+                TunnelCameraFraming.PlanetVisualRadius)
+            : TunnelCameraFraming.PlanetVisualRadius;
+        if (!effectiveRadius.HasValue)
+            return false;
+
         var center = new TunnelPoint3(0d, 0d, TunnelCameraFraming.CurrentPlaneZ);
-        if (!TunnelRayHitMapper.TryIntersectSphere(ray, center, TunnelCameraFraming.PlanetVisualRadius, out var planetLocal))
+        if (!TunnelRayHitMapper.TryIntersectSphere(ray, center, effectiveRadius.Value, out var planetLocal))
             return false;
 
         // Both hits lie on the same ray, so nearer-along-ray reduces to squared distance from origin.
