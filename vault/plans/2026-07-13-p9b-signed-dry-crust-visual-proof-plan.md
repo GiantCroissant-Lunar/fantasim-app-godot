@@ -8,10 +8,11 @@
 the dry crust, then tune the tunnel so the independently zoomable planet is larger and the two rings
 are thinner without acting as a planet aperture.
 
-**Architecture:** `CellElevations` remains the broad crust envelope. `CellFeatures` adds a signed,
-feature-specific deterministic signal before bounded procedural fabric. The same adaptive
-`GlobePlateSurfaces` path produces the mesh. Presentation tuning changes only scale/framing and does
-not alter canonical history.
+**Architecture:** `CellElevations` is the authoritative signed crust envelope, already composed from
+state-derived elevation and boundary profiles. `CellFeatures` selects only bounded residual fabric
+and adaptive emphasis; presentation must not add the same tectonic uplift/depression twice. The same
+adaptive `GlobePlateSurfaces` path produces the mesh. Presentation tuning changes only
+scale/framing and does not alter canonical history.
 
 **Repository:** `/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot`
 
@@ -19,29 +20,48 @@ not alter canonical history.
 
 ## Locked acceptance behavior
 
-- Mountain and volcanic arc are positive; trench is negative; ridge has positive crest/flanks;
-  fault defaults to zero vertical signal.
-- A zero-noise configuration still produces those signs. Trench never selects positive ridged
-  noise. Noise at a tagged cell is strictly bounded below that feature's tectonic signal.
+- In a zero-noise real-pipeline fixture: mountain/volcanic cells are at least 750 m above the
+  zero-profile baseline, trench cells at least 750 m below, and ridge flanks at least 300 m above.
+  Fault gets no feature-enum uplift beyond the configured transform profile.
+- Trench never selects positive ridged noise. Residual noise is at most 250 m peak and at most one
+  third of the smallest mandatory 800 m tectonic boundary signal.
 - Geometry remains deterministic and watertight. Hydrology and biome color remain out of this gate.
 - Tunnel planet scale is independent, restored on tunnel exit, and starts visibly larger. It may
   project beyond the instrument rings. Both ring bands are thinner and remain pickable using the
   same declared geometry/hit radii.
 
-## Task 1: RED signed feature-profile tests
+## Task 1: RED authoritative signed-elevation and finalized-mesh tests
 
 **Modify:**
 
 - `project/tests/App.World.Tests/GlobePlateSurfacesTests.cs`
+- `project/tests/App.World.Tests/BoundaryProfileIntegrationTests.cs`
+- `project/tests/App.World.Tests/WorldCrustMaterializerTests.cs`
 - `project/tests/App.Presentation.Tests/PlateSurfaceReliefFabricTests.cs`
 
-Add one-cell-center and final-vertex tests with noise amplitude zero. Compare each feature against
-the identical no-feature baseline: mountain > 0, volcanic > 0, trench < 0, ridge > 0, fault == 0.
-Add a trench profile assertion that `Ridged == false`, a deterministic-repeat assertion, and a
-bound proving `abs(noise contribution) < abs(feature signal)` for all non-fault tagged kinds.
-Observe current failures: zero noise disables the sampler and active trenches take the ridged path.
+Use `BoundaryProfileParameters.Zero` as the independent baseline and the existing default profile
+as the signal. With noise disabled, assert mountain/volcanic target cells gain at least 750 m,
+trench cells lose at least 750 m, and ridge flanks gain at least 300 m. Trace those exact source
+cells through `PlanetPresentationDocument` and source-triangle provenance to finalized cap/mesh
+vertex radii after the height lens and displacement cap; assert the same directions there. Add a
+trench residual-profile assertion that `Ridged == false`, deterministic-repeat assertions, and the
+250 m / one-third noise bounds. Observe the intended current failures before production edits.
 
-## Task 2: GREEN signed tectonic detail before fabric
+## Task 2: Fix non-snapshot feature transport through the production plate frame
+
+**Modify:**
+
+- `project/plugins/App.World/Crust/PlateFrameSampler.cs`
+- `project/plugins/App.World/Services/Service.cs`
+- `project/tests/App.World.Tests/PlateFrameSamplerSmoothnessTests.cs`
+- `project/tests/App.World.Tests/MotionGateTests.cs`
+
+At arbitrary playhead ticks, read the governing `products.SnapshotTick` feature map and transport
+its feature records through the same plate-frame mapping as crust state. Do not query
+`FeaturesByTick` with the arbitrary playhead tick. Add an onset+2,500,000 non-snapshot test that
+retains a non-empty feature set and keeps feature cells aligned with the moved plate frame.
+
+## Task 3: GREEN bounded residual fabric without duplicate uplift
 
 **Modify:**
 
@@ -49,19 +69,21 @@ Observe current failures: zero noise disables the sampler and active trenches ta
 - `project/contracts/App.World.Rendering/Globe/TectonicDetailSampler.cs`
 - `project/plugins/App.Presentation/PlateSurfaceMeshFactory.cs`
 - `project/plugins/App.Presentation/PlateSurfaceReliefFabric.cs`
+- `project/plugins/App.World/Services/Service.cs`
 
-Introduce a contract-owned feature-kind enum matching the engine semantic values and expose a
-signed feature displacement in `TectonicDetailProfile`. Evaluate the feature signal even when noise
-amplitude is zero. Use deterministic magnitude shaping with finite clamps: broad positive mountain,
-localized stronger volcanic peak, narrow negative trench, positive ridge (an axial notch may be
-added only if the flanks stay positive), and zero fault. Feature sign must not be derived from random
-noise. Give trenches non-ridged bounded fabric; reduce/bound world and diagnostic noise so it cannot
-dominate tagged feature signal.
+Introduce a contract-owned feature-kind enum, but map `CrustFeatureKind` to it with an explicit
+exhaustive switch plus unknown-value behavior; never ordinal-cast across packages. Do not add signed
+feature displacement in presentation. Keep sign/broad morphology in `CellElevations`. Give trenches
+non-ridged, zero-mean residual fabric and reduce every residual profile to at most 250 m peak and no
+more than one third of the smallest mandatory boundary-profile signal. Other feature kinds may vary
+frequency/roughness only within that bound.
 
-Thread the combined signed sampler through the existing adaptive surface builder. Do not bypass
-`CellElevations`, `BuildAdaptiveSurfaces`, the displacement cap, or vertex provenance.
+Thread the bounded sampler through the existing adaptive surface builder. Do not bypass
+`CellElevations`, `BuildAdaptiveSurfaces`, the displacement cap, or vertex provenance. Add no
+presentation constants for tectonic widths/amplitudes; those remain data in
+`BoundaryProfileParameters`.
 
-## Task 3: RED real crust-pipeline causality tests
+## Task 4: Lock real crust-pipeline causality and dry-mode fixture
 
 **Modify:**
 
@@ -69,13 +91,16 @@ Thread the combined signed sampler through the existing adaptive surface builder
 - `project/tests/App.World.Tests/MotionGateTests.cs`
 
 Run the real generated crust pipeline at selected ticks and locate actual cells of each available
-feature kind. Prove the returned `CellFeatures` changes signed final displacement at those cells
-relative to the same `CellElevations` with features removed. Prove changing the plate-motion tick
-changes at least one boundary classification/feature/elevation for the accepted fixture. Tests may
-skip only a feature kind the deterministic fixture demonstrably cannot produce; the visual fixture
-must be selected so mountain, trench, and volcanic arc are all present.
+feature kind. Independently compute the default-minus-zero `BoundaryProfileContribution` for those
+cells, assert its sign/range, then trace the same cell IDs through `CellElevations`, the presentation
+document, and finalized mesh. `CellFeatures` is a lineage tag and residual-profile selector, not the
+source of another renderer offset. Use the default patch recipe (seed 0, five patches) and lock a
+frequency/tick fixture that fails unless mountain, trench, and volcanic arc each have at least one
+cell; do not skip those three. Name one plate pair whose boundary classification changes at the
+later tick and assert the expected downstream feature and elevation direction for its cells. Assert
+effective hydrosphere mode is `Absent`.
 
-## Task 4: RED/ GREEN larger independent planet and thinner rings
+## Task 5: RED/GREEN larger independent planet and thinner rings
 
 **Modify:**
 
@@ -88,29 +113,31 @@ must be selected so mountain, trench, and volcanic arc are all present.
 - `project/tests/App.Presentation.Tests/TunnelInstrumentContractTests.cs`
 - `project/tests/App.Presentation.Tests/TunnelInputPolicyTests.cs`
 
-First add tests requiring a default tunnel scale greater than 1, exact restoration of the captured
-original scale, ring band widths materially below the current 0.20/0.25, consistent visual/hit
-radii, and projected planet bounds that extend beyond at least the inner-ring aperture while the
-camera/readouts remain safe at supported aspect ratios. Then apply the default zoom immediately
-after capture, retain wheel zoom/clamps, and restore on every disable/teardown path. Tune radii and
-readout offsets together; do not couple maximum planet zoom to either ring radius.
+Lock `TunnelPlanetZoom.DefaultScale = 1.35f`, retain the current 0.35..3.0 clamp, set exact inner and
+outer ring widths to 0.08 and 0.10 world units, and keep hit bands at those same radii (minimum width
+0.08). At 4:3, 16:9, and 21:9, require the default projected planet radius to exceed the projected
+inner aperture by at least 5% while camera/readouts stay inside their current safe rectangle. Apply
+the default zoom immediately after capture and restore the exact original scale on ordinary disable,
+repeated enable/disable, disable-before-capture, rebind, cancellation/exception, bundle teardown,
+and a second enable (which must not recapture the already-zoomed scale). Tune radii/readout offsets
+together; do not couple maximum planet zoom to either ring radius.
 
-## Task 5: Focused and full verification
+## Task 6: Focused and full verification
 
 Run focused `App.World.Tests`, `App.Presentation.Tests`, and `App.Timeline.Tests`, then the repository
 build/test workflow through `dotnet unify-build`. Preserve watertight seam, adaptive subdivision,
 camera framing, hit arbitration, teardown, and collectible-ALC tests.
 
-## Task 6: Exported-app visual gate
+## Task 7: Exported-app visual gate
 
-Keep the exported Godot app open per the workspace bundle rule. Stage/reload changed PCKs into the
-live process and capture fresh screenshots at actual generated ticks/orientations with real
-mountain, trench, and volcanic cells. Record logs containing tick, counts by feature kind, minimum
-and maximum base elevation, signed feature displacement extrema, noise extrema, final displacement
-extrema, planet zoom scale, and ring widths. The accepted frame must show gray/faceted dry crust,
-positive mountain/volcanic relief, negative trenches, a larger planet extending beyond the ring
-aperture, and thinner rings. Hydrology and biomes stay off. Finish with successful ALC unload and
-collection evidence.
+The feature enum and `TectonicDetailSampler` live in resident contract/rendering assemblies, so first
+build/stage a full common bundle/export and restart into that build; merely reloading `world.pck` is
+not evidence. Keep the restarted export open, then exercise collectible PCK reloads. Capture fresh
+same-camera screenshots at actual generated ticks/orientations with real mountain, trench, and
+volcanic cells. Record feature cell IDs and projected screen locations plus finalized mesh vertex
+min/max radii, noise-off versus feature-on values, planet zoom scale, ring widths, effective
+hydrosphere mode `Absent`, and confirmation that no biome/hydrology material is active. Finish with
+successful collectible-ALC unload/collection evidence.
 
 ## Agent handoff
 

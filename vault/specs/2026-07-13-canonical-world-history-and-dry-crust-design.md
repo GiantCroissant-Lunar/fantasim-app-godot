@@ -256,6 +256,11 @@ Execution is split into two independently reviewable packets under the same sess
 P9a and P9b may run in separate worktrees and pass their own gates. Neither packet's success is
 substituted for the other's.
 
+This first slice records and verifies the raw-source digest but does not yet publish the raw bytes
+to the canonical artifact store, because that store is Phase B. Therefore P9a establishes semantic
+event authority and a digest-addressed provenance pointer, not durable canonical retention of the
+raw source. It must not claim that a digest alone is the retained provenance artifact.
+
 ### 7.1 Responsibility-accurate rename
 
 Rename:
@@ -303,19 +308,23 @@ The app workflow is:
 1. Accept source name, `.rot` text/bytes, world/branch identity, and plate-onset binding.
 2. Parse once with `RotParser`.
 3. Preserve current fail-closed behavior: any parse issue rejects the import; append nothing.
-4. Append `world.rotation-source-prepared.v1` on the separate
+4. CAS-append `world.rotation-source-prepared.v1` on the separate
    `{world}:{branch}:L0:world:imports` control stream. It records source digest, parser/release
    digest, onset tick, target plate stream, deterministic ordered-draft digest/count, and the
-   expected prior plate head. Prepared does not activate the source.
+   expected prior plate head. The append expects an exact prior control head and returns the exact
+   prepared cursor. Prepared does not activate the source. Prepare and bind use the onset tick, so
+   their ticks are equal and non-decreasing on the one-source control stream.
 5. Use `RotationStreamImporter.ToDrafts`, then append those drafts through a new
    `ITruthEventWriter.AppendIfHeadAsync`/`ActorTruthEventWriter` CAS path using the prepared expected
    head. Do not call `ImportAsync` with the underlying store.
-6. After the atomic plate-draft batch returns its exact head, append a versioned
+6. After the atomic plate-draft batch returns its exact head, CAS-append a versioned
    `world.rotation-source-bound.v1` event on a separate `{world}:{branch}:L0:world:imports`
-   control stream. Its payload contains source digest, parser version, onset tick, and the
-   resulting plate-stream cursor. Only that binding activates the imported source; a crash after
-   the plate append but before bind leaves plate events recoverable but invisible to the app.
-7. Read the committed stream through a read-only capability and materialize `RotationModel`.
+   control stream against the exact prepared head. Its payload contains the prepared cursor,
+   source digest, parser version, onset tick, and the resulting plate-stream cursor. Only that
+   binding activates the imported source; a crash after the plate append but before bind leaves
+   plate events recoverable but invisible to the app.
+7. Read and verify the committed plate stream only through the bound cursor, then materialize
+   `RotationModel`. A later current head or orphan batch is never consumed implicitly.
 8. Adapt the materialized total rotations to the app's onset-relative `IPlateRotationProvider`:
    `R_abs(timeMa(tick)) * inverse(R_abs(onsetMa))`. The existing playback convention pins
    `onsetMa = 0 Ma` and maps `timeMa(tick) = TickDeltaToMegaAnnum(tick - onsetTick)`; interpolation
@@ -340,6 +349,13 @@ provider accepts, including a valid fixed-parent change through time, enhance th
 materializer with tests. Rejection is reserved for invalid/cyclic input, not used as an easier
 substitute for real GPlates coverage. No hidden fallback to direct reparsing is allowed.
 
+Parity with the current provider fixes the parent-change algorithm: resolve the applicable parent
+chain to an absolute quaternion at each authored keyframe (duplicate moving-plate/time rows are
+last-wins in stream order), then SLERP those absolute samples. Do not instead interpolate relative
+rotations at query time and compose them, because quaternion composition and SLERP do not commute.
+Crossover tests cover just-before, exactly-at, and just-after times; an authored discontinuity stays
+authored rather than being silently repaired.
+
 The plate stream uses the established five-axis convention, parameterized from the requested world
 instead of hardcoded app constants. For the existing plate stream the domain/model convention is
 `{world}:main:L0:geosphere:plates`; exact branch and world ids come from the request/world record.
@@ -350,10 +366,13 @@ after a later head on the same immutable plate stream.
 
 Retry/recovery follows the control-stream state machine:
 
-- prepared + plate head still equals the expected prior head: execute the CAS append;
-- prepared + the appended event range exactly matches the deterministic ordered drafts: verify the
-  actual head and append the missing bound event;
+- prepared is the exact control head + plate head still equals the expected prior head: execute the
+  plate CAS append, then CAS bind against the prepared control cursor;
+- prepared is the exact control head + the appended event range exactly matches the deterministic
+  ordered drafts: verify the actual plate head and CAS the missing bound event against prepared;
 - bound already exists for the same source/onset/head: return idempotent success;
+- a concurrent prepare CAS failure: reread control; converge on the same prepared/bound record only
+  when source/onset/draft digests match, otherwise fail as a different-source conflict;
 - any other plate/control head: fail closed as an import conflict.
 
 This closes the crash window without re-appending ticks or treating an orphan batch as active.
@@ -362,26 +381,35 @@ Existing `PlateRotationPayload` bytes remain unchanged in this slice so current 
 hashes stay stable. New import-control payloads carry `WorldEventContextV1`; a later versioned
 payload migration can add the context directly to rotation events if required.
 
+Canonical control DTOs/codecs live in stable `fantasim-world` truth/rotation packages rather than
+the collectible app implementation. The app owns orchestration only. Known digest vectors lock the
+fixed-key encoding and length framing.
+
 The lead session—not the implementation agent—authors the parity oracle from independently derived
 quaternion fixtures and expected values. The GLM implementation packet may consume those RED tests
 but may not define or weaken their expected results.
 
 ### 7.3 Data-driven dry crust
 
-Dry-crust geometry starts from `CellElevations`. `CellFeatures` contributes signed, feature-specific
-detail:
+Dry-crust sign and broad morphology are authoritative in `CellElevations`, produced by
+`CellElevationSystem.Derive` plus `BoundaryProfileContribution`. Do not add the same uplift or
+depression a second time in presentation. `CellFeatures` selects only bounded residual surface
+fabric and adaptive emphasis:
 
-| Feature | Required geometric direction |
+| Feature | Required authoritative direction |
 |---|---|
-| Mountain | positive relief, broadened orogenic mass |
-| Volcanic arc | positive localized/conical relief along active arc cells |
-| Trench | negative narrow depression; never positive ridge detail |
-| Ridge | positive flanks/crest with optional shallow axial notch |
-| Fault | no default vertical displacement unless a later model provides one |
+| Mountain | positive broadened orogenic mass from state/boundary elevation |
+| Volcanic arc | positive localized arc uplift from state/boundary elevation |
+| Trench | negative narrow boundary depression; never positive ridge fabric |
+| Ridge | positive boundary swell/flanks with the configured shallow axial notch |
+| Fault | only the configured transform scarp; no feature-enum uplift |
 
-Procedural noise is secondary fabric. With a fixed base state, changing/removing feature data must
-change geometry more at tagged cells than changing/removing the noise fabric. Noise-disabled tests
-must prove signs before any screenshot is accepted.
+Procedural noise is secondary residual fabric: at most 250 m peak amplitude and at most one third of
+the smallest mandatory 800 m tectonic profile signal. Noise-disabled tests prove the signs from the
+real pipeline before any screenshot is accepted. Tests trace the same engine-derived feature cells
+through the production presentation document and finalized mesh after height lens and displacement
+cap. Non-snapshot playhead ticks must transport the governing snapshot's feature records through the
+same plate frame instead of returning an empty feature array.
 
 Visual target: the gray, faceted, rocky reference supplied on 2026-07-13—mountains, trenches, and
 volcanic structures visible without hydrology or biome color. Hydrology and biome presentation stay
@@ -399,6 +427,10 @@ and tunnel rings remain thin enough not to frame it as a bounded token.
 - Malformed/empty input appends zero events and returns a failure.
 - Repeating the same import has an explicit idempotency result; it does not silently duplicate the
   active binding.
+- Prepare and bind both CAS the control stream; simultaneous same-source imports converge to one
+  binding, while simultaneous different-source imports produce one winner and one conflict.
+- Materialization verifies and reads only through the cursor named by bound; later heads/orphans do
+  not affect playback.
 - Onset-relative parity tests listed in section 7.2 pass.
 - Concurrent SurrealDB-path imports remain serialized through `ActorTruthEventWriter`; in-memory
   tests alone are insufficient evidence.
@@ -415,18 +447,22 @@ and tunnel rings remain thin enough not to frame it as a bounded token.
 
 ### 8.2 Crust tests
 
-- With noise disabled, mountain and volcanic feature vertices are higher than their no-feature
-  baseline; trench vertices are lower; ridge flanks are higher.
+- With noise disabled, real-pipeline mountain and volcanic cells are at least 750 m above their
+  zero-profile baseline, trench cells at least 750 m below, and ridge flanks at least 300 m above.
 - A trench never receives the positive ridged-detail branch.
-- Geometry changes when `CellElevations`/`CellFeatures` change and stays deterministic for fixed
-  inputs.
-- Noise contribution is bounded below the tectonic feature signal at tagged cells.
+- Finalized mesh vertices preserve those directions after the lens/cap and stay deterministic.
+- Residual noise is no more than 250 m and no more than one third of the smallest mandatory
+  tectonic profile signal.
+- A non-snapshot playhead retains transported feature data; the mandatory deterministic fixture
+  fails unless mountain, trench, and volcanic cells are all present.
 - Existing watertight plate-surface and adaptive-subdivision tests remain green.
 
 ### 8.3 Exported-app visual gate
 
-Keep the exported Godot app open, reload/install the changed PCKs, and capture fresh screenshots at
-real generated ticks/orientations containing actual mountain, trench, and volcanic feature cells.
+Because P9a/P9b change resident contract/rendering assemblies, first rebuild/stage a full common
+bundle/export and restart into that build. Then keep that exported Godot app open, reload/install
+the collectible changed PCKs, and capture fresh screenshots at real generated ticks/orientations
+containing actual mountain, trench, and volcanic feature cells.
 Evidence must include:
 
 - dry gray/faceted crust with hydrology and biomes off;
@@ -434,7 +470,14 @@ Evidence must include:
 - a larger independently zoomable planet not bounded by the rings;
 - thinner tunnel rings;
 - runtime diagnostics identifying selected tick, feature counts/kinds, and displacement extrema;
+- proof that hydrology mode is `Absent` and no biome/hydrology material is active;
 - successful collectible-ALC unload/collection after bundle reload.
+
+Run imported-history reload recovery against a declared durable backend and prove the restarted
+world bundle rediscovers bound and rematerializes only through its cursor. An in-memory backend is an
+explicitly ephemeral test and cannot satisfy that recovery claim. Cancellation/failure unload tests
+cover every prepare/CAS/bind boundary, actor termination/mailbox drainage, and writer-before-store
+disposal.
 
 A screenshot complements but does not replace the directional geometry tests.
 
