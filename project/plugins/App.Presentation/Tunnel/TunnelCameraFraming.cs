@@ -51,13 +51,13 @@ internal static class TunnelCameraFraming
 
     // The instrument is parented to the mount (not the camera) and centered on the tunnel axis, so
     // the rings encircle the throat instead of sitting as a corner dial. Anchor Z sits in front of
-    // the camera; radii ring the planet (visual radius ~2.06) — the ring plane is nearer the camera
+    // the camera; radii ring the planet (outer radius 1.62) — the ring plane is nearer the camera
     // than the planet, so it projects larger even at a smaller raw radius.
     internal static readonly Vector3 InstrumentLocalAnchor = new(0.0f, 0.0f, -1.0f);
-    internal const float InnerRingInnerRadius = 1.70f;
-    internal const float InnerRingOuterRadius = 1.90f;
-    internal const float OuterRingInnerRadius = 2.20f;
-    internal const float OuterRingOuterRadius = 2.45f;
+    internal const float InnerRingInnerRadius = 1.30f;
+    internal const float InnerRingOuterRadius = 1.38f;
+    internal const float OuterRingInnerRadius = 1.52f;
+    internal const float OuterRingOuterRadius = 1.62f;
 
     internal static Vector3 NearInteriorLipCuePoint(int index)
     {

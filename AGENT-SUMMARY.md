@@ -105,3 +105,46 @@ Evidence: `RotationImportRecoveryTests` + `WorldHistoryBuildModeContractTests`; 
 `UseProjectReferences=false`. `dotnet tool restore` and the configured `dotnet unify-build Compile`
 gate also succeed (the current build config has no compile project groups, so the two full test
 modes are the meaningful compile/runtime proof).
+
+## P9b signed dry-crust review correction — 2026-07-13
+
+- The original universal default-minus-`BoundaryProfileParameters.Zero` quantitative comparator
+  was causally wrong for Mountain: zero profiles intentionally retain the authoritative
+  `OrogenicPressure * OrogenicGain` elevation. The accepted gate now uses formation-specific
+  counterfactuals: Mountain removes orogenic pressure and profiles; active VolcanicArc uses a real
+  profile-disabled arc baseline; Trench and Ridge use zero profiles. Thresholds remain unchanged
+  (mountain/volcanic +750 m, trench -750 m, ridge +300 m), and category fixtures need not co-occur.
+- The deterministic frequency-2/tick-200M public document remains the all-four lineage and visual
+  fixture. Its Mountain is proved against the no-orogeny dry-crust baseline, not by falsely claiming
+  its zero-profile delta is the mountain signal. A frequency-4/tick-200M public cell supplies the
+  separate quantitative active-volcanic-arc proof.
+- Boundary arcs are local real shared tessellation edges. An incident cell has exact zero
+  footprint-to-arc distance; nonincident cells retain centroid-to-arc distance as an interior guard.
+  At a multi-edge junction, the one-sample boundary field uses stable input arc order as the exact
+  zero-distance tie-break, pinned by a junction test.
+- Locked quantitative/mesh fixtures after the correction:
+  - lower frequency-2/tick-67M: Mountain 85 is +2000 m default-minus-zero and exceeds +750 m
+    versus no-orogeny/no-profile (mesh outward); VolcanicArc 144 is +48.8 m (visual lineage,
+    outward); Trench 182 is -2000 m (inward); Ridge 196 is +400 m (outward);
+  - public frequency-2/tick-200M all-four document: Mountain 134 has a +40000 m state-derived
+    signal versus no-orogeny dry crust (outward), while its default-minus-zero profile delta is
+    honestly 0; VolcanicArc 137 is +400 m (outward), Trench 40 -2000 m (inward), Ridge 224 +400 m
+    (outward);
+  - public frequency-4/tick-200M: active VolcanicArc 803 is +1336.1 m versus zero profiles and
+    remains outward in the finalized adaptive mesh.
+- Exact shared-edge RED was `-4.021378056e-7` rad at frequency 2 and `-5.437160815e-7` rad at
+  frequency 4 under the rejected inradius subtraction. GREEN is exactly `-double.Epsilon` on the
+  subducting side at both frequencies, with a same-plate far-interior contribution of exactly zero.
+- Current P9b tunnel constants supersede the older prototype values above: independent default
+  planet zoom 1.35 (clamp 0.35..3.0), camera `(−0.25, 0.25, 2.9)` at 74 degrees, axis-centred
+  instrument anchor `(0, 0, −1)`, inner ring 1.30..1.38 (width 0.08), outer ring 1.52..1.62
+  (width 0.10). Tunnel-local reload identifiers use world-bundle wording; the resource service's
+  actual `RuntimeChanged` API name is unchanged.
+- Verification after the final causal/test changes: modified World focus 63/63; full
+  `App.World.Tests` 584/584; `App.Presentation.Tests` 232/232; `App.Timeline.Tests` 339/339;
+  `git diff --check` clean. No commit or push was made.
+- Core changed areas: world feature mapping/transport, edge-local reconstruction and polarity,
+  finite-cell boundary fields and elevation composition, bounded tectonic detail, adaptive-mesh
+  integration proofs, independent tunnel zoom/framing/ring hit geometry, and their World,
+  Presentation, and Timeline tests. The exported-app screenshot plus collectible-ALC gate remains
+  intentionally pending for the lead session; no unit suite is presented as a substitute for it.

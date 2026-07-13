@@ -16,6 +16,13 @@ public sealed class TectonicDetailSampler
 {
     public const double DefaultInteriorAmplitudeMultiplier = 0.28;
 
+    public const double MaxResidualAmplitudeMetres = 250.0;
+
+    public const double SmallestMandatoryBoundarySignalMetres = 800.0;
+
+    public const double MaxResidualAmplitudeRatioOfSignal =
+        MaxResidualAmplitudeMetres / SmallestMandatoryBoundarySignalMetres;
+
     private const double TieEpsilon = 1e-12;
 
     private readonly CellContext[] _contexts;
@@ -34,6 +41,13 @@ public sealed class TectonicDetailSampler
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(baseNoise);
+        if (baseNoise.Amplitude < 0.0 || !double.IsFinite(baseNoise.Amplitude))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(baseNoise),
+                baseNoise.Amplitude,
+                "Base noise amplitude must be finite and non-negative.");
+        }
         if (interiorAmplitudeMultiplier < 0.0 || !double.IsFinite(interiorAmplitudeMultiplier))
         {
             throw new ArgumentOutOfRangeException(
@@ -113,8 +127,13 @@ public sealed class TectonicDetailSampler
         bool ridgeActiveFeatures,
         double activeAmplitudeMultiplier)
     {
-        double interiorAmplitude = baseNoise.Amplitude * interiorAmplitudeMultiplier;
-        if (featureKind == 0 || featureWeight <= 0.0)
+        double cappedBaseAmplitude = Math.Min(
+            baseNoise.Amplitude,
+            MaxResidualAmplitudeMetres);
+        double interiorAmplitude = ClampResidualAmplitude(
+            cappedBaseAmplitude * interiorAmplitudeMultiplier);
+        var kind = TectonicFeatureKindExtensions.FromWireByte(featureKind);
+        if (kind == TectonicFeatureKind.None || featureWeight <= 0.0)
         {
             return baseNoise with
             {
@@ -124,31 +143,39 @@ public sealed class TectonicDetailSampler
             };
         }
 
-        double activeAmplitude = featureKind switch
+        double activeAmplitude = ClampResidualAmplitude((kind switch
         {
-            1 => baseNoise.Amplitude * 1.45, // Mountain
-            2 => baseNoise.Amplitude * 1.25, // Volcanic arc
-            3 => baseNoise.Amplitude * 1.10, // Trench
-            4 => baseNoise.Amplitude * 1.35, // Ridge
-            5 => baseNoise.Amplitude * 0.72, // Fault / transform scarp
-            _ => baseNoise.Amplitude * 0.55,
-        } * activeAmplitudeMultiplier;
+            TectonicFeatureKind.Mountain => cappedBaseAmplitude * 1.45,
+            TectonicFeatureKind.VolcanicArc => cappedBaseAmplitude * 1.25,
+            TectonicFeatureKind.Trench => cappedBaseAmplitude * 1.0,
+            TectonicFeatureKind.Ridge => cappedBaseAmplitude * 1.35,
+            TectonicFeatureKind.Fault => cappedBaseAmplitude * 0.72,
+            _ => cappedBaseAmplitude * 0.55,
+        }) * activeAmplitudeMultiplier);
 
-        double frequencyMultiplier = featureKind switch
+        double frequencyMultiplier = kind switch
         {
-            1 => 0.72,
-            2 => 0.88,
-            3 => 0.82,
-            4 => 1.10,
-            5 => 1.35,
+            TectonicFeatureKind.Mountain => 0.72,
+            TectonicFeatureKind.VolcanicArc => 0.88,
+            TectonicFeatureKind.Trench => 0.82,
+            TectonicFeatureKind.Ridge => 1.10,
+            TectonicFeatureKind.Fault => 1.35,
             _ => 1.0,
         };
+
+        double resolvedAmplitude = ClampResidualAmplitude(
+            Lerp(interiorAmplitude, activeAmplitude, featureWeight));
+
+        bool ridged = ridgeActiveFeatures
+            && kind is TectonicFeatureKind.Mountain
+                or TectonicFeatureKind.VolcanicArc
+                or TectonicFeatureKind.Ridge;
 
         return baseNoise with
         {
             BaseFrequency = Math.Max(1.0, baseNoise.BaseFrequency * frequencyMultiplier),
-            Amplitude = Lerp(interiorAmplitude, activeAmplitude, featureWeight),
-            Ridged = ridgeActiveFeatures && featureKind is 1 or 2 or 3 or 4,
+            Amplitude = resolvedAmplitude,
+            Ridged = ridged,
         };
     }
 
@@ -183,6 +210,15 @@ public sealed class TectonicDetailSampler
 
     private static double Lerp(double a, double b, double t)
         => a + ((b - a) * Math.Clamp(t, 0.0, 1.0));
+
+    private static double ClampResidualAmplitude(double amplitude)
+    {
+        if (double.IsNaN(amplitude) || amplitude <= 0.0)
+            return 0.0;
+        if (double.IsPositiveInfinity(amplitude))
+            return MaxResidualAmplitudeMetres;
+        return Math.Min(amplitude, MaxResidualAmplitudeMetres);
+    }
 
     private readonly record struct CellContext(
         int CellId,

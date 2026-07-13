@@ -631,6 +631,49 @@ public sealed class GlobePlateSurfacesTests
         Assert.Equal(sampler.Sample(position), sampler.Sample(position), 12);
     }
 
+    [Fact]
+    public void TectonicDetailSampler_CapsResolvedInteriorAndActiveAmplitudes_WhenMultipliersExceedOne()
+    {
+        var snapshot = TwoPlateSnapshot();
+        var noise = StrongCrustFabric with { Amplitude = TectonicDetailSampler.MaxResidualAmplitudeMetres };
+        var interior = new TectonicDetailSampler(
+            snapshot,
+            new CellCrustFeature[snapshot.CellCount],
+            noise,
+            interiorAmplitudeMultiplier: 8.0,
+            activeAmplitudeMultiplier: 8.0)
+            .ResolveProfile(CellCenter(snapshot.Cells[0]));
+        var active = new TectonicDetailSampler(
+            snapshot,
+            Enumerable.Repeat(
+                new CellCrustFeature(TectonicFeatureKind.Mountain.ToWireByte(), 10_000.0),
+                snapshot.CellCount).ToArray(),
+            noise,
+            interiorAmplitudeMultiplier: 8.0,
+            activeAmplitudeMultiplier: 8.0)
+            .ResolveProfile(CellCenter(snapshot.Cells[0]));
+
+        Assert.InRange(interior.Noise.Amplitude, 0.0, TectonicDetailSampler.MaxResidualAmplitudeMetres);
+        Assert.InRange(active.Noise.Amplitude, 0.0, TectonicDetailSampler.MaxResidualAmplitudeMetres);
+        Assert.True(double.IsFinite(interior.Noise.Amplitude));
+        Assert.True(double.IsFinite(active.Noise.Amplitude));
+    }
+
+    [Fact]
+    public void TectonicDetailSampler_RejectsNegativeOrNonFiniteAmplitudeInputs()
+    {
+        var snapshot = TwoPlateSnapshot();
+        foreach (double invalid in new[] { -1.0, double.NaN, double.PositiveInfinity, double.NegativeInfinity })
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                new TectonicDetailSampler(snapshot, null, StrongCrustFabric, interiorAmplitudeMultiplier: invalid));
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                new TectonicDetailSampler(snapshot, null, StrongCrustFabric, activeAmplitudeMultiplier: invalid));
+            Assert.Throws<ArgumentOutOfRangeException>(() =>
+                new TectonicDetailSampler(snapshot, null, StrongCrustFabric with { Amplitude = invalid }));
+        }
+    }
+
     // Find the local vertex index in a cap whose unit direction matches `dir` (the shared corner).
     private static int VertexClosestTo(PlateCap cap, GlobeVec3 dir)
     {

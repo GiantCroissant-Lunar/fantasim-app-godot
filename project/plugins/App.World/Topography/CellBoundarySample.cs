@@ -4,11 +4,13 @@ namespace FantaSim.App.World.Topography;
 
 /// <summary>
 /// One cell's relationship to its nearest plate boundary, computed Godot-free from the typed boundary
-/// arcs and the cell centroid (see <see cref="CellBoundaryField"/>). Consumed by
+/// arcs, with exact zero distance when an edge-local arc is one of the cell's own edges (see
+/// <see cref="CellBoundaryField"/>). Consumed by
 /// <see cref="BoundaryProfileShape.Contribution"/> to shape the per-cell boundary-profile elevation term.
 /// </summary>
 /// <param name="Found">False when there are no boundary arcs (pre-onset / non-plate regime): the contribution is zero.</param>
-/// <param name="SignedDistanceRad">Great-circle angular distance to the nearest arc point (rad). For
+/// <param name="SignedDistanceRad">Angular distance from the cell footprint to an incident boundary
+/// edge, otherwise the great-circle centroid-to-nearest-arc-point distance (rad). For
 /// convergent subduction: negative on the subducting (down-going) side, positive on the overriding side.
 /// For convergent collision, divergent, and transform: always non-negative (the profile is symmetric).</param>
 /// <param name="Kind">The nearest boundary's type (Convergent/Divergent/Transform). Inactive arcs are skipped.</param>

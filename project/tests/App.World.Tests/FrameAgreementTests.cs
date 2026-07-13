@@ -94,6 +94,62 @@ public sealed class FrameAgreementTests
         }
     }
 
+    [Fact]
+    public void Boundary_arc_segments_cover_actual_shared_frontier_edges_without_cross_gap_jumps()
+    {
+        const int subdivisions = 16;
+        var model = BuildAppReconstructor(out long onsetTick);
+        long tick = onsetTick + 8 * UnitConverter.TicksPerMegaAnnum;
+        var snapshot = model.BuildGlobeAt(tick);
+        var arcs = model.BuildBoundaryArcsAt(tick, subdivisions);
+        var tessellation = new GeodesicSphereTessellation(AppFrequency);
+        var plateByCell = snapshot.Cells.ToDictionary(cell => cell.CellId, cell => cell.PlateId);
+        var expected = new List<(int A, int B, GlobeVec3 P0, GlobeVec3 P1, double Length)>();
+
+        for (int cell = 0; cell < snapshot.CellCount; cell++)
+        {
+            foreach (var neighbor in tessellation.Space.Neighbors(new GeodesicCoord(cell, AppFrequency)))
+            {
+                int other = neighbor.FaceIndex;
+                if (other <= cell || plateByCell[other] == plateByCell[cell])
+                    continue;
+
+                var (p0, p1) = SharedEdgeEndpoints(tessellation, cell, other);
+                expected.Add((
+                    Math.Min(plateByCell[cell], plateByCell[other]),
+                    Math.Max(plateByCell[cell], plateByCell[other]),
+                    p0,
+                    p1,
+                    AngularDistance(p0, p1)));
+            }
+        }
+
+        Assert.Equal(expected.Count, arcs.Count);
+        var matched = new HashSet<int>();
+        foreach (var arc in arcs)
+        {
+            Assert.Equal(subdivisions + 1, arc.Points.Count);
+            int match = expected.FindIndex(edge =>
+                edge.A == arc.PlateA
+                && edge.B == arc.PlateB
+                && ((SameDirection(edge.P0, arc.Points[0]) && SameDirection(edge.P1, arc.Points[^1]))
+                    || (SameDirection(edge.P1, arc.Points[0]) && SameDirection(edge.P0, arc.Points[^1]))));
+            Assert.True(match >= 0,
+                $"arc {arc.PlateA}|{arc.PlateB} does not terminate on one actual shared frontier edge");
+            Assert.True(matched.Add(match),
+                $"shared frontier edge {match} was emitted more than once");
+
+            double maximumStep = expected[match].Length / subdivisions + 1e-5;
+            for (int point = 1; point < arc.Points.Count; point++)
+            {
+                Assert.True(AngularDistance(arc.Points[point - 1], arc.Points[point]) <= maximumStep,
+                    $"arc {arc.PlateA}|{arc.PlateB} contains a cross-gap jump at point {point}");
+            }
+        }
+
+        Assert.Equal(expected.Count, matched.Count);
+    }
+
     /// <summary>
     /// The union of all plate caps covers every cell exactly once at the arc tick: no cell is
     /// unassigned (no gap → mantle visible through the surface) and no cell is doubly assigned
@@ -120,4 +176,33 @@ public sealed class FrameAgreementTests
 
         Assert.Equal(snapshot.CellCount, seen.Count);
     }
+
+    private static (GlobeVec3 P0, GlobeVec3 P1) SharedEdgeEndpoints(
+        GeodesicSphereTessellation tessellation,
+        int cell,
+        int other)
+    {
+        var a = tessellation.GetBoundary(new GeodesicCoord(cell, AppFrequency));
+        var b = tessellation.GetBoundary(new GeodesicCoord(other, AppFrequency));
+        var shared = new List<GlobeVec3>(2);
+        foreach (var pointA in a)
+        {
+            var vectorA = pointA.ToVector3D();
+            if (!b.Any(pointB => Vector3D.Dot(vectorA, pointB.ToVector3D()) >= 1.0 - 1e-12))
+                continue;
+            shared.Add(new GlobeVec3((float)vectorA.X, (float)vectorA.Y, (float)vectorA.Z));
+        }
+
+        Assert.Equal(2, shared.Count);
+        return (shared[0], shared[1]);
+    }
+
+    private static bool SameDirection(GlobeVec3 a, GlobeVec3 b)
+        => Dot(a, b) >= 1.0 - 1e-6;
+
+    private static double AngularDistance(GlobeVec3 a, GlobeVec3 b)
+        => Math.Acos(Math.Clamp(Dot(a, b), -1.0, 1.0));
+
+    private static double Dot(GlobeVec3 a, GlobeVec3 b)
+        => ((double)a.X * b.X) + ((double)a.Y * b.Y) + ((double)a.Z * b.Z);
 }

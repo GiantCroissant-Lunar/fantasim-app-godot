@@ -8,10 +8,9 @@ namespace FantaSim.App.Presentation;
 
 /// <summary>
 /// Renders plate boundaries as SMOOTH great-circle polylines coloured by boundary kind, driven by
-/// <see cref="PlateBoundaryArc"/> topology truth. Each arc's points are pre-subdivided Godot-free
-/// (great-circle interpolation between the topology's ordered sample points), so here we only lift
-/// them into a thin ribbon quad-strip that hugs the sphere just above the plate caps. This replaces
-/// the earlier cell-edge derivation, which followed the 1280-cell grid and looked jagged.
+/// <see cref="PlateBoundaryArc"/> topology truth. Each local shared-edge segment is pre-subdivided
+/// Godot-free with great-circle interpolation, so here we only batch the segments by kind and lift
+/// them into thin ribbon quad-strips that hug the sphere just above the plate caps.
 /// </summary>
 public partial class PlateBoundaryFocusRenderer : Node3D
 {

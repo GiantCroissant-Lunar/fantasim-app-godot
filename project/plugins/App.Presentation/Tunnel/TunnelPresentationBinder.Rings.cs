@@ -18,10 +18,8 @@ internal readonly record struct TunnelInspectionLensSettings(
 internal static class TunnelInspectionLensContract
 {
     internal static TunnelInspectionLensSettings Settings => new(
-        // Beside the (enlarged, axis-centered) outer ring so the fine-inspection preview does not
-        // occlude the dials — X sits just outside OuterRingOuterRadius.
         Label: "inspection",
-        LocalPosition: new NumericsVector3(2.85f, 0f, 0.03f),
+        LocalPosition: new NumericsVector3(1.95f, 0f, 0.03f),
         Radius: 0.48f);
 }
 
@@ -63,9 +61,9 @@ internal static class TunnelInstrumentContract
 
     // Readout stack Y positions are chosen to fit inside a conservative 16:9/16:10 viewport safe
     // area when the instrument is at InstrumentLocalAnchor. See TunnelCameraFramingSafeBoundsTests.
-    internal const float OuterReadoutYOffset = 2.20f;
-    internal const float InnerReadoutYOffset = -2.00f;
-    internal const float StatusReadoutYOffset = -2.30f;
+    internal const float OuterReadoutYOffset = 1.82f;
+    internal const float InnerReadoutYOffset = -1.70f;
+    internal const float StatusReadoutYOffset = -1.95f;
 
     internal static float CanonicalOuterRotationDegrees(long tick, long unitTicks)
         => (float)TunnelScrubMapper.CanonicalPhaseDegrees(tick, unitTicks);

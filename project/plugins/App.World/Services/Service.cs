@@ -183,7 +183,7 @@ public sealed class Service : IService, IDisposable
         return GetPlanetPresentationAsyncCore(referenceTick, renderOptions with { TessellationFrequency = clamped });
     }
 
-    private PlanetPresentationDocument GetPlanetPresentationAsyncCore(long referenceTick, WorldGenerationRenderOptions renderOptions)
+    internal PlanetPresentationDocument GetPlanetPresentationAsyncCore(long referenceTick, WorldGenerationRenderOptions renderOptions)
     {
         PresentationRequested?.Invoke();
         var family = WorldGenerationGraphDefaults.BuildFamily();
@@ -392,13 +392,14 @@ public sealed class Service : IService, IDisposable
         var plateIdByCell = currentGlobe.Cells.ToDictionary(c => c.CellId, c => c.PlateId);
         var stateForSampling = StateKeyedAt(products, request.Tick);
         var sampledState = sampler.SampleAt(request.Tick, stateForSampling, plateIdByCell);
+        var sampledFeatures = sampler.SampleFeaturesAt(currentGlobe, sampledState, currentArcs);
         var elevations = sampler.SampleElevationsAt(
-            request.Tick,
-            stateForSampling,
+            currentGlobe,
+            sampledState,
+            sampledFeatures,
             currentArcs,
             previewOptions.BoundaryProfiles,
-            previewOptions.HydrosphereMode,
-            plateIdByCell);
+            previewOptions.HydrosphereMode);
 
         var cells = BuildFilmstripCells(currentGlobe, cell =>
         {
@@ -883,18 +884,17 @@ public sealed class Service : IService, IDisposable
         var sampledState = sampler.SampleAt(arcTick, stateForSampling, plateIdByCell);
         var sampledFractions = ContinentalFractionsFromState(sampledState);
 
+        var sampledFeatures = sampler.SampleFeaturesAt(currentGlobe, sampledState, currentArcs);
+        var cellFeatures = BuildCellFeatures(
+            products.Materialization.Tessellation.CellCount,
+            sampledFeatures);
         var cellElevations = sampler.SampleElevationsAt(
-            arcTick,
-            stateForSampling,
+            currentGlobe,
+            sampledState,
+            sampledFeatures,
             currentArcs,
             renderOptions.BoundaryProfiles,
-            renderOptions.HydrosphereMode,
-            plateIdByCell);
-
-        var cellFeatures = BuildCellFeaturesFromSampledState(
-            products.Materialization.Tessellation.CellCount,
-            sampledState,
-            products.Materialization.Result.FeaturesByTick.GetValueOrDefault(arcTick));
+            renderOptions.HydrosphereMode);
 
         var cellCrustThickness = products.Materialization.BuildCrustThickness(
             products.GlobeAtSnapshot, arcTick, _logger);
@@ -1250,22 +1250,21 @@ public sealed class Service : IService, IDisposable
         rgba[i + 3] = 255;
     }
 
-    private static IReadOnlyList<CellCrustFeature> BuildCellFeaturesFromSampledState(
+    private static IReadOnlyList<CellCrustFeature> BuildCellFeatures(
         int cellCount,
-        IReadOnlyDictionary<int, CellCrustState> state,
         IReadOnlyDictionary<int, CrustFeature>? featureMap)
     {
         if (cellCount <= 0)
             return Array.Empty<CellCrustFeature>();
 
         var result = new CellCrustFeature[cellCount];
-        if (featureMap is not null)
+        if (featureMap is null || featureMap.Count == 0)
+            return result;
+
+        foreach (var (cellId, feature) in featureMap)
         {
-            foreach (var (cellId, feature) in featureMap)
-            {
-                if (cellId >= 0 && cellId < result.Length)
-                    result[cellId] = new CellCrustFeature((byte)feature.Kind, feature.Magnitude);
-            }
+            if (cellId >= 0 && cellId < result.Length)
+                result[cellId] = CrustFeatureContractMapper.ToCellFeature(feature);
         }
 
         return result;

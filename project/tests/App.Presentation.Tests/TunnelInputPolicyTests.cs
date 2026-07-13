@@ -20,7 +20,7 @@ public sealed class TunnelInputPolicyTests
 
         Assert.False(result.Handled);
         Assert.False(result.AdjustZoom);
-        Assert.Equal(1.0f, result.RequestedZoomScale);
+        Assert.Equal(TunnelPlanetZoom.DefaultScale, result.RequestedZoomScale);
     }
 
     [Fact]
@@ -31,7 +31,10 @@ public sealed class TunnelInputPolicyTests
 
         Assert.True(result.Handled);
         Assert.True(result.AdjustZoom);
-        Assert.Equal(TunnelPlanetZoom.StepFactor, result.RequestedZoomScale, precision: 5);
+        Assert.Equal(
+            TunnelPlanetZoom.Step(TunnelPlanetZoom.DefaultScale, direction: 1),
+            result.RequestedZoomScale,
+            precision: 5);
     }
 
     [Fact]
@@ -53,7 +56,8 @@ public sealed class TunnelInputPolicyTests
         policy.OnTunnelEnabled(new NumericsVector3(1.0f, 2.0f, 3.0f));
 
         Assert.Equal(new NumericsVector3(1.0f, 2.0f, 3.0f), policy.OriginalScale);
-        Assert.Equal(1.0f, policy.CurrentZoomScale);
+        Assert.Equal(TunnelPlanetZoom.DefaultScale, policy.CurrentZoomScale);
+        Assert.True(policy.IsEnabled);
         Assert.True(policy.HandleWheel(direction: 1).Handled);
     }
 
@@ -76,7 +80,8 @@ public sealed class TunnelInputPolicyTests
         policy.OnTunnelDisabled();
 
         Assert.Null(policy.OriginalScale);
-        Assert.Equal(1.0f, policy.CurrentZoomScale);
+        Assert.Equal(TunnelPlanetZoom.DefaultScale, policy.CurrentZoomScale);
+        Assert.False(policy.IsEnabled);
         Assert.False(policy.HandleWheel(direction: 1).Handled);
     }
 
@@ -85,6 +90,102 @@ public sealed class TunnelInputPolicyTests
     {
         var policy = new TunnelInputPolicy(enabled: false);
         Assert.Null(policy.OriginalScale);
-        Assert.Equal(1.0f, policy.CurrentZoomScale);
+        Assert.Equal(TunnelPlanetZoom.DefaultScale, policy.CurrentZoomScale);
+    }
+
+    [Fact]
+    public void Repeated_Enable_Disable_RestoresOriginalScaleExactly()
+    {
+        var original = new NumericsVector3(0.8f, 0.8f, 0.8f);
+
+        var policy = new TunnelInputPolicy(enabled: false);
+        policy.OnTunnelEnabled(original);
+        Assert.Equal(original, policy.OriginalScale);
+        policy.HandleWheel(direction: 1);
+        policy.OnTunnelDisabled();
+
+        policy.OnTunnelEnabled(original);
+        Assert.Equal(original, policy.OriginalScale);
+        Assert.Equal(TunnelPlanetZoom.DefaultScale, policy.CurrentZoomScale);
+        policy.OnTunnelDisabled();
+
+        Assert.Null(policy.OriginalScale);
+    }
+
+    [Fact]
+    public void Disable_Before_Capture_Is_NoOp()
+    {
+        var policy = new TunnelInputPolicy(enabled: false);
+        policy.OnTunnelDisabled();
+
+        Assert.Null(policy.OriginalScale);
+        Assert.Equal(TunnelPlanetZoom.DefaultScale, policy.CurrentZoomScale);
+        Assert.False(policy.IsEnabled);
+    }
+
+    [Fact]
+    public void Second_Enable_Does_Not_Recapture_AlreadyZoomed_Scale()
+    {
+        var original = new NumericsVector3(1.0f, 1.0f, 1.0f);
+        var policy = new TunnelInputPolicy(enabled: false);
+
+        policy.OnTunnelEnabled(original);
+        policy.HandleWheel(direction: 1);
+        var zoomedScale = policy.CurrentZoomScale;
+
+        policy.OnTunnelEnabled(new NumericsVector3(99f, 99f, 99f));
+        Assert.Equal(original, policy.OriginalScale);
+        Assert.Equal(zoomedScale, policy.CurrentZoomScale);
+    }
+
+    [Fact]
+    public void Disable_After_Exception_RestoresOriginalScaleAndResetsZoom()
+    {
+        var original = new NumericsVector3(1.5f, 1.5f, 1.5f);
+        var policy = new TunnelInputPolicy(enabled: false);
+
+        policy.OnTunnelEnabled(original);
+        policy.HandleWheel(direction: 1);
+        Assert.NotEqual(TunnelPlanetZoom.DefaultScale, policy.CurrentZoomScale);
+
+        policy.OnTunnelDisabled();
+
+        Assert.Null(policy.OriginalScale);
+        Assert.Equal(TunnelPlanetZoom.DefaultScale, policy.CurrentZoomScale);
+        Assert.False(policy.HandleWheel(direction: 1).Handled);
+    }
+
+    [Fact]
+    public void Bundle_Shutdown_RestoresOriginalScaleAndResetsZoom()
+    {
+        var original = new NumericsVector3(0.7f, 0.7f, 0.7f);
+        var policy = new TunnelInputPolicy(enabled: false);
+
+        policy.OnTunnelEnabled(original);
+        policy.HandleWheel(direction: 1);
+        policy.HandleWheel(direction: 1);
+
+        policy.OnTunnelDisabled();
+
+        Assert.Null(policy.OriginalScale);
+        Assert.Equal(TunnelPlanetZoom.DefaultScale, policy.CurrentZoomScale);
+    }
+
+    [Fact]
+    public void Rebind_After_Disable_RecapturesFreshOriginalScale()
+    {
+        var firstOriginal = new NumericsVector3(1.0f, 1.0f, 1.0f);
+        var secondOriginal = new NumericsVector3(0.5f, 0.5f, 0.5f);
+        var policy = new TunnelInputPolicy(enabled: false);
+
+        policy.OnTunnelEnabled(firstOriginal);
+        Assert.Equal(firstOriginal, policy.OriginalScale);
+        policy.OnTunnelDisabled();
+
+        Assert.Null(policy.OriginalScale);
+
+        policy.OnTunnelEnabled(secondOriginal);
+        Assert.Equal(secondOriginal, policy.OriginalScale);
+        Assert.Equal(TunnelPlanetZoom.DefaultScale, policy.CurrentZoomScale);
     }
 }

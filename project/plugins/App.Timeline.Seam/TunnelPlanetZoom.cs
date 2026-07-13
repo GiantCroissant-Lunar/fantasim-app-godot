@@ -12,7 +12,7 @@ public static class TunnelPlanetZoom
 {
     public const float MinScale = 0.35f;
     public const float MaxScale = 3.0f;
-    public const float DefaultScale = 1.0f;
+    public const float DefaultScale = 1.35f;
     public const float StepFactor = 1.12f;
 
     /// <summary>direction &gt; 0 zooms in (larger), &lt; 0 zooms out (smaller), 0 is a no-op.</summary>

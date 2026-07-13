@@ -87,20 +87,24 @@ public sealed class TunnelInstrumentContractTests
         Assert.Contains("ApplyFineFrameEmphasis(inspectionActive: false);", input, StringComparison.Ordinal);
         var rebindStart = binder.IndexOf("public void Rebind()", StringComparison.Ordinal);
         Assert.True(rebindStart >= 0, "Tunnel binder Rebind entry point is missing.");
-        var rebindCancel = binder.IndexOf(
-            "CancelTunnelGesture(\"rebind\");",
-            rebindStart,
-            StringComparison.Ordinal);
-        var rebindReset = binder.IndexOf(
-            "ResetFinePreview(TunnelFineResetReason.BaseTimeChanged);",
+        var rebindDisable = binder.IndexOf(
+            "FailSafeDisable(\"rebind\", TunnelFineResetReason.BaseTimeChanged);",
             rebindStart,
             StringComparison.Ordinal);
         var controllerLookup = binder.IndexOf(
             "var controller = _registry.TryGet<ITimelineController>();",
             rebindStart,
             StringComparison.Ordinal);
-        Assert.True(rebindCancel > rebindStart && rebindReset > rebindCancel && controllerLookup > rebindReset,
-            "Rebind must cancel gesture ownership and released fine work before resolving lifecycle dependencies.");
+        Assert.True(rebindDisable > rebindStart && controllerLookup > rebindDisable,
+            "Rebind must release tunnel lifecycle ownership before resolving controller dependencies.");
+
+        var failSafeStart = binder.IndexOf("private void FailSafeDisable(", StringComparison.Ordinal);
+        var failSafeCancel = binder.IndexOf("CancelTunnelGesture(reason);", failSafeStart, StringComparison.Ordinal);
+        var failSafeReset = binder.IndexOf("ResetFinePreview(resetReason);", failSafeStart, StringComparison.Ordinal);
+        var failSafeZoom = binder.IndexOf("SynchronizeDisabledPlanetZoom();", failSafeStart, StringComparison.Ordinal);
+        Assert.True(
+            failSafeStart >= 0 && failSafeCancel > failSafeStart && failSafeReset > failSafeCancel && failSafeZoom > failSafeReset,
+            "Fail-safe disable must cancel gesture ownership, reset released fine work, and restore planet zoom in order.");
 
         var runtimeGate = binder.IndexOf("TunnelRuntimeChangeThreadGate.Run(", StringComparison.Ordinal);
         var runtimeApply = binder.IndexOf(
@@ -171,6 +175,39 @@ public sealed class TunnelInstrumentContractTests
         var timelineReturn = binder.IndexOf("return;", timelineBranch, StringComparison.Ordinal);
         Assert.True(timelineCancel > timelineBranch && timelineReturn > timelineCancel,
             "Timeline reload must relinquish any owned gesture before preserving the tunnel mount.");
+    }
+
+    [Fact]
+    public void Rebind_and_mount_preparation_synchronize_the_disabled_zoom_lifecycle()
+    {
+        var binder = File.ReadAllText(ProjectFile(
+            "project/plugins/App.Presentation/Tunnel/TunnelPresentationBinder.cs"));
+
+        var rebindStart = binder.IndexOf("public void Rebind()", StringComparison.Ordinal);
+        var rebindDisable = binder.IndexOf(
+            "FailSafeDisable(\"rebind\", TunnelFineResetReason.BaseTimeChanged);",
+            rebindStart,
+            StringComparison.Ordinal);
+        var controllerLookup = binder.IndexOf(
+            "var controller = _registry.TryGet<ITimelineController>();",
+            rebindStart,
+            StringComparison.Ordinal);
+        Assert.True(
+            rebindStart >= 0 && rebindDisable > rebindStart && controllerLookup > rebindDisable,
+            "A controller-present Rebind must restore the captured scale and disable input before remounting.");
+
+        var mountStart = binder.IndexOf("private void EnsureMounted(int expectedGeneration)", StringComparison.Ordinal);
+        var mountDisable = binder.IndexOf(
+            "SynchronizeDisabledPlanetZoom();",
+            mountStart,
+            StringComparison.Ordinal);
+        var stageLookup = binder.IndexOf(
+            "var stageEnvironment = _sceneRegistry.GetNodeOrNull",
+            mountStart,
+            StringComparison.Ordinal);
+        Assert.True(
+            mountStart >= 0 && mountDisable > mountStart && stageLookup > mountDisable,
+            "Every accepted mount generation must synchronize binder enable state, zoom ownership, and input policy before preparation.");
     }
 
     [Fact]
@@ -257,14 +294,14 @@ public sealed class TunnelInstrumentContractTests
     [Fact]
     public void Local_ray_intersects_the_same_zero_plane_used_by_instrument_geometry()
     {
-        // Point chosen to land in the (enlarged, axis-centered) outer ring band but not the inner.
+        var x = (TunnelInstrumentContract.OuterRingInnerRadius + TunnelInstrumentContract.OuterRingOuterRadius) / 2f;
         var success = TunnelInstrumentHitPolicy.TryIntersectPlane(
-            new TunnelInstrumentPoint3(2.35, 0.0, -2.0),
-            new TunnelInstrumentPoint3(2.35, 0.0, 2.0),
+            new TunnelInstrumentPoint3(x, 0.0, -2.0),
+            new TunnelInstrumentPoint3(x, 0.0, 2.0),
             out var point);
 
         Assert.True(success);
-        Assert.Equal(2.35, point.X, precision: 8);
+        Assert.Equal(x, point.X, precision: 8);
         Assert.Equal(0.0, point.Y, precision: 8);
         Assert.Equal(TunnelInstrumentContract.GeometryPlaneZ, point.Z, precision: 8);
         Assert.True(TunnelInstrumentHitPolicy.IsInBand(

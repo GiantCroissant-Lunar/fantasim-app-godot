@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using FantaSim.App.Ecs.Cells;
 using FantaSim.App.Ecs.Systems;
+using FantaSim.App.World.Dto;
 using FantaSim.App.World.Globe;
 using FantaSim.App.World.Topography;
 using FantaSim.Geosphere.Crust;
@@ -89,23 +91,70 @@ public sealed class PlateFrameSampler
         if (!stateByTick.TryGetValue(tick, out var tickState) || tickState.Count == 0)
             return new Dictionary<int, CellCrustState>();
 
+        var sourceMap = SampleSourceAssignmentCore(tick, stateByTick, out var delta, out var tickStateResolved);
         int n = _tessellation.CellCount;
-        var result = new Dictionary<int, CellCrustState>(n);
+        var result = new Dictionary<int, CellCrustState>(sourceMap.Count);
+        foreach (var (targetCell, sourceCell) in sourceMap)
+        {
+            if (sourceCell >= 0 && tickStateResolved.TryGetValue(sourceCell, out var s))
+                result[targetCell] = s;
+            else
+                result[targetCell] = new CellCrustState(
+                    targetCell,
+                    ContinentalFraction: 0.0,
+                    OrogenicPressure: 0.0,
+                    VolcanicActivity: 0.0,
+                    CrustAgeTicks: delta);
+        }
+        return result;
+    }
 
-        long delta = tick - _onsetTick;
+    /// <summary>
+    /// Returns the target-cell to source-cell ID mapping at <paramref name="tick"/> using the same
+    /// Lagrangian transport as <see cref="SampleAt"/>. For each target cell the returned source cell
+    /// is the onset-frame cell whose material arrived there under forward plate rotation. Identity at
+    /// or before onset. Gap-filled target cells (newly formed oceanic crust with no source) map to -1.
+    /// Exposes the exact material-carriage mapping for diagnostics and downstream consumers that
+    /// need to relate onset-frame material to the reconstructed globe.
+    /// </summary>
+    public IReadOnlyDictionary<int, int> SampleSourceAssignmentAt(
+        long tick,
+        IReadOnlyDictionary<long, IReadOnlyDictionary<int, CellCrustState>> stateByTick,
+        IReadOnlyDictionary<int, int>? currentAssignment = null)
+    {
+        if (tick < 0) throw new ArgumentOutOfRangeException(nameof(tick));
+        ArgumentNullException.ThrowIfNull(stateByTick);
+
+        if (!stateByTick.TryGetValue(tick, out var tickState) || tickState.Count == 0)
+            return new Dictionary<int, int>();
+
+        return SampleSourceAssignmentCore(tick, stateByTick, out _, out _);
+    }
+
+    private Dictionary<int, int> SampleSourceAssignmentCore(
+        long tick,
+        IReadOnlyDictionary<long, IReadOnlyDictionary<int, CellCrustState>> stateByTick,
+        out long delta,
+        out IReadOnlyDictionary<int, CellCrustState> tickState)
+    {
+        tickState = stateByTick.TryGetValue(tick, out var ts) && ts.Count > 0
+            ? ts
+            : new Dictionary<int, CellCrustState>();
+        int n = _tessellation.CellCount;
+        var result = new Dictionary<int, int>(n);
+
+        delta = tick - _onsetTick;
         if (delta <= 0)
         {
             for (int cell = 0; cell < n; cell++)
             {
                 if (!_onsetAssignment.TryGetValue(cell, out _)) continue;
-                if (tickState.TryGetValue(cell, out var s))
-                    result[cell] = s;
+                if (tickState.TryGetValue(cell, out _))
+                    result[cell] = cell;
             }
             return result;
         }
 
-        // Forward rotation per plate, sourced from the active rotation provider (generated Euler
-        // poles by default, or imported .rot finite rotations when the P3 seam selects imported).
         var forwardByPlate = new Dictionary<int, UnifyMaths.Quaternion>(_plates.Count);
         foreach (var plate in _plates)
             forwardByPlate[plate.PlateId] = _rotationProvider.RotationFromOnsetTo(plate.PlateId, tick);
@@ -119,17 +168,6 @@ public sealed class PlateFrameSampler
                 : _centers[i];
         }
 
-        // Distance caps. GAP-FILL cap (1.5 mean spacings): where plates DIVERGE the space
-        // between forward images exceeds it — those cells are NEWLY FORMED oceanic crust
-        // (sea-floor spreading: fraction 0, age = time since onset). SUBDUCTION-OVERRIDE cap
-        // (0.75 spacings, sub-cell): where plates CONVERGE their images interleave at cell
-        // scale — raw nearest picking shatters land into salt-and-pepper, while letting a
-        // continental candidate win anywhere inside the WIDE cap dilates every land source to
-        // its whole cap disc and inflates land 5-7x mid-window (both observed in the windowed
-        // gate, 2026-07-06). So: nearest image within the wide cap wins by default; a
-        // continental image overrides an oceanic nearest ONLY when genuinely co-located
-        // (within the tight cap) — buoyant continental crust does not subduct (the engine's
-        // CrustSideClassifier rule), but it also does not grow.
         double meanSpacingRad = Math.Sqrt(4.0 * Math.PI / n);
         double gapFillDot = Math.Cos(1.5 * meanSpacingRad);
         double overrideDot = Math.Cos(0.75 * meanSpacingRad);
@@ -154,21 +192,16 @@ public sealed class PlateFrameSampler
                 }
             }
 
-            CellCrustState? chosen = null;
-            if (nearestCell >= 0 && tickState.TryGetValue(nearestCell, out var nearest))
+            int source = -1;
+            if (nearestCell >= 0)
             {
-                chosen = nearest;
-                if (nearest.ContinentalFraction < 0.5 && continentalCell >= 0
-                    && tickState.TryGetValue(continentalCell, out var continental))
-                    chosen = continental; // co-located overlap: the continental side overrides
+                source = nearestCell;
+                if (tickState.TryGetValue(nearestCell, out var nearest) && nearest.ContinentalFraction < 0.5
+                    && continentalCell >= 0)
+                    source = continentalCell;
             }
 
-            result[cell] = chosen ?? new CellCrustState(
-                cell,
-                ContinentalFraction: 0.0,
-                OrogenicPressure: 0.0,
-                VolcanicActivity: 0.0,
-                CrustAgeTicks: delta); // ridge-born ocean floor, at most window-old
+            result[cell] = source;
         }
 
         return result;
@@ -190,24 +223,83 @@ public sealed class PlateFrameSampler
     }
 
     /// <summary>
-    /// Derived per-cell elevation at <paramref name="tick"/> in the moving frame, using
+    /// Re-derives the engine feature map in the current Eulerian boundary frame from the already
+    /// transported material state. Accumulated orogenic/volcanic fields therefore move with their
+    /// material, while trench/ridge/fault markers and arc eligibility come from the current plate
+    /// assignment and current typed boundaries. This avoids advecting topology-bound markers away
+    /// from the boundary that gives them meaning.
+    /// </summary>
+    public IReadOnlyDictionary<int, CrustFeature> SampleFeaturesAt(
+        WorldGlobeSnapshot currentGlobe,
+        IReadOnlyDictionary<int, CellCrustState> sampledState,
+        IReadOnlyList<PlateBoundaryArc> currentArcs)
+    {
+        ArgumentNullException.ThrowIfNull(currentGlobe);
+        ArgumentNullException.ThrowIfNull(sampledState);
+        ArgumentNullException.ThrowIfNull(currentArcs);
+        if (sampledState.Count == 0)
+            return new Dictionary<int, CrustFeature>();
+
+        var currentAssignment = currentGlobe.Cells.ToDictionary(cell => cell.CellId, cell => cell.PlateId);
+        var currentBoundariesByPair = new Dictionary<(int A, int B), Boundary>();
+        foreach (var arc in currentArcs)
+        {
+            var key = (Math.Min(arc.PlateA, arc.PlateB), Math.Max(arc.PlateA, arc.PlateB));
+            currentBoundariesByPair[key] = new Boundary(
+                arc.PlateA,
+                arc.PlateB,
+                Array.Empty<SphericalPoint>(),
+                arc.Kind switch
+                {
+                    PlateBoundaryKind.Convergent => BoundaryType.Convergent,
+                    PlateBoundaryKind.Divergent => BoundaryType.Divergent,
+                    PlateBoundaryKind.Transform => BoundaryType.Transform,
+                    _ => BoundaryType.Inactive,
+                },
+                MeanNormalRate: 0.0,
+                MeanTangentialRate: 0.0);
+        }
+
+        var currentTopology = new PlateTopology(
+            currentAssignment,
+            currentBoundariesByPair.Values
+                .OrderBy(boundary => boundary.PlateA)
+                .ThenBy(boundary => boundary.PlateB)
+                .ToArray(),
+            Array.Empty<Junction>());
+        return CrustFeatures.Derive(sampledState, _tessellation, currentTopology);
+    }
+
+    /// <summary>
+    /// Derived per-cell elevation from already transported current-frame state/features, using
     /// <see cref="CellElevationSystem.Derive"/> with the requested hydrosphere mode and adding the
-    /// boundary-profile contribution evaluated at <paramref name="tick"/>.
+    /// boundary-profile contribution against the real current globe (including exact PlateIds).
     /// </summary>
     public double[] SampleElevationsAt(
-        long tick,
-        IReadOnlyDictionary<long, IReadOnlyDictionary<int, CellCrustState>> stateByTick,
+        WorldGlobeSnapshot currentGlobe,
+        IReadOnlyDictionary<int, CellCrustState> sampledState,
+        IReadOnlyDictionary<int, CrustFeature> sampledFeatures,
         IReadOnlyList<PlateBoundaryArc> boundaryArcs,
         BoundaryProfileParameters boundaryProfiles,
-        CellElevationHydrosphereMode hydrosphereMode,
-        IReadOnlyDictionary<int, int>? currentAssignment = null)
+        CellElevationHydrosphereMode hydrosphereMode)
     {
-        var state = SampleAt(tick, stateByTick, currentAssignment);
-        var features = IReadOnlyDictionaryExtensions.Empty<int, CrustFeature>();
-        return BuildElevations(state, features, boundaryArcs, boundaryProfiles, hydrosphereMode);
+        ArgumentNullException.ThrowIfNull(currentGlobe);
+        ArgumentNullException.ThrowIfNull(sampledState);
+        ArgumentNullException.ThrowIfNull(sampledFeatures);
+        ArgumentNullException.ThrowIfNull(boundaryArcs);
+        ArgumentNullException.ThrowIfNull(boundaryProfiles);
+        if (currentGlobe.CellCount != _tessellation.CellCount)
+        {
+            throw new ArgumentException(
+                $"Current globe cell count {currentGlobe.CellCount} does not match sampler tessellation {_tessellation.CellCount}.",
+                nameof(currentGlobe));
+        }
+
+        return BuildElevations(currentGlobe, sampledState, sampledFeatures, boundaryArcs, boundaryProfiles, hydrosphereMode);
     }
 
     private double[] BuildElevations(
+        WorldGlobeSnapshot currentGlobe,
         IReadOnlyDictionary<int, CellCrustState> state,
         IReadOnlyDictionary<int, CrustFeature> features,
         IReadOnlyList<PlateBoundaryArc> boundaryArcs,
@@ -219,7 +311,7 @@ public sealed class PlateFrameSampler
 
         var boundaryContributions = boundaryArcs.Count > 0
             ? BoundaryProfileContribution.Build(
-                _tessellation,
+                currentGlobe,
                 boundaryArcs,
                 state,
                 features,
@@ -237,11 +329,4 @@ public sealed class PlateFrameSampler
 
         return elevations;
     }
-}
-
-internal static class IReadOnlyDictionaryExtensions
-{
-    public static IReadOnlyDictionary<TKey, TValue> Empty<TKey, TValue>()
-        where TKey : notnull
-        => (IReadOnlyDictionary<TKey, TValue>)new Dictionary<TKey, TValue>();
 }

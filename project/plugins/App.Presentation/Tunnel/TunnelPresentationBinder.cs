@@ -34,6 +34,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
     private readonly ILogger _log;
     private readonly FilmstripPreviewController _filmstrip;
     private readonly Func<Node3D?> _planetBodyProvider;
+    private Node3D? _zoomedPlanetBody;
     private readonly PlanetPresentationReloadGate _worldBundleReload = new();
     private const int StagePreparationRetryLimit = 120;
 
@@ -85,7 +86,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
             log: _log);
 
         _resource.RuntimeChanging += OnResourceRuntimeChanging;
-        _resource.RuntimeChanged += OnResourceRuntimeChanged;
+        _resource.RuntimeChanged += OnResourceBundleChanged;
     }
 
     public bool IsEnabled => _enabled;
@@ -108,16 +109,15 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
             return;
 
         // Rebind advances the mount generation even when the controller instance is unchanged.
-        // Relinquish any press ownership before resetting released fine inspection so neither an
-        // outer commit nor inner accumulated motion can span the lifecycle boundary.
-        CancelTunnelGesture("rebind");
-        ResetFinePreview(TunnelFineResetReason.BaseTimeChanged);
+        // It is also a mode boundary: relinquish gesture/camera/zoom ownership immediately so a
+        // controller-present remount cannot leave the shared planet enlarged while hidden.
+        FailSafeDisable("rebind", TunnelFineResetReason.BaseTimeChanged);
         var controller = _registry.TryGet<ITimelineController>();
         if (controller is null)
         {
             _generation++;
             DisconnectStagePreparationRetry();
-            FailSafeDisable("controller_lost", TunnelFineResetReason.ControllerLost);
+            ResetFinePreview(TunnelFineResetReason.ControllerLost);
             UnsubscribeController();
             UnsubscribeLayerTrackRegistry();
             SeverFilmstrip();
@@ -207,15 +207,13 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
 
     private void FailSafeDisable(string reason, TunnelFineResetReason resetReason)
     {
-        _enabled = false;
         _pendingCorridorRebuild = false;
         CancelTunnelGesture(reason);
         ResetFinePreview(resetReason);
         CancelF9CommandWork(reason);
         _filmstrip.Supersede();
         _filmstrip.CancelInFlight();
-        RestorePlanetZoom();
-        _inputPolicy.OnTunnelDisabled();
+        SynchronizeDisabledPlanetZoom();
         if (_mount is not null && GodotObject.IsInstanceValid(_mount))
             _mount.Visible = false;
         RestorePreviousCamera();
@@ -239,6 +237,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         if (_disposed || _tearingDown || expectedGeneration != _generation)
             return;
 
+        SynchronizeDisabledPlanetZoom();
         var stageEnvironment = _sceneRegistry.GetNodeOrNull(StageBundleId, StageEnvironmentPath) as Node3D;
         var body = _planetBodyProvider();
         var action = TunnelStagePreparationPolicy.Decide(new TunnelStagePreparationReadiness(
@@ -315,7 +314,6 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
             return;
         }
 
-        _enabled = false;
         _mount.Visible = false;
         _stagePreparationRetryFrames = 0;
         _stagePreparationRetryExhaustedLogged = false;
@@ -347,8 +345,13 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
 
         // Effective enable is the only moment the shared planet body's original scale may be
         // captured. Hidden preparation (mount created but _enabled == false) never calls this, so
-        // a stale snapshot cannot survive across globe/tunnel mode switches.
+        // a stale snapshot cannot survive across globe/tunnel mode switches. Apply the default
+        // zoom immediately so the planet starts visibly larger the instant the tunnel is effective.
+        var capturedNow = !_inputPolicy.OriginalScale.HasValue;
         _inputPolicy.OnTunnelEnabled(new NumericsVector3(body.Scale.X, body.Scale.Y, body.Scale.Z));
+        if (capturedNow)
+            _zoomedPlanetBody = body;
+        ApplyPlanetZoom();
     }
 
     // Scroll-wheel step (direction > 0 = larger planet). Multiplicative, clamped in the seam helper.
@@ -359,7 +362,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
 
     private void ApplyPlanetZoom()
     {
-        var body = _planetBodyProvider();
+        var body = ResolveZoomedPlanetBody();
         if (body is null || !GodotObject.IsInstanceValid(body))
             return;
 
@@ -376,7 +379,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
 
     private void RestorePlanetZoom()
     {
-        var body = _planetBodyProvider();
+        var body = ResolveZoomedPlanetBody();
         var originalScale = _inputPolicy.OriginalScale;
         if (originalScale.HasValue
             && body is not null && GodotObject.IsInstanceValid(body))
@@ -386,6 +389,22 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
                 originalScale.Value.Y,
                 originalScale.Value.Z);
         }
+    }
+
+    private Node3D? ResolveZoomedPlanetBody()
+    {
+        if (_zoomedPlanetBody is not null && GodotObject.IsInstanceValid(_zoomedPlanetBody))
+            return _zoomedPlanetBody;
+
+        return _planetBodyProvider();
+    }
+
+    private void SynchronizeDisabledPlanetZoom()
+    {
+        _enabled = false;
+        RestorePlanetZoom();
+        _inputPolicy.OnTunnelDisabled();
+        _zoomedPlanetBody = null;
     }
 
     private void ScheduleStagePreparationRetry(int expectedGeneration, Node3D? stageEnvironment)
@@ -592,20 +611,20 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         });
     }
 
-    private void OnResourceRuntimeChanged(object? sender, EventArgs args)
+    private void OnResourceBundleChanged(object? sender, EventArgs args)
     {
         if (_disposed || !_worldBundleReload.TryScheduleDeferredAttempt())
             return;
 
         var expectedGeneration = _generation;
-        Callable.From(() => TryRebindAfterWorldBundleChange(expectedGeneration)).CallDeferred();
+        Callable.From(() => TryRebindAfterWorldBundleReload(expectedGeneration)).CallDeferred();
     }
 
-    private void TryRebindAfterWorldBundleChange(int expectedGeneration)
+    private void TryRebindAfterWorldBundleReload(int expectedGeneration)
     {
-        var runtimeChangeInProgress = _resource.IsRuntimeChangeInProgress(WorldBundleId)
+        var bundleReloadInProgress = _resource.IsRuntimeChangeInProgress(WorldBundleId)
             || _resource.IsRuntimeChangeInProgress(StageBundleId);
-        if (!_worldBundleReload.CompleteDeferredAttempt(runtimeChangeInProgress)
+        if (!_worldBundleReload.CompleteDeferredAttempt(bundleReloadInProgress)
             || _disposed
             || expectedGeneration != _generation
             || !_worldBundleReload.IsPending
@@ -843,7 +862,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         FailSafeDisable("disposed", TunnelFineResetReason.Disposed);
         _disposed = true;
         _resource.RuntimeChanging -= OnResourceRuntimeChanging;
-        _resource.RuntimeChanged -= OnResourceRuntimeChanged;
+        _resource.RuntimeChanged -= OnResourceBundleChanged;
         SeverManagedInputCallbacks();
         UnsubscribeController();
         UnsubscribeLayerTrackRegistry();

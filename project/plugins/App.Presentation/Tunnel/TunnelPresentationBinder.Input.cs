@@ -74,6 +74,7 @@ internal sealed class TunnelInputPolicy
 
     public NumericsVector3? OriginalScale { get; private set; }
     public float CurrentZoomScale { get; private set; } = TunnelPlanetZoom.DefaultScale;
+    public bool IsEnabled => _enabled;
 
     public void OnTunnelEnabled(NumericsVector3 originalScale)
     {

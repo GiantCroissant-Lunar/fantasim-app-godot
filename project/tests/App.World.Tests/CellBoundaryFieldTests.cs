@@ -1,7 +1,13 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using FantaSim.App.World;
 using FantaSim.App.World.Dto;
+using FantaSim.App.World.Globe;
 using FantaSim.App.World.Topography;
+using UnifyCell;
+using UnifyGeometry.Spherical;
+using UnifyMaths;
 using Xunit;
 
 namespace FantaSim.App.World.Tests;
@@ -134,5 +140,129 @@ public sealed class CellBoundaryFieldTests
         var field = CellBoundaryField.Build(cells, arcs, new Dictionary<(int, int), ConvergentBoundaryPolarity>());
 
         Assert.Equal(1, field[0].NearestPointIndex);
+    }
+
+    [Fact]
+    public void Coarse_real_boundary_cell_receives_narrow_profile_while_same_plate_interior_stays_zero()
+    {
+        var (boundaryCell, interiorCell, arc) = RealSharedEdgeFixture(frequency: 2);
+        var polarity = new Dictionary<(int, int), ConvergentBoundaryPolarity>
+        {
+            [(0, 1)] = new ConvergentBoundaryPolarity(0, 1, IsCollision: false),
+        };
+
+        var field = CellBoundaryField.Build(new[] { boundaryCell, interiorCell }, new[] { arc }, polarity);
+        double boundaryContribution = BoundaryProfileShape.Contribution(field[0], BoundaryProfileParameters.Default);
+        double interiorContribution = BoundaryProfileShape.Contribution(field[1], BoundaryProfileParameters.Default);
+
+        Assert.Equal(-double.Epsilon, field[0].SignedDistanceRad);
+        Assert.True(boundaryContribution < -100.0,
+            $"coarse subducting boundary cell must receive the 0.06-rad trench profile; was {boundaryContribution:F6}");
+        Assert.Equal(0.0, interiorContribution, 9);
+    }
+
+    [Fact]
+    public void Finite_cell_distance_preserves_high_frequency_boundary_profile()
+    {
+        var (boundaryCell, interiorCell, arc) = RealSharedEdgeFixture(frequency: 4);
+        var polarity = new Dictionary<(int, int), ConvergentBoundaryPolarity>
+        {
+            [(0, 1)] = new ConvergentBoundaryPolarity(0, 1, IsCollision: false),
+        };
+
+        var field = CellBoundaryField.Build(new[] { boundaryCell, interiorCell }, new[] { arc }, polarity);
+
+        Assert.Equal(-double.Epsilon, field[0].SignedDistanceRad);
+        Assert.True(
+            BoundaryProfileShape.Contribution(field[0], BoundaryProfileParameters.Default) < -100.0);
+        Assert.Equal(
+            0.0,
+            BoundaryProfileShape.Contribution(field[1], BoundaryProfileParameters.Default),
+            9);
+    }
+
+    [Fact]
+    public void Junction_tie_uses_first_incident_edge_in_order()
+    {
+        var up = new GlobeVec3(0, 0, 1);
+        var junctionCell = new GlobeCell(0, 0, East, North, up);
+        var divergent = Arc(0, 1, PlateBoundaryKind.Divergent, East, North);
+        var transform = Arc(0, 2, PlateBoundaryKind.Transform, North, up);
+        var noPolarity = new Dictionary<(int, int), ConvergentBoundaryPolarity>();
+
+        var divergentFirst = CellBoundaryField.Build(
+            new[] { junctionCell },
+            new[] { divergent, transform },
+            noPolarity);
+        var transformFirst = CellBoundaryField.Build(
+            new[] { junctionCell },
+            new[] { transform, divergent },
+            noPolarity);
+
+        Assert.Equal(0.0, divergentFirst[0].SignedDistanceRad);
+        Assert.Equal(PlateBoundaryKind.Divergent, divergentFirst[0].Kind);
+        Assert.Equal(0.0, transformFirst[0].SignedDistanceRad);
+        Assert.Equal(PlateBoundaryKind.Transform, transformFirst[0].Kind);
+    }
+
+    private static (GlobeCell BoundaryCell, GlobeCell InteriorCell, PlateBoundaryArc Arc) RealSharedEdgeFixture(
+        int frequency)
+    {
+        var tessellation = new GeodesicSphereTessellation(frequency);
+        const int boundaryCellId = 0;
+        int adjacentCellId = tessellation.Space
+            .Neighbors(new GeodesicCoord(boundaryCellId, frequency))
+            .First().FaceIndex;
+        var boundaryCorners = tessellation.GetBoundary(new GeodesicCoord(boundaryCellId, frequency));
+        var adjacentCorners = tessellation.GetBoundary(new GeodesicCoord(adjacentCellId, frequency));
+        var shared = boundaryCorners
+            .Where(point => adjacentCorners.Any(other =>
+                Vector3D.Dot(point.ToVector3D(), other.ToVector3D()) >= 1.0 - 1e-12))
+            .ToArray();
+        Assert.Equal(2, shared.Length);
+
+        var edgeMidpoint = Normalize(shared[0].ToVector3D() + shared[1].ToVector3D());
+        int interiorCellId = Enumerable.Range(0, tessellation.CellCount)
+            .Where(cell => cell != boundaryCellId && cell != adjacentCellId)
+            .MinBy(cell => Vector3D.Dot(
+                tessellation.GetCenter(new GeodesicCoord(cell, frequency)).ToVector3D(),
+                edgeMidpoint));
+        var arc = new PlateBoundaryArc(
+            0,
+            1,
+            PlateBoundaryKind.Convergent,
+            BoundaryArcSampler.SubdivideGreatCircle(shared[0], shared[1], subdiv: 16));
+
+        return (
+            ToGlobeCell(tessellation, boundaryCellId, plateId: 0, frequency),
+            ToGlobeCell(tessellation, interiorCellId, plateId: 0, frequency),
+            arc);
+    }
+
+    private static GlobeCell ToGlobeCell(
+        GeodesicSphereTessellation tessellation,
+        int cellId,
+        int plateId,
+        int frequency)
+    {
+        var corners = tessellation.GetBoundary(new GeodesicCoord(cellId, frequency));
+        return new GlobeCell(
+            cellId,
+            plateId,
+            ToGlobeVec3(corners[0]),
+            ToGlobeVec3(corners[1]),
+            ToGlobeVec3(corners[2]));
+    }
+
+    private static GlobeVec3 ToGlobeVec3(SphericalPoint point)
+    {
+        var vector = point.ToVector3D();
+        return new GlobeVec3((float)vector.X, (float)vector.Y, (float)vector.Z);
+    }
+
+    private static Vector3D Normalize(Vector3D vector)
+    {
+        double length = vector.Length();
+        return vector * (1.0 / length);
     }
 }

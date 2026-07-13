@@ -14,7 +14,6 @@ public sealed class PlateSurfaceReliefFabricTests
     {
         var crust = PlateSurfaceReliefFabric.ForView(GlobeViewMode.HypsometricTerrain);
 
-        Assert.True(crust.Amplitude > GlobePlateSurfaces.DefaultPeaks.Amplitude);
         Assert.InRange(crust.BaseFrequency, 5.0, 10.0);
         Assert.True(crust.Octaves >= 4);
 
@@ -26,7 +25,10 @@ public sealed class PlateSurfaceReliefFabricTests
             PlateSurfaceReliefFabric.RidgeActiveFeaturesForView(GlobeViewMode.HypsometricTerrain));
         double standardDeviation = SampledRadialStandardDeviation(sampler);
 
-        Assert.InRange(standardDeviation, 0.06, 0.22);
+        Assert.True(standardDeviation > 0.0,
+            $"feature belt must add non-zero roughness; std dev was {standardDeviation}");
+        Assert.True(standardDeviation <= 0.02,
+            $"bounded residual fabric must stay subtle; std dev {standardDeviation} exceeds the 250 m peak budget at this scale");
     }
 
     [Fact]
@@ -146,8 +148,6 @@ public sealed class PlateSurfaceReliefFabricTests
     [Fact]
     public void ForView_crust_diagnostic_does_not_damp_active_amplitude()
     {
-        // Spec §3: remove the 0.45 active damping — belts are the drama now that the silhouette is
-        // capped. Active amplitude multiplier must be 1.0 (no damping) for the crust diagnostic.
         Assert.Equal(1.0, PlateSurfaceReliefFabric.ActiveAmplitudeMultiplierForView(GlobeViewMode.HypsometricTerrain));
     }
 
@@ -155,6 +155,73 @@ public sealed class PlateSurfaceReliefFabricTests
     public void ForView_world_keeps_active_amplitude_undamped()
     {
         Assert.Equal(1.0, PlateSurfaceReliefFabric.ActiveAmplitudeMultiplierForView(GlobeViewMode.World));
+    }
+
+    [Fact]
+    public void Trench_residual_profile_is_never_ridged()
+    {
+        var crust = PlateSurfaceReliefFabric.ForView(GlobeViewMode.HypsometricTerrain);
+        var sampler = new TectonicDetailSampler(
+            SingleCellSnapshot(),
+            new[] { new CellCrustFeature(Kind: 3, Magnitude: 10_000.0) },
+            crust,
+            PlateSurfaceReliefFabric.InteriorAmplitudeMultiplierForView(GlobeViewMode.HypsometricTerrain),
+            PlateSurfaceReliefFabric.RidgeActiveFeaturesForView(GlobeViewMode.HypsometricTerrain));
+
+        var profile = sampler.ResolveProfile(CellCenterOf(SingleCellSnapshot()));
+
+        Assert.False(profile.Noise.Ridged,
+            $"Trench residual fabric must never be ridged (positive ridged detail); got Ridged={profile.Noise.Ridged}");
+    }
+
+    [Theory]
+    [InlineData(GlobeViewMode.World)]
+    [InlineData(GlobeViewMode.HypsometricTerrain)]
+    public void Residual_noise_amplitude_never_exceeds_250m_for_any_feature_kind(GlobeViewMode view)
+    {
+        var relief = PlateSurfaceReliefFabric.ForView(view);
+        var interiorMult = PlateSurfaceReliefFabric.InteriorAmplitudeMultiplierForView(view);
+        var activeMult = PlateSurfaceReliefFabric.ActiveAmplitudeMultiplierForView(view);
+        var ridgeActive = PlateSurfaceReliefFabric.RidgeActiveFeaturesForView(view);
+
+        for (byte kind = 0; kind <= 5; kind++)
+        {
+            var snapshot = SingleCellSnapshot();
+            var features = new[] { new CellCrustFeature(kind, 10_000.0) };
+            var sampler = new TectonicDetailSampler(snapshot, features, relief, interiorMult, ridgeActive, activeMult);
+            var profile = sampler.ResolveProfile(CellCenterOf(snapshot));
+
+            Assert.True(
+                profile.Noise.Amplitude <= TectonicDetailSampler.MaxResidualAmplitudeMetres + 1e-9,
+                $"view {view} kind {kind}: amplitude {profile.Noise.Amplitude:G5} exceeds {TectonicDetailSampler.MaxResidualAmplitudeMetres} m");
+        }
+    }
+
+    [Fact]
+    public void Residual_noise_amplitude_is_at_most_one_third_of_smallest_mandatory_signal()
+    {
+        Assert.Equal(800.0, TectonicDetailSampler.SmallestMandatoryBoundarySignalMetres);
+        Assert.True(
+            TectonicDetailSampler.MaxResidualAmplitudeMetres <= TectonicDetailSampler.SmallestMandatoryBoundarySignalMetres / 3.0 + 1e-9,
+            $"Max residual {TectonicDetailSampler.MaxResidualAmplitudeMetres} must be <= one third of {TectonicDetailSampler.SmallestMandatoryBoundarySignalMetres}");
+    }
+
+    [Fact]
+    public void TectonicFeatureKind_mapping_is_exhaustive_and_degrades_unknown_to_none()
+    {
+        Assert.Equal(TectonicFeatureKind.None, TectonicFeatureKindExtensions.FromWireByte(0));
+        Assert.Equal(TectonicFeatureKind.Mountain, TectonicFeatureKindExtensions.FromWireByte(1));
+        Assert.Equal(TectonicFeatureKind.VolcanicArc, TectonicFeatureKindExtensions.FromWireByte(2));
+        Assert.Equal(TectonicFeatureKind.Trench, TectonicFeatureKindExtensions.FromWireByte(3));
+        Assert.Equal(TectonicFeatureKind.Ridge, TectonicFeatureKindExtensions.FromWireByte(4));
+        Assert.Equal(TectonicFeatureKind.Fault, TectonicFeatureKindExtensions.FromWireByte(5));
+        Assert.Equal(TectonicFeatureKind.None, TectonicFeatureKindExtensions.FromWireByte(255));
+        Assert.Equal((byte)0, TectonicFeatureKind.None.ToWireByte());
+        Assert.Equal((byte)1, TectonicFeatureKind.Mountain.ToWireByte());
+        Assert.Equal((byte)2, TectonicFeatureKind.VolcanicArc.ToWireByte());
+        Assert.Equal((byte)3, TectonicFeatureKind.Trench.ToWireByte());
+        Assert.Equal((byte)4, TectonicFeatureKind.Ridge.ToWireByte());
+        Assert.Equal((byte)5, TectonicFeatureKind.Fault.ToWireByte());
     }
 
     private static CartesianPoint3 CellCenterOf(WorldGlobeSnapshot snapshot)

@@ -9,6 +9,8 @@ using FantaSim.App.World.Crust;
 using FantaSim.App.World.Dto;
 using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Globe;
+using FantaSim.App.World.Topography;
+using FantaSim.Geosphere.Crust;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -248,5 +250,101 @@ public sealed class WorldCrustMaterializerTests
         var roster = OnsetRoster.Build(options.Seed, onsetTick, options.TessellationFrequency);
         var geosphere = SphereRegimeScheduleDefaults.GeosphereDefault;
         return GlobeReconstructor.FromOnsetRoster(roster, onsetTick, geosphere, options.TessellationFrequency);
+    }
+
+    [Fact]
+    public async Task Default_pipeline_fixture_produces_mountain_trench_and_volcanic_cells()
+    {
+        var foundMountain = false;
+        var foundTrench = false;
+        var foundVolcanicArc = false;
+
+        var reconstructor = new GlobeReconstructor(frequency: 4);
+        var snapshot = reconstructor.RunCrustSnapshot(new[] { 5_000_000L });
+        if (snapshot.FeaturesByTick.TryGetValue(5_000_000L, out var freq4Features))
+        {
+            var kinds = freq4Features.Values.Select(f => f.Kind).ToHashSet();
+            foundMountain = kinds.Contains(CrustFeatureKind.Mountain);
+        }
+
+        using var service = new FantaSim.App.World.Services.Service(new ServiceArchi.Core.ServiceRegistry());
+        long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        var lateDoc = service.GetPlanetPresentationAsync(onsetTick + 20_000_000L);
+        if (lateDoc.CellFeatures is not null)
+        {
+            foreach (var f in lateDoc.CellFeatures)
+            {
+                var kind = FantaSim.App.World.Dto.TectonicFeatureKindExtensions.FromWireByte(f.Kind);
+                if (kind == FantaSim.App.World.Dto.TectonicFeatureKind.Trench) foundTrench = true;
+                if (kind == FantaSim.App.World.Dto.TectonicFeatureKind.VolcanicArc) foundVolcanicArc = true;
+            }
+        }
+
+        Assert.True(foundMountain, "pipeline must produce Mountain feature cells (freq 4, tick 5M)");
+        Assert.True(foundTrench, "pipeline must produce Trench feature cells (seed 7, onset+20M)");
+        Assert.True(foundVolcanicArc, "pipeline must produce VolcanicArc feature cells (seed 7, onset+20M)");
+
+        await Task.CompletedTask;
+    }
+
+    [Fact]
+    public void Engine_CrustFeatureKind_mapping_covers_every_enum_member_and_degrades_unknown()
+    {
+        var expected = new Dictionary<CrustFeatureKind, FantaSim.App.World.Dto.TectonicFeatureKind>
+        {
+            [CrustFeatureKind.None] = FantaSim.App.World.Dto.TectonicFeatureKind.None,
+            [CrustFeatureKind.Mountain] = FantaSim.App.World.Dto.TectonicFeatureKind.Mountain,
+            [CrustFeatureKind.VolcanicArc] = FantaSim.App.World.Dto.TectonicFeatureKind.VolcanicArc,
+            [CrustFeatureKind.Trench] = FantaSim.App.World.Dto.TectonicFeatureKind.Trench,
+            [CrustFeatureKind.Ridge] = FantaSim.App.World.Dto.TectonicFeatureKind.Ridge,
+            [CrustFeatureKind.Fault] = FantaSim.App.World.Dto.TectonicFeatureKind.Fault,
+        };
+        var engineKinds = Enum.GetValues<CrustFeatureKind>();
+        Assert.Equal(expected.Count, engineKinds.Length);
+
+        foreach (var engineKind in engineKinds)
+        {
+            var mapped = CrustFeatureContractMapper.ToContractKind(engineKind);
+            Assert.Equal(expected[engineKind], mapped);
+
+            var cellFeature = CrustFeatureContractMapper.ToCellFeature(
+                new CrustFeature(CellId: 7, engineKind, Magnitude: 0.25));
+            Assert.Equal(mapped, FantaSim.App.World.Dto.TectonicFeatureKindExtensions.FromWireByte(cellFeature.Kind));
+            Assert.Equal(engineKind, CrustFeatureContractMapper.ToEngineKind(cellFeature.Kind));
+        }
+
+        Assert.Equal(
+            FantaSim.App.World.Dto.TectonicFeatureKind.None,
+            FantaSim.App.World.Dto.TectonicFeatureKindExtensions.FromWireByte(255));
+        Assert.Equal(CrustFeatureKind.None, CrustFeatureContractMapper.ToEngineKind(255));
+    }
+
+    [Fact]
+    public void Residual_cap_matches_smallest_effective_mandatory_boundary_signal()
+    {
+        var defaultParams = BoundaryProfileParameters.Default;
+        var mandatorySignals = new[]
+        {
+            Math.Abs(defaultParams.DivergentSwellHeight),
+            Math.Abs(defaultParams.ConvergentArcHeight),
+            Math.Abs(defaultParams.ConvergentTrenchDepth),
+            Math.Abs(defaultParams.ConvergentCollisionHeight),
+        };
+        var smallestMandatory = mandatorySignals.Min();
+
+        Assert.Equal(
+            smallestMandatory,
+            FantaSim.App.World.Globe.TectonicDetailSampler.SmallestMandatoryBoundarySignalMetres,
+            precision: 0);
+
+        Assert.True(
+            FantaSim.App.World.Globe.TectonicDetailSampler.MaxResidualAmplitudeMetres
+                <= smallestMandatory / 3.0 + 1e-9,
+            $"Residual cap {FantaSim.App.World.Globe.TectonicDetailSampler.MaxResidualAmplitudeMetres} must be <= 1/3 of smallest mandatory signal {smallestMandatory}");
+
+        Assert.Equal(
+            defaultParams.DivergentSwellHeight,
+            FantaSim.App.World.Globe.TectonicDetailSampler.SmallestMandatoryBoundarySignalMetres,
+            precision: 0);
     }
 }

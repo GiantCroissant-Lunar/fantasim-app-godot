@@ -105,7 +105,7 @@ public sealed class BoundaryNetworkCompletenessTests
     }
 
     [Fact]
-    public void ArcCountMatchesTopologyBoundaryCount()
+    public void ArcPlatePairsMatchTopologyBoundaryPairs()
     {
         var model = BuildAppReconstructor(out long onsetTick);
         var arcs = model.BuildBoundaryArcsAt(onsetTick);
@@ -117,7 +117,9 @@ public sealed class BoundaryNetworkCompletenessTests
         var boundaries = PlateTopologyBuilder.ClassifyBoundariesAt(
             tess, plates, topology, new CanonicalTick(onsetTick));
 
-        Assert.Equal(boundaries.Count, arcs.Count);
+        var boundaryPairs = boundaries.Select(boundary => (boundary.PlateA, boundary.PlateB)).ToHashSet();
+        var arcPairs = arcs.Select(arc => (arc.PlateA, arc.PlateB)).ToHashSet();
+        Assert.Equal(boundaryPairs, arcPairs);
     }
 
     // Regression: the specific failure mode — boundaries whose topology truth carries a single
@@ -150,16 +152,19 @@ public sealed class BoundaryNetworkCompletenessTests
         Assert.NotEmpty(singleSamplePairs);
 
         var arcs = model.BuildBoundaryArcsAt(onsetTick);
-        var arcByKey = arcs.ToDictionary(a => (a.PlateA, a.PlateB));
         foreach (var pair in singleSamplePairs)
         {
-            Assert.True(arcByKey.ContainsKey(pair),
-                $"single-sample boundary {pair} was dropped — no arc emitted");
-            var arc = arcByKey[pair];
-            Assert.True(arc.Points.Count >= 2,
-                $"recovered arc {pair} has {arc.Points.Count} points");
-            foreach (var p in arc.Points)
-                AssertUnitLength(p);
+            var matchingArcs = arcs
+                .Where(arc => (arc.PlateA, arc.PlateB) == pair)
+                .ToArray();
+            Assert.NotEmpty(matchingArcs);
+            foreach (var arc in matchingArcs)
+            {
+                Assert.True(arc.Points.Count >= 2,
+                    $"recovered arc {pair} has {arc.Points.Count} points");
+                foreach (var p in arc.Points)
+                    AssertUnitLength(p);
+            }
         }
     }
 

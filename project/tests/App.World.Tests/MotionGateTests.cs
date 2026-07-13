@@ -349,6 +349,30 @@ public sealed class MotionGateTests
             GlobeViewModeResolver.Resolve("mobile-plate", sel, "identity"));
     }
 
+    [Fact]
+    public void Non_snapshot_playhead_retains_governing_snapshot_features()
+    {
+        long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        long snapshotTick = onsetTick + 5_000_000L;
+        long nonSnapshotTick = onsetTick + 2_500_000L;
+
+        using var service = new Service(new ServiceRegistry());
+
+        var snapshotDoc = service.GetPlanetPresentationAsync(snapshotTick);
+        var nonSnapshotDoc = service.GetPlanetPresentationAsync(nonSnapshotTick);
+
+        Assert.NotNull(snapshotDoc.CellFeatures);
+        Assert.NotNull(nonSnapshotDoc.CellFeatures);
+
+        int snapshotFeatureCount = snapshotDoc.CellFeatures!.Count(f => f.Kind != 0);
+        int nonSnapshotFeatureCount = nonSnapshotDoc.CellFeatures!.Count(f => f.Kind != 0);
+
+        Assert.True(snapshotFeatureCount > 0,
+            "snapshot tick must have tectonic feature cells");
+        Assert.True(nonSnapshotFeatureCount > 0,
+            $"non-snapshot tick {nonSnapshotTick} must retain transported features from governing snapshot; got {nonSnapshotFeatureCount} feature cells");
+    }
+
     private static void AssertSetEqual(IEnumerable<int> expected, IReadOnlySet<int> actual)
         => Assert.True(expected.ToHashSet().SetEquals(actual));
 

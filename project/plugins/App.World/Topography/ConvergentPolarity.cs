@@ -50,20 +50,39 @@ public static class ConvergentPolarity
         ArgumentNullException.ThrowIfNull(cells);
         ArgumentNullException.ThrowIfNull(state);
 
-        var polarity = new Dictionary<(int, int), ConvergentBoundaryPolarity>();
+        var pointsByPair = new Dictionary<(int Lo, int Hi), List<GlobeVec3>>();
         foreach (var arc in arcs)
         {
             if (arc.Kind != PlateBoundaryKind.Convergent) continue;
             if (arc.Points.Count == 0) continue;
 
             var (lo, hi) = arc.PlateA <= arc.PlateB ? (arc.PlateA, arc.PlateB) : (arc.PlateB, arc.PlateA);
-            polarity[(lo, hi)] = ClassifyOne(arc, lo, hi, cells, features, state, nearRadiusRad, continentalThreshold);
+            if (!pointsByPair.TryGetValue((lo, hi), out var points))
+            {
+                points = new List<GlobeVec3>();
+                pointsByPair[(lo, hi)] = points;
+            }
+            points.AddRange(arc.Points);
+        }
+
+        var polarity = new Dictionary<(int, int), ConvergentBoundaryPolarity>(pointsByPair.Count);
+        foreach (var ((lo, hi), points) in pointsByPair)
+        {
+            polarity[(lo, hi)] = ClassifyOne(
+                points,
+                lo,
+                hi,
+                cells,
+                features,
+                state,
+                nearRadiusRad,
+                continentalThreshold);
         }
         return polarity;
     }
 
     private static ConvergentBoundaryPolarity ClassifyOne(
-        PlateBoundaryArc arc,
+        IReadOnlyList<GlobeVec3> arcPoints,
         int plateLo,
         int plateHi,
         IReadOnlyList<GlobeCell> cells,
@@ -78,7 +97,7 @@ public static class ConvergentPolarity
         int cfCountLo = 0, cfCountHi = 0;
 
         double cosNear = Math.Cos(nearRadiusRad);
-        var arcVecs = ToVector3D(arc.Points);
+        var arcVecs = ToVector3D(arcPoints);
 
         foreach (var cell in cells)
         {

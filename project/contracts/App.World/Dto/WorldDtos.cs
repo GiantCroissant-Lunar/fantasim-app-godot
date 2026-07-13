@@ -109,3 +109,49 @@ public record WorldGlobeSnapshot(
 /// <param name="Kind">Feature kind byte (mirrors CrustFeatureKind).</param>
 /// <param name="Magnitude">The magnitude that produced the feature (drives accent intensity).</param>
 public readonly record struct CellCrustFeature(byte Kind, double Magnitude);
+
+/// <summary>
+/// Contract-owned residual-fabric feature kind for the rendering/presentation layer. Maps 1:1 to
+/// <c>FantaSim.Geosphere.Crust.CrustFeatureKind</c> but is owned here so the T1 contract surface
+/// carries no engine dependency and presentation code never ordinal-casts across packages.
+/// <see cref="CellCrustFeature.Kind"/> is the authoritative wire byte; this enum is the exhaustive
+/// mapping target (see <see cref="TectonicFeatureKindExtensions.FromWireByte"/>).
+/// </summary>
+public enum TectonicFeatureKind : byte
+{
+    None = 0,
+    Mountain = 1,
+    VolcanicArc = 2,
+    Trench = 3,
+    Ridge = 4,
+    Fault = 5,
+}
+
+/// <summary>
+/// Exhaustive, explicit mapping from the raw <see cref="CellCrustFeature.Kind"/> byte to the
+/// contract-owned <see cref="TectonicFeatureKind"/>. Presentation code MUST go through this method
+/// rather than ordinal-casting the byte, so an unknown future value degrades gracefully to
+/// <see cref="TectonicFeatureKind.None"/> instead of producing an invalid enum.
+/// </summary>
+public static class TectonicFeatureKindExtensions
+{
+    public static TectonicFeatureKind FromWireByte(byte kind) => kind switch
+    {
+        1 => TectonicFeatureKind.Mountain,
+        2 => TectonicFeatureKind.VolcanicArc,
+        3 => TectonicFeatureKind.Trench,
+        4 => TectonicFeatureKind.Ridge,
+        5 => TectonicFeatureKind.Fault,
+        _ => TectonicFeatureKind.None,
+    };
+
+    public static byte ToWireByte(this TectonicFeatureKind kind) => kind switch
+    {
+        TectonicFeatureKind.Mountain => 1,
+        TectonicFeatureKind.VolcanicArc => 2,
+        TectonicFeatureKind.Trench => 3,
+        TectonicFeatureKind.Ridge => 4,
+        TectonicFeatureKind.Fault => 5,
+        _ => 0,
+    };
+}

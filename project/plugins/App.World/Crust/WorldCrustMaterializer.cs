@@ -75,7 +75,7 @@ internal sealed record WorldCrustMaterialization(
                 }
 
                 if (featureMap is not null && featureMap.TryGetValue(cell, out var f))
-                    features[cell] = new CellCrustFeature((byte)f.Kind, f.Magnitude);
+                    features[cell] = CrustFeatureContractMapper.ToCellFeature(f);
             }
 
             return (elevations, features);
@@ -238,7 +238,10 @@ internal static class WorldCrustMaterializer
         var features = materialization.Result.FeaturesByTick.TryGetValue(snapshotTick, out var featuresAtTick)
             ? featuresAtTick.Values
                 .OrderBy(f => f.CellId)
-                .Select(f => new CrustFeatureRecord(f.CellId, (byte)f.Kind, f.Magnitude))
+                .Select(f => new CrustFeatureRecord(
+                    f.CellId,
+                    CrustFeatureContractMapper.ToContractKind(f.Kind).ToWireByte(),
+                    f.Magnitude))
                 .ToArray()
             : Array.Empty<CrustFeatureRecord>();
 
@@ -282,7 +285,10 @@ internal static class WorldCrustMaterializer
             s => new CellCrustState(s.CellId, s.ContinentalFraction, s.OrogenicPressure, s.VolcanicActivity, s.CrustAgeTicks));
         IReadOnlyDictionary<int, CrustFeature> features = record.Features.ToDictionary(
             f => f.CellId,
-            f => new CrustFeature(f.CellId, (CrustFeatureKind)f.Kind, f.Magnitude));
+            f => new CrustFeature(
+                f.CellId,
+                CrustFeatureContractMapper.ToEngineKind(f.Kind),
+                f.Magnitude));
 
         var stateByTick = new Dictionary<long, IReadOnlyDictionary<int, CellCrustState>> { [record.SnapshotTick] = cellStates };
         var featuresByTick = new Dictionary<long, IReadOnlyDictionary<int, CrustFeature>> { [record.SnapshotTick] = features };

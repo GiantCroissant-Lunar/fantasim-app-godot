@@ -77,7 +77,7 @@ public sealed class TunnelPlanetOcclusionPolicyTests
             zoomScale: bad,
             baseRadius: 2.0f);
 
-        Assert.Equal(2.0f, radius, precision: 5);
+        Assert.Equal(2.0f * TunnelPlanetZoom.DefaultScale, radius, precision: 5);
     }
 
     [Fact]

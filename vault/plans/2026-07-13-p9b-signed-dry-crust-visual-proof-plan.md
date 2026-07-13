@@ -20,9 +20,13 @@ scale/framing and does not alter canonical history.
 
 ## Locked acceptance behavior
 
-- In a zero-noise real-pipeline fixture: mountain/volcanic cells are at least 750 m above the
-  zero-profile baseline, trench cells at least 750 m below, and ridge flanks at least 300 m above.
-  Fault gets no feature-enum uplift beyond the configured transform profile.
+- In zero-noise real-pipeline, category-specific fixtures: mountain cells are at least 750 m above
+  the same real state's no-orogeny/no-profile counterfactual; active volcanic-arc cells are at least
+  750 m above the same real state's profile-disabled counterfactual; trench cells are at least 750 m
+  below zero profiles; and ridge flanks are at least 300 m above zero profiles. These gates need not
+  co-occur in one snapshot or tessellation frequency. Fault gets no feature-enum uplift beyond the
+  configured transform profile. `BoundaryProfileParameters.Zero` is not a valid mountain baseline
+  by itself because it deliberately preserves `OrogenicPressure * OrogenicGain`.
 - Trench never selects positive ridged noise. Residual noise is at most 250 m peak and at most one
   third of the smallest mandatory 800 m tectonic boundary signal.
 - Geometry remains deterministic and watertight. Hydrology and biome color remain out of this gate.
@@ -39,11 +43,14 @@ scale/framing and does not alter canonical history.
 - `project/tests/App.World.Tests/WorldCrustMaterializerTests.cs`
 - `project/tests/App.Presentation.Tests/PlateSurfaceReliefFabricTests.cs`
 
-Use `BoundaryProfileParameters.Zero` as the independent baseline and the existing default profile
-as the signal. With noise disabled, assert mountain/volcanic target cells gain at least 750 m,
-trench cells lose at least 750 m, and ridge flanks gain at least 300 m. Trace those exact source
-cells through `PlanetPresentationDocument` and source-triangle provenance to finalized cap/mesh
-vertex radii after the height lens and displacement cap; assert the same directions there. Add a
+Use formation-specific causal counterfactuals: mountain removes orogenic pressure and profiles;
+active volcanic arc disables its profile (and volcanic state when that state term is the subject);
+trench and ridge disable profiles. With noise disabled, assert mountain/volcanic target cells gain
+at least 750 m, trench cells lose at least 750 m, and ridge flanks gain at least 300 m. Category
+fixtures may use different real ticks/frequencies when the deterministic seed does not make all
+categories co-occur. Trace those exact source cells through `PlanetPresentationDocument` and
+source-triangle provenance to finalized cap/mesh vertex radii after the height lens and displacement
+cap; assert the same directions there. Add a
 trench residual-profile assertion that `Ridged == false`, deterministic-repeat assertions, and the
 250 m / one-third noise bounds. Observe the intended current failures before production edits.
 
@@ -91,12 +98,14 @@ presentation constants for tectonic widths/amplitudes; those remain data in
 - `project/tests/App.World.Tests/MotionGateTests.cs`
 
 Run the real generated crust pipeline at selected ticks and locate actual cells of each available
-feature kind. Independently compute the default-minus-zero `BoundaryProfileContribution` for those
-cells, assert its sign/range, then trace the same cell IDs through `CellElevations`, the presentation
+feature kind. Independently compute the formation-specific counterfactual delta for those cells,
+assert its sign/range, then trace the same cell IDs through `CellElevations`, the presentation
 document, and finalized mesh. `CellFeatures` is a lineage tag and residual-profile selector, not the
-source of another renderer offset. Use the default patch recipe (seed 0, five patches) and lock a
-frequency/tick fixture that fails unless mountain, trench, and volcanic arc each have at least one
-cell; do not skip those three. Name one plate pair whose boundary classification changes at the
+source of another renderer offset. Use the default patch recipe (seed 0, five patches) and lock real
+category-specific frequency/tick fixtures; quantitative mountain, trench, volcanic-arc, and ridge
+gates do not have to coexist in one snapshot. Keep an all-four public document as lineage/visual
+proof when available, without misreporting a zero-profile mountain delta as total mountain relief.
+Name one plate pair whose boundary classification changes at the
 later tick and assert the expected downstream feature and elevation direction for its cells. Assert
 effective hydrosphere mode is `Absent`.
 

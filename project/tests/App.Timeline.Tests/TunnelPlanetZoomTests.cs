@@ -14,15 +14,28 @@ public sealed class TunnelPlanetZoomTests
     [Fact]
     public void Step_In_MultipliesByStepFactor()
     {
-        var next = TunnelPlanetZoom.Step(1.0f, direction: 1);
-        Assert.Equal(TunnelPlanetZoom.StepFactor, next, precision: 5);
+        var next = TunnelPlanetZoom.Step(TunnelPlanetZoom.DefaultScale, direction: 1);
+        Assert.Equal(TunnelPlanetZoom.DefaultScale * TunnelPlanetZoom.StepFactor, next, precision: 5);
     }
 
     [Fact]
     public void Step_Out_DividesByStepFactor()
     {
-        var next = TunnelPlanetZoom.Step(1.0f, direction: -1);
-        Assert.Equal(1.0f / TunnelPlanetZoom.StepFactor, next, precision: 5);
+        var next = TunnelPlanetZoom.Step(TunnelPlanetZoom.DefaultScale, direction: -1);
+        Assert.Equal(TunnelPlanetZoom.DefaultScale / TunnelPlanetZoom.StepFactor, next, precision: 5);
+    }
+
+    [Fact]
+    public void DefaultScale_IsLockedToOnePointThreeFive()
+    {
+        Assert.Equal(1.35f, TunnelPlanetZoom.DefaultScale);
+    }
+
+    [Fact]
+    public void Clamp_RetainsExistingBounds()
+    {
+        Assert.Equal(0.35f, TunnelPlanetZoom.MinScale);
+        Assert.Equal(3.0f, TunnelPlanetZoom.MaxScale);
     }
 
     [Fact]

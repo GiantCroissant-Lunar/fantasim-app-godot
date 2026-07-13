@@ -24,10 +24,11 @@ public enum PlateBoundaryKind
 }
 
 /// <summary>
-/// One plate boundary as a smooth great-circle polyline: the unordered plate pair it separates,
-/// the motion-derived <see cref="Kind"/>, and the ordered unit-sphere points along the arc. Points
-/// are pre-subdivided (Godot-free, from the topology truth's ordered sample points via great-circle
-/// interpolation) so the host seam only lifts them into line geometry. All points are unit length.
+/// One local plate-boundary segment as a smooth great-circle polyline: the unordered plate pair it
+/// separates, the motion-derived <see cref="Kind"/>, and the ordered unit-sphere points along one
+/// real shared tessellation edge. A boundary pair normally has multiple segment records. Points are
+/// pre-subdivided Godot-free so the host seam only lifts them into line geometry. All points are
+/// unit length, and no record joins disconnected frontier branches.
 /// </summary>
 /// <param name="PlateA">The lower plate id of the pair (<c>PlateA &lt; PlateB</c>).</param>
 /// <param name="PlateB">The higher plate id of the pair.</param>
