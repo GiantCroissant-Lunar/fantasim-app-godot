@@ -68,7 +68,7 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
     private bool _graphViewMounted;
     private readonly bool _showWorldGraph;
     private int? _subscribedWorldHash;
-    private readonly PlanetPresentationReloadGate _worldRuntimeReload = new();
+    private readonly PlanetPresentationReloadGate _worldBundleReload = new();
     private int _mountGeneration;
     private string? _boundRegimeId;
     private PlanetSurfaceBindStamp? _boundSurfaceStamp;
@@ -357,7 +357,7 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
             document.GlobeSnapshot?.CellCount ?? 0,
             document.Layers.Count,
             document.Revision);
-        _worldRuntimeReload.MarkMounted();
+        _worldBundleReload.MarkMounted();
     }
 
     private void ApplyTimelineTick(long tick)
@@ -703,7 +703,7 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
             _generationSubscription?.Dispose();
             _generationSubscription = null;
         }
-        _worldRuntimeReload.MarkRuntimeChanging();
+        _worldBundleReload.MarkRuntimeChanging();
         ResetRegimeTracking();
         Callable.From(() =>
         {
@@ -718,19 +718,19 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
 
     private void OnResourceRuntimeChanged(object? sender, EventArgs args)
     {
-        if (_disposed || !_worldRuntimeReload.TryScheduleDeferredAttempt())
+        if (_disposed || !_worldBundleReload.TryScheduleDeferredAttempt())
             return;
 
-        Callable.From(TryRebindAfterWorldRuntimeChange).CallDeferred();
+        Callable.From(TryRebindAfterWorldBundleChange).CallDeferred();
     }
 
-    private void TryRebindAfterWorldRuntimeChange()
+    private void TryRebindAfterWorldBundleChange()
     {
         var runtimeChangeInProgress = _resource.IsRuntimeChangeInProgress(WorldBundleId)
             || _resource.IsRuntimeChangeInProgress(StageBundleId);
-        if (!_worldRuntimeReload.CompleteDeferredAttempt(runtimeChangeInProgress)
+        if (!_worldBundleReload.CompleteDeferredAttempt(runtimeChangeInProgress)
             || _disposed
-            || !_worldRuntimeReload.IsPending
+            || !_worldBundleReload.IsPending
             || !_resource.IsLoaded(WorldBundleId)
             || !_resource.IsLoaded(StageBundleId))
             return;

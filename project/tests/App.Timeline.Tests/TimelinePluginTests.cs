@@ -102,7 +102,7 @@ public sealed class TimelinePluginTests
     }
 
     [Fact]
-    public async Task WorldRuntimeChangingShowsHudAndLeavesGeometryTeardownToWorldBinder()
+    public async Task WorldBundleChangingShowsHudAndLeavesGeometryTeardownToWorldBinder()
     {
         var registry = NewRegistry();
         var resource = new FakeResourceService { WorldLoaded = true };

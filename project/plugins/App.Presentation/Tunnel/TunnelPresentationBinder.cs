@@ -34,7 +34,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
     private readonly ILogger _log;
     private readonly FilmstripPreviewController _filmstrip;
     private readonly Func<Node3D?> _planetBodyProvider;
-    private readonly PlanetPresentationReloadGate _worldRuntimeReload = new();
+    private readonly PlanetPresentationReloadGate _worldBundleReload = new();
     private const int StagePreparationRetryLimit = 120;
 
     private ITimelineController? _ctl;
@@ -320,7 +320,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         _stagePreparationRetryFrames = 0;
         _stagePreparationRetryExhaustedLogged = false;
         _log.LogInformation("Tunnel presentation prepared hidden under stage Environment.");
-        _worldRuntimeReload.MarkMounted();
+        _worldBundleReload.MarkMounted();
     }
 
     private bool TryAlignToPlanetBody(Node3D body, int gen)
@@ -583,7 +583,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
                 _sourceTracks = Array.Empty<LayerTrackDescriptor>();
                 _focusIndex = -1;
             }
-            _worldRuntimeReload.MarkRuntimeChanging();
+            _worldBundleReload.MarkRuntimeChanging();
             CleanupDetachedMount(DetachMountState());
             _log.LogInformation(
                 "Tunnel presentation released before resource {Operation}: {BundleId}",
@@ -594,21 +594,21 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
 
     private void OnResourceRuntimeChanged(object? sender, EventArgs args)
     {
-        if (_disposed || !_worldRuntimeReload.TryScheduleDeferredAttempt())
+        if (_disposed || !_worldBundleReload.TryScheduleDeferredAttempt())
             return;
 
         var expectedGeneration = _generation;
-        Callable.From(() => TryRebindAfterWorldRuntimeChange(expectedGeneration)).CallDeferred();
+        Callable.From(() => TryRebindAfterWorldBundleChange(expectedGeneration)).CallDeferred();
     }
 
-    private void TryRebindAfterWorldRuntimeChange(int expectedGeneration)
+    private void TryRebindAfterWorldBundleChange(int expectedGeneration)
     {
         var runtimeChangeInProgress = _resource.IsRuntimeChangeInProgress(WorldBundleId)
             || _resource.IsRuntimeChangeInProgress(StageBundleId);
-        if (!_worldRuntimeReload.CompleteDeferredAttempt(runtimeChangeInProgress)
+        if (!_worldBundleReload.CompleteDeferredAttempt(runtimeChangeInProgress)
             || _disposed
             || expectedGeneration != _generation
-            || !_worldRuntimeReload.IsPending
+            || !_worldBundleReload.IsPending
             || !_resource.IsLoaded(WorldBundleId)
             || !_resource.IsLoaded(StageBundleId))
             return;

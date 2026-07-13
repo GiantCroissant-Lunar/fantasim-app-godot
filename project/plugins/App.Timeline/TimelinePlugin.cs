@@ -104,7 +104,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             if (_resource?.IsRuntimeChangeInProgress("world") == true)
             {
                 _worldRebindPending = true;
-                _log.LogInformation("TimelinePlugin: initialized during world runtime change; composition deferred.");
+                _log.LogInformation("TimelinePlugin: initialized during world bundle change; composition deferred.");
             }
             else
             {
@@ -564,7 +564,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
 
             SeverTimelineService(unbindProxy: false);
             _worldRebindPending = true;
-            _log?.LogInformation("TimelinePlugin: world runtime changing; timeline binding severed.");
+            _log?.LogInformation("TimelinePlugin: world bundle changing; timeline binding severed.");
         }
     }
 
