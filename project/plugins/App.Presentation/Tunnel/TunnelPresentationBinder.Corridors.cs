@@ -8,11 +8,44 @@ using Microsoft.Extensions.Logging;
 
 namespace FantaSim.App.Presentation.Tunnel;
 
+/// <summary>
+/// Godot-free style policy for corridor wall, header, and current-plane cue. Keeping the
+/// active/inactive/focused color computation in one place guarantees that <see cref="BuildCorridorHeader"/>,
+/// <see cref="BuildCurrentPlaneCue"/>, and <see cref="UpdateCorridorActivityStyles"/> cannot drift.
+/// </summary>
+internal static class TunnelCorridorActivityStylePolicy
+{
+    public static readonly Color ActiveColor = new(0.30f, 0.55f, 0.62f);
+    public static readonly Color InactiveColor = new(0.42f, 0.44f, 0.46f);
+    public static readonly Color FocusColor = new(0.42f, 0.68f, 0.52f);
+
+    public readonly record struct CorridorStyle(
+        Color WallColor,
+        Color CueColor,
+        Color TitleColor,
+        Color SubtitleColor);
+
+    public static CorridorStyle Resolve(bool isActive, bool isFocused)
+    {
+        var wallColor = isFocused
+            ? FocusColor
+            : (isActive ? ActiveColor : InactiveColor);
+        var titleColor = isFocused
+            ? new Color(1.0f, 0.98f, 0.85f, 0.98f)
+            : (isActive ? new Color(0.92f, 0.94f, 0.97f, 0.94f) : new Color(0.62f, 0.63f, 0.68f, 0.85f));
+        var subtitleColor = isActive
+            ? new Color(0.72f, 0.86f, 0.78f, 0.90f)
+            : new Color(0.55f, 0.56f, 0.60f, 0.80f);
+
+        return new CorridorStyle(wallColor, wallColor, titleColor, subtitleColor);
+    }
+}
+
 internal sealed partial class TunnelPresentationBinder
 {
-    private static readonly Color CorridorActiveColor = new(0.30f, 0.55f, 0.62f);
-    private static readonly Color CorridorInactiveColor = new(0.42f, 0.44f, 0.46f);
-    private static readonly Color CorridorFocusColor = new(0.42f, 0.68f, 0.52f);
+    private static readonly Color CorridorActiveColor = TunnelCorridorActivityStylePolicy.ActiveColor;
+    private static readonly Color CorridorInactiveColor = TunnelCorridorActivityStylePolicy.InactiveColor;
+    private static readonly Color CorridorFocusColor = TunnelCorridorActivityStylePolicy.FocusColor;
     private static readonly Color CurrentPlaneCueColor = new(0.52f, 0.88f, 0.84f);
     private static readonly Color AxialCueColor = new(0.35f, 0.62f, 0.78f);
     private const double CorridorGapDeg = 2.0;
@@ -33,11 +66,26 @@ internal sealed partial class TunnelPresentationBinder
         bool IsFocused,
         float DepthFraction);
 
+    private sealed record CorridorHeaderBinding(
+        Label3D Title,
+        Label3D Subtitle,
+        LayerTrackDescriptor Descriptor,
+        bool IsFocused);
+
+    private sealed record CorridorCueBinding(
+        Node3D Root,
+        MeshInstance3D Slice,
+        LayerTrackDescriptor Descriptor,
+        bool IsFocused,
+        bool IsActive);
+
     private Node3D? _corridorsRoot;
     private Node3D? _fineRailRoot;
     private MeshInstance3D? _fineCursor;
     private readonly List<TunnelFrameBinding> _frameBindings = new();
     private readonly List<CorridorWallBinding> _corridorNodes = new();
+    private readonly List<CorridorHeaderBinding> _corridorHeaders = new();
+    private readonly List<CorridorCueBinding> _corridorCues = new();
 
     // Last-applied corridor active-flag bitmask (one bit per corridor, LSB = first). -1 means
     // "unknown/invalidated" so the next style pass always applies. Reset wherever _corridorNodes is
@@ -70,6 +118,8 @@ internal sealed partial class TunnelPresentationBinder
         _fineRailRoot = null;
         _fineCursor = null;
         _corridorNodes.Clear();
+        _corridorHeaders.Clear();
+        _corridorCues.Clear();
         _lastCorridorActivityMask = -1;
         _hasRequestedFrameWindow = false;
     }
@@ -87,6 +137,8 @@ internal sealed partial class TunnelPresentationBinder
         ReleaseFrameBindings(supersedeWaiters: true);
         ClearChildren(_corridorsRoot!);
         _corridorNodes.Clear();
+        _corridorHeaders.Clear();
+        _corridorCues.Clear();
         _lastCorridorActivityMask = -1;
         _fineRailRoot = null;
         _fineCursor = null;
@@ -185,7 +237,7 @@ internal sealed partial class TunnelPresentationBinder
 
         BuildCorridorHeader(slot.Descriptor, centerAngle, isActive, slot.IsFocused);
 
-        BuildCurrentPlaneCue(slot.Descriptor, centerAngle, color);
+        BuildCurrentPlaneCue(slot.Descriptor, centerAngle, isActive, slot.IsFocused);
 
         if (slot.Descriptor.Content.Type == "filmstrip")
             BuildFilmstripFrames(
@@ -208,6 +260,7 @@ internal sealed partial class TunnelPresentationBinder
             return;
 
         var header = TunnelCorridorHeader.Build(descriptor, isActive);
+        var style = TunnelCorridorActivityStylePolicy.Resolve(isActive, isFocused);
         var rad = Mathf.DegToRad((float)centerAngleDeg);
         var headZ = (float)TunnelCorridorFilmstripPolicy.TrackIdentityLabelZ(
             TunnelCameraFraming.CurrentPlaneZ);
@@ -216,36 +269,33 @@ internal sealed partial class TunnelPresentationBinder
             Mathf.Sin(rad) * (CorridorSurfaceRadius - 0.3f),
             headZ);
 
-        var titleColor = isFocused
-            ? new Color(1.0f, 0.98f, 0.85f, 0.98f)
-            : (isActive ? new Color(0.92f, 0.94f, 0.97f, 0.94f) : new Color(0.62f, 0.63f, 0.68f, 0.85f));
-        var subtitleColor = isActive
-            ? new Color(0.72f, 0.86f, 0.78f, 0.90f)
-            : new Color(0.55f, 0.56f, 0.60f, 0.80f);
-
-        _corridorsRoot!.AddChild(new Label3D
+        var title = new Label3D
         {
             Name = "CorridorHeaderTitle",
             Text = header.Title,
             Position = basePos + new Vector3(0f, 0.22f, 0f),
             Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
             FontSize = 22,
-            Modulate = titleColor,
+            Modulate = style.TitleColor,
             OutlineModulate = new Color(0f, 0f, 0f, 0.70f),
             NoDepthTest = false,
-        });
+        };
 
-        _corridorsRoot!.AddChild(new Label3D
+        var subtitle = new Label3D
         {
             Name = "CorridorHeaderSubtitle",
             Text = header.Subtitle,
             Position = basePos - new Vector3(0f, 0.22f, 0f),
             Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
             FontSize = 14,
-            Modulate = subtitleColor,
+            Modulate = style.SubtitleColor,
             OutlineModulate = new Color(0f, 0f, 0f, 0.60f),
             NoDepthTest = false,
-        });
+        };
+
+        _corridorsRoot!.AddChild(title);
+        _corridorsRoot!.AddChild(subtitle);
+        _corridorHeaders.Add(new CorridorHeaderBinding(title, subtitle, descriptor, isFocused));
     }
 
     private void BuildFilmstripFrames(
@@ -388,11 +438,13 @@ internal sealed partial class TunnelPresentationBinder
     private void BuildCurrentPlaneCue(
         LayerTrackDescriptor descriptor,
         double centerAngleDegrees,
-        Color corridorColor)
+        bool isActive,
+        bool isFocused)
     {
         if (_corridorsRoot is null)
             return;
 
+        var style = TunnelCorridorActivityStylePolicy.Resolve(isActive, isFocused);
         var rad = Mathf.DegToRad((float)centerAngleDegrees);
         var radialDistance = CorridorSurfaceRadius - 0.58f;
         var root = new Node3D
@@ -413,9 +465,10 @@ internal sealed partial class TunnelPresentationBinder
         {
             Name = "CurrentPlaneSlice",
             Mesh = new BoxMesh { Size = new Vector3(1.10f, 0.72f, 0.035f) },
-            MaterialOverride = BuildCueMaterial(corridorColor, 0.075f),
+            MaterialOverride = BuildCueMaterial(style.CueColor, 0.075f),
         };
         root.AddChild(slice);
+        _corridorCues.Add(new CorridorCueBinding(root, slice, descriptor, isFocused, isActive));
 
         var chevronMaterial = BuildCueMaterial(CurrentPlaneCueColor, 0.82f);
         root.AddChild(new MeshInstance3D
@@ -753,27 +806,85 @@ internal sealed partial class TunnelPresentationBinder
         _lastCorridorActivityMask = mask;
 
         bit = 1;
+        var headerIndex = 0;
+        var cueIndex = 0;
         foreach (var binding in _corridorNodes)
         {
             var node = binding.Node;
             var active = (mask & bit) != 0;
             bit <<= 1;
             if (!GodotObject.IsInstanceValid(node))
+            {
+                headerIndex++;
+                cueIndex++;
                 continue;
+            }
 
-            var color = binding.IsFocused
-                ? CorridorFocusColor
-                : (active ? CorridorActiveColor : CorridorInactiveColor);
+            var style = TunnelCorridorActivityStylePolicy.Resolve(active, binding.IsFocused);
             if (node.MaterialOverride is StandardMaterial3D material
                 && GodotObject.IsInstanceValid(material))
             {
-                ApplyCorridorDepthMaterial(material, color, binding.DepthFraction);
+                ApplyCorridorDepthMaterial(material, style.WallColor, binding.DepthFraction);
             }
             else
             {
-                node.MaterialOverride = BuildCorridorDepthMaterial(color, binding.DepthFraction);
+                node.MaterialOverride = BuildCorridorDepthMaterial(style.WallColor, binding.DepthFraction);
             }
+
+            UpdateCorridorHeaderStyle(headerIndex, active, binding.IsFocused, style);
+            UpdateCorridorCueStyle(cueIndex, style);
+            headerIndex++;
+            cueIndex++;
         }
+    }
+
+    private void UpdateCorridorHeaderStyle(
+        int index,
+        bool isActive,
+        bool isFocused,
+        TunnelCorridorActivityStylePolicy.CorridorStyle style)
+    {
+        if (index < 0 || index >= _corridorHeaders.Count)
+            return;
+
+        var binding = _corridorHeaders[index];
+        if (!GodotObject.IsInstanceValid(binding.Title) || !GodotObject.IsInstanceValid(binding.Subtitle))
+            return;
+
+        var header = TunnelCorridorHeader.Build(binding.Descriptor, isActive);
+        binding.Title.Text = header.Title;
+        binding.Title.Modulate = style.TitleColor;
+        binding.Subtitle.Text = header.Subtitle;
+        binding.Subtitle.Modulate = style.SubtitleColor;
+    }
+
+    private void UpdateCorridorCueStyle(
+        int index,
+        TunnelCorridorActivityStylePolicy.CorridorStyle style)
+    {
+        if (index < 0 || index >= _corridorCues.Count)
+            return;
+
+        var binding = _corridorCues[index];
+        if (!GodotObject.IsInstanceValid(binding.Slice))
+            return;
+
+        if (binding.Slice.MaterialOverride is StandardMaterial3D material
+            && GodotObject.IsInstanceValid(material))
+        {
+            ApplyCueMaterial(material, style.CueColor, 0.075f);
+        }
+        else
+        {
+            binding.Slice.MaterialOverride = BuildCueMaterial(style.CueColor, 0.075f);
+        }
+    }
+
+    private static void ApplyCueMaterial(StandardMaterial3D material, Color color, float alpha)
+    {
+        var tinted = new Color(color.R, color.G, color.B, alpha);
+        material.AlbedoColor = tinted;
+        material.Emission = new Color(color.R, color.G, color.B, 1f);
     }
 
     private void ScheduleCorridorRequestRebuild()

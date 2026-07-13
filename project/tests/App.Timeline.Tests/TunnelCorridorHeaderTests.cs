@@ -62,4 +62,30 @@ public sealed class TunnelCorridorHeaderTests
 
         Assert.Equal("active", header.Subtitle);
     }
+
+    [Fact]
+    public void Build_ActiveToInactive_TransitionChangesSubtitleAndFlag()
+    {
+        var descriptor = Descriptor();
+        var active = TunnelCorridorHeader.Build(descriptor, isActive: true);
+        var inactive = TunnelCorridorHeader.Build(descriptor, isActive: false);
+
+        Assert.True(active.IsActive);
+        Assert.False(inactive.IsActive);
+        Assert.Equal("ka · active", active.Subtitle);
+        Assert.Equal("ka · inactive", inactive.Subtitle);
+    }
+
+    [Fact]
+    public void Build_InactiveToActive_TransitionChangesSubtitleAndFlag()
+    {
+        var descriptor = Descriptor();
+        var inactive = TunnelCorridorHeader.Build(descriptor, isActive: false);
+        var active = TunnelCorridorHeader.Build(descriptor, isActive: true);
+
+        Assert.False(inactive.IsActive);
+        Assert.True(active.IsActive);
+        Assert.Equal("ka · inactive", inactive.Subtitle);
+        Assert.Equal("ka · active", active.Subtitle);
+    }
 }
