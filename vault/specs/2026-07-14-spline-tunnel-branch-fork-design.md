@@ -96,10 +96,12 @@ Contract:
 
 ### 3.2 Binder mapping
 
-- `TunnelPresentationBinder.Rings.cs`: rung-ring planes placed at `Evaluate(depth)` position
-  with the transported frame instead of straight-Z offsets.
-- `TunnelPresentationBinder.Corridors.cs`: corridor wall quads / filmstrip frames follow the
-  same frames (per-segment placement; corridors bend with the bore for free).
+- `TunnelPresentationBinder.Corridors.cs`: corridor wall sector meshes and filmstrip frames
+  follow the spline frames (per-segment placement; corridors bend with the bore for free).
+  The `Rings.cs` partial is the camera-anchored cockpit instrument, NOT bore geometry — it is
+  explicitly untouched; no rung rings exist in the bore since the asymmetric-cockpit redesign.
+- `TunnelPresentationBinder.cs` `BuildDarkShell`: shell bands beyond the straight window get
+  the same segment treatment; the mouth-side shell (behind the current plane) stays legacy.
 - The seed is the stable hash of the active branch's stream-identity branch axis (today:
   `main`), so future branches naturally get distinct but deterministic bends.
 - Interactive depth window asserted ⊆ straight window by test, so no input mapper changes.
