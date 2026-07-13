@@ -54,6 +54,7 @@ public sealed class TunnelInputPolicyTests
 
         Assert.Equal(new NumericsVector3(1.0f, 2.0f, 3.0f), policy.OriginalScale);
         Assert.Equal(1.0f, policy.CurrentZoomScale);
+        Assert.True(policy.HandleWheel(direction: 1).Handled);
     }
 
     [Fact]
@@ -76,6 +77,7 @@ public sealed class TunnelInputPolicyTests
 
         Assert.Null(policy.OriginalScale);
         Assert.Equal(1.0f, policy.CurrentZoomScale);
+        Assert.False(policy.HandleWheel(direction: 1).Handled);
     }
 
     [Fact]

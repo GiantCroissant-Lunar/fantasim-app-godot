@@ -790,16 +790,16 @@ internal sealed partial class TunnelPresentationBinder
         // schedule boundaries — not on most drag frames. Recompute the small active-flag mask (cheap
         // schedule lookups) and early-out before touching any material when it is unchanged, so a
         // scrub does not rewrite ~10 properties per corridor every frame for an identical result.
+        var activityByDescriptor = new Dictionary<(string SphereId, string LayerId), bool>();
         var mask = 0;
         var bit = 1;
-        foreach (var binding in _corridorNodes)
+        foreach (var binding in _corridorHeaders)
         {
-            if (GodotObject.IsInstanceValid(binding.Node)
-                && TunnelTrackActivity.IsActive(
-                    binding.Descriptor, tick, _ctl.GeosphereSchedule, _ctl.AtmosphereSchedule))
-            {
+            var active = TunnelTrackActivity.IsActive(
+                binding.Descriptor, tick, _ctl.GeosphereSchedule, _ctl.AtmosphereSchedule);
+            activityByDescriptor[(binding.Descriptor.SphereId, binding.Descriptor.LayerId)] = active;
+            if (active)
                 mask |= bit;
-            }
             bit <<= 1;
         }
 
@@ -807,20 +807,14 @@ internal sealed partial class TunnelPresentationBinder
             return;
         _lastCorridorActivityMask = mask;
 
-        bit = 1;
-        var headerIndex = 0;
-        var cueIndex = 0;
         foreach (var binding in _corridorNodes)
         {
             var node = binding.Node;
-            var active = (mask & bit) != 0;
-            bit <<= 1;
-            if (!GodotObject.IsInstanceValid(node))
-            {
-                headerIndex++;
-                cueIndex++;
+            if (!GodotObject.IsInstanceValid(node)
+                || !activityByDescriptor.TryGetValue(
+                    (binding.Descriptor.SphereId, binding.Descriptor.LayerId),
+                    out var active))
                 continue;
-            }
 
             var style = TunnelCorridorActivityStylePolicy.Resolve(active, binding.IsFocused);
             if (node.MaterialOverride is StandardMaterial3D material
@@ -832,10 +826,30 @@ internal sealed partial class TunnelPresentationBinder
             {
                 node.MaterialOverride = BuildCorridorDepthMaterial(style.WallColor, binding.DepthFraction);
             }
+        }
 
+        var headerIndex = 0;
+        foreach (var binding in _corridorHeaders)
+        {
+            var active = activityByDescriptor[(binding.Descriptor.SphereId, binding.Descriptor.LayerId)];
+            var style = TunnelCorridorActivityStylePolicy.Resolve(active, binding.IsFocused);
             UpdateCorridorHeaderStyle(headerIndex, active, binding.IsFocused, style);
-            UpdateCorridorCueStyle(cueIndex, style);
             headerIndex++;
+        }
+
+        var cueIndex = 0;
+        foreach (var binding in _corridorCues)
+        {
+            if (!activityByDescriptor.TryGetValue(
+                    (binding.Descriptor.SphereId, binding.Descriptor.LayerId),
+                    out var active))
+            {
+                cueIndex++;
+                continue;
+            }
+
+            var style = TunnelCorridorActivityStylePolicy.Resolve(active, binding.IsFocused);
+            UpdateCorridorCueStyle(cueIndex, style);
             cueIndex++;
         }
     }

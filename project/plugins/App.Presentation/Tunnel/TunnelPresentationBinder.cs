@@ -292,6 +292,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
             {
                 Name = "TunnelInputRelay",
                 OnInput = e => HandleInputEvent(e),
+                OnUnhandledInput = e => HandleUnhandledInputEvent(e),
                 OnProcess = d => ConsumeTunnelFrame(d),
                 OnCancel = r => CancelTunnelGesture(r),
                 OnError = ex => _log.LogError(ex, "Tunnel input handler threw; gesture cancelled and event consumed."),

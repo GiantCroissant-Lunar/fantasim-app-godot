@@ -77,11 +77,13 @@ internal sealed class TunnelInputPolicy
 
     public void OnTunnelEnabled(NumericsVector3 originalScale)
     {
+        _enabled = true;
         OriginalScale ??= originalScale;
     }
 
     public void OnTunnelDisabled()
     {
+        _enabled = false;
         OriginalScale = null;
         CurrentZoomScale = TunnelPlanetZoom.DefaultScale;
     }
@@ -240,16 +242,25 @@ internal sealed partial class TunnelPresentationBinder
                 return HandleOwnedRelease(released);
             case InputEventMouseMotion motion when _gestureOwned:
                 return HandleOwnedMotion(motion);
-        case InputEventMouseButton { ButtonIndex: MouseButton.WheelUp, Pressed: true }:
-            return HandleWheel(+1);
-        case InputEventMouseButton { ButtonIndex: MouseButton.WheelDown, Pressed: true }:
-            return HandleWheel(-1);
             case InputEventKey { Pressed: true, Echo: false, Keycode: Key.F9 }:
                 RouteTunnelToggleThroughCommand();
                 return true;
             default:
                 return false;
         }
+    }
+
+    private bool HandleUnhandledInputEvent(InputEvent @event)
+    {
+        if (_disposed)
+            return false;
+
+        return @event switch
+        {
+            InputEventMouseButton { ButtonIndex: MouseButton.WheelUp, Pressed: true } => HandleWheel(+1),
+            InputEventMouseButton { ButtonIndex: MouseButton.WheelDown, Pressed: true } => HandleWheel(-1),
+            _ => false,
+        };
     }
 
     // F9 no longer flips this binder directly: every enable path (command, F9) must flow through

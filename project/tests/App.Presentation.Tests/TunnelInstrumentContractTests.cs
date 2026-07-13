@@ -200,6 +200,35 @@ public sealed class TunnelInstrumentContractTests
         Assert.Contains("new GuardedFineInspectionSink", input, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Wheel_zoom_runs_after_gui_input_and_corridor_activity_is_keyed_by_logical_track()
+    {
+        var relay = File.ReadAllText(ProjectFile(
+            "project/plugins/App.Presentation/Tunnel/TunnelInputRelay.cs"));
+        var binder = File.ReadAllText(ProjectFile(
+            "project/plugins/App.Presentation/Tunnel/TunnelPresentationBinder.cs"));
+        var input = File.ReadAllText(ProjectFile(
+            "project/plugins/App.Presentation/Tunnel/TunnelPresentationBinder.Input.cs"));
+        var corridors = File.ReadAllText(ProjectFile(
+            "project/plugins/App.Presentation/Tunnel/TunnelPresentationBinder.Corridors.cs"));
+
+        Assert.Contains("public override void _UnhandledInput(InputEvent @event)", relay, StringComparison.Ordinal);
+        Assert.Contains("OnUnhandledInput = e => HandleUnhandledInputEvent(e)", binder, StringComparison.Ordinal);
+
+        var primaryStart = input.IndexOf("private bool HandleInputEvent", StringComparison.Ordinal);
+        var unhandledStart = input.IndexOf("private bool HandleUnhandledInputEvent", StringComparison.Ordinal);
+        Assert.True(primaryStart >= 0 && unhandledStart > primaryStart,
+            "Tunnel input must expose distinct primary and GUI-after input handlers.");
+        Assert.DoesNotContain("MouseButton.Wheel", input[primaryStart..unhandledStart], StringComparison.Ordinal);
+        Assert.Contains("MouseButton.WheelUp", input[unhandledStart..], StringComparison.Ordinal);
+        Assert.Contains("MouseButton.WheelDown", input[unhandledStart..], StringComparison.Ordinal);
+
+        Assert.Contains("activityByDescriptor", corridors, StringComparison.Ordinal);
+        Assert.Contains("foreach (var binding in _corridorNodes)", corridors, StringComparison.Ordinal);
+        Assert.Contains("foreach (var binding in _corridorHeaders)", corridors, StringComparison.Ordinal);
+        Assert.Contains("foreach (var binding in _corridorCues)", corridors, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(0L, 0f)]
     [InlineData(250L, -90f)]
