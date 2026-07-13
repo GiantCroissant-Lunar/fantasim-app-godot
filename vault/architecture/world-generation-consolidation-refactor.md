@@ -1,5 +1,11 @@
 # World generation consolidation and refactor plan
 
+> **2026-07-13 authority update:** canonical history/checkpoint/cache ownership, app `.rot` truth
+> adoption, the `WorldRuntime` rename, and the signed dry-crust relief gate are now specified by
+> `vault/specs/2026-07-13-canonical-world-history-and-dry-crust-design.md`. In particular, the
+> existing persisted crust product is a disposable cache and must not be promoted to canonical
+> checkpoint truth.
+
 > **AUDIT (2026-07-06, code-verified):** CURRENT with drift — the parameterless `GetPlanetPresentationAsync()` this doc lists in the active path is now BANNED (station contract 3 / C3 conformance gate; `Rebind()` is tick-addressed); `Continents` mode postdates this doc; Phase 5 (Seam fate) remains open. _(See the authority index in `vault/README.md`.)_
 
 

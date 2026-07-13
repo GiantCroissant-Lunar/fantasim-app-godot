@@ -1,6 +1,6 @@
 # Runtime geodata import boundary
 
-> **AUDIT (2026-07-06, code-verified):** slices 1–2 landed in fantasim-world under `Geosphere.Plate.Rotation.Stream` (the fallback placement); slices 3–5 (app import seam, shapefile) unbuilt; the bytes-not-paths boundary doctrine remains the live rule. _(See the authority index in `vault/README.md`.)_
+> **AUDIT (2026-07-13, code-verified):** slices 1–2 landed in fantasim-world under `Geosphere.Plate.Rotation.Stream`; `RotationModelMaterializer` also exists in the engine. The app still bypasses both through direct `ImportedRotationProvider` construction. Slice 3 is superseded and made precise by `vault/specs/2026-07-13-canonical-world-history-and-dry-crust-design.md`: drafts append through the actor writer and committed semantic events are replay authority. Raw-import provenance artifact storage is specified there but lands with its checkpoint/artifact phase, not app slice 3. Slices 4–5 remain unbuilt. The bytes-not-paths boundary doctrine remains live. _(See the authority index in `vault/README.md`.)_
 
 
 **Status:** Architecture note and implementation direction (2026-06-24)
@@ -364,4 +364,3 @@ Deliverable should be a neutral payload schema and C# adapter boundary, not dire
 Implement `.rot` first as a world-native C# parser plus adapter. It is small, directly maps to existing `PlateRotationPayload`, and is important for deterministic replay.
 
 Treat shapefile import as a separate spike. Use iii for authoring-time geospatial normalization, but prefer a packaged importer if runtime exported-app shapefile import is a product requirement. In both cases, final conversion into topology, fields, products, or truth streams remains C# world-side.
-
