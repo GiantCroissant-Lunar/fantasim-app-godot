@@ -55,6 +55,9 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
     private int _focusIndex = -1;
     private IReadOnlyList<LayerTrackDescriptor> _sourceTracks = Array.Empty<LayerTrackDescriptor>();
 
+    private TunnelBoreSpline? _boreSpline;
+    private long _boreSeed;
+
     private double _lastPointerAngleDeg;
     private TunnelFineTrackBinding _fineBinding;
     private TunnelFinePreview _finePreview;
@@ -783,6 +786,22 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         return BuildMeshFromArrays(vertices, normals, uvs);
     }
 
+    private TunnelBoreSpline EnsureBoreSpline(string? branchId)
+    {
+        var seed = TunnelBoreSeedPolicy.SeedFor(branchId);
+        if (_boreSpline is null || _boreSeed != seed)
+        {
+            _boreSeed = seed;
+            _boreSpline = TunnelBoreSpline.Create(
+                seed,
+                TunnelBoreContract.StraightRadius,
+                TunnelBoreContract.CurvatureCapRadPerUnit,
+                maxDepth: TunnelCameraFraming.TimelineDepth);
+        }
+
+        return _boreSpline;
+    }
+
     private void BuildDarkShell()
     {
         if (_mount is null)
@@ -796,29 +815,69 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         _mount.AddChild(shellRoot);
 
         var bands = TunnelShellDepthPolicy.Plan(MouthZ, ThroatZ);
+        var spline = EnsureBoreSpline(ResolveActiveBranchId());
         for (var index = 0; index < bands.Count; index++)
         {
             var band = bands[index];
-            var shellMesh = BuildCylinderSectorMesh(
-                0.0,
-                360.0,
-                TunnelRadius,
-                band.NearZ,
-                band.FarZ,
-                angularStepDeg: 6.0);
-            if (shellMesh is null)
-                continue;
 
-            shellRoot.AddChild(new MeshInstance3D
+            // Mouth-side and fully-straight bands (depth <= StraightRadius, including the
+            // negative-depth region behind the current plane) bypass the planner and keep the
+            // exact legacy single-mesh path; band 0's "Shell" name is a validity-gate contract.
+            if (DepthOfZ(band.FarZ) <= TunnelBoreContract.StraightRadius)
             {
-                // EnsureMounted's validity gate resolves the first band by this stable path.
-                Name = index == 0 ? "Shell" : $"ShellDepth{index}",
-                Mesh = shellMesh,
-                MaterialOverride = BuildUnlitMaterial(new Color(
-                    band.Value * 0.82f,
-                    band.Value * 0.91f,
-                    band.Value)),
-            });
+                var shellMesh = BuildCylinderSectorMesh(
+                    0.0,
+                    360.0,
+                    TunnelRadius,
+                    band.NearZ,
+                    band.FarZ,
+                    angularStepDeg: 6.0);
+                if (shellMesh is null)
+                    continue;
+
+                shellRoot.AddChild(new MeshInstance3D
+                {
+                    // EnsureMounted's validity gate resolves the first band by this stable path.
+                    Name = index == 0 ? "Shell" : $"ShellDepth{index}",
+                    Mesh = shellMesh,
+                    MaterialOverride = BuildUnlitMaterial(new Color(
+                        band.Value * 0.82f,
+                        band.Value * 0.91f,
+                        band.Value)),
+                });
+                continue;
+            }
+
+            var segments = TunnelBoreSegments.Plan(
+                spline,
+                DepthOfZ(band.NearZ),
+                DepthOfZ(band.FarZ),
+                TunnelBoreContract.MaxSegmentLength);
+            for (var s = 0; s < segments.Count; s++)
+            {
+                var segment = segments[s];
+                var shellMesh = BuildCylinderSectorMesh(
+                    0.0,
+                    360.0,
+                    TunnelRadius,
+                    (float)segment.HalfLength,
+                    (float)-segment.HalfLength,
+                    angularStepDeg: 6.0);
+                if (shellMesh is null)
+                    continue;
+
+                shellRoot.AddChild(new MeshInstance3D
+                {
+                    Name = $"ShellDepth{index}_Seg{s}",
+                    Mesh = shellMesh,
+                    MaterialOverride = BuildUnlitMaterial(new Color(
+                        band.Value * 0.82f,
+                        band.Value * 0.91f,
+                        band.Value)),
+                    Position = BoreWorldPosition(segment.Frame),
+                    Basis = BoreBasis(segment.Frame),
+                });
+            }
         }
     }
 

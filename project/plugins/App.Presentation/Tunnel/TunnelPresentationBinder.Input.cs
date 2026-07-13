@@ -667,7 +667,12 @@ internal sealed partial class TunnelPresentationBinder
         if (!TryBuildMountLocalRay(screenPosition, camera, out var ray, out _))
             return false;
 
-        return TunnelRayHitMapper.TryIntersectCylinder(ray, CorridorSurfaceRadius, ThroatZ, MouthZ, out wallLocal);
+        return TunnelRayHitMapper.TryIntersectCylinder(
+            ray,
+            CorridorSurfaceRadius,
+            TunnelBoreContract.InteractiveThroatZ(TunnelCameraFraming.CurrentPlaneZ),
+            MouthZ,
+            out wallLocal);
     }
 
     private bool IsPlanetOccludingWall(Vector2 screenPosition, Camera3D camera, TunnelPoint3 wallLocal)

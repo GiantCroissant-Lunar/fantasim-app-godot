@@ -62,7 +62,7 @@ partials, xUnit.
     `Right = (1,0,0)`, `Up = (0,1,0)` — positions are RELATIVE to the current plane; the binder
     adds `CurrentPlaneZ`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```csharp
 using FantaSim.App.Presentation.Tunnel;
@@ -205,12 +205,12 @@ public sealed class TunnelBoreSplineTests
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `dotnet test project/tests/App.Presentation.Tests/App.Presentation.Tests.csproj --nologo -v minimal --filter "FullyQualifiedName~TunnelBoreSplineTests"`
 Expected: FAIL — `TunnelBoreSpline` / `TunnelBoreContract` not defined.
 
-- [ ] **Step 3: Implement the module**
+- [x] **Step 3: Implement the module**
 
 ```csharp
 using System;
@@ -383,7 +383,7 @@ after NLerp interpolation of nearly-parallel neighbors (step is 0.05, so neighbo
 apart — it will not), re-orthogonalize `right = (up × forward).Normalize()` style inside
 `Evaluate` rather than loosening the test.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `dotnet test project/tests/App.Presentation.Tests/App.Presentation.Tests.csproj --nologo -v minimal --filter "FullyQualifiedName~TunnelBoreSplineTests"`
 Expected: PASS (8 tests).
@@ -403,7 +403,7 @@ Expected: PASS (8 tests).
   - `internal static class TunnelBoreSegments` with
     `internal static IReadOnlyList<TunnelBoreSegment> Plan(TunnelBoreSpline spline, double nearDepth, double farDepth, double maxSegmentLength)`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```csharp
 using System.Collections.Generic;
@@ -481,12 +481,12 @@ public sealed class TunnelBoreSegmentsTests
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `dotnet test project/tests/App.Presentation.Tests/App.Presentation.Tests.csproj --nologo -v minimal --filter "FullyQualifiedName~TunnelBoreSegmentsTests"`
 Expected: FAIL — `TunnelBoreSegments` not defined.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```csharp
 using System;
@@ -550,7 +550,7 @@ internal static class TunnelBoreSegments
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `dotnet test project/tests/App.Presentation.Tests/App.Presentation.Tests.csproj --nologo -v minimal --filter "FullyQualifiedName~TunnelBoreSegmentsTests"`
 Expected: PASS (5 tests).
@@ -568,7 +568,7 @@ Expected: PASS (5 tests).
   `internal static long SeedFor(string? branchId)` — FNV-1a 64-bit over the ordinal UTF-16 code
   units of the trimmed branch id; null/empty/whitespace falls back to `"main"`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```csharp
 using FantaSim.App.Presentation.Tunnel;
@@ -607,12 +607,12 @@ implementation matches the spec below EXACTLY (offset basis 14695981039346656037
 golden constant ONLY if you had to correct the implementation to match this spec, and say so in
 AGENT-SUMMARY.md.
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `dotnet test project/tests/App.Presentation.Tests/App.Presentation.Tests.csproj --nologo -v minimal --filter "FullyQualifiedName~TunnelBoreSeedPolicyTests"`
 Expected: FAIL — `TunnelBoreSeedPolicy` not defined.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```csharp
 using System;
@@ -644,8 +644,8 @@ internal static class TunnelBoreSeedPolicy
 }
 ```
 
-- [ ] **Step 4: Run tests, verify pass** (same filter). Expected: PASS (4 tests; see the golden-
-value note in Step 1 if the constant needed correction).
+- [x] **Step 4: Run tests, verify pass** (same filter). Expected: PASS (4 tests; see the golden-
+  value note in Step 1 if the constant needed correction).
 
 ---
 
@@ -667,7 +667,7 @@ modify `TunnelRayHitMapper` itself.
 - Produces: `internal static float InteractiveThroatZ(float currentPlaneZ)` on
   `TunnelBoreContract` — the deepest Z wall picking may accept.
 
-- [ ] **Step 1: Write the failing test** (append to `TunnelBoreSplineTests`):
+- [x] **Step 1: Write the failing test** (append to `TunnelBoreSplineTests`):
 
 ```csharp
 [Fact]
@@ -682,10 +682,10 @@ public void Interactive_window_is_inside_the_straight_window()
 }
 ```
 
-- [ ] **Step 2: Run it, verify FAIL** (method not defined):
+- [x] **Step 2: Run it, verify FAIL** (method not defined):
 `dotnet test project/tests/App.Presentation.Tests/App.Presentation.Tests.csproj --nologo -v minimal --filter "FullyQualifiedName~Interactive_window_is_inside_the_straight_window"`
 
-- [ ] **Step 3: Implement.** Add to `TunnelBoreContract`:
+- [x] **Step 3: Implement.** Add to `TunnelBoreContract`:
 
 ```csharp
 internal static float InteractiveThroatZ(float currentPlaneZ)
@@ -706,7 +706,7 @@ return TunnelRayHitMapper.TryIntersectCylinder(
 (Confirm the local names `ThroatZ`/`MouthZ` at that site resolve to the
 `TunnelCameraFraming` constants; keep `MouthZ` exactly as-is.)
 
-- [ ] **Step 4: Run both suites' pick-related tests:**
+- [x] **Step 4: Run both suites' pick-related tests:**
 `dotnet test project/tests/App.Timeline.Tests/App.Timeline.Tests.csproj --nologo -v minimal --filter "FullyQualifiedName~TunnelRayHitMapper|FullyQualifiedName~TunnelGestureCoordinator"`
 Expected: PASS — the mapper is untouched; if any gesture test asserted picks deeper than
 Z = -12.5, STOP and record it in AGENT-SUMMARY.md instead of weakening the test (that would mean
@@ -728,7 +728,7 @@ the interactive window is genuinely deeper than the straight window and the lead
   `TunnelBoreContract` (Tasks 1-3).
 - Produces: `_boreSpline` field + `EnsureBoreSpline(string? branchId)` used by Tasks 6-7.
 
-- [ ] **Step 1: Add the spline field and helpers.** In `TunnelPresentationBinder.cs` add:
+- [x] **Step 1: Add the spline field and helpers.** In `TunnelPresentationBinder.cs` add:
 
 ```csharp
 private TunnelBoreSpline? _boreSpline;
@@ -774,7 +774,7 @@ negation on the third column. Wait — verify against the straight case: for the
 (Forward=(0,0,-1)) this yields the identity basis, which must leave today's rendering
 byte-identical. That is the correctness gate for the mapping.)
 
-- [ ] **Step 2: Replace the wall band loop.** The current loop builds one mesh per depth band
+- [x] **Step 2: Replace the wall band loop.** The current loop builds one mesh per depth band
 with world-Z extents baked into the mesh (`BuildCylinderSectorMesh(start, span, radius,
 band.NearZ, band.FarZ)`) and leaves the node at the origin. Replace the body with
 segment-planned placement — geometry LOCAL, transform on the node:
@@ -832,8 +832,8 @@ code produced (same vertices in world space). Read `BuildCylinderSectorMesh` to 
 no other dependency on absolute Z (if it derives UVs or tone from Z, parameterize with the
 band's `DepthFraction`, which you already have).
 
-- [ ] **Step 3: Run the presentation suites** (no new tests in this task — the pure modules are
-tested; the binder is exercised by the windowed gate):
+- [x] **Step 3: Run the presentation suites** (no new tests in this task — the pure modules are
+  tested; the binder is exercised by the windowed gate):
 `dotnet test project/tests/App.Presentation.Tests/App.Presentation.Tests.csproj --nologo -v minimal`
 Expected: PASS, all existing tests unchanged.
 
@@ -848,7 +848,7 @@ Expected: PASS, all existing tests unchanged.
 **Interfaces:**
 - Consumes: `EnsureBoreSpline`, `BoreWorldPosition`, `BoreBasis`, `DepthOfZ` (Task 5).
 
-- [ ] **Step 1: Replace the frame-center computation.** Current code:
+- [x] **Step 1: Replace the frame-center computation.** Current code:
 
 ```csharp
 var frameCenter = new Vector3(
@@ -879,7 +879,7 @@ For depths inside the straight window the result is bit-identical to today (iden
 same Z), so near-field filmstrips — including everything the fine-preview scheduler touches —
 are untouched.
 
-- [ ] **Step 2: Run both suites:**
+- [x] **Step 2: Run both suites:**
 `dotnet test project/tests/App.Presentation.Tests/App.Presentation.Tests.csproj --nologo -v minimal && dotnet test project/tests/App.Timeline.Tests/App.Timeline.Tests.csproj --nologo -v minimal`
 Expected: PASS.
 
@@ -897,7 +897,7 @@ Expected: PASS.
   in Corridors.cs, so both partials share one copy — they are one partial class, so file
   placement is a readability choice; keep exactly one definition).
 
-- [ ] **Step 1: Apply the same segment treatment** to the shell bands from
+- [x] **Step 1: Apply the same segment treatment** to the shell bands from
 `TunnelShellDepthPolicy.Plan(MouthZ, ThroatZ)`: bands entirely at depth ≤
 `TunnelBoreContract.StraightRadius` (including everything behind the current plane toward the
 mouth, whose depth is negative) keep today's exact single-mesh path — DO NOT change the
@@ -909,20 +909,20 @@ Note: `TunnelBoreSegments.Plan` returns nothing for `farDepth <= nearDepth`, and
 (mouth-side) bands must simply bypass the planner — guard with
 `if (DepthOfZ(band.FarZ) <= TunnelBoreContract.StraightRadius) { /* legacy single-mesh path */ }`.
 
-- [ ] **Step 2: Run the full presentation suite.** Expected: PASS.
+- [x] **Step 2: Run the full presentation suite.** Expected: PASS.
 
 ---
 
 ### Task 8: Full-suite gate + handoff summary
 
-- [ ] **Step 1:**
+- [x] **Step 1:**
 `dotnet test project/tests/App.Presentation.Tests/App.Presentation.Tests.csproj --nologo -v minimal`
 Expected: PASS — 232 pre-existing + 18 new (8 spline, 5 segments, 4 seed, 1 interactive-window)
 = 250; report the exact count.
-- [ ] **Step 2:**
+- [x] **Step 2:**
 `dotnet test project/tests/App.Timeline.Tests/App.Timeline.Tests.csproj --nologo -v minimal`
 Expected: PASS — 339, unchanged (Task 4 touches no seam code).
-- [ ] **Step 3:** Write `AGENT-SUMMARY.md` at the repo root: files changed, RED→GREEN evidence
+- [x] **Step 3:** Write `AGENT-SUMMARY.md` at the repo root: files changed, RED→GREEN evidence
 (exact test summary lines), the golden-seed note if applicable, any place where the actual code
 shape forced a deviation from this plan (name the deviation explicitly — do not silently adapt),
 and confirmation that nothing was committed.

@@ -231,3 +231,82 @@ Assumptions / notes: the "(b) no marker appended" proof observes authority throu
 drift), reusing the existing imported-vs-generated observable so no Service test hook was added. The
 Defect 2 fixture uses the materializer default anchor `"000"`. The spec's "5 oracle tests" is an
 approximation — the oracle file has 3 `[Fact]` methods; production kinematics satisfies the contract.
+
+## Spline tunnel slice 1 — bent bore — 2026-07-14
+
+Implementation of `vault/plans/2026-07-14-spline-tunnel-slice1-plan.md` (spec:
+`vault/specs/2026-07-14-spline-tunnel-branch-fork-design.md` §1.1, §3). All 8 tasks executed
+top-to-bottom with TDD verify-fail / verify-pass gates. **Nothing committed/staged/pushed — all in
+the working tree.**
+
+### Files changed
+
+New (production, Godot-free pure module):
+- `project/plugins/App.Presentation/Tunnel/TunnelBoreSpline.cs` — `TunnelBoreContract` (constants +
+  `InteractiveThroatZ`), `TunnelBoreFrame` record, `TunnelBoreSpline` (deterministic centerline,
+  UnifyMaths `Vector3D`/`Quaternion`, parallel-transport frames, smoothstep curvature ramp).
+- `project/plugins/App.Presentation/Tunnel/TunnelBoreSegments.cs` — `TunnelBoreSegment` record +
+  `TunnelBoreSegments.Plan` (chops a depth band into chord segments; straight part stays one exact
+  segment, curved remainder subdivided to `MaxSegmentLength`).
+- `project/plugins/App.Presentation/Tunnel/TunnelBoreSeedPolicy.cs` — FNV-1a 64-bit seed over UTF-16
+  code units; null/empty/whitespace → "main".
+
+New (tests):
+- `TunnelBoreSplineTests.cs` (9 cases incl. Task-4 append), `TunnelBoreSegmentsTests.cs` (5),
+  `TunnelBoreSeedPolicyTests.cs` (6).
+
+Modified (binder partials — Godot types only here, per T4 rule):
+- `TunnelPresentationBinder.cs` — `_boreSpline`/`_boreSeed` fields + `EnsureBoreSpline`;
+  `BuildDarkShell` segment-plans bands past the straight radius while mouth-side/fully-straight bands
+  keep the exact legacy single-mesh path (band 0's "Shell" validity-gate name preserved).
+- `TunnelPresentationBinder.Corridors.cs` — `DepthOfZ`/`BoreWorldPosition`/`BoreBasis`/
+  `ResolveActiveBranchId` helpers; corridor wall band loop → segment-planned placement (local
+  symmetric mesh + node `Position`/`Basis`); `BuildFilmstripFrames` frame-center applies the lateral
+  offset inside the bore frame.
+- `TunnelPresentationBinder.Input.cs` — single additive change at the wall-pick site:
+  `ThroatZ` → `TunnelBoreContract.InteractiveThroatZ(TunnelCameraFraming.CurrentPlaneZ)` so picking
+  never sees bent geometry. `MouthZ` kept as-is; `TunnelRayHitMapper` untouched.
+
+Modified (vault, the one allowed vault edit): plan checkboxes checked off.
+
+### RED → GREEN evidence (verbatim summary lines)
+
+- Task 1 TunnelBoreSpline: RED `CS0246 TunnelBoreSpline not found` → GREEN `Passed: 9, Total: 9`.
+- Task 2 TunnelBoreSegments: RED `CS0103 TunnelBoreSegments does not exist` → GREEN `Passed: 5, Total: 5`.
+- Task 3 TunnelBoreSeedPolicy: RED `CS0103 TunnelBoreSeedPolicy does not exist` → GREEN
+  `Passed: 6, Total: 6` (after golden-value correction below).
+- Task 4 guard: RED `CS0117 InteractiveThroatZ not defined` → GREEN presentation `Passed: 1`;
+  pick-related Timeline `Passed: 46, Total: 46` (no gesture test asserted picks deeper than Z=-12.5).
+- Tasks 5/6/7: full presentation suite `Passed: 253` + timeline `Passed: 339`, 0 failed throughout.
+- Task 8 final gate: Presentation `Passed: 253, Total: 253`; Timeline `Passed: 339, Total: 339`.
+
+### Golden-seed note (Task 3)
+
+The plan's draft golden `unchecked((long)0xC29FDD00E9E48F0EUL)` did not match the spec algorithm.
+The implementation matches the spec exactly (FNV-1a-64, basis 14695981039346656037, prime
+1099511628211, per-char low-then-high byte). Actual hash of `"main"` is `0xd9454cea63131806` →
+the test constant was corrected to `unchecked((long)0xd9454cea63131806UL)`; the implementation was
+not changed (per the plan's Step-1 instruction). Provenance is documented inline in the test.
+
+### Deviations from the plan (rule 5)
+
+Only the golden-seed correction above. No other deviations — actual code shapes matched the plan's
+assumptions: `BuildCylinderSectorMesh` has no absolute-Z dependency (UVs fixed, normals radial, tone
+from material); UnifyMaths API (`Quaternion.FromAxisAngle`/`.Rotate`/`Vector3D.Normalize()`) confirmed
+from `GeneratedEulerPoleRotationProvider.cs` and `BoundaryArcSampler.cs`; the straight window is
+bit-identical (identity `Basis` + symmetric local mesh = same world vertices, verified by hand).
+
+### Acceptance-gate reconciliation
+
+Plan says "232 pre-existing + 18 new = 250". Pre-existing 232 matches exactly. The "18 new" counts
+test methods; xUnit's `Total` counts cases (Theories expand), so the actual new-case count is 21
+(9+5+6+1) and the presentation total is 253. Every prescribed test method is present and green; no
+plan test was added, removed, or weakened.
+
+### Constraints honored
+
+Godot-free pure math on UnifyMaths types; Godot types only in binder partials. Deterministic (no
+Random/wall-clock/Guid). Straight window bit-identical for depth ≤ 7.5. Did not modify
+`TunnelCameraFraming`, `Rings.cs`, `TunnelRayHitMapper`, scrub/fine-preview, planet occlusion, the 2D
+face, any csproj, or `collectible-bundles.json`. Windowed/visual gate is the lead's job — no Godot
+app was run or exported.

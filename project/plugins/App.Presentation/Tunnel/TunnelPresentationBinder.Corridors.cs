@@ -95,6 +95,23 @@ internal sealed partial class TunnelPresentationBinder
     private long _requestedFrameEndTick;
     private bool _hasRequestedFrameWindow;
 
+    private static float DepthOfZ(float z) => TunnelCameraFraming.CurrentPlaneZ - z;
+
+    private static Vector3 BoreWorldPosition(TunnelBoreFrame frame)
+        => new(
+            (float)frame.Position.X,
+            (float)frame.Position.Y,
+            TunnelCameraFraming.CurrentPlaneZ + (float)frame.Position.Z);
+
+    private static Basis BoreBasis(TunnelBoreFrame frame)
+        => new(
+            new Vector3((float)frame.Right.X, (float)frame.Right.Y, (float)frame.Right.Z),
+            new Vector3((float)frame.Up.X, (float)frame.Up.Y, (float)frame.Up.Z),
+            new Vector3((float)-frame.Forward.X, (float)-frame.Forward.Y, (float)-frame.Forward.Z));
+
+    private string? ResolveActiveBranchId()
+        => _sourceTracks.Count > 0 ? _sourceTracks[0].StreamId.Branch : null;
+
     private void EnsureCorridorsRoot()
     {
         if (_mount is null)
@@ -209,30 +226,42 @@ internal sealed partial class TunnelPresentationBinder
         var depthBands = TunnelCorridorDepthPolicy.Plan(
             TunnelCameraFraming.CurrentPlaneZ,
             TunnelCameraFraming.ThroatZ);
+        var spline = EnsureBoreSpline(ResolveActiveBranchId());
         for (var depthBand = 0; depthBand < depthBands.Count; depthBand++)
         {
             var band = depthBands[depthBand];
-            var wallMesh = BuildCylinderSectorMesh(
-                start,
-                span,
-                CorridorSurfaceRadius,
-                band.NearZ,
-                band.FarZ);
-            if (wallMesh is null)
-                continue;
-
-            var wall = new MeshInstance3D
+            var segments = TunnelBoreSegments.Plan(
+                spline,
+                DepthOfZ(band.NearZ),
+                DepthOfZ(band.FarZ),
+                TunnelBoreContract.MaxSegmentLength);
+            for (var s = 0; s < segments.Count; s++)
             {
-                Name = $"Corridor_{SafeNodeName(slot.Descriptor.SphereId)}_{SafeNodeName(slot.Descriptor.LayerId)}_Depth{depthBand}",
-                Mesh = wallMesh,
-                MaterialOverride = BuildCorridorDepthMaterial(color, band.DepthFraction),
-            };
-            _corridorsRoot!.AddChild(wall);
-            _corridorNodes.Add(new CorridorWallBinding(
-                wall,
-                slot.Descriptor,
-                slot.IsFocused,
-                band.DepthFraction));
+                var segment = segments[s];
+                var wallMesh = BuildCylinderSectorMesh(
+                    start,
+                    span,
+                    CorridorSurfaceRadius,
+                    (float)segment.HalfLength,
+                    (float)-segment.HalfLength);
+                if (wallMesh is null)
+                    continue;
+
+                var wall = new MeshInstance3D
+                {
+                    Name = $"Corridor_{SafeNodeName(slot.Descriptor.SphereId)}_{SafeNodeName(slot.Descriptor.LayerId)}_Depth{depthBand}_Seg{s}",
+                    Mesh = wallMesh,
+                    MaterialOverride = BuildCorridorDepthMaterial(color, band.DepthFraction),
+                    Position = BoreWorldPosition(segment.Frame),
+                    Basis = BoreBasis(segment.Frame),
+                };
+                _corridorsRoot!.AddChild(wall);
+                _corridorNodes.Add(new CorridorWallBinding(
+                    wall,
+                    slot.Descriptor,
+                    slot.IsFocused,
+                    band.DepthFraction));
+            }
         }
 
         BuildCorridorHeader(slot.Descriptor, centerAngle, isActive, slot.IsFocused);
@@ -321,15 +350,18 @@ internal sealed partial class TunnelPresentationBinder
             var fs = framePlan.Slot;
             if (!TunnelCameraFraming.TryTickToZ(fs.Tick, baseTick, coarseUnitTicks, out var z))
                 continue;
-            var frameCenter = new Vector3(
-                Mathf.Cos(rad) * (CorridorSurfaceRadius - 0.55f),
-                Mathf.Sin(rad) * (CorridorSurfaceRadius - 0.55f),
-                z);
+            var boreFrame = EnsureBoreSpline(ResolveActiveBranchId()).Evaluate(DepthOfZ(z));
+            var lateralX = Mathf.Cos(rad) * (CorridorSurfaceRadius - 0.55f);
+            var lateralY = Mathf.Sin(rad) * (CorridorSurfaceRadius - 0.55f);
+            var frameCenter = BoreWorldPosition(boreFrame)
+                + (BoreBasis(boreFrame).X * lateralX)
+                + (BoreBasis(boreFrame).Y * lateralY);
 
             var frameRoot = new Node3D
             {
                 Name = $"Frame_{SafeNodeName(descriptor.SphereId)}_{SafeNodeName(descriptor.LayerId)}_{fs.Index}_{fs.Tick}",
                 Position = frameCenter,
+                Basis = BoreBasis(boreFrame),
             };
             var material = new SnapshotSphereMaterial();
             var sphere = new MeshInstance3D
