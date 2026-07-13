@@ -29,6 +29,7 @@ internal sealed class MaterializedRotationProvider : IPlateRotationProvider
     private readonly long _onsetTick;
     private readonly Dictionary<int, string> _plateIdMap;
     private readonly Dictionary<int, Quaternion> _onsetInverse;
+    private readonly Dictionary<int, (long LowerTick, long UpperTick)> _finiteKinematicsBounds;
 
     public MaterializedRotationProvider(RotationModel model, long onsetTick)
     {
@@ -38,6 +39,7 @@ internal sealed class MaterializedRotationProvider : IPlateRotationProvider
 
         _plateIdMap = new Dictionary<int, string>();
         _onsetInverse = new Dictionary<int, Quaternion>();
+        _finiteKinematicsBounds = new Dictionary<int, (long LowerTick, long UpperTick)>();
 
         var onsetTime = new TimeCode(0.0);
         foreach (var authoredId in model.Circuit.PlateIds)
@@ -50,6 +52,8 @@ internal sealed class MaterializedRotationProvider : IPlateRotationProvider
             _plateIdMap[numericId] = authoredId;
             var absAtOnset = model.Circuit.ReconstructOrientation(authoredId, onsetTime);
             _onsetInverse[numericId] = absAtOnset.Inverse();
+            if (TryGetFiniteKinematicsBounds(authoredId, out var bounds))
+                _finiteKinematicsBounds[numericId] = bounds;
         }
     }
 
@@ -70,9 +74,52 @@ internal sealed class MaterializedRotationProvider : IPlateRotationProvider
         if (!_plateIdMap.ContainsKey(plateId))
             return StationaryPole();
 
-        var current = RotationFromOnsetTo(plateId, tick);
-        var next = RotationFromOnsetTo(plateId, checked(tick + KinematicsSampleTicks));
-        var delta = (next * current.Inverse()).Normalize();
+        long beforeTick;
+        long afterTick;
+        if (_finiteKinematicsBounds.TryGetValue(plateId, out var bounds))
+        {
+            // Finite rotations clamp outside their authored range. They are stationary strictly
+            // outside it, while exact endpoints use the available one-sided derivative.
+            if (tick < bounds.LowerTick || tick > bounds.UpperTick || bounds.LowerTick == bounds.UpperTick)
+                return StationaryPole();
+
+            if (tick == bounds.LowerTick)
+            {
+                beforeTick = tick;
+                afterTick = Math.Min(bounds.UpperTick, tick + KinematicsSampleTicks);
+            }
+            else if (tick == bounds.UpperTick)
+            {
+                beforeTick = Math.Max(bounds.LowerTick, tick - KinematicsSampleTicks);
+                afterTick = tick;
+            }
+            else
+            {
+                beforeTick = Math.Max(bounds.LowerTick, tick - KinematicsSampleTicks);
+                afterTick = Math.Min(bounds.UpperTick, tick + KinematicsSampleTicks);
+            }
+        }
+        else
+        {
+            // A circuit containing an unbounded source (for example a constant Euler pole) has no
+            // finite endpoint to clamp against, so use a symmetric derivative where long permits.
+            beforeTick = tick <= long.MinValue + KinematicsSampleTicks
+                ? tick
+                : tick - KinematicsSampleTicks;
+            afterTick = tick >= long.MaxValue - KinematicsSampleTicks
+                ? tick
+                : tick + KinematicsSampleTicks;
+        }
+
+        long durationTicks = afterTick - beforeTick;
+        if (durationTicks <= 0)
+            return StationaryPole();
+
+        var before = RotationFromOnsetTo(plateId, beforeTick);
+        var after = RotationFromOnsetTo(plateId, afterTick);
+        // World-frame angular delta: later world orientation times inverse(earlier world
+        // orientation). Reversing this order would instead report a body-frame velocity.
+        var delta = (after * before.Inverse()).Normalize();
 
         // q and -q encode the same rotation. Select the short representative before extracting
         // angle so interpolation sign choices cannot turn a tiny step into an almost-2π velocity.
@@ -89,7 +136,47 @@ internal sealed class MaterializedRotationProvider : IPlateRotationProvider
             delta.Y / vectorLength,
             delta.Z / vectorLength);
         double angle = 2.0 * Math.Atan2(vectorLength, Math.Clamp(delta.W, 0.0, 1.0));
-        return new EulerPole(axis, angle / KinematicsSampleTicks);
+        return new EulerPole(axis, angle / durationTicks);
+    }
+
+    private bool TryGetFiniteKinematicsBounds(
+        string authoredId,
+        out (long LowerTick, long UpperTick) bounds)
+    {
+        double lowerMa = double.PositiveInfinity;
+        double upperMa = double.NegativeInfinity;
+        bool foundFiniteSamples = false;
+
+        for (var node = _model.Circuit.GetNode(authoredId);
+             node is not null;
+             node = node.ParentPlateId is null ? null : _model.Circuit.GetNode(node.ParentPlateId))
+        {
+            if (node.RelativeRotation is null)
+                continue;
+            if (node.RelativeRotation is not FiniteRotationSamples finite)
+            {
+                bounds = default;
+                return false;
+            }
+
+            var times = finite.Samples.Times;
+            if (times.Count == 0)
+                continue;
+            foundFiniteSamples = true;
+            lowerMa = Math.Min(lowerMa, times[0].Value);
+            upperMa = Math.Max(upperMa, times[^1].Value);
+        }
+
+        if (!foundFiniteSamples)
+        {
+            bounds = default;
+            return false;
+        }
+
+        bounds = (
+            checked(_onsetTick + UnitConverter.MegaAnnumToTickDelta(lowerMa)),
+            checked(_onsetTick + UnitConverter.MegaAnnumToTickDelta(upperMa)));
+        return true;
     }
 
     private static EulerPole StationaryPole()

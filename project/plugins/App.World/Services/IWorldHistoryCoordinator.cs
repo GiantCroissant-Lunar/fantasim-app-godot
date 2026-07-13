@@ -22,8 +22,6 @@ internal interface IWorldHistoryCoordinator : IDisposable
         string branchId,
         RotationSourceRecipe recipe,
         long onsetTick);
-    IPlateRotationProvider? GetActiveRotationProvider(long onsetTick);
-    RotationAuthorityIdentity GetActiveRotationAuthority();
     RotationAuthorityProjection GetActiveRotationProjection(long onsetTick);
 }
 
@@ -36,9 +34,28 @@ internal readonly record struct RotationAuthorityIdentity(string Digest)
     public static RotationAuthorityIdentity Generated { get; } = new("generated:v1");
 }
 
-internal readonly record struct RotationAuthorityProjection(
-    RotationAuthorityIdentity Authority,
-    IPlateRotationProvider? Provider);
+internal sealed record RotationAuthorityProjection
+{
+    public RotationAuthorityProjection(
+        RotationAuthorityIdentity authority,
+        IPlateRotationProvider? provider)
+    {
+        bool generated = authority == RotationAuthorityIdentity.Generated;
+        if ((generated && provider is not null) || (!generated && provider is null))
+        {
+            throw new InvalidOperationException(
+                generated
+                    ? "Generated rotation authority must use its roster-derived provider."
+                    : $"Imported rotation authority '{authority.Digest}' requires a materialized provider.");
+        }
+
+        Authority = authority;
+        Provider = provider;
+    }
+
+    public RotationAuthorityIdentity Authority { get; }
+    public IPlateRotationProvider? Provider { get; }
+}
 
 /// <summary>
 /// Selects the <see cref="IWorldHistoryCoordinator"/> implementation at construction. The real

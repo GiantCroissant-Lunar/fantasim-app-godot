@@ -23,8 +23,9 @@ internal interface IPlateRotationProvider
 
     /// <summary>
     /// Instantaneous world-frame Euler pole at <paramref name="tick"/>. Imported finite rotations
-    /// derive this from a stable forward difference; generated constant-pole motion returns its
-    /// authored pole exactly. Unserved/stationary plates return a zero-rate pole.
+    /// derive this from a bounded central difference with one-sided differences at finite authored
+    /// endpoints; generated constant-pole motion returns its authored pole exactly. Unserved or
+    /// out-of-range stationary plates return a zero-rate pole.
     /// </summary>
     EulerPole InstantaneousPoleAt(int plateId, long tick);
 }

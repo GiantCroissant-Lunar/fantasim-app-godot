@@ -198,27 +198,21 @@ internal sealed class WorldHistoryCoordinator : IWorldHistoryCoordinator
         }
     }
 
-    public IPlateRotationProvider? GetActiveRotationProvider(long onsetTick)
-    {
-        lock (_rotationStateGate)
-            return _activeRotationProvider is not null && _activeRotationOnsetTick == onsetTick
-                ? _activeRotationProvider
-                : null;
-    }
-
-    public RotationAuthorityIdentity GetActiveRotationAuthority()
-    {
-        lock (_rotationStateGate)
-            return _activeRotationAuthority;
-    }
-
     public RotationAuthorityProjection GetActiveRotationProjection(long onsetTick)
     {
         lock (_rotationStateGate)
         {
-            var provider = _activeRotationProvider is not null && _activeRotationOnsetTick == onsetTick
-                ? _activeRotationProvider
-                : null;
+            if (_activeRotationAuthority != RotationAuthorityIdentity.Generated
+                && (_activeRotationProvider is null || _activeRotationOnsetTick != onsetTick))
+            {
+                throw new InvalidOperationException(
+                    $"Imported rotation authority '{_activeRotationAuthority.Digest}' was materialized " +
+                    $"for onset tick {_activeRotationOnsetTick}, not requested onset tick {onsetTick}.");
+            }
+
+            var provider = _activeRotationAuthority == RotationAuthorityIdentity.Generated
+                ? null
+                : _activeRotationProvider;
             return new RotationAuthorityProjection(_activeRotationAuthority, provider);
         }
     }

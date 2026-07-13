@@ -91,7 +91,7 @@ converges and publishes the index. Prepared and bound control-event envelope tic
 equal their payload onset tick.
 
 Durable selection and its in-memory provider projection share one authority gate, including
-`GetActiveRotationProvider` readers and disposal. A reader cannot cross the interval after the
+atomic `GetActiveRotationProjection` readers and disposal. A reader cannot cross the interval after the
 selection CAS but before its cache update, and an earlier switch rereads terminal selection before
 applying its projection so a newer re-entrant selection cannot be overwritten.
 
@@ -142,7 +142,17 @@ modes are the meaningful compile/runtime proof).
   canonical bound cursor, and generated identity is `generated:v1`. Globe and crust cache keys plus
   persisted crust-cache schema v2 include that identity, preventing generated/imported aliasing.
   Imported rotation changes globe ownership/arcs, boundary deposits/features, signed elevations,
-  and exact replay after coordinator reconstruction.
+  and exact replay after coordinator reconstruction. Every public rotation-dependent query captures
+  the projection once and threads it through reconstruction, materialization, cache identity, and
+  sampling, so concurrent selection changes cannot mix authorities. Imported authority without a
+  provider (including an onset mismatch after recovery), and generated authority with an imported
+  provider, fail closed.
+- `.rot` scope remains intentionally narrow: it supplies finite rotations for matching ids on the
+  procedurally generated onset roster and geometry. Unmatched ids are stationary. It does not import
+  Earth's authored plate polygons; GPML/shapefile topology normalization remains future Phase E.
+- Imported finite-rotation kinematics use world-frame `later * inverse(earlier)` deltas in radians
+  per canonical tick, central differences in-range, one-sided derivatives at exact keyframe
+  endpoints, and an intentional stationary pole strictly outside the authored finite range.
 - Frame doctrine is explicit: the Eulerian globe classifies reassigned ownership on fixed world
   centers plus current poles (a RED parity test caught the prior double rotation); Lagrangian crust
   classifies onset-owned original centers after rotation. The non-snapshot gate now checks every
@@ -151,7 +161,9 @@ modes are the meaningful compile/runtime proof).
 - Transform scarp phase uses a stable world-space coordinate instead of resetting per edge-local arc.
   Mantle forcing groups normalized pair/kind records, coalesces exact endpoint-connected degree-two
   chains, terminates at junctions, never bridges disconnected components, and reduces a real
-  frequency-4 frontier to at most one third as many forcing segments as visual forcing arcs.
+  frequency-4 frontier to at most one third as many forcing segments as visual forcing arcs. A
+  shuffled/reversed three-branch Y-junction regression proves all branches terminate at the junction
+  and no leaf-to-leaf shortcut is introduced.
 - Exact shared-edge RED was `-4.021378056e-7` rad at frequency 2 and `-5.437160815e-7` rad at
   frequency 4 under the rejected inradius subtraction. GREEN is exactly `-double.Epsilon` on the
   subducting side at both frequencies, with a same-plate far-interior contribution of exactly zero.
@@ -160,9 +172,9 @@ modes are the meaningful compile/runtime proof).
   instrument anchor `(0, 0, −1)`, inner ring 1.30..1.38 (width 0.08), outer ring 1.52..1.62
   (width 0.10). Tunnel-local reload identifiers use world-bundle wording; the resource service's
   actual `RuntimeChanged` API name is unchanged.
-- Verification after the authority/frame follow-up: focused World authority/morphology 81/81;
-  full `App.World.Composition.Tests` 109/109; full `App.World.Tests` 622/622 with project references;
-  engine package closure 0.1.12 restore and full package-mode `App.World.Tests` 622/622. The prior
+- Verification after the atomic-authority/kinematics follow-up: focused World authority/rotation/
+  cache 40/40; full `App.World.Composition.Tests` 110/110 and full `App.World.Tests` 627/627 with
+  project references; package-mode restore plus those same full suites at 110/110 and 627/627. The prior
   checkpoint's `App.Presentation.Tests` 232/232 and `App.Timeline.Tests` 339/339 were not rerun for
   this World-only increment. `git diff --check` is clean; commit hashes are reported in the handoff,
   and nothing was pushed.

@@ -170,6 +170,43 @@ public class MantleHistoryAdapterTests
     }
 
     [Fact]
+    public void Build_YJunction_PreservesBranchesWithoutLeafToLeafShortcut()
+    {
+        var junction = Unit(1.0, 0.0, 0.0);
+        var northLeaf = Unit(System.Math.Cos(0.25), System.Math.Sin(0.25), 0.0);
+        var southLeaf = Unit(System.Math.Cos(0.25), -System.Math.Sin(0.25), 0.0);
+        var upperLeaf = Unit(System.Math.Cos(0.25), 0.0, System.Math.Sin(0.25));
+
+        // Three same-boundary branches share one endpoint. Records are shuffled, plate ids are
+        // reversed, and two polylines point toward the junction so ordering/orientation cannot
+        // justify pairing two leaves through the degree-three vertex.
+        var arcs = new[]
+        {
+            new PlateBoundaryArc(1, 0, PlateBoundaryKind.Convergent, new[] { northLeaf, junction }),
+            new PlateBoundaryArc(0, 1, PlateBoundaryKind.Convergent, new[] { junction, upperLeaf }),
+            new PlateBoundaryArc(1, 0, PlateBoundaryKind.Convergent, new[] { southLeaf, junction }),
+        };
+
+        var history = MantleHistoryAdapter.Build(arcs, plateOnsetTick: 0);
+
+        Assert.Equal(3, history.Segments.Count);
+        Assert.All(
+            history.Segments,
+            segment => Assert.True(
+                ApproxEqual(junction, segment.A) || ApproxEqual(junction, segment.B),
+                "Every mantle segment at a Y-junction must terminate at the junction; a segment " +
+                "whose endpoints are both leaves is an invalid leaf-to-leaf shortcut."));
+
+        foreach (var leaf in new[] { northLeaf, southLeaf, upperLeaf })
+        {
+            Assert.Contains(
+                history.Segments,
+                segment => ApproxEqual(leaf, segment.A) && ApproxEqual(junction, segment.B)
+                    || ApproxEqual(junction, segment.A) && ApproxEqual(leaf, segment.B));
+        }
+    }
+
+    [Fact]
     public void Build_LongArc_IsChunked_ByAngularSpan_AndStaysContiguous()
     {
         // 25 points spanning ~2.16 rad: must split into spans each within the ~1.2 rad angular cap,

@@ -77,6 +77,13 @@ current boundary kinds, crust deposits/features, material transport, and the pre
 Generated motion remains the explicit default authority rather than a fallback hidden inside the
 import path.
 
+This is rotation playback, not complete Earth reconstruction. The current app still builds its
+onset plate roster, cell ownership geometry, and plate shapes procedurally, then applies matching
+`.rot` plate ids to that generated roster. Authored ids absent from the roster remain stationary;
+the `.rot` file alone cannot supply Earth's real plate polygons. GPML/shapefile topology import and
+semantic topology events remain Phase E work and are required before an Earth dataset can reproduce
+its authored plate shapes as well as its rotations.
+
 Other established facts:
 
 - `TruthStreamIdentity` already provides variant, branch, L-level, domain, and model axes.
@@ -445,6 +452,14 @@ generated identity is the stable `generated:v1`. Both the globe-reconstructor ca
 product cache include this identity. Persisted crust cache schema v2 stores and verifies it, but the
 record remains a disposable projection and never becomes canonical history.
 
+Every public rotation-dependent query captures this immutable projection once at its boundary and
+threads it through reconstruction, crust materialization/cache identity, and per-tick sampling. A
+concurrent source selection therefore affects the next query, never a later phase of the in-flight
+query. Projection construction enforces exactly two valid states: generated authority with no
+imported provider, or imported authority with a materialized provider. An imported provider
+recovered for onset A queried at onset B fails closed; it cannot fall back to generated motion under
+an imported cache digest.
+
 Frame use is explicit and intentionally different by domain:
 
 - The visible globe is Eulerian: fixed world tessellation cells are reassigned from rotated seeds,
@@ -476,6 +491,11 @@ Frame use is explicit and intentionally different by domain:
 - Materialization verifies and reads only through the cursor named by bound; later heads/orphans do
   not affect playback.
 - Onset-relative parity tests listed in section 7.2 pass.
+- Known-axis finite-rotation kinematics report radians per canonical tick using world-frame
+  quaternion order, central differences in-range, one-sided derivatives at exact endpoints, and a
+  stationary pole strictly outside the authored sample range.
+- A concurrent selection-change test proves one public document and its crust-cache entry use
+  entirely the old or entirely the new authority, never a mixture.
 - Concurrent SurrealDB-path imports remain serialized through `ActorTruthEventWriter`; in-memory
   tests alone are insufficient evidence.
 - A forced failure between prepare, plate CAS append, and bind proves retry completes or fails

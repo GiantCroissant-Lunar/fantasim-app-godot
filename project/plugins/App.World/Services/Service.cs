@@ -81,7 +81,16 @@ public sealed class Service : IService, IDisposable
     private bool _disposed;
 
     public Service(IRegistry registry, ActorSystem? actorSystem = null)
+        : this(registry, actorSystem, WorldHistoryCoordinatorFactory.Create)
     {
+    }
+
+    internal Service(
+        IRegistry registry,
+        ActorSystem? actorSystem,
+        Func<IRegistry, FantaSim.World.TruthStream.ITruthEventReader, ITruthEventWriter, IWorldHistoryCoordinator> historyFactory)
+    {
+        ArgumentNullException.ThrowIfNull(historyFactory);
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         var config = registry.TryGet<CrosscutFoundation.Config.IService>();
         var truthStoreOptions = WorldTruthStoreOptions.FromConfig(config);
@@ -101,7 +110,7 @@ public sealed class Service : IService, IDisposable
                     truthStoreHandle.EventStore,
                     actorName: NewTruthWriterActorName())
                 : new DirectTruthEventWriter(truthStoreHandle.EventStore);
-            _history = WorldHistoryCoordinatorFactory.Create(
+            _history = historyFactory(
                 registry,
                 truthStoreHandle.EventStore,
                 truthWriter);
@@ -186,10 +195,19 @@ public sealed class Service : IService, IDisposable
     internal PlanetPresentationDocument GetPlanetPresentationAsyncCore(long referenceTick, WorldGenerationRenderOptions renderOptions)
     {
         PresentationRequested?.Invoke();
+        long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        // A presentation is one read transaction over rotation truth. Selection may change on a
+        // different thread while the relatively expensive globe/crust build is running, but every
+        // phase of this document must retain the authority captured at the query boundary.
+        var rotationProjection = _history.GetActiveRotationProjection(onsetTick);
         var family = WorldGenerationGraphDefaults.BuildFamily();
         var overview = _history.GetOverview();
         var renderSnapshot = _history.GetRenderSnapshot();
-        var runtime = BuildPlanetPresentationRuntime(family, renderOptions, referenceTick);
+        var runtime = BuildPlanetPresentationRuntime(
+            family,
+            renderOptions,
+            referenceTick,
+            rotationProjection);
         WorldGenerationProductsView products;
         IReadOnlyList<long> crustSnapshotTicks;
         lock (_generationProductsGate)
@@ -263,7 +281,8 @@ public sealed class Service : IService, IDisposable
         var family = WorldGenerationGraphDefaults.BuildFamily();
         var renderOptions = ResolvePlanetRenderOptions(family);
         var onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
-        var reconstructor = GetCachedGlobeReconstructor(renderOptions, onsetTick);
+        var rotationProjection = _history.GetActiveRotationProjection(onsetTick);
+        var reconstructor = GetCachedGlobeReconstructor(renderOptions, onsetTick, rotationProjection);
         return reconstructor.BuildGlobeAt(tick);
     }
 
@@ -273,7 +292,8 @@ public sealed class Service : IService, IDisposable
         var family = WorldGenerationGraphDefaults.BuildFamily();
         var renderOptions = ResolvePlanetRenderOptions(family);
         var onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
-        var reconstructor = GetCachedGlobeReconstructor(renderOptions, onsetTick);
+        var rotationProjection = _history.GetActiveRotationProjection(onsetTick);
+        var reconstructor = GetCachedGlobeReconstructor(renderOptions, onsetTick, rotationProjection);
         return reconstructor.ClassifyCellsAt(tick);
     }
 
@@ -298,15 +318,24 @@ public sealed class Service : IService, IDisposable
         var family = WorldGenerationGraphDefaults.BuildFamily();
         var renderOptions = ResolvePlanetRenderOptions(family);
         var onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        var rotationProjection = _history.GetActiveRotationProjection(onsetTick);
 
-        var products = GetOrBuildCrustTickProducts(renderOptions, onsetTick, tick, family.Revision);
+        var products = GetOrBuildCrustTickProducts(
+            renderOptions,
+            onsetTick,
+            tick,
+            family.Revision,
+            rotationProjection);
         if (!products.Materialization.Result.StateByTick.TryGetValue(products.SnapshotTick, out var snapshotState)
             || snapshotState.Count == 0)
         {
             return new Dictionary<int, double>();
         }
 
-        var rotationProvider = BuildRotationProvider(_history, products.Materialization.Result.Plates, onsetTick);
+        var rotationProvider = BuildRotationProvider(
+            rotationProjection,
+            products.Materialization.Result.Plates,
+            onsetTick);
         var sampler = new PlateFrameSampler(
             products.Materialization.Tessellation,
             products.Materialization.Result.Plates,
@@ -314,7 +343,7 @@ public sealed class Service : IService, IDisposable
             onsetTick,
             rotationProvider);
 
-        var reconstructor = GetCachedGlobeReconstructor(renderOptions, onsetTick);
+        var reconstructor = GetCachedGlobeReconstructor(renderOptions, onsetTick, rotationProjection);
         var currentGlobe = reconstructor.BuildGlobeAt(tick);
         var plateIdByCell = currentGlobe.Cells.ToDictionary(c => c.CellId, c => c.PlateId);
 
@@ -348,14 +377,16 @@ public sealed class Service : IService, IDisposable
                     SurfaceSubdivision = SurfaceSubdivisionMode.Fixed,
                     AdaptiveSubdivisionMaxDepth = 0,
                 };
+                long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+                var rotationProjection = _history.GetActiveRotationProjection(onsetTick);
 
                 var map = request.LayerId switch
                 {
-                    "geosphere.crust" => BuildCrustFilmstripPreview(request, previewOptions, startRevision, cancellationToken),
-                    "geosphere.plate" => BuildPlateFilmstripPreview(request, previewOptions, startRevision, cancellationToken),
+                    "geosphere.crust" => BuildCrustFilmstripPreview(request, previewOptions, startRevision, rotationProjection, cancellationToken),
+                    "geosphere.plate" => BuildPlateFilmstripPreview(request, previewOptions, startRevision, rotationProjection, cancellationToken),
                     "geosphere.magma-ocean" => BuildProceduralFilmstripPreview(request, previewFrequency, startRevision, "magma-ocean", new(225, 74, 38), new(255, 190, 72), cancellationToken),
                     "geosphere.stagnant-lid" => BuildProceduralFilmstripPreview(request, previewFrequency, startRevision, "stagnant-lid", new(54, 68, 74), new(125, 101, 82), cancellationToken),
-                    "geosphere.mantle" => BuildMantleFilmstripPreview(request, previewOptions, startRevision, cancellationToken),
+                    "geosphere.mantle" => BuildMantleFilmstripPreview(request, previewOptions, startRevision, rotationProjection, cancellationToken),
                     _ when string.Equals(request.SphereId, "atmosphere", StringComparison.Ordinal)
                         => BuildProceduralFilmstripPreview(request, previewFrequency, startRevision, "atmosphere-placeholder", new(39, 93, 143), new(145, 203, 224), cancellationToken),
                     _ => BuildProceduralFilmstripPreview(request, previewFrequency, startRevision, "layer-placeholder", new(70, 82, 92), new(128, 146, 156), cancellationToken),
@@ -370,19 +401,28 @@ public sealed class Service : IService, IDisposable
         LayerFilmstripPreviewRequest request,
         WorldGenerationRenderOptions previewOptions,
         int graphRevision,
+        RotationAuthorityProjection rotationProjection,
         CancellationToken cancellationToken)
     {
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
         if (request.Tick < onsetTick)
             return BuildProceduralFilmstripPreview(request, previewOptions.TessellationFrequency, graphRevision, "pre-crust", new(45, 49, 54), new(100, 85, 68), cancellationToken);
 
-        var products = GetOrBuildCrustTickProducts(previewOptions, onsetTick, request.Tick, graphRevision);
+        var products = GetOrBuildCrustTickProducts(
+            previewOptions,
+            onsetTick,
+            request.Tick,
+            graphRevision,
+            rotationProjection);
         cancellationToken.ThrowIfCancellationRequested();
-        var reconstructor = GetCachedGlobeReconstructor(previewOptions, onsetTick);
+        var reconstructor = GetCachedGlobeReconstructor(previewOptions, onsetTick, rotationProjection);
         var currentGlobe = reconstructor.BuildGlobeAt(request.Tick);
         cancellationToken.ThrowIfCancellationRequested();
         var currentArcs = reconstructor.BuildBoundaryArcsAt(request.Tick);
-        var rotationProvider = BuildRotationProvider(_history, products.Materialization.Result.Plates, onsetTick);
+        var rotationProvider = BuildRotationProvider(
+            rotationProjection,
+            products.Materialization.Result.Plates,
+            onsetTick);
         var sampler = new PlateFrameSampler(
             products.Materialization.Tessellation,
             products.Materialization.Result.Plates,
@@ -426,10 +466,11 @@ public sealed class Service : IService, IDisposable
         LayerFilmstripPreviewRequest request,
         WorldGenerationRenderOptions previewOptions,
         int graphRevision,
+        RotationAuthorityProjection rotationProjection,
         CancellationToken cancellationToken)
     {
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
-        var reconstructor = GetCachedGlobeReconstructor(previewOptions, onsetTick);
+        var reconstructor = GetCachedGlobeReconstructor(previewOptions, onsetTick, rotationProjection);
         var globe = reconstructor.BuildGlobeAt(request.Tick);
         cancellationToken.ThrowIfCancellationRequested();
         var cells = BuildFilmstripCells(globe, cell => (cell.PlateId, 0.0));
@@ -452,10 +493,11 @@ public sealed class Service : IService, IDisposable
         LayerFilmstripPreviewRequest request,
         WorldGenerationRenderOptions previewOptions,
         int graphRevision,
+        RotationAuthorityProjection rotationProjection,
         CancellationToken cancellationToken)
     {
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
-        var reconstructor = GetCachedGlobeReconstructor(previewOptions, onsetTick);
+        var reconstructor = GetCachedGlobeReconstructor(previewOptions, onsetTick, rotationProjection);
         var arcs = reconstructor.BuildBoundaryArcsAt(request.Tick);
         cancellationToken.ThrowIfCancellationRequested();
         var history = MantleHistoryAdapter.Build(arcs, onsetTick);
@@ -556,12 +598,11 @@ public sealed class Service : IService, IDisposable
     }
 
     internal static IPlateRotationProvider BuildRotationProvider(
-        IWorldHistoryCoordinator history,
+        RotationAuthorityProjection rotationProjection,
         IReadOnlyList<TopoPlate> plates,
         long onsetTick)
     {
-        ArgumentNullException.ThrowIfNull(history);
-        return history.GetActiveRotationProjection(onsetTick).Provider
+        return rotationProjection.Provider
             ?? new GeneratedEulerPoleRotationProvider(plates, onsetTick);
     }
 
@@ -831,10 +872,11 @@ public sealed class Service : IService, IDisposable
     private PlanetPresentationRuntime BuildPlanetPresentationRuntime(
         WorldGenerationGraphFamilyDocument family,
         WorldGenerationRenderOptions renderOptions,
-        long arcTick)
+        long arcTick,
+        RotationAuthorityProjection rotationProjection)
     {
         long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
-        var reconstructor = GetCachedGlobeReconstructor(renderOptions, onsetTick);
+        var reconstructor = GetCachedGlobeReconstructor(renderOptions, onsetTick, rotationProjection);
         var geosphere = SphereRegimeScheduleDefaults.GeosphereDefault;
         var atmosphere = SphereRegimeScheduleDefaults.AtmosphereFor(onsetTick);
         var currentGlobe = reconstructor.BuildGlobeAt(arcTick);
@@ -867,8 +909,16 @@ public sealed class Service : IService, IDisposable
                 renderOptions.AdaptiveSubdivisionFeatureWeightDelta);
         }
 
-        var products = GetOrBuildCrustTickProducts(renderOptions, onsetTick, arcTick, family.Revision);
-        var rotationProvider = BuildRotationProvider(_history, products.Materialization.Result.Plates, onsetTick);
+        var products = GetOrBuildCrustTickProducts(
+            renderOptions,
+            onsetTick,
+            arcTick,
+            family.Revision,
+            rotationProjection);
+        var rotationProvider = BuildRotationProvider(
+            rotationProjection,
+            products.Materialization.Result.Plates,
+            onsetTick);
         var sampler = new PlateFrameSampler(
             products.Materialization.Tessellation,
             products.Materialization.Result.Plates,
@@ -941,7 +991,8 @@ public sealed class Service : IService, IDisposable
         WorldGenerationRenderOptions renderOptions,
         long onsetTick,
         long arcTick,
-        int graphRevision)
+        int graphRevision,
+        RotationAuthorityProjection rotationProjection)
     {
         var mobilePlateRegime = GeosphereScheduleFor(onsetTick).Regimes
             .FirstOrDefault(r => string.Equals(r.RegimeId, "mobile-plate", StringComparison.Ordinal));
@@ -953,8 +1004,6 @@ public sealed class Service : IService, IDisposable
             CrustSnapshotTickSeries.DefaultSpacingTicks,
             onsetTick + MobilePlateWindowTicks);
         var snapshotTick = series.SelectSnapshotForPlayhead(arcTick) ?? arcTick;
-        var rotationProjection = _history.GetActiveRotationProjection(onsetTick);
-
         // Seed + SpinRate mirror the sibling globe-reconstructor cache key (_globeReconstructorKey
         // below); GraphRevision mirrors CrustGenerationTriggerKey (CrustGenerationTriggerPolicy.cs)
         // -- a generation-graph edit must not serve a stale crust product (2026-07-11 cache-key
@@ -1015,7 +1064,7 @@ public sealed class Service : IService, IDisposable
                 stopwatch.ElapsedMilliseconds, key);
         }
 
-        var reconstructor = GetCachedGlobeReconstructor(renderOptions, onsetTick);
+        var reconstructor = GetCachedGlobeReconstructor(renderOptions, onsetTick, rotationProjection);
         var globeAtSnapshot = reconstructor.BuildGlobeAt(snapshotTick);
         var arcsAtSnapshot = reconstructor.BuildBoundaryArcsAt(snapshotTick);
         var products = new CrustTickProducts(snapshotTick, materialization, globeAtSnapshot, arcsAtSnapshot);
@@ -1343,11 +1392,11 @@ public sealed class Service : IService, IDisposable
 
     private GlobeReconstructor GetCachedGlobeReconstructor(
         WorldGenerationRenderOptions renderOptions,
-        long onsetTick)
+        long onsetTick,
+        RotationAuthorityProjection rotationProjection)
     {
         // Spin rate is part of the key: authoring the knob must rebuild the roster, not
         // serve a reconstructor seeded at the previous rate.
-        var rotationProjection = _history.GetActiveRotationProjection(onsetTick);
         var key = (
             renderOptions.Seed,
             renderOptions.TessellationFrequency,

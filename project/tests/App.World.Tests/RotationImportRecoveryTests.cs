@@ -177,7 +177,7 @@ public sealed class RotationImportRecoveryTests
                     "fixture.rot"),
                 OnsetTick);
             Assert.IsType<FantaSim.App.World.Crust.MaterializedRotationProvider>(
-                first.GetActiveRotationProvider(OnsetTick));
+                first.GetActiveRotationProjection(OnsetTick).Provider);
         }
 
         using var secondWriter = new DirectTruthEventWriter(store);
@@ -187,7 +187,7 @@ public sealed class RotationImportRecoveryTests
             secondWriter);
 
         var recovered = Service.BuildRotationProvider(
-            reconstructed,
+            reconstructed.GetActiveRotationProjection(OnsetTick),
             Array.Empty<FantaSim.Geosphere.Plate.Topology.Plate>(),
             OnsetTick);
 
@@ -195,6 +195,33 @@ public sealed class RotationImportRecoveryTests
         AssertRotationOfUnitX(
             recovered.RotationFromOnsetTo(1, OnsetTick + UnitConverter.MegaAnnumToTickDelta(2.0)),
             3.0);
+    }
+
+    [Fact]
+    public void Recovered_import_fails_closed_when_queried_with_a_different_onset()
+    {
+        var store = new InMemoryTruthEventStore();
+        using var firstWriter = new DirectTruthEventWriter(store);
+        using (var first = new WorldHistoryCoordinator(new ServiceRegistry(), store, firstWriter))
+        {
+            first.ImportRotationSource(
+                "world-a",
+                "main",
+                new FantaSim.App.World.Crust.RotationSourceRecipe(
+                    FantaSim.App.World.Crust.RotationSourceKind.Imported,
+                    Source,
+                    "fixture.rot"),
+                OnsetTick);
+        }
+
+        using var recoveredWriter = new DirectTruthEventWriter(store);
+        using var recovered = new WorldHistoryCoordinator(new ServiceRegistry(), store, recoveredWriter);
+
+        var error = Assert.Throws<InvalidOperationException>(
+            () => recovered.GetActiveRotationProjection(OnsetTick + 1));
+
+        Assert.Contains("materialized for onset tick", error.Message, StringComparison.Ordinal);
+        Assert.NotNull(recovered.GetActiveRotationProjection(OnsetTick).Provider);
     }
 
     [Fact]
@@ -218,7 +245,7 @@ public sealed class RotationImportRecoveryTests
         using var secondWriter = new DirectTruthEventWriter(store);
         using var reconstructed = new WorldHistoryCoordinator(new ServiceRegistry(), store, secondWriter);
         var selected = Service.BuildRotationProvider(
-            reconstructed,
+            reconstructed.GetActiveRotationProjection(OnsetTick),
             Array.Empty<FantaSim.Geosphere.Plate.Topology.Plate>(),
             OnsetTick);
 
@@ -261,7 +288,7 @@ public sealed class RotationImportRecoveryTests
         var readTask = Task.Run(() =>
         {
             readerStarted.Set();
-            return history.GetActiveRotationProvider(OnsetTick);
+            return history.GetActiveRotationProjection(OnsetTick).Provider;
         });
         Assert.True(readerStarted.Wait(TimeSpan.FromSeconds(5)));
 
@@ -303,10 +330,10 @@ public sealed class RotationImportRecoveryTests
         Assert.Equal(
             new[] { RotationSourceSelectionEventTypes.Imported, RotationSourceSelectionEventTypes.Generated },
             markers.Select(evt => evt.EventType));
-        Assert.Null(history.GetActiveRotationProvider(OnsetTick));
+        Assert.Null(history.GetActiveRotationProjection(OnsetTick).Provider);
         Assert.IsType<FantaSim.App.World.Crust.GeneratedEulerPoleRotationProvider>(
             Service.BuildRotationProvider(
-                history,
+                history.GetActiveRotationProjection(OnsetTick),
                 Array.Empty<FantaSim.Geosphere.Plate.Topology.Plate>(),
                 OnsetTick));
     }
@@ -372,7 +399,7 @@ public sealed class RotationImportRecoveryTests
                     "fixture.rot"),
                 OnsetTick);
             Assert.IsType<FantaSim.App.World.Crust.MaterializedRotationProvider>(
-                retry.GetActiveRotationProvider(OnsetTick));
+                retry.GetActiveRotationProjection(OnsetTick).Provider);
         }
 
         Assert.Single(await ReadAllAsync(store, RotationSelectionStream));

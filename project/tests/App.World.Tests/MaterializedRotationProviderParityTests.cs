@@ -1,6 +1,7 @@
 using FantaSim.App.World.Crust;
 using FantaSim.Geosphere.Plate.Reconstruction;
 using FantaSim.Geosphere.Plate.Rotation;
+using FantaSim.Geosphere.Plate.Topology;
 using FantaSim.World.TruthStream;
 using FantaSim.World.TruthStream.Core;
 using TimeDete.Time.Primitives;
@@ -69,6 +70,24 @@ public sealed class MaterializedRotationProviderParityTests
         AssertClose(0.0, actual.Z);
     }
 
+    [Fact]
+    public async Task Instantaneous_pole_uses_bounded_difference_at_both_keyframe_endpoints()
+    {
+        const string rotText = "001 0 90 0 30 000\n001 10 90 0 50 000";
+        var parsed = new RotParser().Parse("endpoint-kinematics.rot", new StringReader(rotText));
+        var stream = new TruthStreamIdentity("endpoint-kinematics", "main", 0, "geosphere", "plates");
+        var store = new InMemoryTruthEventStore();
+        await store.AppendIfHeadAsync(stream, RotationStreamImporter.ToDrafts(parsed, stream), null);
+        var model = await RotationModelMaterializer.MaterializeAsync(store, stream);
+        var provider = new MaterializedRotationProvider(model, OnsetTick);
+
+        double expectedRate = (2.0 * Math.PI / 180.0) / TicksPerMegaAnnum;
+        AssertPole(provider.InstantaneousPoleAt(1, OnsetTick), expectedRate); // lower: forward
+        AssertPole(provider.InstantaneousPoleAt(1, OnsetTick + 5L * TicksPerMegaAnnum), expectedRate); // central
+        AssertPole(provider.InstantaneousPoleAt(1, OnsetTick + 10L * TicksPerMegaAnnum), expectedRate); // upper: backward
+        AssertStationaryPole(provider.InstantaneousPoleAt(1, OnsetTick + 20L * TicksPerMegaAnnum)); // after upper
+    }
+
     private static void AssertRotationOfUnitX(
         IPlateRotationProvider provider,
         long tick,
@@ -85,4 +104,16 @@ public sealed class MaterializedRotationProviderParityTests
 
     private static void AssertClose(double expected, double actual)
         => Assert.InRange(actual, expected - 1e-9, expected + 1e-9);
+
+    private static void AssertPole(EulerPole pole, double expectedRate)
+    {
+        Assert.InRange(pole.Axis.Length(), 1.0 - 1e-12, 1.0 + 1e-12);
+        Assert.InRange(pole.Axis.X, -1e-12, 1e-12);
+        Assert.InRange(pole.Axis.Y, -1e-12, 1e-12);
+        Assert.InRange(pole.Axis.Z, 1.0 - 1e-12, 1.0 + 1e-12);
+        Assert.InRange(pole.AngularRate, expectedRate - 1e-12, expectedRate + 1e-12);
+    }
+
+    private static void AssertStationaryPole(EulerPole pole)
+        => Assert.Equal(0.0, pole.AngularRate);
 }
