@@ -41,11 +41,13 @@
   <ItemGroup>
     <ProjectReference Include="$(YokanProjectsRoot)\fantasim-cartography\project\contracts\Cartography.Shared\Cartography.Shared.csproj" />
     <ProjectReference Include="$(YokanProjectsRoot)\fantasim-cartography\project\contracts\Cartography.Globe\Cartography.Globe.csproj" />
-    <ProjectReference Include="$(YokanProjectsRoot)\fantasim-cartography\project\plugins\Cartography.Globe.Core\Cartography.Globe.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="UnifyMaths" />
+    <!-- Cartography impl (GlobeSurfaceBuilder, NoiseRelief) from the local feed; the two
+         cartography contracts above stay project refs and carry the same assembly names. -->
+    <PackageReference Include="GiantCroissant.FantaSim.Cartography.Globe.Core" />
   </ItemGroup>
 
   <PropertyGroup>

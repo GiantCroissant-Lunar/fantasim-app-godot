@@ -84,6 +84,9 @@
     <PackageVersion Include="UnifyGeometry.Primitives" Version="0.1.5" />
     <PackageVersion Include="UnifyMaths" Version="0.1.5" />
     <PackageVersion Include="UnifyMaths.Numerics" Version="0.1.5" />
+    <!-- Cartography impl consumed as a package (contracts stay project refs — same assembly
+         names via the cartography csproj AssemblyName pins, so no type-identity split). -->
+    <PackageVersion Include="GiantCroissant.FantaSim.Cartography.Globe.Core" Version="0.1.0" />
   </ItemGroup>
 
   <ItemGroup>
