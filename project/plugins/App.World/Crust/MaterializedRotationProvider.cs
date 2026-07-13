@@ -49,6 +49,14 @@ internal sealed class MaterializedRotationProvider : IPlateRotationProvider
             if (!TryNormalizePlateId(authoredId, out int numericId))
                 continue;
 
+            if (_plateIdMap.TryGetValue(numericId, out var priorAuthoredId)
+                && !string.Equals(priorAuthoredId, authoredId, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Plate-id mapping collision: authored ids '{priorAuthoredId}' and '{authoredId}' "
+                    + $"both normalize to integer plate id {numericId}; ambiguous mapping is invalid input.");
+            }
+
             _plateIdMap[numericId] = authoredId;
             var absAtOnset = model.Circuit.ReconstructOrientation(authoredId, onsetTime);
             _onsetInverse[numericId] = absAtOnset.Inverse();

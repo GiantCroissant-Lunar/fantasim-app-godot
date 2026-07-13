@@ -192,3 +192,42 @@ modes are the meaningful compile/runtime proof).
   integration proofs, independent tunnel zoom/framing/ring hit geometry, and their World,
   Presentation, and Timeline tests. The exported-app screenshot plus collectible-ALC gate remains
   intentionally pending for the lead session; no unit suite is presented as a substitute for it.
+
+## P9a review follow-ups — fail-closed rotation-authority fixes — 2026-07-13
+
+Two fail-open defects from the adversarial review of the canonical world-history slice
+(`vault/specs/2026-07-13-canonical-world-history-and-dry-crust-design.md`, 7.2/7.4). Test-first;
+nothing committed, all changes left in the worktree working tree on `fix/p9a-review-followups`.
+
+Files changed (production 2, tests 1 + 1 new; no csproj/engine/coordinator changes):
+- `project/plugins/App.World/Services/Service.cs` — `ReadRotationSourceFromParameters`.
+- `project/plugins/App.World/Crust/MaterializedRotationProvider.cs` — constructor.
+- `project/tests/App.World.Tests/RotationSourceSeamTests.cs` — Defect 1 tests added.
+- `project/tests/App.World.Tests/MaterializedRotationProviderPlateIdCollisionTests.cs` — new, Defect 2.
+
+Defect 1: an unrecognized non-empty `rotationSourceKind` silently returned `Default`, so
+`RunGenerationAsync` durably CAS-appended a generated-selection marker and deactivated any bound
+imported authority across restart. Fix mirrors the locked semantics of
+`WorldCrustRunSpec.ReadRotationSourceRecipe`: unknown non-empty kind throws `ArgumentException`
+naming the offending kind and accepted kinds (`generated`/absent and `imported`/`rot`/`gplates`);
+absent/non-string/empty/whitespace and the explicit `generated` aliases stay `Default`. The throw
+precedes the Imported/UseGenerated branch, so no marker and no generation event are appended.
+
+Defect 2: `_plateIdMap[numericId] = authoredId` was last-wins, so distinct authored ids `"1"` and
+`"001"` (both normalize to integer 1) silently dropped one plate's motion. Fix throws
+`InvalidOperationException` at construction when a DISTINCT prior authored id already maps to the
+same integer, naming both ids and the colliding integer; the same id reappearing stays idempotent.
+
+RED -> GREEN: before fixes the new tests failed with `No exception was thrown` (both defects
+fail-open). After fixes, the 8 new cases pass.
+
+Acceptance gates:
+- `dotnet test App.World.Tests` -> `Passed: 640, Failed: 0` (includes the lead-owned
+  `MaterializedRotationKinematicsOracleTests`, 3/3 green and unmodified).
+- `dotnet test App.World.Composition.Tests` -> `Passed: 110, Failed: 0`.
+
+Assumptions / notes: the "(b) no marker appended" proof observes authority through the public
+`GetPlanetPresentationAsync` topology (identity roster stays onset-identical; a generated flip would
+drift), reusing the existing imported-vs-generated observable so no Service test hook was added. The
+Defect 2 fixture uses the materializer default anchor `"000"`. The spec's "5 oracle tests" is an
+approximation — the oracle file has 3 `[Fact]` methods; production kinematics satisfies the contract.

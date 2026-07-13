@@ -210,6 +210,106 @@ public sealed class RotationSourceSeamTests
         Assert.True(service.GetOverviewAsync().IsDirty);
     }
 
+    [Theory]
+    [InlineData("gplate")]
+    [InlineData("import")]
+    [InlineData("fabricated")]
+    public void Unknown_rotationSourceKind_fails_closed_with_diagnostic_naming_kind_and_accepted(string kind)
+    {
+        // Defect 1 (fail-open): an unrecognized non-empty rotationSourceKind must throw, not
+        // silently select the generated default (mirrors WorldCrustRunSpec.ReadRotationSourceRecipe).
+        using var service = new Service(new ServiceRegistry());
+        var request = new WorldGenerationRequest(
+            WorldId: "unknown-kind-world",
+            GenerationSpec: "world.generate",
+            Parameters: new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["source"] = "world-generation.graph",
+                ["rotationSourceKind"] = kind,
+            });
+
+        var error = Assert.Throws<ArgumentException>(() => service.RunGenerationAsync(request));
+
+        Assert.Contains(kind, error.Message ?? string.Empty, StringComparison.Ordinal);
+        Assert.Contains("imported", error.Message ?? string.Empty, StringComparison.Ordinal);
+        Assert.Contains("generated", error.Message ?? string.Empty, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Unknown_rotationSourceKind_appends_no_generated_marker_and_leaves_prior_authority_active()
+    {
+        // Defect 1 (durable consequence): the throw must precede the durable generated-selection
+        // CAS-append, so a bound imported authority stays active. Proven via visible topology: the
+        // identity roster stays onset-identical at the evolved tick; a flip to generated would drift.
+        long onsetTick = SphereRegimeScheduleDefaults.PlateOnsetTick;
+        const long evolvedTick = 200_000_000L;
+        using var service = new Service(new ServiceRegistry());
+
+        var generatedAssignments = Assert.IsType<WorldGlobeSnapshot>(
+                service.GetPlanetPresentationAsync(evolvedTick, tessellationFrequency: 2).GlobeSnapshot)
+            .Cells.Select(cell => cell.PlateId).ToArray();
+
+        var importResult = service.RunGenerationAsync(new WorldGenerationRequest(
+            WorldId: "prior-import-world",
+            GenerationSpec: "world.generate",
+            Parameters: new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["source"] = "world-generation.graph",
+                ["rotationSourceKind"] = "imported",
+                ["rotationSourcePayload"] = IdentityRosterRotText,
+                ["rotationSourceName"] = "identity-roster.rot",
+            }));
+        Assert.True(importResult.Success);
+
+        var importedAssignments = Assert.IsType<WorldGlobeSnapshot>(
+                service.GetPlanetPresentationAsync(evolvedTick, tessellationFrequency: 2).GlobeSnapshot)
+            .Cells.Select(cell => cell.PlateId).ToArray();
+        Assert.False(generatedAssignments.SequenceEqual(importedAssignments));
+
+        var bad = Assert.Throws<ArgumentException>(() => service.RunGenerationAsync(new WorldGenerationRequest(
+            WorldId: "prior-import-world",
+            GenerationSpec: "world.generate",
+            Parameters: new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                ["source"] = "world-generation.graph",
+                ["rotationSourceKind"] = "gplate",
+            })));
+        Assert.Contains("gplate", bad.Message ?? string.Empty, StringComparison.Ordinal);
+
+        var stillActiveAssignments = Assert.IsType<WorldGlobeSnapshot>(
+                service.GetPlanetPresentationAsync(evolvedTick, tessellationFrequency: 2).GlobeSnapshot)
+            .Cells.Select(cell => cell.PlateId).ToArray();
+        Assert.Equal(importedAssignments, stillActiveAssignments);
+        Assert.False(generatedAssignments.SequenceEqual(stillActiveAssignments));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Absent_or_empty_rotationSourceKind_selects_generated_default(string? kind)
+    {
+        // Defect 1 (preserve real default): absent/empty kind is the genuine generated-default path
+        // and must not break.
+        var parameters = new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            ["source"] = "world-generation.graph",
+        };
+        if (kind is not null)
+            parameters["rotationSourceKind"] = kind;
+
+        using var service = new Service(new ServiceRegistry());
+        var request = new WorldGenerationRequest(
+            WorldId: "default-kind-world",
+            GenerationSpec: "world.generate",
+            Parameters: parameters);
+
+        var result = service.RunGenerationAsync(request);
+
+        Assert.True(result.Success);
+        Assert.True(service.GetOverviewAsync().IsDirty);
+    }
+
     [Fact]
     public void CommittedImportedAuthority_DrivesVisibleTopologyAndOwnsADistinctCrustCacheEntry()
     {
