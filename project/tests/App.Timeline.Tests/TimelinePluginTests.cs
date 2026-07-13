@@ -448,6 +448,114 @@ public sealed class TimelinePluginTests
     }
 
     [Fact]
+    public async Task TunnelZoomCommand_RegistersAndZoomsInWhenEnabled()
+    {
+        var registry = NewRegistry();
+        var commands = new FakeCommandService();
+        var proxy = new FakeFaceProxy();
+        var tunnel = new FakeTunnelPresentation(
+            enabled => new TunnelActivationResult(enabled, enabled, string.Empty),
+            initiallyEnabled: true);
+        registry.Register<FantaSim.App.Command.IService>(commands);
+        registry.Register<ITimelineController>(new FakeTimelineController());
+        registry.Register<ITunnelPresentation>(tunnel);
+
+        var plugin = new TimelinePlugin(() => proxy);
+        await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+
+        Assert.Contains(commands.Commands, command => command.Id == TimelinePlugin.TunnelZoomCommandId);
+
+        var result = await commands.ExecuteAsync(new CommandRequest(
+            TimelinePlugin.TunnelZoomCommandId,
+            new JsonObject { ["direction"] = 1 }.ToJsonString()));
+        var payload = JsonNode.Parse(result.ResultJson!)!.AsObject();
+
+        Assert.True(result.Ok);
+        Assert.True(payload["ok"]!.GetValue<bool>());
+        Assert.Equal(1, payload["direction"]!.GetValue<int>());
+        Assert.Equal(1.12f, payload["effectiveScale"]!.GetValue<float>(), precision: 5);
+        Assert.Equal(string.Empty, payload["failureReason"]!.GetValue<string>());
+        Assert.Equal(1, tunnel.TrySetZoomCalls);
+    }
+
+    [Fact]
+    public async Task TunnelZoomCommand_RegistersAndZoomsOutWhenEnabled()
+    {
+        var registry = NewRegistry();
+        var commands = new FakeCommandService();
+        var proxy = new FakeFaceProxy();
+        var tunnel = new FakeTunnelPresentation(
+            enabled => new TunnelActivationResult(enabled, enabled, string.Empty),
+            initiallyEnabled: true);
+        registry.Register<FantaSim.App.Command.IService>(commands);
+        registry.Register<ITimelineController>(new FakeTimelineController());
+        registry.Register<ITunnelPresentation>(tunnel);
+
+        var plugin = new TimelinePlugin(() => proxy);
+        await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+
+        var result = await commands.ExecuteAsync(new CommandRequest(
+            TimelinePlugin.TunnelZoomCommandId,
+            new JsonObject { ["direction"] = -1 }.ToJsonString()));
+        var payload = JsonNode.Parse(result.ResultJson!)!.AsObject();
+
+        Assert.True(result.Ok);
+        Assert.True(payload["ok"]!.GetValue<bool>());
+        Assert.Equal(-1, payload["direction"]!.GetValue<int>());
+        Assert.Equal(1.0f / 1.12f, payload["effectiveScale"]!.GetValue<float>(), precision: 5);
+    }
+
+    [Fact]
+    public async Task TunnelZoomCommand_RejectsWhenTunnelDisabled()
+    {
+        var registry = NewRegistry();
+        var commands = new FakeCommandService();
+        var proxy = new FakeFaceProxy();
+        var tunnel = new FakeTunnelPresentation(
+            enabled => new TunnelActivationResult(enabled, enabled, string.Empty),
+            initiallyEnabled: false);
+        registry.Register<FantaSim.App.Command.IService>(commands);
+        registry.Register<ITimelineController>(new FakeTimelineController());
+        registry.Register<ITunnelPresentation>(tunnel);
+
+        var plugin = new TimelinePlugin(() => proxy);
+        await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+
+        var result = await commands.ExecuteAsync(new CommandRequest(
+            TimelinePlugin.TunnelZoomCommandId,
+            new JsonObject { ["direction"] = 1 }.ToJsonString()));
+        var payload = JsonNode.Parse(result.ResultJson!)!.AsObject();
+
+        Assert.True(result.Ok);
+        Assert.False(payload["ok"]!.GetValue<bool>());
+        Assert.Equal("tunnel mode not effective", payload["failureReason"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task TunnelZoomCommand_RejectsZeroDirection()
+    {
+        var registry = NewRegistry();
+        var commands = new FakeCommandService();
+        var proxy = new FakeFaceProxy();
+        var tunnel = new FakeTunnelPresentation(
+            enabled => new TunnelActivationResult(enabled, enabled, string.Empty),
+            initiallyEnabled: true);
+        registry.Register<FantaSim.App.Command.IService>(commands);
+        registry.Register<ITimelineController>(new FakeTimelineController());
+        registry.Register<ITunnelPresentation>(tunnel);
+
+        var plugin = new TimelinePlugin(() => proxy);
+        await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+
+        var result = await commands.ExecuteAsync(new CommandRequest(
+            TimelinePlugin.TunnelZoomCommandId,
+            new JsonObject { ["direction"] = 0 }.ToJsonString()));
+
+        Assert.False(result.Ok);
+        Assert.Contains("non-zero", result.Error!.Message);
+    }
+
+    [Fact]
     public void FaceContextRevisionProviderIsLazyAndSeversOnDispose()
     {
         var revision = 4;
@@ -574,14 +682,18 @@ public sealed class TimelinePluginTests
 
         public FakeTunnelPresentation(
             Func<bool, TunnelActivationResult> activate,
-            bool initiallyEnabled = false)
+            bool initiallyEnabled = false,
+            float initialZoomScale = 1.0f)
         {
             _activate = activate;
             IsEnabled = initiallyEnabled;
+            ZoomScale = initialZoomScale;
         }
 
         public bool IsEnabled { get; private set; }
         public int TrySetEnabledCalls { get; private set; }
+        public int TrySetZoomCalls { get; private set; }
+        public float ZoomScale { get; private set; }
 
         public void Rebind() { }
 
@@ -591,6 +703,16 @@ public sealed class TimelinePluginTests
             var result = _activate(enabled);
             IsEnabled = result.EffectiveEnabled;
             return result;
+        }
+
+        public TunnelZoomResult TrySetZoom(int direction)
+        {
+            TrySetZoomCalls++;
+            if (!IsEnabled)
+                return new TunnelZoomResult(false, ZoomScale, "tunnel mode not effective");
+
+            ZoomScale = direction > 0 ? ZoomScale * 1.12f : ZoomScale / 1.12f;
+            return new TunnelZoomResult(true, ZoomScale, string.Empty);
         }
 
         public void Dispose() { }

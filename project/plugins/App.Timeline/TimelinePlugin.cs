@@ -32,6 +32,9 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
     // Tunnel slice-1 (vault/plans/2026-07-11-tunnel-slice1-plan.md Task 11).
     internal const string TunnelViewCommandId = "timeline.tunnel_view";
 
+    // Tunnel slice-1 Part C: headless/testable zoom command sharing wheel-zoom clamping/ownership.
+    internal const string TunnelZoomCommandId = "timeline.tunnel_zoom";
+
     private readonly Func<ITimelineFaceProxy> _faceProxyFactory;
 
     // Serializes compose/sever/shutdown across threads: world reloads raise RuntimeChanging/
@@ -473,6 +476,35 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
                     return Task.FromResult<string?>(BuildTunnelResultJson(result, decision.ModeEpoch));
                 }
             });
+
+        commandService.Register(
+            new FantaSim.App.Command.CommandDescriptor(
+                Id: TunnelZoomCommandId,
+                Title: "Zoom the tunnel planet",
+                Description: "Adjusts the shared planet zoom while tunnel mode is effective. Payload: {\"direction\":1} for zoom-in, {\"direction\":-1} for zoom-out.",
+                Category: "timeline"),
+            (payloadJson, _) =>
+            {
+                var payload = ParseTunnelZoomPayload(payloadJson);
+                if (!TryReadInt(payload["direction"], out var direction) || direction == 0)
+                    throw new ArgumentException("timeline.tunnel_zoom requires non-zero integer 'direction'.");
+
+                lock (_lifecycleGate)
+                {
+                    var tunnel = _registry?.TryGet<ITunnelPresentation>();
+                    var result = tunnel is null
+                        ? new TunnelZoomResult(false, 1.0f, "tunnel presentation unavailable")
+                        : tunnel.TrySetZoom(direction);
+
+                    return Task.FromResult<string?>(new JsonObject
+                    {
+                        ["ok"] = result.Ok,
+                        ["direction"] = direction,
+                        ["effectiveScale"] = result.EffectiveScale,
+                        ["failureReason"] = result.FailureReason,
+                    }.ToJsonString());
+                }
+            });
     }
 
     private void UnregisterTimelineCommands()
@@ -483,6 +515,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
         commandService?.Unregister(ToggleLayerCommandId);
         commandService?.Unregister(SetTrackArchivedCommandId);
         commandService?.Unregister(TunnelViewCommandId);
+        commandService?.Unregister(TunnelZoomCommandId);
     }
 
     private void OnResourceRuntimeChanging(object? sender, ResourceRuntimeChangingEventArgs args)
@@ -643,6 +676,30 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
 
         return JsonNode.Parse(payloadJson) as JsonObject
             ?? throw new ArgumentException("timeline.tunnel_view payload must be a JSON object.");
+    }
+
+    private static JsonObject ParseTunnelZoomPayload(string? payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+            throw new ArgumentException("timeline.tunnel_zoom payload is required.");
+
+        return JsonNode.Parse(payloadJson) as JsonObject
+            ?? throw new ArgumentException("timeline.tunnel_zoom payload must be a JSON object.");
+    }
+
+    private static bool TryReadInt(JsonNode? node, out int value)
+    {
+        value = 0;
+        if (node is not JsonValue jsonValue)
+            return false;
+        if (jsonValue.TryGetValue(out value))
+            return true;
+        if (jsonValue.TryGetValue<string>(out var text)
+            && int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value))
+        {
+            return true;
+        }
+        return false;
     }
 
     private static string BuildTunnelResultJson(TunnelActivationResult result, long modeEpoch)

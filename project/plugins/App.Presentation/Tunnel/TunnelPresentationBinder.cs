@@ -90,6 +90,18 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
 
     public bool IsEnabled => _enabled;
 
+    public TunnelZoomResult TrySetZoom(int direction)
+    {
+        if (!_enabled)
+            return new TunnelZoomResult(false, _inputPolicy.CurrentZoomScale, "tunnel mode not effective");
+
+        var result = _inputPolicy.HandleWheel(direction);
+        if (result.AdjustZoom)
+            ApplyPlanetZoom();
+
+        return new TunnelZoomResult(true, _inputPolicy.CurrentZoomScale, string.Empty);
+    }
+
     public void Rebind()
     {
         if (_disposed || _tearingDown)

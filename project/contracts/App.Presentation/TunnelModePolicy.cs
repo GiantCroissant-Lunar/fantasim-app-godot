@@ -5,6 +5,11 @@ public readonly record struct TunnelActivationResult(
     bool EffectiveEnabled,
     string FailureReason);
 
+public readonly record struct TunnelZoomResult(
+    bool Ok,
+    float EffectiveScale,
+    string FailureReason);
+
 public enum TunnelModeEvent
 {
     EnableSucceeded,

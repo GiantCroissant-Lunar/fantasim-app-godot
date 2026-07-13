@@ -14,5 +14,10 @@ public interface ITunnelPresentation : IDisposable
     /// world/stage/controller/geometry dependency is unavailable; disabling is always idempotent.</summary>
     TunnelActivationResult TrySetEnabled(bool enabled);
 
+    /// <summary>Adjusts the shared-planet zoom scale when tunnel mode is effective. Direction > 0
+    /// zooms in, < 0 zooms out. Shares the same clamping/ownership path as wheel zoom and reports
+    /// the effective scale deterministically.</summary>
+    TunnelZoomResult TrySetZoom(int direction);
+
     bool IsEnabled { get; }
 }
