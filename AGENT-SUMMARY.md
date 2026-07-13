@@ -148,8 +148,10 @@ modes are the meaningful compile/runtime proof).
   provider (including an onset mismatch after recovery), and generated authority with an imported
   provider, fail closed.
 - `.rot` scope remains intentionally narrow: it supplies finite rotations for matching ids on the
-  procedurally generated onset roster and geometry. Unmatched ids are stationary. It does not import
-  Earth's authored plate polygons; GPML/shapefile topology normalization remains future Phase E.
+  procedurally generated onset roster and geometry. Authored `.rot` ids absent from that roster have
+  no geometry to drive; generated roster ids absent from the materialized provider retain identity
+  rotation and a zero-rate pole. It does not import Earth's authored plate polygons;
+  GPML/shapefile topology normalization remains future Phase E.
 - Imported finite-rotation kinematics use world-frame `later * inverse(earlier)` deltas in radians
   per canonical tick, central differences in-range, one-sided derivatives at exact keyframe
   endpoints, and an intentional stationary pole strictly outside the authored finite range.

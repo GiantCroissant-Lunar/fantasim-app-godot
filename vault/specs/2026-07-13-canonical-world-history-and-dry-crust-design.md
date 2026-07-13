@@ -79,10 +79,12 @@ import path.
 
 This is rotation playback, not complete Earth reconstruction. The current app still builds its
 onset plate roster, cell ownership geometry, and plate shapes procedurally, then applies matching
-`.rot` plate ids to that generated roster. Authored ids absent from the roster remain stationary;
-the `.rot` file alone cannot supply Earth's real plate polygons. GPML/shapefile topology import and
-semantic topology events remain Phase E work and are required before an Earth dataset can reproduce
-its authored plate shapes as well as its rotations.
+`.rot` plate ids to that generated roster. Authored `.rot` ids absent from the procedural roster
+have no geometry to drive and are ignored; procedural roster ids absent from the materialized
+provider retain identity rotation and a zero-rate pole. The `.rot` file alone cannot supply Earth's
+real plate polygons. GPML/shapefile topology import and semantic topology events remain Phase E work
+and are required before an Earth dataset can reproduce its authored plate shapes as well as its
+rotations.
 
 Other established facts:
 
