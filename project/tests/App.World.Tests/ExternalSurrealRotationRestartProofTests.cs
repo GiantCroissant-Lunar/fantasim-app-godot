@@ -1,4 +1,5 @@
 using Akka.Actor;
+using FantaSim.App.World.Composition;
 using FantaSim.App.World.Crust;
 using FantaSim.App.World.Services;
 using FantaSim.World.Contracts.Units;
@@ -25,12 +26,15 @@ public sealed class ExternalSurrealRotationRestartProofTests
     private const long OnsetTick = 42_000_000L;
     private const string WorldId = "durable-rotation-restart-proof";
     private const string BranchId = "main";
+    // Minted via WorldStreamVocabulary so the proof reads the SAME streams production writes.
+    // The previous hand-pinned L0 identities predated the L2 migration: every "stream empty"
+    // precondition was checking a stream nothing writes to — vacuously true (found 2026-07-14).
     private static readonly TruthStreamIdentity SelectionStream =
-        new("app", "main", 0, "world", "rotation-bindings");
+        WorldStreamVocabulary.RotationSelection();
     private static readonly TruthStreamIdentity ControlStream =
-        new(WorldId, BranchId, 0, "world", "imports");
+        WorldStreamVocabulary.ImportsControl(WorldId, BranchId);
     private static readonly TruthStreamIdentity PlateStream =
-        new(WorldId, BranchId, 0, "geosphere", "plates");
+        WorldStreamVocabulary.Plates(WorldId, BranchId);
     private const string RotationSource = """
         001 0 90 0 30 000
         001 4 90 0 36 000
