@@ -66,8 +66,21 @@ Read-order for the next session: this handover → engine
 where axis meaning lives only in prose. The L2 migration + vocabulary guard fixed the
 mechanical class. What remains is DOC work:
 
-1. **fantasim-hub lands in yokan-projects** (user does the move). Then: index its docs; the
-   hub originals are the AUTHORITY for LRM/variant doctrine.
+1. **fantasim-hub lands in yokan-projects.** Concrete state (established 2026-07-14 by the
+   user's other session, on the machine that held the C: copy): remote
+   `git@github.com:GiantCroissant-Lunar/fantasim-hub.git` (private) now carries TWO completely
+   unrelated histories — **`main` (248 commits, through May 2026: the Oct-2025→May-2026
+   discussion era — old handovers/RFCs/observatory history and the doctrine originals
+   `lrm-axis-model.md` / `variant-and-branch.md` / RFC-0500-004 / `domain-organization.md`)**
+   and **`curated-restoration` (46 commits, Jun 10-16 2026: the deliberately re-chartered
+   "curated restoration hub", pushed non-destructively from the C: copy; local main there
+   tracks it)**. No common ancestor; no force-push was performed. When cloning into
+   `yokan-projects/`, fetch BOTH branches — the doc-organization pass must decide the authority
+   relationship: the curated line was an intentional fresh start, so likely
+   curated-restoration = the go-forward hub with the 248-commit main mined for doctrine
+   originals and discussion history (then reconcile the workspace's recovered-doctrine bridge
+   against whichever line wins per doc). Cloning is a user-approved structural step — the user
+   said they'll bring it in; if delegated, clone WITHOUT creating anything new beyond the clone.
 2. **Reconcile** engine `vault/architecture/variant-fantasy-doctrine-recovered.md` (recovered
    this session from supermemory backups — source doc ids inside) against the real hub docs.
    Recovered highlights: variant axis = lawsets `science`/`wuxing`/`high-magic`; coupling laws
