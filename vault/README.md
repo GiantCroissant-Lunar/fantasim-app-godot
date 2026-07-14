@@ -12,7 +12,10 @@ Per-branch execution progress is tracked in `.git/sdd/progress.md` (not committe
 
 ## Authority index (audited against code 2026-07-06; banners on every stale doc · index extended 2026-07-11 — delta section below; 07-06 banners unchanged)
 
-**Constitution — read first (mechanically enforced by `App.Architecture.Tests`):**
+**App-internal constitution — read first (mechanically enforced by `App.Architecture.Tests`).**
+Cross-repo DOCTRINE authority is the hub
+(`fantasim-hub/vault/architecture/doc-authority-map.md` is the tie-breaker; S-006
+correction 2026-07-14) — everything below governs THIS app only:
 - [planet-domain-station-map](architecture/planet-domain-station-map.md) — the mandatory station route (truth stream → node graph → ECS → tiers → bundle seam) + the two gates.
 - [attempt-8 recovery roadmap](plans/2026-07-06-attempt8-recovery-roadmap.md) — the ACTIVE master plan (P0–P7, progress log, product outcomes O1–O5).
 - [long-term roadmap](plans/2026-07-06-long-term-roadmap.md) — horizons H1–H4; horizons do not open early.
