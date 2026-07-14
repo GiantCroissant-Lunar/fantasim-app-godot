@@ -16,10 +16,11 @@ namespace FantaSim.App.World.Composition;
 /// the underlying declared/discovered data itself is never deleted -- only the overlay flag.
 /// </summary>
 /// <remarks>
-/// Composed and owned by <c>FantaSim.App.Timeline.TimelinePlugin</c> (the timeline category owns
-/// track UX -- vault/plans/2026-07-10-layer-track-registry-slice1-plan.md Task 3), the same way
-/// that plugin already owns the timeline <c>Services.Service</c> instance. All paths are
-/// injected, never resolved internally, so this class stays testable against a temp directory.
+/// Composed and owned by <c>WorldPlugin.CreateLayerTrackRegistry</c> (registered under
+/// <c>OwnerId "app.world"</c>); the timeline plugin only consumes it through the registry.
+/// (The slice-1 plan's Task 3 originally assigned ownership to the timeline plugin — the
+/// shipped composition landed world-side.) All paths are injected, never resolved internally,
+/// so this class stays testable against a temp directory.
 /// </remarks>
 public sealed class LayerTrackRegistryService : ILayerTrackRegistry, IDisposable
 {
