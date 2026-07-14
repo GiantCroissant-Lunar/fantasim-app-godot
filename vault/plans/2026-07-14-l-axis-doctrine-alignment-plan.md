@@ -53,6 +53,41 @@ test that asserts the canonical convention string itself.
 - [ ] **Step 1:** Apply the changes.
 - [ ] **Step 2:** Build: `dotnet build project/plugins/App.World/App.World.csproj --nologo -v minimal` → 0 errors.
 
+### Task 1b: Fix the variant/branch transposition + centralize identity minting (audit additions, 2026-07-14)
+
+The 2026-07-14 stack-model validity audit found two more mechanical-drift items; they land in
+this migration because they touch the same lines.
+
+- **Transposition fix:** `TrackPipelineNodeCatalog.cs:70,119` populate
+  `LayerTrackStreamId("main", "default", ...)` — variation and branch are TRANSPOSED (doctrine
+  and every other site: variant="default", branch="main"; compare `WorldPlugin.cs:170` which
+  uses ("app","main",...) ordering). Fix both defaults to `("default", "main", "L2", "world",
+  "default")` and update the tests that assert the vocabulary
+  (`LayerTrackRegistryDefaultAssetsTests`, `LayerTrackRegistryBuilderTests`).
+- **Vocabulary centralization (the drift guard):** create
+  `project/contracts/App.World/Composition/WorldStreamVocabulary.cs` — a static class that is
+  the ONLY production minting point for five-axis identities. Factories (exact set, derived
+  from the sites in Task 1): `Plates(world, branch)`, `ImportsControl(world, branch)`,
+  `RotationSelection()`, `Generation()`, plus `TrackDefault()` returning the
+  `LayerTrackStreamId` default. Each factory hard-codes the doctrine-correct LLevel (2 for all
+  of these) with a doc comment citing `planet-stack-model.md` §2. Include argument validation:
+  a variant id that parses as an IP address or is empty/whitespace throws (the audit found the
+  HTTP ingress path leaks caller IPs into WorldId — this guard makes that loud at mint time
+  until the ingress mapping is redesigned).
+- Rewrite every Task-1 production site to call the vocabulary instead of constructing
+  identities inline.
+- **Architecture guard test** (new file
+  `project/tests/App.World.Tests/StreamVocabularyGuardTests.cs`): source-level scan (same
+  technique as `RotationSourceSeamTests`' source assertions) proving no production file under
+  `project/plugins/App.World`/`App.World.Composition` contains `new TruthStreamIdentity(` or
+  `new LayerTrackStreamId(` outside `WorldStreamVocabulary.cs` and codec DECODE paths
+  (`RotationSourceSelectionCodec.cs`, serializer deserialization) — list allowed files
+  explicitly in the test. Plus doctrine tests: every vocabulary factory's LLevel equals 2, and
+  `RotationSelection().ToStreamKey()` etc. match pinned expected strings.
+
+- [ ] **Step 1:** Write the guard + doctrine tests RED (vocabulary absent).
+- [ ] **Step 2:** Implement vocabulary, rewrite sites, fix transposition, tests GREEN.
+
 ### Task 2: App tests and assets
 
 - Update the 8 app-test `TruthStreamIdentity(..., 0, ...)` fixtures and every `"L0"` string
