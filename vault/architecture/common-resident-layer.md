@@ -94,10 +94,11 @@ MessagePack\*, Newtonsoft.Json, Schedulers, `TimeDete.Time.Primitives`,
 this is a **separate list** from the top-level `exactMatches`/`prefixes` that
 govern collectible-bundle sharing at runtime (`cross-alc-rules.md` §2); the
 `common` sub-object governs packaging only, consumed by `stage_bundle.py` to
-build `common.pck` and by nothing at runtime. The manifest's own comment notes
-`ReactiveUI`/`DynamicData`/`BoomHud.Foundation` were candidates in the
-original 2026-07-08 design brief but were dropped — verified not in the real
-host closure.
+build `common.pck` and by nothing at runtime. That sub-object's comment (in
+`shared-assembly-policy.json` — the generated `manifest.json` carries no
+comments) notes `ReactiveUI`/`DynamicData`/`BoomHud.Foundation` were
+candidates in the original 2026-07-08 design brief but were dropped —
+verified not in the real host closure.
 
 ### Boot sequence (`CommonResidentLayerBootstrap.EnsureLoaded`)
 
