@@ -57,7 +57,7 @@ public sealed class WorldHistoryBuildModeContractTests
         try
         {
             var values = service.GetFieldValuesAsync(new WorldFieldValuesRequest(
-                "app:test:L0:world:default",
+                "app:test:L2:world:default",
                 new[] { "app.elevation-m" }));
             Assert.Single(values.FieldValues);
             AssertBoundaryOwnership(values, context);

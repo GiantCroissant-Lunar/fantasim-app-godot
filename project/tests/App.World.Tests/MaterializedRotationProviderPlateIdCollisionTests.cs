@@ -24,7 +24,7 @@ public sealed class MaterializedRotationProviderPlateIdCollisionTests
         var parsed = new RotParser().Parse("collision.rot", new StringReader(rotText));
         Assert.Empty(parsed.Issues);
 
-        var stream = new TruthStreamIdentity("collision", "main", 0, "geosphere", "plates");
+        var stream = new TruthStreamIdentity("collision", "main", 2, "geosphere", "plates");
         var store = new InMemoryTruthEventStore();
         await store.AppendIfHeadAsync(
             stream,

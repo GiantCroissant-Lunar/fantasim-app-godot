@@ -23,12 +23,8 @@ namespace FantaSim.App.World.Services;
 /// </summary>
 internal sealed class WorldHistoryCoordinator : IWorldHistoryCoordinator
 {
-    private static readonly TruthStreamIdentity RotationSelectionStream = new(
-        VariantId: "app",
-        BranchId: "main",
-        LLevel: 0,
-        Domain: "world",
-        Model: "rotation-bindings");
+    private static readonly TruthStreamIdentity RotationSelectionStream =
+        FantaSim.App.World.Composition.WorldStreamVocabulary.RotationSelection();
 
     private readonly IFieldCatalog _catalog;
     private readonly IFieldReducerRegistry _reducers;
@@ -88,12 +84,7 @@ internal sealed class WorldHistoryCoordinator : IWorldHistoryCoordinator
         _catalog = new CompositeFieldCatalog(seed);
         CatalogValidator.Validate(_catalog, _reducers);
 
-        _streamId = new TruthStreamIdentity(
-            VariantId: "app",
-            BranchId: "main",
-            LLevel: 0,
-            Domain: "world",
-            Model: "default");
+        _streamId = FantaSim.App.World.Composition.WorldStreamVocabulary.Generation();
 
         RestoreActiveRotationSource();
     }

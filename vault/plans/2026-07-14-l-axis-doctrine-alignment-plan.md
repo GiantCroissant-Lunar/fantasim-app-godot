@@ -50,8 +50,8 @@ test that asserts the canonical convention string itself.
   --include=*.json` — every remaining world-scoped site aligns to 2 / "L2"; anything genuinely
   local-scoped stays and is listed in AGENT-SUMMARY.md with justification (expected: none).
 
-- [ ] **Step 1:** Apply the changes.
-- [ ] **Step 2:** Build: `dotnet build project/plugins/App.World/App.World.csproj --nologo -v minimal` → 0 errors.
+- [x] **Step 1:** Apply the changes.
+- [x] **Step 2:** Build: `dotnet build project/plugins/App.World/App.World.csproj --nologo -v minimal` → 0 errors.
 
 ### Task 1b: Fix the variant/branch transposition + centralize identity minting (audit additions, 2026-07-14)
 
@@ -85,8 +85,8 @@ this migration because they touch the same lines.
   explicitly in the test. Plus doctrine tests: every vocabulary factory's LLevel equals 2, and
   `RotationSelection().ToStreamKey()` etc. match pinned expected strings.
 
-- [ ] **Step 1:** Write the guard + doctrine tests RED (vocabulary absent).
-- [ ] **Step 2:** Implement vocabulary, rewrite sites, fix transposition, tests GREEN.
+- [x] **Step 1:** Write the guard + doctrine tests RED (vocabulary absent).
+- [x] **Step 2:** Implement vocabulary, rewrite sites, fix transposition, tests GREEN.
 
 ### Task 2: App tests and assets
 
@@ -101,19 +101,19 @@ this migration because they touch the same lines.
 - Re-pin any app-side golden that embeds a convention-modeling identity (expected: the
   selection-codec golden if one exists; list every re-pin).
 
-- [ ] **Step 1:** Apply.
-- [ ] **Step 2:** `dotnet test project/tests/App.World.Tests/App.World.Tests.csproj --nologo -v minimal` → 640/640.
-- [ ] **Step 3:** `dotnet test project/tests/App.World.Composition.Tests/App.World.Composition.Tests.csproj --nologo -v minimal` → 110/110.
-- [ ] **Step 4:** `dotnet test project/tests/App.Presentation.Tests/App.Presentation.Tests.csproj --nologo -v minimal && dotnet test project/tests/App.Timeline.Tests/App.Timeline.Tests.csproj --nologo -v minimal` → 253 + 339.
+- [x] **Step 1:** Apply.
+- [x] **Step 2:** `dotnet test project/tests/App.World.Tests/App.World.Tests.csproj --nologo -v minimal` → 640/640.
+- [x] **Step 3:** `dotnet test project/tests/App.World.Composition.Tests/App.World.Composition.Tests.csproj --nologo -v minimal` → 110/110.
+- [x] **Step 4:** `dotnet test project/tests/App.Presentation.Tests/App.Presentation.Tests.csproj --nologo -v minimal && dotnet test project/tests/App.Timeline.Tests/App.Timeline.Tests.csproj --nologo -v minimal` → 253 + 339.
 
 ### Task 3: Durable gate re-run
 
-- [ ] **Step 1:** `tools/verify-durable-rotation-restart.sh` → both phases pass (the restart
+- [x] **Step 1:** `tools/verify-durable-rotation-restart.sh` → both phases pass (the restart
   proof now commits and rediscovers L2 streams end-to-end).
 
 ### Task 4: Summary
 
-- [ ] AGENT-SUMMARY.md: every changed site, every re-pinned golden (before/after), the sweep
+- [x] AGENT-SUMMARY.md: every changed site, every re-pinned golden (before/after), the sweep
   output proving no `L0` convention site remains (`grep` results), test totals, confirmation
   nothing was committed.
 

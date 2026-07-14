@@ -83,7 +83,7 @@ public sealed class MaterializedRotationKinematicsOracleTests
         var parsed = new RotParser().Parse("drifting-kinematics.rot", new StringReader(RotText));
         Assert.Empty(parsed.Issues);
 
-        var stream = new TruthStreamIdentity("drifting-kinematics", "main", 0, "geosphere", "plates");
+        var stream = new TruthStreamIdentity("drifting-kinematics", "main", 2, "geosphere", "plates");
         var store = new InMemoryTruthEventStore();
         await store.AppendIfHeadAsync(stream, RotationStreamImporter.ToDrafts(parsed, stream), null);
         var model = await RotationModelMaterializer.MaterializeAsync(store, stream);

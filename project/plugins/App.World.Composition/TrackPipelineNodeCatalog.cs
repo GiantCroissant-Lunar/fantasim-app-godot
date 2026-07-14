@@ -67,7 +67,7 @@ public static class TrackPipelineNodeCatalog
 /// generation family json (the "layer-scope graphs" the family document already names).</summary>
 internal static class FamilyLayersNodeHandler
 {
-    private static readonly LayerTrackStreamId DefaultStreamId = new("main", "default", "L0", "world", "default");
+    private static readonly LayerTrackStreamId DefaultStreamId = WorldStreamVocabulary.TrackDefault();
     private static readonly IReadOnlyList<string> Capabilities = new[] { "scrub", "toggle", "expand-graph" };
 
     public static IReadOnlyList<LayerTrackDescriptor> Execute(TrackPipelineNode node, TrackPipelineBuildContext context)
@@ -116,7 +116,7 @@ internal static class FamilyLayersNodeHandler
 /// <summary>Source handler: one declared descriptor per entry in the declared-layers json asset.</summary>
 internal static class DeclaredLayersNodeHandler
 {
-    private static readonly LayerTrackStreamId DefaultStreamId = new("main", "default", "L0", "world", "default");
+    private static readonly LayerTrackStreamId DefaultStreamId = WorldStreamVocabulary.TrackDefault();
     internal const string DefaultSourceRef = "declared-layers";
 
     public static IReadOnlyList<LayerTrackDescriptor> Execute(TrackPipelineNode node, TrackPipelineBuildContext context)

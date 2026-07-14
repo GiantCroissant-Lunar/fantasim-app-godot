@@ -179,7 +179,7 @@ public sealed class LayerTrackRegistryServiceTests : IDisposable
         var record = new DiscoveredTrackRecord(
             SphereId: "world",
             LayerId: "world.truth-events",
-            StreamId: new LayerTrackStreamId("app", "main", "L0", "world", "default"),
+            StreamId: new LayerTrackStreamId("app", "main", "L2", "world", "default"),
             DisplayName: "Truth Events",
             ContentType: LayerTrackContentTypes.Events,
             ContentSource: "app:main:0:world:default");

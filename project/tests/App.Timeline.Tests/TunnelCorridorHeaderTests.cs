@@ -18,7 +18,7 @@ public sealed class TunnelCorridorHeaderTests
         string rung = "ka") => new(
         SphereId: "geosphere",
         LayerId: layerId,
-        StreamId: new LayerTrackStreamId("main", "default", "L0", "world", "default"),
+        StreamId: new LayerTrackStreamId("main", "default", "L2", "world", "default"),
         DisplayName: displayName,
         State: LayerTrackStates.Declared,
         TimeDomain: new LayerTrackTimeDomain(0L, null, rung),

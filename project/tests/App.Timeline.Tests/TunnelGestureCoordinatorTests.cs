@@ -24,7 +24,7 @@ public sealed class TunnelGestureCoordinatorTests
     private static LayerTrackDescriptor Descriptor(string layerId = "geosphere.crust", string rung = "ka") => new(
         SphereId: "geosphere",
         LayerId: layerId,
-        StreamId: new LayerTrackStreamId("main", "default", "L0", "world", "default"),
+        StreamId: new LayerTrackStreamId("main", "default", "L2", "world", "default"),
         DisplayName: layerId,
         State: LayerTrackStates.Declared,
         TimeDomain: new LayerTrackTimeDomain(0L, null, rung),

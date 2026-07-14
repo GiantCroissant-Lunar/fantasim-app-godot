@@ -20,7 +20,7 @@ public sealed class TrackLaneViewModelBuilderTests
         string contentType = "filmstrip") => new(
         SphereId: sphereId,
         LayerId: layerId,
-        StreamId: new LayerTrackStreamId("main", "default", "L0", "world", "default"),
+        StreamId: new LayerTrackStreamId("main", "default", "L2", "world", "default"),
         DisplayName: layerId,
         State: state,
         TimeDomain: new LayerTrackTimeDomain(0L, null, "ka"),

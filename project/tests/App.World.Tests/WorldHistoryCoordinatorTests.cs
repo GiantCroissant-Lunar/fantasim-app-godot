@@ -176,7 +176,7 @@ public class WorldHistoryCoordinatorTests
                 askTimeout: TimeSpan.FromSeconds(30));
             var tasks = Enumerable.Range(0, 12).Select(index =>
             {
-                var stream = new TruthStreamIdentity($"cas-{index}", "main", 0, "world", "imports");
+                var stream = new TruthStreamIdentity($"cas-{index}", "main", 2, "world", "imports");
                 ITruthEventDraft draft = new FantaSim.App.World.Services.TruthEventDraft(
                     stream,
                     "world.rotation-source-prepared.v1",

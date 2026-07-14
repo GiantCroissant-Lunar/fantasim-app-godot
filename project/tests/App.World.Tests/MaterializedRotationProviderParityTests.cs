@@ -35,7 +35,7 @@ public sealed class MaterializedRotationProviderParityTests
         var parsed = new RotParser().Parse("parity.rot", new StringReader(rotText));
         Assert.Empty(parsed.Issues);
 
-        var stream = new TruthStreamIdentity("parity", "main", 0, "geosphere", "plates");
+        var stream = new TruthStreamIdentity("parity", "main", 2, "geosphere", "plates");
         var store = new InMemoryTruthEventStore();
         var drafts = RotationStreamImporter.ToDrafts(parsed, stream);
         await store.AppendIfHeadAsync(stream, drafts, expectedHead: null);
@@ -56,7 +56,7 @@ public sealed class MaterializedRotationProviderParityTests
     {
         const string rotText = "001 0 90 0 30 000\n001 10 90 0 50 000";
         var parsed = new RotParser().Parse("identity.rot", new StringReader(rotText));
-        var stream = new TruthStreamIdentity("parity", "main", 0, "geosphere", "plates");
+        var stream = new TruthStreamIdentity("parity", "main", 2, "geosphere", "plates");
         var store = new InMemoryTruthEventStore();
         await store.AppendIfHeadAsync(stream, RotationStreamImporter.ToDrafts(parsed, stream), null);
         var model = await RotationModelMaterializer.MaterializeAsync(store, stream);
@@ -75,7 +75,7 @@ public sealed class MaterializedRotationProviderParityTests
     {
         const string rotText = "001 0 90 0 30 000\n001 10 90 0 50 000";
         var parsed = new RotParser().Parse("endpoint-kinematics.rot", new StringReader(rotText));
-        var stream = new TruthStreamIdentity("endpoint-kinematics", "main", 0, "geosphere", "plates");
+        var stream = new TruthStreamIdentity("endpoint-kinematics", "main", 2, "geosphere", "plates");
         var store = new InMemoryTruthEventStore();
         await store.AppendIfHeadAsync(stream, RotationStreamImporter.ToDrafts(parsed, stream), null);
         var model = await RotationModelMaterializer.MaterializeAsync(store, stream);

@@ -109,7 +109,7 @@ public sealed class LayerTrackRegistryDefaultAssetsTests
         var record = new DiscoveredTrackRecord(
             SphereId: "world",
             LayerId: "world.truth-events",
-            StreamId: new LayerTrackStreamId("app", "main", "L0", "world", "default"),
+            StreamId: new LayerTrackStreamId("app", "main", "L2", "world", "default"),
             DisplayName: "Truth Events",
             ContentType: LayerTrackContentTypes.Events);
 

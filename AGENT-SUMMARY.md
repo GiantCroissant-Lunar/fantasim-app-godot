@@ -306,7 +306,115 @@ plan test was added, removed, or weakened.
 ### Constraints honored
 
 Godot-free pure math on UnifyMaths types; Godot types only in binder partials. Deterministic (no
-Random/wall-clock/Guid). Straight window bit-identical for depth ≤ 7.5. Did not modify
+Random/wall-clock/Guid). Straight window bit-identical for depth <= 7.5. Did not modify
 `TunnelCameraFraming`, `Rings.cs`, `TunnelRayHitMapper`, scrub/fine-preview, planet occlusion, the 2D
-face, any csproj, or `collectible-bundles.json`. Windowed/visual gate is the lead's job — no Godot
+face, any csproj, or `collectible-bundles.json`. Windowed/visual gate is the lead's job -- no Godot
 app was run or exported.
+
+## L-axis doctrine alignment (L0 -> L2) -- 2026-07-14
+
+Plan: `vault/plans/2026-07-14-l-axis-doctrine-alignment-plan.md`. Spec: S7.5 of the canonical
+world-history spec. Doctrine: `planet-stack-model.md` S2 (L3 stellar, L2 world, L1 regional, L0
+local, negative micro; plate topology = L2). **Nothing committed/staged/pushed -- all in the
+working tree.**
+
+### What changed
+
+Every world-scoped truth/control stream identity in this app is now **L2**, routed through a single
+production vocabulary. The shipped `L0` convention was a pre-doctrine default; no durable production
+history held L0 identities (in-memory runtime, disposable gate evidence), so this is a rename, not a
+data migration.
+
+**New files (2):**
+- `project/plugins/App.World.Composition/WorldStreamVocabulary.cs` -- the ONLY production minting
+  point for five-axis stream identities. Six factories: `Plates(worldId, branchId)`,
+  `ImportsControl(worldId, branchId)`, `RotationSelection()`, `Generation()`, `TrackDefault()`,
+  `TruthEventsTrack()`. Each hard-codes `WorldLLevel = 2`. Includes `ValidateWorldId` that rejects
+  empty/whitespace and IP-address worldIds (HTTP ingress leak guard).
+- `project/tests/App.World.Tests/StreamVocabularyGuardTests.cs` -- 13 tests: source-level scan
+  proving no production file under `project/plugins/App.World` or `App.World.Composition` contains
+  `new TruthStreamIdentity(` or `new LayerTrackStreamId(` outside `WorldStreamVocabulary.cs` and
+  `RotationSourceSelectionCodec.cs` (decode path); plus doctrine assertions pinning every factory's
+  LLevel = 2 and its `ToStreamKey()` expected string.
+
+**Production files (4):**
+- `RotationImportCoordinator.cs` -- plateStream and controlStream now via vocabulary; LLevel
+  validation check changed from `!= 0` to `!= WorldStreamVocabulary.WorldLLevel`.
+- `WorldHistoryCoordinator.cs` -- RotationSelectionStream and generation `_streamId` via vocabulary.
+- `WorldPlugin.cs` -- truth-events track via `WorldStreamVocabulary.TruthEventsTrack()`.
+- `TrackPipelineNodeCatalog.cs` -- both DefaultStreamId via `WorldStreamVocabulary.TrackDefault()`;
+  transposition fix applied: was `("main", "default", "L0", ...)` (variation/branch transposed),
+  now `("default", "main", "L2", ...)`.
+
+**Test files (16):** All `"L0"` assertions and `TruthStreamIdentity(..., 0, ...)` fixtures updated
+to L2 across App.World.Tests (6 files), App.World.Composition.Tests (4 files), App.Timeline.Tests
+(6 files).
+
+### Re-pinned goldens (before/after)
+
+1. `LayerTrackDescriptorTests.cs` sample descriptor: `L: "L0"` -> `L: "L2"` (models default vocabulary).
+2. `LayerTrackDescriptorTests.cs` JSON golden: `"l": "L0"` -> `"l": "L2"` (forward-compat fixture
+   modeling the convention).
+3. `WorldHistoryBuildModeContractTests.cs`: `"app:test:L0:world:default"` -> `"app:test:L2:world:default"`.
+
+No hardcoded imported-authority digest values exist in tests (digest assertions check prefix only
+or compare runtime-to-runtime digests).
+
+### Sites genuinely NOT world-scoped (left untouched)
+
+`project/tests/App.Ecs.Tests/ReduceFieldsSystemTests.cs:183` --
+`TruthStreamIdentity("v", "main", 0, "app-ecs", "reduce-test")`. Domain "app-ecs" is not a world
+domain; this is an arbitrary ECS test fixture. L0 (local scope) is correct. (Expected: none. Found:
+1, justified.)
+
+### Final sweep output
+
+```
+=== Sweep 1: TruthStreamIdentity( in production ===
+project/plugins/App.World/History/RotationSourceSelectionCodec.cs:48:  (codec DECODE -- allowed)
+project/plugins/App.World.Composition/WorldStreamVocabulary.cs:16,34,45  (vocabulary -- the minting point)
+
+=== Sweep 2: L0 string literals in production (plugins+contracts+hosts+bundles) ===
+(empty -- grep exit 1)
+
+=== Sweep 4: LayerTrackStreamId( in production ===
+project/plugins/App.World.Composition/WorldStreamVocabulary.cs:16  (doc comment)
+project/contracts/App.World/Composition/LayerTrackDescriptor.cs:17  (record definition)
+
+=== Sweep 5: LLevel hardcoded 0 ===
+(empty -- grep exit 1)
+```
+
+No world-scoped L0 construction remains.
+
+### Test totals
+
+| Suite | Baseline | After | Delta |
+|---|---|---|---|
+| App.World.Tests | 640 | 653 | +13 (guard tests) |
+| App.World.Composition.Tests | 110 | 110 | 0 |
+| App.Presentation.Tests | 253 | 253 | 0 |
+| App.Timeline.Tests | 339 | 339 | 0 |
+| **Total** | **1342** | **1355** | **+13** |
+
+Durable restart proof: `tools/verify-durable-rotation-restart.sh` PASSED (write phase commits L2
+streams to SurrealDB; read phase recovers them in a distinct process over the same RocksDB state).
+
+### Deviations
+
+1. **Vocabulary location:** plan specified `project/contracts/App.World/Composition/`; placed in
+   `project/plugins/App.World.Composition/` instead. The T1 contracts project is shared across
+   collectible ALC boundaries; adding `TruthStreamIdentity` as a dependency caused a type-identity
+   split in `WorldHistoryBuildModeContractTests` (`TypeLoadException`). The plugin already references
+   TruthStream and lives in the same ALC as its consumers. Namespace is identical; the guard test's
+   allowed-files list was updated.
+
+2. **TruthEventsTrack() factory added:** plan's exact set was 5 factories. Added a 6th because
+   `WorldPlugin` constructs a `LayerTrackStreamId("app", "main", ...)` distinct from `TrackDefault()`
+   (variation "app" vs "default"). Without this factory, WorldPlugin would need inline construction
+   (defeating the guard).
+
+3. **Timeline tests transposition not fixed:** the six Timeline test files had the same transposed
+   `("main", "default", ...)` ordering. Only L0->L2 was applied; variation/branch transposition was
+   left as-is because the plan's Task 1b names only TrackPipelineNodeCatalog and the Composition
+   tests for that fix.

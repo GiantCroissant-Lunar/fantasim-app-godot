@@ -199,7 +199,7 @@ public sealed class LayerTrackRegistryBuilderTests
     [Fact]
     public void Build_StreamDiscovery_MapsRecordFieldByField()
     {
-        var streamId = new LayerTrackStreamId("app", "main", "L0", "world", "default");
+        var streamId = new LayerTrackStreamId("app", "main", "L2", "world", "default");
         var record = new DiscoveredTrackRecord(
             SphereId: "world",
             LayerId: "world.truth-events",
@@ -237,7 +237,7 @@ public sealed class LayerTrackRegistryBuilderTests
         var record = new DiscoveredTrackRecord(
             SphereId: "world",
             LayerId: "world.truth-events",
-            StreamId: new LayerTrackStreamId("app", "main", "L0", "world", "default"),
+            StreamId: new LayerTrackStreamId("app", "main", "L2", "world", "default"),
             DisplayName: "Truth Events",
             ContentType: LayerTrackContentTypes.Events);
 
@@ -266,7 +266,7 @@ public sealed class LayerTrackRegistryBuilderTests
         var record = new DiscoveredTrackRecord(
             SphereId: "world",
             LayerId: "world.truth-events",
-            StreamId: new LayerTrackStreamId("app", "main", "L0", "world", "default"),
+            StreamId: new LayerTrackStreamId("app", "main", "L2", "world", "default"),
             DisplayName: "Truth Events",
             ContentType: LayerTrackContentTypes.Events);
         var archived = new HashSet<string>
@@ -295,7 +295,7 @@ public sealed class LayerTrackRegistryBuilderTests
         var record = new DiscoveredTrackRecord(
             SphereId: "world",
             LayerId: "world.truth-events",
-            StreamId: new LayerTrackStreamId("app", "main", "L0", "world", "default"),
+            StreamId: new LayerTrackStreamId("app", "main", "L2", "world", "default"),
             DisplayName: "Truth Events",
             ContentType: LayerTrackContentTypes.Events);
         var pipeline = PipelineWithDiscovery();
@@ -360,7 +360,7 @@ public sealed class LayerTrackRegistryBuilderTests
         var record = new DiscoveredTrackRecord(
             SphereId: "world",
             LayerId: "world.truth-events",
-            StreamId: new LayerTrackStreamId("app", "main", "L0", "world", "default"),
+            StreamId: new LayerTrackStreamId("app", "main", "L2", "world", "default"),
             DisplayName: "Truth Events",
             ContentType: LayerTrackContentTypes.Events);
         var trackSetParams = new JsonObject { ["laneOrder"] = new JsonArray("geosphere") };

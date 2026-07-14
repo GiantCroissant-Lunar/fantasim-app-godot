@@ -18,7 +18,7 @@ public sealed class LayerTrackDescriptorTests
         StreamId: new LayerTrackStreamId(
             Variation: "main",
             Branch: "default",
-            L: "L0",
+            L: "L2",
             Domain: "world",
             Model: "default"),
         DisplayName: "Crust",
@@ -67,7 +67,7 @@ public sealed class LayerTrackDescriptorTests
         {
           "sphereId": "geosphere",
           "layerId": "geosphere.crust",
-          "streamId": { "variation": "main", "branch": "default", "l": "L0", "domain": "world", "model": "default", "future": "value" },
+          "streamId": { "variation": "main", "branch": "default", "l": "L2", "domain": "world", "model": "default", "future": "value" },
           "displayName": "Crust",
           "state": "declared",
           "timeDomain": { "startTick": 100000000, "endTick": null, "rung": "ka" },

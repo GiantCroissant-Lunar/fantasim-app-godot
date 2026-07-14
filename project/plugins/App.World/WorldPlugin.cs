@@ -167,7 +167,7 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
             new DiscoveredTrackRecord(
                 SphereId: "world",
                 LayerId: "world.truth-events",
-                StreamId: new LayerTrackStreamId("app", "main", "L0", "world", "default"),
+                StreamId: WorldStreamVocabulary.TruthEventsTrack(),
                 DisplayName: "Truth Events",
                 ContentType: LayerTrackContentTypes.Events,
                 ContentSource: overview.WorldId,

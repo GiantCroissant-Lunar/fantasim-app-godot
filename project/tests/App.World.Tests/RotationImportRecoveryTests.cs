@@ -687,13 +687,13 @@ public sealed class RotationImportRecoveryTests
     }
 
     private static TruthStreamIdentity PlateStream =>
-        new("world-a", "main", 0, "geosphere", "plates");
+        new("world-a", "main", 2, "geosphere", "plates");
 
     private static TruthStreamIdentity ControlStream =>
-        new("world-a", "main", 0, "world", "imports");
+        new("world-a", "main", 2, "world", "imports");
 
     private static TruthStreamIdentity RotationSelectionStream =>
-        new("app", "main", 0, "world", "rotation-bindings");
+        new("app", "main", 2, "world", "rotation-bindings");
 
     private static async Task<List<ITruthEvent>> ReadAllAsync(
         ITruthEventReader reader,

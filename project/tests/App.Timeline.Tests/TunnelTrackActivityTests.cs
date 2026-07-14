@@ -17,7 +17,7 @@ public sealed class TunnelTrackActivityTests
     private static LayerTrackDescriptor Descriptor(string sphereId, string layerId) => new(
         SphereId: sphereId,
         LayerId: layerId,
-        StreamId: new LayerTrackStreamId("main", "default", "L0", "world", "default"),
+        StreamId: new LayerTrackStreamId("main", "default", "L2", "world", "default"),
         DisplayName: layerId,
         State: LayerTrackStates.Declared,
         TimeDomain: new LayerTrackTimeDomain(0L, null, "ka"),

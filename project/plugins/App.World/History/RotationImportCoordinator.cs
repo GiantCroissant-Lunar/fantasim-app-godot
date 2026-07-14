@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using FantaSim.App.World.Composition;
 using FantaSim.App.World.Crust;
 using FantaSim.App.World.Services;
 using FantaSim.Geosphere.Plate.Reconstruction;
@@ -214,7 +215,7 @@ internal sealed class RotationImportCoordinator
         CancellationToken ct = default)
     {
         if (!boundCursor.IsBounded
-            || boundCursor.Stream.LLevel != 0
+            || boundCursor.Stream.LLevel != WorldStreamVocabulary.WorldLLevel
             || !string.Equals(boundCursor.Stream.Domain, "world", StringComparison.Ordinal)
             || !string.Equals(boundCursor.Stream.Model, "imports", StringComparison.Ordinal))
         {
@@ -324,8 +325,8 @@ internal sealed class RotationImportCoordinator
                 nameof(request));
         }
 
-        var plateStream = new TruthStreamIdentity(request.WorldId, request.BranchId, 0, "geosphere", "plates");
-        var controlStream = new TruthStreamIdentity(request.WorldId, request.BranchId, 0, "world", "imports");
+        var plateStream = WorldStreamVocabulary.Plates(request.WorldId, request.BranchId);
+        var controlStream = WorldStreamVocabulary.ImportsControl(request.WorldId, request.BranchId);
         var drafts = RotationStreamImporter.ToDrafts(parsed, plateStream);
         if (drafts.Count == 0)
         {
