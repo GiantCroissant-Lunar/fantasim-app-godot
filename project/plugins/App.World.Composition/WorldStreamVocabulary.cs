@@ -35,6 +35,17 @@ public static class WorldStreamVocabulary
     }
 
     /// <summary>
+    /// The engine-emitted plate-topology truth stream consumed at onset:
+    /// <c>default:main:L2:geo.plates.topology:M0</c>. These five values MUST match the engine's
+    /// plate-topology stream config (fantasim-world PlateTopologyEmitter.EmitRoster call path) —
+    /// if the engine config changes, update this factory in lockstep. Note this is the
+    /// doctrine-correct dotted-domain + M0 form (lrm-axis-model: Domain vs M); the bare-domain
+    /// factories above predate that rule and their migration is an owed decision.
+    /// </summary>
+    public static TruthStreamIdentity PlateTopologyTruth()
+        => new("default", "main", WorldLLevel, "geo.plates.topology", "M0");
+
+    /// <summary>
     /// The rotation-import control stream for a given world/branch:
     /// <c>{world}:{branch}:L2:world:imports</c>. Used by the prepare/bind CAS protocol.
     /// </summary>

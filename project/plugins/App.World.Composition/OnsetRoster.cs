@@ -42,12 +42,11 @@ public sealed class OnsetRoster
 
     /// <summary>
     /// The TruthStream identity used by LidFractureAtOnset / PlateTopologyEmitter when producing
-    /// the onset roster. These values MUST match the engine's plate-topology stream config
-    /// (TruthStreamIdentity used in fantasim-world's PlateTopologyEmitter.EmitRoster call path).
-    /// If the engine config changes, update all five parts here in lockstep.
+    /// the onset roster. Minted by <see cref="WorldStreamVocabulary.PlateTopologyTruth"/> — the
+    /// engine-lockstep contract lives on that factory.
     /// </summary>
     private static readonly TruthStreamIdentity PlateTopologyStreamIdentity =
-        new("default", "main", 2, "geo.plates.topology", "M0");
+        WorldStreamVocabulary.PlateTopologyTruth();
 
     private static readonly PlateTopologyState EmptyState = new();
 

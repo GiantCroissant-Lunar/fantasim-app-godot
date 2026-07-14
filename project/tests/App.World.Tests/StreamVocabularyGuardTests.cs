@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using FantaSim.App.World.Composition;
 using FantaSim.World.TruthStream;
 using Xunit;
@@ -18,6 +19,15 @@ namespace FantaSim.App.World.Tests;
 /// </summary>
 public sealed class StreamVocabularyGuardTests
 {
+    /// <summary>
+    /// Catches target-typed identity constructions the literal scans miss:
+    /// fields/properties/locals declared as the identity type and assigned `new(...)`
+    /// (with `=` or `=>`), e.g. `TruthStreamIdentity Foo = new("a", "b", 2, "c", "d");`.
+    /// </summary>
+    private static readonly Regex TargetTypedConstruction = new(
+        @"\b(?:TruthStreamIdentity|LayerTrackStreamId)\s+[A-Za-z_@]\w*\s*(?:=>|=)\s*new\s*\(",
+        RegexOptions.Compiled);
+
     private static readonly string[] AllowedConstructionFiles =
     {
         "WorldStreamVocabulary.cs",
@@ -51,6 +61,11 @@ public sealed class StreamVocabularyGuardTests
                     violations.Add($"{Path.GetRelativePath(RepoRoot(), file)}: new TruthStreamIdentity(");
                 if (source.Contains("new LayerTrackStreamId(", StringComparison.Ordinal))
                     violations.Add($"{Path.GetRelativePath(RepoRoot(), file)}: new LayerTrackStreamId(");
+
+                // Target-typed constructions bypass the literal scans above
+                // (e.g. `TruthStreamIdentity Foo = new(...)` — found live in OnsetRoster 2026-07-14).
+                foreach (Match match in TargetTypedConstruction.Matches(source))
+                    violations.Add($"{Path.GetRelativePath(RepoRoot(), file)}: target-typed {match.Value.Trim()}");
             }
         }
 
@@ -77,6 +92,14 @@ public sealed class StreamVocabularyGuardTests
         var stream = WorldStreamVocabulary.Plates("earth", "main");
         Assert.Equal(2, stream.LLevel);
         Assert.Equal("earth:main:L2:geosphere:plates", stream.ToStreamKey());
+    }
+
+    [Fact]
+    public void PlateTopologyTruth_factory_matches_engine_lockstep_identity()
+    {
+        var stream = WorldStreamVocabulary.PlateTopologyTruth();
+        Assert.Equal(2, stream.LLevel);
+        Assert.Equal("default:main:L2:geo.plates.topology:M0", stream.ToStreamKey());
     }
 
     [Fact]
