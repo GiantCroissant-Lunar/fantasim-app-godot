@@ -36,5 +36,6 @@ public interface IRenderLayer : ILayer
     IReadOnlyList<WorldLayerDescriptor> RenderLayers { get; }
 }
 
-// NOTE: ITimelineLayer omitted — App.Timeline / ITimelineSource not yet present in this app.
-// Port it when the timeline contract is wired.
+// NOTE: ITimelineLayer deliberately does not exist. App.Timeline shipped (native .tscn timeline);
+// timeline lanes bind to truth streams via the track registry, not via an ILayer capability —
+// only the generator face binds truth (planet-stack-model §4).
