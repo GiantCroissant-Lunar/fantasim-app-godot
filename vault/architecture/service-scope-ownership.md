@@ -1,9 +1,22 @@
 # Service scope ownership — which scope (resident vs collectible) owns each service
 
-> **AUDIT (2026-07-06, code-verified):** CURRENT with drift — the `world` collectible bundle now exists (a domain service IS bundle-owned); `ITimelineController` is composed by App.Presentation (`WorldViewComposition` is dead code); Host.cs line refs predate host-slim. _(See the authority index in `vault/README.md`.)_
+> **AUDIT (2026-07-14, code-verified — supersedes the 2026-07-06 note):** Layer-3 ("Assembly
+> collectibility") and the current-inventory section described scope moves as prefix edits to
+> `App.Common/Bootstrap.cs:110-136` (`FantaSim.App.`/`FantaSim.App.World.` as shared-resident
+> prefixes). That mechanism is gone (2026-07-11 polarity flip — see
+> [cross-alc-rules.md](cross-alc-rules.md) §2): collectibility is now granted by
+> `project/hosts/complete-app/config/collectible-bundles.json`'s per-bundle `assemblyNames`,
+> consumed as `excludedExactMatches` in `Bootstrap.BuildPluginHost`. The World→bundle migration
+> this doc proposed **already shipped** via that mechanism — the `world` bundle is live
+> (`FantaSim.App.World`, `FantaSim.App.Presentation`, `FantaSim.App.World.FieldView`,
+> `FantaSim.App.World.Composition` + 15 deps). `ITimelineController` is registered by
+> `App.Presentation/PlanetPresentationBinder.cs` via `RegisterOwned` (`WorldViewComposition` is
+> dead code). Both sections rewritten below; the doc's decision rule and reference-direction
+> invariant are unaffected and remain current. _(See the authority index in `vault/README.md`.)_
 
 
-**Status:** PROPOSED (2026-06-25). Companion to [service-tier-architecture.md](service-tier-architecture.md)
+**Status:** PROPOSED (2026-06-25); layer-3 + inventory sections corrected 2026-07-14 to the
+shipped mechanism. Companion to [service-tier-architecture.md](service-tier-architecture.md)
 (the vertical T1–T4 axis) and [multi-scene-di-scoping-review.md](multi-scene-di-scoping-review.md)
 (the scope *mechanism*). This doc owns the **horizontal axis**: for each service, *which scope owns
 its lifetime*, and *which direction references may cross the resident↔collectible boundary*.
@@ -65,9 +78,25 @@ way references flow across the boundary:
   [bundle-hot-reload handover](../handover/2026-06-24-bundle-hot-reload-di-scoping.md).
 
 **Working example already in the tree:** the Timeline split. `ITimelineController` is resident
-(composed by `WorldViewComposition`), while the timeline *view* lives in the collectible `timeline`
-bundle. The view (collectible) → controller (resident) reference is the safe direction. The reverse
-— controller storing the view — would pin the timeline ALC.
+(registered by `App.Presentation/PlanetPresentationBinder.cs` via `IRegistry.RegisterOwned` —
+`WorldViewComposition`, this section's original citation, is dead code), while the timeline *view*
+lives in the collectible `timeline` bundle. The view (collectible) → controller (resident)
+reference is the safe direction. The reverse — controller storing the view — would pin the
+timeline ALC.
+
+## Standing rule: collectible services that spawn actors (live constraint, not hypothetical)
+
+`ActorSystem` is resident (`App.Common/Bootstrap.cs`). Any collectible service that creates actors
+within it must not let those actors pin the collectible ALC. The original World worked example
+below flagged this as a hypothetical "Akka gotcha"; it is now a **live constraint**: the
+collectible `world` bundle's `App.World/Services/Service.cs` starts `ActorTruthEventWriter` (an
+actor hosted in the resident `ActorSystem`) when the world truth-store backend is SurrealDB, so
+truth writes serialize through the single writer actor. A collectible service that spawns actors
+must either stay a plain class, or explicitly stop/detach its actors
+(`GracefulStop`/`PoisonPill`) on scene exit — the actor's `PostStop` must complete before (or as
+part of) the bundle's `ShutdownAsync`, or the resident `ActorSystem` holds a live reference into
+the collectible ALC and it never collects. Apply this check to every future actor-backed
+collectible service, not just World.
 
 ## "Scope ownership" is three layers, not one
 
@@ -86,11 +115,18 @@ a collectible scope (in the strong, *unloadable* sense) requires **all three** l
    forwarding, not real child containers) and the
    [child-scope-singletons follow-up spec](../specs/2026-06-24-dependency-archi-child-scope-singletons-followup.md).
 3. **Assembly collectibility** — whether the assembly is shared-resident or packaged into the
-   scene's collectible bundle. The `SharedAssemblyPolicy` in
-   [App.Common/Bootstrap.cs:110-136](../../project/plugins/App.Common/Bootstrap.cs:110) lists
-   `FantaSim.App.` and `FantaSim.App.World.` as **shared-resident prefixes**; only
-   `collectibleBundles.AssemblyNames` are excluded (→ collectible). So a service is collectible only
-   if its assembly leaves the shared prefixes **and** is packed into the scene `.pck`.
+   scene's collectible bundle. Since the 2026-07-11 polarity flip, the mechanism is DATA-DRIVEN,
+   not a prefix edit: `SharedAssemblyPolicy` (`App.Common/SharedAssemblyPolicyConfig.cs`, sourced
+   from `project/hosts/complete-app/config/shared-assembly-policy.json`) shares only an
+   **enumerated** list of T1 contracts + a small resident floor (`exactMatches`) plus narrow
+   infrastructure `prefixes` — the old broad `FantaSim.App.` prefix is gone (see
+   [cross-alc-rules.md](cross-alc-rules.md) §2). An assembly becomes collectible by being listed in
+   `project/hosts/complete-app/config/collectible-bundles.json`'s per-bundle `assemblyNames`, which
+   is consumed as `excludedExactMatches` in `Bootstrap.BuildPluginHost`. So a service is
+   collectible only if its assembly is **not** in `exactMatches`/`prefixes` **and** is listed in
+   its bundle's `assemblyNames` in `collectible-bundles.json`. "Move a service to a bundle" today
+   means: add its assembly names to the bundle's `assemblyNames` entry (and pack the project into
+   `projects`) — not editing a shared prefix.
 
 A **weak** ("lifetime-scoped but not unloadable") ownership needs layers 1+2. A **strong**
 ("unloadable/reloadable") ownership needs all three. The user's "Stage can be unloaded/reloaded"
@@ -150,9 +186,12 @@ Two decisions fixed here:
 > - **Camera is not composed in `Host.cs` at all** — confirm where it is currently registered before
 >   assuming it is resident; it may already be the easiest to make stage-owned.
 
-## Current inventory (2026-06-25)
+## Current inventory (2026-06-25, refreshed 2026-07-14)
 
-Everything domain-level is **resident** today; the collectible scenes own no domain services.
+Domain services are no longer all resident: the `world` bundle now owns World, CellElevation,
+and (via `App.Presentation`) the render seam that registers `ITimelineController`; Timeline's
+`Compose` step already ran inside the collectible `timeline` bundle even under the original
+2026-06-25 inventory below. Everything else in this table remains resident.
 
 ### Resident kernel (App.Common.Bootstrap) — foundational, correctly resident
 
@@ -168,41 +207,53 @@ kernel-shared) and must stay resident.
 | SceneFlow | resident | no | owns scene enter/exit; the resident arbiter |
 | Command | resident | no | the axis router; resident by design |
 | Ecs | resident | maybe | per-world isolation; actor-backed (resident ActorSystem) |
-| **World** | **resident** | **yes (proposed → stage)** | the trigger for this doc; see below |
-| CellElevation | resident | with World | derived from World; same scope as World |
-| WorldView | resident | with World | registers `ITimelineController`; render seam |
+| **World** | **collectible (`world` bundle)** | **shipped 2026-07-11** | `WorldComposition.ComposeWorld` now runs inside `App.World/WorldPlugin.cs` (`InitializeAsync`), not `Host.cs` — see the worked example below |
+| CellElevation | collectible, with World | shipped (structural) | `CellElevationComposition` lives in `App.World/HostComposition/`, part of the now-collectible `App.World` assembly — same scope as World |
+| WorldView | **superseded — do not use** | n/a | `WorldViewComposition` is dead code; `ITimelineController` is registered instead by `App.Presentation/PlanetPresentationBinder.cs` via `IRegistry.RegisterOwned` |
 | Gpu / GpuShader | resident | maybe | smoke-checked from assist today |
 | Iii | resident | no | external-axis bridge; Node-backed seam, resident |
-| Timeline (Compose) | resident | yes (proposed → stage) | service → stage; T1 contract stays resident; the *view* is the collectible `timeline` bundle |
-| Camera | not in Host.cs (verify) | yes (proposed → stage) | not composed in Host.cs — find current registration; may already be easiest to stage-own |
-| NodeGraph | resident (contracts + view) | proposed → stage (audit) | largely shared contracts + App.Ui.NodeGraph view; resident Host demos consume it — see audit flags |
+| Timeline (Compose) | collectible (`timeline` bundle) | shipped | `TimelinePlugin.ComposeTimeline` runs inside the collectible `App.Timeline` plugin; T1 contract stays resident |
+| Camera | resident (`Host.cs`) | not moved | `CameraComposition.ComposeCamera` is called directly from `Host.cs` — confirmed still resident, contrary to this row's earlier "may already be easiest to stage-own" note |
+| NodeGraph | resident (contracts + view) | not re-verified this pass | left as previously documented; re-audit before relying on this row |
 | Activity | resident | no | append-only log |
 | Ui | resident | no | resident view host |
 | RemoteIngress | resident | no | HTTP command ingress |
 
 ### Collectible scenes (entered via SceneFlow, loaded as PCK into collectible ALCs)
 
-`stage` (StageActivator) · `assist` (under stage) · `timeline` (under stage). Each registers only its
-own `Bootstrap`; assist additionally runs GPU smoke checks. **No domain service is scene-owned yet.**
+`stage` (StageActivator) · `assist` (under stage) · `timeline` (under stage) · `world` (under stage,
+shipped 2026-07-11 — packs `App.World`, `App.Presentation`, `App.World.FieldView`,
+`App.World.Composition` per `collectible-bundles.json`). Each registers its own `Bootstrap`/plugin
+entry; assist additionally runs GPU smoke checks. **World is scene-owned today** — this corrects
+the 2026-06-25 "no domain service is scene-owned yet" note below.
 
-## Worked example — World: resident → stage
+## Worked example — World: resident → stage (SHIPPED 2026-07-11)
 
-Moving World to the stage scope is the first proposed delta. The honest scope of work, by layer:
+> **Status: DONE.** The `world` collectible bundle is live in `collectible-bundles.json`
+> (`FantaSim.App.World`, `FantaSim.App.Presentation`, `FantaSim.App.World.FieldView`,
+> `FantaSim.App.World.Composition` + 15 dependency assemblies), entered under `stage` per the
+> phasing below. It shipped via the bundle-`assemblyNames` mechanism (Layer 3, corrected above),
+> not a shared-prefix edit. The layer-by-layer breakdown below is kept for the historical
+> reasoning; read "proposed" language in it as settled history, not an open question.
+
+Moving World to the stage scope was the first proposed delta. The honest scope of work, by layer:
 
 - **Layer 1 (registration):** move `WorldComposition.ComposeWorld` (and `CellElevation`,
   `WorldView`) out of the resident `Host.cs` sequence into the stage activation path.
 - **Layer 2 (DI scope):** requires the child-scope-owned-singleton capability that is **specced but
   not built** (see references). Until then, "stage-owned World" can only be approximated by manual
   forwarding — document the limitation, don't pretend it's clean.
-- **Layer 3 (collectibility):** remove `FantaSim.App.World.` (and audit `FantaSim.App.`) from the
-  shared prefixes, add World assemblies to `collectible-bundles.json`, and pack them into `stage.pck`.
+- **Layer 3 (collectibility):** ~~remove `FantaSim.App.World.` (and audit `FantaSim.App.`) from
+  the shared prefixes~~ — superseded: World's assemblies were never added to `exactMatches`; they
+  are listed directly in `collectible-bundles.json`'s `world` bundle `assemblyNames`, packed into
+  `world.pck` (World shipped as its own bundle, not folded into `stage.pck`).
 - **Reference audit:** find every resident → World strong reference (e.g. `Host` fields like
   `_cellElevation`, the world-graph view slots) and sever/weaken them, or the stage ALC will not
   collect.
-- **Akka gotcha:** `ActorSystem` is resident ([App.Common/Bootstrap.cs:64](../../project/plugins/App.Common/Bootstrap.cs:64)).
-  If a collectible World spawns actors there, those actors hold collectible World types in resident
-  state → the ALC never collects. A collectible World must either stay a plain class or explicitly
-  stop + detach its actors on scene exit.
+- **Akka gotcha (now live, not hypothetical):** `ActorSystem` is resident
+  (`App.Common/Bootstrap.cs`). The collectible `world` bundle's truth-writer
+  (`ActorTruthEventWriter`, `App.World/Services/Service.cs`) is the real, shipped instance of this
+  constraint — see the standing rule above.
 
 **Recommended phasing.** Phase 1 = lifetime-scope World to stage (layers 1+2, assembly stays
 resident-shared) — reversible, no ALC risk, delivers "stage owns World's lifetime." Phase 2 (only if
@@ -210,11 +261,15 @@ true unload/reload is wanted) = make World collectible (layer 3 + reference audi
 gated by a `doubt-driven-development` review and a windowed `old ALC collected` verification per
 [verify-windowed](../../.claude/skills/verify-windowed/SKILL.md).
 
-**Decided (2026-06-25):** dedicated `world` bundle entered under stage (per-subsystem topology — the
-template Camera/NodeGraph/Timeline follow); lifetime via `IRegistry.RegisterOwned<T>` + `ShutdownAsync`
-disposal — the proven timeline/assist/activity bundle pattern, **not** the unbuilt child-scope work, so
-Layer 2 is not a blocker for bundle-style ownership. Full step-by-step:
-[plans/2026-06-25-world-to-stage-scope.md](../plans/2026-06-25-world-to-stage-scope.md).
+**Decided (2026-06-25), SHIPPED 2026-07-11:** dedicated `world` bundle entered under stage
+(per-subsystem topology — the template Camera/NodeGraph/Timeline follow); lifetime via
+`IRegistry.RegisterOwned<T>` + `ShutdownAsync` disposal — the proven timeline/assist/activity
+bundle pattern, **not** the unbuilt child-scope work, so Layer 2 is not a blocker for
+bundle-style ownership. Full step-by-step:
+[plans/2026-06-25-world-to-stage-scope.md](../plans/2026-06-25-world-to-stage-scope.md). Live
+evidence: the `world` entry in `collectible-bundles.json`; `ITimelineController` registered via
+`RegisterOwned` in `App.Presentation/PlanetPresentationBinder.cs` (`WorldViewComposition` is now
+dead code).
 
 ## Adding a new service — apply the rule
 

@@ -1,6 +1,19 @@
 # Akka.NET + UnifyECS multi-world integration
 
-> **AUDIT (2026-07-06, code-verified):** IMPLEMENTED as designed (`App.Ecs/Actors/{EcsSupervisorActor,EcsWorldActor}`, Akka 1.5.69, `EcsComposition.ComposeEcs`) — the 'PROPOSED' status header is stale. _(See the authority index in `vault/README.md`.)_
+> **AUDIT (2026-07-14, code-verified — supersedes the 2026-07-06 note):** IMPLEMENTED, but not
+> "as designed." The shape is real (`App.Ecs/Actors/{EcsSupervisorActor,EcsWorldActor}` exist,
+> Akka 1.5.69 per `Directory.Packages.props`, `EcsComposition.ComposeEcs` wired at `Host.cs`), but
+> this doc's three load-bearing design decisions were **not built**: **no `PinnedDispatcher`**
+> anywhere (`EcsSupervisorActor.cs` creates world-actor children with plain `Props.Create`, no
+> `.WithDispatcher(...)`); **no `FrameLocked`/Option-C dispatch** (`UpdateAll` is a plain `Tell`
+> fan-out to every child, not the per-world Ask/Tell split described below); **supervision is
+> narrower** than documented (`EcsSupervisorActor.SupervisorStrategy` restarts only on
+> `ObjectDisposedException`, not the added `InvalidOperationException` case shown in the
+> "Supervision strategy" section below); and `GetWorldSnapshot` hardcodes
+> `RegisteredSystemCount` to `0` (`EcsWorldActor.MakeSnapshot`) rather than reporting the runner's
+> real count. Treat "The threading decision," "The update timing decision," and the expanded
+> "Supervision strategy" section below as **design-only** until these land. _(See the authority
+> index in `vault/README.md`.)_
 
 
 **Status:** PROPOSED (2026-06-19). Based on analysis of UnifyECS source (`plate-projects/unify-ecs`), the ref-projects `App.Ecs` service, and the Akka.NET actor model discussion.
@@ -78,7 +91,7 @@ internal sealed class EcsWorldActor : ReceiveActor
             Sender.Tell(new EcsWorldInfo(
                 _spec.WorldId, _spec.Backend,
                 _spec.DisplayName ?? _spec.WorldId,
-                _world.EntityCount, _runner.RegisteredSystemCount,
+                _world.EntityCount, _runner.RegisteredSystemCount, // DESIGN-ONLY: shipped code hardcodes 0 here (EcsWorldActor.MakeSnapshot), not _runner.RegisteredSystemCount
                 _initialized)));
 
         Receive<DestroyWorld>(_ =>
@@ -175,6 +188,10 @@ public sealed class Service : IService, IDisposable
 
 ## The threading decision: pinned dispatcher
 
+> **DESIGN-ONLY (not built as of 2026-07-14).** No `EcsWorldActor` is given a `PinnedDispatcher`
+> today; children are created with plain `Props.Create` (`EcsSupervisorActor.cs`). The section
+> below describes the intended design, not current behavior.
+
 Arch is fastest single-threaded. Akka's `PinnedDispatcher` pins an actor to a single dedicated thread for its entire lifetime. Giving each `EcsWorldActor` a pinned dispatcher means:
 
 - Each world's `Update` runs on its own dedicated thread.
@@ -194,6 +211,10 @@ This is the Arch-recommended pattern: single-threaded ECS update, no contention,
 ---
 
 ## The update timing decision
+
+> **DESIGN-ONLY (not built as of 2026-07-14).** The shipped `UpdateAll` is a plain `Tell` fan-out
+> to every child (Option A below) -- there is no `FrameLocked` flag on `EcsWorldSpec` and no
+> Option-C per-world Ask/Tell split.
 
 The Godot `_Process` loop calls `IService.UpdateAll(dt)` once per frame. Two options:
 
@@ -307,6 +328,10 @@ These live in the T3 orchestrator assembly (`FantaSim.App.Ecs`), not in the cont
 ---
 
 ## Supervision strategy
+
+> **DESIGN-ONLY (not built as of 2026-07-14).** The shipped `EcsSupervisorActor.SupervisorStrategy`
+> restarts only on `ObjectDisposedException` (matching the narrower sample earlier in "The
+> mapping" section above). The `InvalidOperationException` branch below is not built.
 
 ```csharp
 protected override SupervisorStrategy SupervisorStrategy()

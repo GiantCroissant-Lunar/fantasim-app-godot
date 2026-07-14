@@ -1,6 +1,15 @@
 # Service tier architecture with Akka.NET (T1-T4)
 
-> **AUDIT (2026-07-06, code-verified):** CURRENT with drift — `App.Agent` does not exist; `App.Remote` is not actor-backed; composition moved to per-plugin `HostComposition` classes (host-slim 2026-07-03); `App.World` is the live collectible world bundle, not dormant; `App.Presentation` — the only live planet render pipeline — postdates this doc (see `planet-domain-station-map.md`). _(See the authority index in `vault/README.md`.)_
+> **AUDIT (2026-07-14, code-verified — supersedes the 2026-07-06 note):** The Akka axis is now
+> **live**, not dormant: `App.Ecs`'s supervisor (`EcsSupervisorActor`/`EcsWorldActor`, wired at
+> `Host.cs` via `EcsComposition.ComposeEcs`) and `App.World`'s `ActorTruthEventWriter` (started in
+> `App.World/Services/Service.cs` when the SurrealDB truth-store backend is active) are both real,
+> shipped actor-backed services. `App.Agent` still does not exist; `App.Remote`
+> (`plugins/App.Remote/HttpTransport.cs` + `RemoteComposition`) still carries no actors — re-class
+> it from "actor-shaped" to plain-class T3 below. Composition moved to per-plugin
+> `HostComposition` classes (host-slim 2026-07-03); `App.World` is the live collectible `world`
+> bundle, not dormant; `App.Presentation` — the only live planet render pipeline — postdates this
+> doc (see `planet-domain-station-map.md`). _(See the authority index in `vault/README.md`.)_
 
 
 **Status:** PROPOSED. Distilled from the ref-projects `lunar-horse-002/ref-projects/fantasim-app-godot` architecture (confirmed 2026-06-10) combined with the Akka.NET integration discussion (2026-06-19), and extended for the iii-graph runtime as a peer orchestration axis (2026-06-19). Supersedes the plain-class-only T3 model where actor benefits are warranted.
@@ -23,7 +32,7 @@ The app has **two peer orchestration axes**, each covering what the other cannot
 
 | Axis | Covers | Backed by | Status |
 |------|--------|-----------|--------|
-| **Akka axis** | Internal actor supervision: concurrent stateful entities, ECS worlds, retry/supervision, in-process simulation | Akka.NET `ActorSystem` (resident) | Present, dormant (`App.World` / `App.Ecs`) |
+| **Akka axis** | Internal actor supervision: concurrent stateful entities, ECS worlds, retry/supervision, in-process simulation | Akka.NET `ActorSystem` (resident) | **Live** — `App.Ecs` supervisor (`EcsSupervisorActor`/`EcsWorldActor`, wired at `Host.cs` via `EcsComposition.ComposeEcs`) + `App.World`'s `ActorTruthEventWriter` (`App.World/Services/Service.cs`, active when the SurrealDB truth-store backend is selected) |
 | **iii axis** | Orchestration crossing the process/agent boundary: dataflow DAGs over external capability workers, agent-driven commands, out-of-process pipelines | Rust gdext bridge + iii-sdk + Python capability workers | Active (`App.Iii`) |
 
 `App.Command.IService` is the **router** between the two axes — not a seat above either. Each axis plugin registers its own command family (`world.*` -> Akka, `pipeline.*`/`iii.*`/`graph.*` -> iii) via `IService.Register`; `ExecuteAsync` dispatches by command-id lookup. The per-axis seams (`IWorldOrchestration`, `IIiiOrchestration`) exist for subsystem identity + health, not as a competing dispatch path. See `iii-graph-runtime.md` for the full iii-axis design.
@@ -132,7 +141,12 @@ internal sealed class AgentSessionActor : ReceiveActor
 }
 ```
 
-Services that fit this shape: `App.Agent` (multiple concurrent LLM sessions), `App.Remote` (command dispatch with timeout/retry), `App.Ecs` (multiple worlds with per-world isolation -- see `akka-ecs-integration.md`).
+Services that fit this shape today: `App.Ecs` (multiple worlds with per-world isolation -- see
+`akka-ecs-integration.md`) and `App.World`'s truth-writer (`ActorTruthEventWriter`, a single writer
+actor serializing SurrealDB truth-store writes). `App.Agent` does not exist in the tree -- dropped
+from this list 2026-07-14. `App.Remote` (`plugins/App.Remote/HttpTransport.cs` +
+`RemoteComposition`) is plain HTTP command dispatch with **zero actor refs** despite the
+actor-shaped framing further down this doc; treat it as a plain-class T3.
 
 **T3 conventions (both shapes):**
 
@@ -183,10 +197,10 @@ The actor model earns its complexity cost when a service has one or more of:
 | App.SceneFlow | No | Simple scene entry/exit state. |
 | App.Camera | No | Minimal concurrency. |
 | App.Activity | No | Append-only event log. |
-| App.Agent | Yes | Multiple concurrent LLM sessions, each with lifecycle, retry, streaming. |
-| App.Remote | Yes | Command dispatch, concurrent handlers, timeout/retry. |
+| App.Agent | **N/A** | Does not exist in the tree (re-classed 2026-07-14) — kept only as a historical marker; confirm it's back in scope before implementing against this row. |
+| App.Remote | **No** | `plugins/App.Remote/HttpTransport.cs` + `RemoteComposition` -- plain HTTP dispatch, zero `IActorRef` usage. Re-classified 2026-07-14 (was listed "Yes"). |
 | App.Ecs | Yes | Multiple independent worlds, per-world isolation, parallel updates. See `akka-ecs-integration.md`. |
-| App.World | Maybe | World simulation could be an actor system (one actor per region/entity). Currently dormant. |
+| App.World | **Yes -- live** | `ActorTruthEventWriter` (`App.World/Services/Service.cs`) is a real, shipped actor serializing SurrealDB truth-store writes through the resident `ActorSystem`. Re-classified 2026-07-14 (was "Maybe... currently dormant"). |
 | App.Timeline | Maybe | Playback state machine, currently simple. |
 | App.Iii (`IiiOrchestrator`) | No | Dataflow DAG executor; pure async over external iii functions. Plain class + `ConcurrentDictionary` for in-flight jobs. Becomes an actor only if retry/supervision needs grow. |
 
@@ -196,7 +210,10 @@ The actor model earns its complexity cost when a service has one or more of:
 
 ## Composition -- how Host.cs wires tiers together
 
-`project/hosts/complete-app/Host.cs` is the Godot autoload entry point. Every service follows the same composition pattern, illustrated with `ComposeUi` (plain class T3) and `ComposeAgent` (actor T3):
+`project/hosts/complete-app/Host.cs` is the Godot autoload entry point. Every service follows the same composition pattern, illustrated with `ComposeUi` (plain class T3) and `ComposeAgent` (actor T3).
+`ComposeAgent`/`App.Agent` is an **illustrative pattern only** -- `App.Agent` does not exist in the
+tree; `App.Ecs`'s real `EcsComposition.ComposeEcs` (wired at `Host.cs`) is the shipped actor-T3
+example to follow instead:
 
 ```
 ComposeUi(composition)

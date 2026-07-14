@@ -126,10 +126,12 @@ tests (`App.World.Composition.Tests/SphereRegimeScheduleTests.cs`,
   RegimeSurfaceKind.cs`) is a pure `regimeId → RegimeSurfaceKind` map (`MagmaOcean`,
   `StagnantLid`, `MobilePlate`, `Default` fallback) that `PlanetPresentationBinder` maps to a
   concrete Godot mantle material.
-- `GlobeReconstructor` (`App.World/Globe/GlobeReconstructor.cs`) gates every plate-feature query
-  (boundary arcs, boundary-cell classification, junctions) on `ShowsPlateFeatures(tick) =
-  _regimeSchedule.RegimeAt(tick)?.ShowsPlateFeatures ?? true` — pre-onset regimes return empty
-  plate-feature output rather than stale/garbage arcs.
+- `GlobeReconstructor.ShowsPlateFeatures(tick)` (`App.World/Globe/GlobeReconstructor.cs`) gates
+  every plate-feature query (boundary arcs, boundary-cell classification, junctions) with THREE
+  checks in order: an independent `tick < _onsetTick → false` gate first, then a
+  `_regimeSchedule is null → true` legacy branch, then `RegimeAt(tick)?.ShowsPlateFeatures ?? true`.
+  Net effect: pre-onset ticks return empty plate-feature output rather than stale/garbage arcs,
+  even if the schedule were absent or disagreed about onset.
 - `PlanetPresentationBinder.ApplyTimelineTick` (`App.Presentation/PlanetPresentationBinder.cs`)
   re-fetches the whole presentation document only when `GeosphereSchedule.RegimeAt(tick).RegimeId`
   differs from the previously-bound regime id (`IsRegimeTransition`-style gating, inlined); a

@@ -1,9 +1,25 @@
 # Bundle delivery & loading — two concerns + an Addressables-style catalog
 
-> **AUDIT (2026-07-06, code-verified):** CURRENT with drift — `ResourcePckWatcher`/`IService.WatchResource` were NOT deleted (a `SceneTierPckWatcher` was added); hot-reload landed via `App.Resource/ReloadPolicy.cs` (2026-06-25 frame-deferred redesign), not this doc's mechanism; catalog phases B/C unbuilt (only `IiiWorkerBundleCatalog`). _(See the authority index in `vault/README.md`.)_
+> **AUDIT (2026-07-14, re-verified — supersedes the 2026-07-06 note):** The 2026-07-06 findings
+> still hold today, re-checked against current HEAD: `ResourcePckWatcher` and
+> `IService.WatchResource` were **not** deleted (`App.Resource/Services/Service.cs`,
+> `contracts/App.Resource/Services/IService.cs`); the shipped hot-reload trigger is a
+> **`SceneTierPckWatcher`** (`FileSystemWatcher`-based) driving `App.Resource/ReloadPolicy.cs`
+> (the 2026-06-25 frame-deferred redesign), plus `task bundle:install` (`Taskfile.yml`) for
+> dev-loop staging — **not** the `resource.reload_bundle` command-ingress mechanism this doc
+> proposes. Of catalog phases B/C, only `App.Iii.Seam/IiiWorkerBundleCatalog.cs` exists. This
+> doc's central thesis ("the trigger is an ingress, not a watcher") was **not adopted** — the
+> shipped mechanism is watcher + `ReloadPolicy`, and it has since absorbed the World and Timeline
+> collectible-bundle cases without the catalog/ingress redesign below. Treat this document as a
+> design proposal still on the table, not a description of current behavior; see
+> [cross-alc-rules.md](cross-alc-rules.md) for the mechanics that did ship (component-ALC resident
+> model, `shared-assembly-policy.json`, `collectible-bundles.json`). _(See the authority index in
+> `vault/README.md`.)_
 
 
-**Status:** PROPOSED (2026-06-24). Supersedes the file-watcher (`ResourcePckWatcher` /
+**Status:** PROPOSED (2026-06-24) — **unadopted as of 2026-07-14**, superseded in practice by the
+shipped `SceneTierPckWatcher` + `ReloadPolicy` + `bundle:install` path described in the audit note
+above. Supersedes the file-watcher (`ResourcePckWatcher` /
 `IService.WatchResource`) hot-reload trigger. Companions: `cross-alc-rules.md`,
 `multi-scene-di-scoping-review.md`.
 
