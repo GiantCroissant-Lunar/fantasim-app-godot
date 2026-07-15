@@ -45,6 +45,15 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
     private LayerTrackRegistryService? _layerTrackRegistry;
     private IDisposable? _layerTrackRegistryRegistration;
     private bool _crustArmed;
+    // Set at the very top of BOTH shutdown paths (ShutdownAsync and ShutdownPartial), before any
+    // disposal step runs. TryArmCrustTrigger checks this first so a late-arm callback that is
+    // already in flight (generation-changed, presentation-requested, or the explicit re-arm call
+    // in the world.run_generation_graph command handler) cannot re-arm a fresh
+    // CrustGenerationTrigger during teardown -- that trigger would subscribe to the resident
+    // ITimelineController.TickChanged and never get disposed (a resident-to-collectible delegate
+    // pin). Disposal ORDER alone does not close this: the command-handler path can already be
+    // in flight on another thread regardless of which field gets disposed first.
+    private volatile bool _shuttingDown;
 
     public ValueTask InitializeAsync(IPluginContext context, CancellationToken ct = default)
     {
@@ -90,6 +99,7 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
 
     public ValueTask ShutdownAsync(CancellationToken ct = default)
     {
+        _shuttingDown = true;
         _log?.LogInformation("WorldPlugin: shutdown started.");
 
         // 1. Unregister the world commands so the resident command service drops the handler
@@ -139,6 +149,8 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
 
     private void ShutdownPartial()
     {
+        _shuttingDown = true;
+
         if (_registry is not null)
         {
             var commandService = _registry.TryGet<FantaSim.App.Command.IService>();
@@ -146,13 +158,16 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
             commandService?.Unregister(ReloadRegistryCommandId);
         }
 
-        _crustTrigger?.Dispose();
-        _crustTrigger = null;
-        _crustArmed = false;
-
+        // Mirrors ShutdownAsync's order: hooks/subscriptions BEFORE the trigger they arm. The
+        // trigger disposed first (the previous order here) left a window where a still-live
+        // late-arm callback could re-arm a fresh trigger that this method would never dispose.
         _lateArmSubscription?.Dispose();
         _lateArmSubscription = null;
         DetachPresentationArmHook();
+
+        _crustTrigger?.Dispose();
+        _crustTrigger = null;
+        _crustArmed = false;
 
         _declarationRegistryHandle?.Dispose();
         _declarationRegistryHandle = null;
@@ -360,6 +375,13 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
 
     private bool TryArmCrustTrigger()
     {
+        // Shutdown/rollback guard: checked first, independent of disposal order, so a callback
+        // that was already dispatched before teardown began (late-arm generation-changed,
+        // presentation-requested, or the explicit re-arm call in the command handler) cannot
+        // create a new CrustGenerationTrigger this instance will never dispose.
+        if (_shuttingDown)
+            return false;
+
         if (_crustArmed || _registry is null)
             return _crustArmed;
 

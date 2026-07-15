@@ -102,6 +102,64 @@ public sealed class WorldPluginCrustTriggerLateBindingTests
         Assert.Equal(1, controller.TickChangedSubscriberCount());
     }
 
+    [Fact]
+    public async Task PartialRollback_guard_blocks_rearm_via_late_hooks_even_when_controller_becomes_available()
+    {
+        // Reproduces the F2 window: a partial-init rollback (ShutdownPartial) is in flight, but the
+        // late-arm generation-changed subscription and the PresentationRequested hook have not been
+        // torn down yet (or, in a genuine concurrent teardown, a callback that was already
+        // dispatched runs regardless of subscription state). If TryArmCrustTrigger has no shutdown
+        // guard, a controller becoming available in that window lets these still-live callbacks
+        // arm a FRESH CrustGenerationTrigger that is never disposed -- a resident-ALC pin. The fix
+        // is a volatile guard flag set at the top of both shutdown paths and checked first in
+        // TryArmCrustTrigger, independent of disposal order.
+        var registry = NewRegistry();
+        var commandService = new FakeCommandService();
+        registry.Register<CommandService>(commandService, new ServiceRegistration { Tags = new[] { "command" } });
+
+        var plugin = new WorldPlugin();
+        await plugin.InitializeAsync(NewContext(registry), CancellationToken.None);
+
+        var pluginType = typeof(WorldPlugin);
+        var crustTriggerField = pluginType.GetField("_crustTrigger", BindingFlags.Instance | BindingFlags.NonPublic);
+        var crustArmedField = pluginType.GetField("_crustArmed", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(crustTriggerField);
+        Assert.NotNull(crustArmedField);
+
+        // No ITimelineController at init -> late-arm path is active (crust trigger itself is NOT
+        // armed yet; the generation-changed subscription and presentation hook are live).
+        Assert.Null(crustTriggerField!.GetValue(plugin));
+        Assert.False((bool)crustArmedField!.GetValue(plugin)!);
+
+        // Controller becomes available AFTER init, mid-rollback -- the exact race window.
+        var controller = new LateFakeController(
+            SphereRegimeScheduleDefaults.GeosphereFor(PlateOnsetTick),
+            SphereRegimeScheduleDefaults.AtmosphereFor(PlateOnsetTick),
+            tick: 0);
+        registry.Register<ITimelineController>(controller, new ServiceRegistration { Tags = new[] { "world", "timeline" } });
+
+        // Simulate the shutdown/rollback guard having been set (per the fix, this happens at the
+        // very top of ShutdownAsync/ShutdownPartial, before any disposal step runs).
+        var guardField = pluginType.GetField("_shuttingDown", BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.NotNull(guardField);
+        guardField!.SetValue(plugin, true);
+
+        // Fire the still-live production callbacks a real caller could still trigger while
+        // rollback is in flight.
+        var world = registry.TryGet<FantaSim.App.World.IService>();
+        Assert.NotNull(world);
+        world!.RunGenerationAsync(new WorldGenerationRequest(
+            WorldId: "rollback-race-test",
+            GenerationSpec: "world.generate",
+            Parameters: new Dictionary<string, object>(StringComparer.Ordinal)));
+        _ = world.GetPlanetPresentationAsync();
+
+        // Then: no new trigger was armed and the controller was never subscribed.
+        Assert.Equal(0, controller.TickChangedSubscriberCount());
+        Assert.Null(crustTriggerField.GetValue(plugin));
+        Assert.False((bool)crustArmedField.GetValue(plugin)!);
+    }
+
     private sealed class LateFakeController : ITimelineController
     {
         private TimelineLayerSelection? _selectedLayer;
