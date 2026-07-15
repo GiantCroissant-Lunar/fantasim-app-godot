@@ -41,6 +41,8 @@
         "FantaSim.App.Presentation",
         "FantaSim.App.World.FieldView",
         "FantaSim.App.World.Composition",
+        "FantaSim.Mythosphere.Cosmology.Registry",
+        "FantaSim.Mythosphere.Cosmology.Science",
         "ConcurrentCollections",
         "Dahomey.Cbor",
         "Microsoft.Extensions.Http",

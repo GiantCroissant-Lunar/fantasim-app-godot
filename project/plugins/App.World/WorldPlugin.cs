@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using FantaSim.App.Common;
 using FantaSim.App.World.Composition;
 using FantaSim.App.World.GenerationGraph;
+using FantaSim.Mythosphere.Cosmology.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using PluginArchi.Extensibility.Abstractions;
@@ -33,6 +34,8 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
     private const long CrustGenerationWindowTicks = CrustSnapshotTickSeries.DefaultSpacingTicks;
 
     private IDisposable? _worldCompositionHandle;
+    private IDisposable? _declarationRegistryHandle;
+    private IWorldDeclarationRegistry? _declarationRegistry;
     private CrustGenerationTrigger? _crustTrigger;
     private IRegistry? _registry;
     private ILoggerFactory? _loggerFactory;
@@ -51,19 +54,36 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
         _loggerFactory = loggerFactory;
         _log = loggerFactory.CreateLogger("WorldPlugin");
 
-        var ctx = new HostCompositionContext(registry, loggerFactory);
-        _worldCompositionHandle = WorldComposition.ComposeWorld(ctx);
+        try
+        {
+            var declarationResult = WorldDeclarationRegistryComposition.Compose(registry, loggerFactory);
+            _declarationRegistryHandle = declarationResult.RegistrationHandle;
+            _declarationRegistry = declarationResult.Registry;
+            _log?.LogInformation(
+                "WorldPlugin: declaration registry active (science={Science}, truth={Truth}, presentation={Presentation})",
+                declarationResult.ScienceLawSet.Digest.Value,
+                declarationResult.DefaultWorld.TruthDigest.Value,
+                declarationResult.DefaultWorld.PresentationDigest.Value);
 
-        // Layer-track registry ownership lives HERE, not in the timeline bundle: the concrete
-        // LayerTrackRegistryService is an App.World.Composition type, and that assembly already
-        // ships in the world bundle's collectible ALC (collectible-bundles.json assemblyNames).
-        // Referencing it from the timeline bundle dual-copied 8 Unify assemblies across the two
-        // ALCs (stage_bundle --check-dual, 2026-07-10) -- the type-identity-split incident class.
-        // Timeline consumes the shared ILayerTrackRegistry contract via registry lookup only.
-        ComposeLayerTrackRegistry(registry);
+            var ctx = new HostCompositionContext(registry, loggerFactory);
+            _worldCompositionHandle = WorldComposition.ComposeWorld(ctx);
 
-        RegisterWorldCommand(registry);
-        InstallCrustTrigger();
+            // Layer-track registry ownership lives HERE, not in the timeline bundle: the concrete
+            // LayerTrackRegistryService is an App.World.Composition type, and that assembly already
+            // ships in the world bundle's collectible ALC (collectible-bundles.json assemblyNames).
+            // Referencing it from the timeline bundle dual-copied 8 Unify assemblies across the two
+            // ALCs (stage_bundle --check-dual, 2026-07-10) -- the type-identity-split incident class.
+            // Timeline consumes the shared ILayerTrackRegistry contract via registry lookup only.
+            ComposeLayerTrackRegistry(registry);
+
+            RegisterWorldCommand(registry);
+            InstallCrustTrigger();
+        }
+        catch
+        {
+            ShutdownPartial();
+            throw;
+        }
 
         return ValueTask.CompletedTask;
     }
@@ -72,7 +92,7 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
     {
         _log?.LogInformation("WorldPlugin: shutdown started.");
 
-        // Unregister the world commands so the resident command service drops the handler
+        // 1. Unregister the world commands so the resident command service drops the handler
         // delegates. The handlers close over the registry and resolve bundle-typed instances
         // (INodeFunctionProvider, LayerTrackRegistryService); keeping either registered pins the
         // old bundle's ALC.
@@ -92,6 +112,13 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
         _crustTrigger = null;
         _crustArmed = false;
 
+        // 2. Dispose the declaration registry registration BEFORE other composition handles:
+        // consumers must not resolve the collectible IWorldDeclarationRegistry instance after
+        // the bundle that owns it begins teardown.
+        _declarationRegistryHandle?.Dispose();
+        _declarationRegistryHandle = null;
+        _declarationRegistry = null;
+
         _layerTrackRegistryRegistration?.Dispose();
         _layerTrackRegistryRegistration = null;
 
@@ -108,6 +135,40 @@ public sealed partial class WorldPlugin : ILifecyclePlugin
         _log?.LogInformation("WorldPlugin: shutdown completed.");
         _log = null;
         return ValueTask.CompletedTask;
+    }
+
+    private void ShutdownPartial()
+    {
+        if (_registry is not null)
+        {
+            var commandService = _registry.TryGet<FantaSim.App.Command.IService>();
+            commandService?.Unregister(RunWorldGenerationGraphCommand);
+            commandService?.Unregister(ReloadRegistryCommandId);
+        }
+
+        _crustTrigger?.Dispose();
+        _crustTrigger = null;
+        _crustArmed = false;
+
+        _lateArmSubscription?.Dispose();
+        _lateArmSubscription = null;
+        DetachPresentationArmHook();
+
+        _declarationRegistryHandle?.Dispose();
+        _declarationRegistryHandle = null;
+        _declarationRegistry = null;
+
+        _layerTrackRegistryRegistration?.Dispose();
+        _layerTrackRegistryRegistration = null;
+        _layerTrackRegistry?.Dispose();
+        _layerTrackRegistry = null;
+
+        _worldCompositionHandle?.Dispose();
+        _worldCompositionHandle = null;
+
+        _registry = null;
+        _loggerFactory = null;
+        _log = null;
     }
 
     private void ComposeLayerTrackRegistry(IRegistry registry)

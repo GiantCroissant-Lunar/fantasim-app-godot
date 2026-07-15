@@ -46,6 +46,11 @@
          the Godot camera rig over the vendored phantom-camera addon). -->
     <ProjectReference Include="..\..\plugins\App.Camera\App.Camera.csproj" />
     <ProjectReference Include="..\..\plugins\App.Camera.Seam\App.Camera.Seam.csproj" />
+    <!-- Cosmology contracts (resident-shared parent ALC): the host loads this contract assembly
+         ONCE so the collectible world bundle resolves the SAME type identity for
+         IWorldDeclarationRegistry, LawSet, WorldDeclaration, etc. The registry and science
+         implementation assemblies stay collectible (world bundle assemblyNames only). -->
+    <ProjectReference Include="$(FantaSimWorldRoot)\project\contracts\Mythosphere.Cosmology\Mythosphere.Cosmology.csproj" Condition="'$(UseProjectReferences)' != 'false'" />
     <!-- Timeline face: resident T4 seam only; T3 App.Timeline ships in the collectible timeline bundle. -->
     <ProjectReference Include="..\..\plugins\App.Timeline.Seam\App.Timeline.Seam.csproj" />
     <!-- Remote command ingress: T3 (App.Remote, HTTP transport over the command IClient) + T4
@@ -74,6 +79,7 @@
          assemblies bind against. -->
     <PackageReference Include="GiantCroissant.CrosscutFoundation.Persistence.Abstractions" Version="0.2.0" />
     <PackageReference Include="UnifySerialization.MessagePack.Runtime" Version="0.2.0" />
+    <PackageReference Include="GiantCroissant.FantaSim.Mythosphere.Cosmology.Contracts" Version="0.1.13" Condition="'$(UseProjectReferences)' == 'false'" />
   </ItemGroup>
 
   <!-- Vendored phantom-camera addon (v0.11.0.2, GDScript at runtime). Its bundled C# wrapper sources
