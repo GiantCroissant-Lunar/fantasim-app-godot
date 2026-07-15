@@ -1,6 +1,6 @@
 ---
 source: G-010 App migration design dialogue, 2026-07-15 (user + lead), implementing the accepted hub variant-identity design section 6 and end gate
-source-status: DESIGN SPEC — architecture approved 2026-07-15; resident App.Storage + SurrealDB-only amendment approved 2026-07-15; internal adversarial reviews reconciled; written-spec review pending
+source-status: DESIGN SPEC — architecture approved 2026-07-15; resident App.Storage + SurrealDB-only amendment approved 2026-07-15; internal adversarial reviews reconciled; written artifact approved by user 2026-07-15
 distilled: 2026-07-15
 plan: prerequisite to the session-scale TDD implementation plan for the complete G-010 end gate
 ---
