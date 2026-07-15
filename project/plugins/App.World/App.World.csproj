@@ -135,6 +135,18 @@
     <ProjectReference Include="$(FantaSimWorldRoot)\project\contracts\World.Parameters\World.Parameters.csproj" />
     <ProjectReference Include="$(FantaSimWorldRoot)\project\contracts\World.TruthStream\World.TruthStream.csproj" />
     <ProjectReference Include="$(FantaSimWorldRoot)\project\plugins\World.TruthStream.Core\World.TruthStream.Core.csproj" />
+    <!-- Cosmology hybrid (project mode): contracts are shared (resident host parent ALC),
+         registry + science are collectible implementation companions staged into world.pck. -->
+    <ProjectReference Include="$(FantaSimWorldRoot)\project\contracts\Mythosphere.Cosmology\Mythosphere.Cosmology.csproj" />
+    <ProjectReference Include="$(FantaSimWorldRoot)\project\plugins\Mythosphere.Cosmology.Registry\Mythosphere.Cosmology.Registry.csproj" />
+    <ProjectReference Include="$(FantaSimWorldRoot)\project\plugins\Mythosphere.Cosmology.Science\Mythosphere.Cosmology.Science.csproj" />
+  </ItemGroup>
+
+  <!-- Cosmology hybrid (package mode): published 0.1.13 packages from the local feed. -->
+  <ItemGroup Condition="'$(UseProjectReferences)' != 'true'">
+    <PackageReference Include="GiantCroissant.FantaSim.Mythosphere.Cosmology.Contracts" />
+    <PackageReference Include="GiantCroissant.FantaSim.Mythosphere.Cosmology.Registry" />
+    <PackageReference Include="GiantCroissant.FantaSim.Mythosphere.Cosmology.Science" />
   </ItemGroup>
 
 </Project>

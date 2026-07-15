@@ -31,4 +31,18 @@
     <ProjectReference Include="..\..\plugins\App.NodeGraph\App.NodeGraph.csproj" />
     <ProjectReference Include="..\..\contracts\App.NodeGraph\App.NodeGraph.csproj" />
   </ItemGroup>
+
+  <!-- Cosmology hybrid references: contracts + registry + science.
+       The default-world authoring tests construct a real registry, invoke science authoring,
+       then invoke DefaultWorldDeclarationAuthoring to prove cross-repo anti-drift. -->
+  <ItemGroup Condition="'$(UseProjectReferences)' == 'true'">
+    <ProjectReference Include="$(FantaSimWorldRoot)\project\contracts\Mythosphere.Cosmology\Mythosphere.Cosmology.csproj" />
+    <ProjectReference Include="$(FantaSimWorldRoot)\project\plugins\Mythosphere.Cosmology.Registry\Mythosphere.Cosmology.Registry.csproj" />
+    <ProjectReference Include="$(FantaSimWorldRoot)\project\plugins\Mythosphere.Cosmology.Science\Mythosphere.Cosmology.Science.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseProjectReferences)' != 'true'">
+    <PackageReference Include="GiantCroissant.FantaSim.Mythosphere.Cosmology.Contracts" />
+    <PackageReference Include="GiantCroissant.FantaSim.Mythosphere.Cosmology.Registry" />
+    <PackageReference Include="GiantCroissant.FantaSim.Mythosphere.Cosmology.Science" />
+  </ItemGroup>
 </Project>
