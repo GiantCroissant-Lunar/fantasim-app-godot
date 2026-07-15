@@ -1,6 +1,6 @@
 ---
 source: G-010 App migration design dialogue, 2026-07-15 (user + lead), implementing the accepted hub variant-identity design section 6 and end gate
-source-status: DESIGN SPEC — architecture approved 2026-07-15; resident App.Storage + SurrealDB-only amendment approved 2026-07-15; internal adversarial reviews reconciled; written artifact approved by user 2026-07-15
+source-status: DESIGN SPEC — architecture approved 2026-07-15; resident App.Storage + SurrealDB-only amendment approved 2026-07-15; written artifact approved by user 2026-07-15; pinned-SDK lifetime correction independently reviewed and reconciled 2026-07-16
 distilled: 2026-07-15
 plan: prerequisite to the session-scale TDD implementation plan for the complete G-010 end gate
 ---
@@ -41,8 +41,9 @@ world-declaration contract plan. It implements, rather than replaces, the accept
 2. **Registry-backend persistence remains out of scope.** Platform and gate-consumer plugins
    deterministically re-author their immutable declarations on every process start. The persisted
    selection exact-resolves only after all required contributors report ready.
-3. **Truth implementation remains collectible.** `FantaSim.App.Storage` owns the SurrealDB client,
-   two scoped SDK sessions, and generated Unify storage adapters. The collectible world runtime
+3. **Truth implementation remains collectible.** `FantaSim.App.Storage` owns one provider-owned
+   singleton SurrealDB root client, two explicit child SDK sessions, and generated Unify storage
+   adapters. The collectible world runtime
    root owns `KvTruthEventStore`, one actor writer, and every per-world session.
    `World.TruthStream.Core`, producer instances, and the declaration-registry implementation do
    not become resident.
@@ -63,12 +64,15 @@ world-declaration contract plan. It implements, rather than replaces, the accept
    `TruthDigest`. A later declaration with a different truth digest uses a new branch (or a future
    explicitly designed migration); quiescing a process-local session is not enough to reuse the
    existing stream.
-9. **Use the plate-projects storage contracts and plugin tiers.** The pinned app packages are
-   `UnifyStorage.Abstractions` 0.1.1 and `UnifyStorage.Runtime.SurrealDb` 0.1.1, sourced from
-   `plate-projects/unify-storage`; do not duplicate their store contracts or reconstruct the
-   generated backend API. `FantaSim.App.Storage` is a Godot-free resident T3 implementation and is
-   not marked `[PluginSharedContract]`. Cross-ALC consumers see only the already-shared UnifyStorage
-   abstractions and DTOs from existing T1 domain-contract assemblies.
+9. **Use the plate-projects storage contracts and plugin tiers.** The pinned app packages are the
+   locally packed `UnifyStorage.Abstractions`, `UnifyStorage.Generators`, and
+   `UnifyStorage.Runtime.SurrealDb` 0.1.2 packages from `plate-projects/unify-storage`. Version
+   0.1.2 adds the reviewed singleton-lifetime registration overload needed to make the SDK root a
+   provider-owned service; do not double-register the SDK directly from the app, duplicate store
+   contracts, or reconstruct the generated backend API. `FantaSim.App.Storage` is a Godot-free
+   resident T3 implementation and is not marked `[PluginSharedContract]`. Cross-ALC consumers see
+   only the already-shared UnifyStorage abstractions and DTOs from existing T1 domain-contract
+   assemblies.
 10. **Production Activity persistence is mandatory and non-owning.** `App.Activity` borrows the
     resident `IDocumentStore`, never creates or disposes a database, and drains its final snapshot
     before the Storage runtime shuts down. Existing `.litedb` files are preserved byte-for-byte but
@@ -141,20 +145,23 @@ Activity composition, `Bootstrap` opens one opaque `App.Storage` runtime handle 
 handle for ordered shutdown.
 
 `App.Storage` constructs one service provider through the pinned
-`UnifyStorage.Runtime.SurrealDb` registration surface and keeps the provider's singleton
-`ISurrealDbClient` for the process lifetime. It creates two process-lifetime async scopes and thus
-two isolated `ISurrealDbSession` instances over that same underlying client connection:
+`UnifyStorage.Runtime.SurrealDb` 0.1.2 singleton-lifetime registration overload. The provider owns
+one lazily resolved `ISurrealDbClient` for the process lifetime. After connecting that root,
+`App.Storage` calls its official `CreateSession` surface exactly twice, producing two isolated
+`ISurrealDbSession` children over that same underlying client connection:
 
 - the **document session** owns the generated `SurrealDbDocumentStore` used for Activity, exact
   selection, UI state, crust cache, and filmstrip cache documents;
 - the **truth session** owns the generated `SurrealDbKeyValueStore` used for truth-event atomic
   batches and compare-and-write.
 
-Both sessions connect and select the same configured namespace and database before plugin or
-Activity composition succeeds. The two-session boundary keeps document traffic independent from
-truth transactions without constructing a second client or database engine. It follows the pinned
-SDK's official lifetime model: `ISurrealDbClient` is singleton, `ISurrealDbSession` is scoped, and
-multiple sessions share the underlying connection:
+Both child sessions select the same configured namespace and database before plugin or Activity
+composition succeeds. The two-session boundary keeps document traffic independent from truth
+transactions without constructing a second client or database engine. It follows the pinned SDK's
+official singleton-root/multiple-session model, while avoiding the SDK's default scoped DI branch:
+that branch captures its root client inside a private factory closure which the provider cannot
+dispose. The 0.1.2 UnifyStorage overload routes once through the SDK's singleton branch, so provider
+disposal reaches the root exactly once. The child sessions share the root connection:
 
 - https://surrealdb.com/docs/languages/dotnet/core/dependency-injection
 - https://surrealdb.com/docs/languages/dotnet/core/multiple-sessions
@@ -166,11 +173,13 @@ The registry exposes only the existing shared `UnifyStorage.Abstractions` contra
 
 The conditional-KV facade has a harmless `Dispose()` because `IKeyValueStore` inherits
 `IDisposable`; a collectible borrower therefore cannot dispose the process-owned generated
-adapter or truth session. No raw SDK client/session, provider, scope, generated adapter type, or
+adapter or truth session. No raw SDK client/session, provider, generated adapter type, or
 `App.Storage` lifetime handle enters the registry. All borrowers resolve a contract at their
 composition point, release it before unload, and never own it.
 
-The one production key is `storage:surrealDb:connectionString`. The old
+The one production key is `storage:surrealDb:connectionString`. Its external endpoint may use the
+pinned SDK's HTTP(S) or WebSocket transport, but the server must be SurrealDB 3.0.0 or newer because
+`CreateSession`, session close, and the transaction surface enforce that minimum. The old
 `world:truthStore:backend`, `world:truthStore:connectionString`, and LiteDB crust/activity path
 settings retire from production composition. A missing or invalid connection string, failed
 connect, or failed namespace/database selection aborts startup before Activity and plugin
@@ -178,7 +187,7 @@ composition; there is no in-memory or alternate-database fallback. Unit tests in
 doubles. Integration, restart, and exported-window gates use the external SurrealDB server.
 
 `UnifyStorageBackends=SurrealDb`, `UnifyStorage.Generators` as a private build dependency,
-`UnifyStorage.Runtime.SurrealDb` 0.1.1, and `SurrealDb.Net` 0.10.2 move together into
+`UnifyStorage.Runtime.SurrealDb` 0.1.2, and `SurrealDb.Net` 0.10.2 move together into
 `App.Storage`. The collectible App.World project retains only `UnifyStorage.Abstractions` and
 removes its generator activation, generated Surreal namespace, package references, and direct SDK
 construction. No production project references or stages `SurrealDb.Embedded.InMemory`.
@@ -202,10 +211,13 @@ reverified. Fresh-boot, dual-copy, and old-ALC-collection gates are mandatory at
 
 Shutdown is the reverse ownership order: quiesce collectible plugin/bundle writers and release
 their storage contracts; stop and fully flush resident Activity; unregister the two storage
-interfaces; dispose the generated adapters; asynchronously dispose both scopes and then the
-provider/client exactly once; finally dispose remaining root infrastructure. Actor-system shutdown
-must not precede writer quiescence. `App.Common` invokes this ordering through the opaque storage
-handle but does not implement or expose the backend.
+interfaces; dispose the generated adapters; asynchronously close the truth and document child
+sessions; then asynchronously dispose the provider, which owns and disposes the singleton root
+client/connection exactly once; finally dispose remaining root infrastructure. `App.Storage` does
+not manually dispose the provider-owned root and then dispose the provider, because that would
+double-dispose the same ownership edge. Actor-system shutdown must not precede writer quiescence.
+`App.Common` invokes this ordering through the opaque storage handle but does not implement or
+expose the backend.
 
 The durable acceptance profile starts an external SurrealDB server with a RocksDB path, exactly as
 the existing restart tool does. RocksDB is the server's internal durable engine, not a second app
@@ -283,7 +295,7 @@ Shutdown order is fixed:
 6. dispose the registry and plugin root;
 7. allow the collectible ALC probe to collect.
 
-The resident SurrealDB client, both scoped sessions, and their adapters remain open until app
+The resident SurrealDB root client, both explicit child sessions, and their adapters remain open until app
 shutdown. The bundle-owned `KvTruthEventStore` does not own or dispose any of them.
 
 The runtime catalog separates truth identity from presentation identity:
@@ -587,8 +599,8 @@ The first implementation packet is one atomic storage-boundary relocation becaus
 commit with the Surreal closure resident and collectible at once is an invalid dual-load state. It
 lands and verifies together:
 
-- the `App.Storage` runtime, two scoped sessions, non-owning conditional-KV facade, and focused
-  ownership/lifetime tests;
+- the `App.Storage` runtime, one provider-owned root plus two explicit child sessions, the
+  non-owning conditional-KV facade, and focused ownership/lifetime tests;
 - `App.Common` composition and reverse-order shutdown;
 - mandatory Activity injection, load/acknowledgement/drain lifecycle, and restart marker proof;
 - App.World borrowing resident conditional KV and deleting bundle-owned Surreal construction;
@@ -656,9 +668,9 @@ explicit replacement mapping, not a lower target count.
 
 - `App.Storage` is Godot-free T3, carries no `[PluginSharedContract]`, exposes no SDK/generated
   types, and is never staged in a collectible bundle;
-- exactly one SDK client and two scoped sessions are created; adapter/facade disposal cannot close
-  the shared client, and app shutdown disposes borrowers, Activity, adapters, scopes, and provider
-  in the locked order exactly once;
+- exactly one provider-owned SDK root and two explicit child sessions are created;
+  adapter/facade disposal cannot close the shared root, and app shutdown disposes borrowers,
+  Activity, adapters, child sessions, and provider/root in the locked order exactly once;
 - App.World compiles against `UnifyStorage.Abstractions` without generator/Surreal SDK references,
   and the exact/shared dual-copy audit finds no Surreal or `FantaSim.App.Storage` assembly in a
   collectible closure;
@@ -728,7 +740,8 @@ Process/server B:
 ### Exported-window gate
 
 - startup logs prove `App.Storage` connects before Activity/plugins, and shutdown logs prove
-  bundle writers and Activity drain before the two storage scopes/provider are disposed;
+  bundle writers and Activity drain before the two storage child sessions and provider/root are
+  disposed;
 - a gate-only export profile explicitly stages the tool consumer bundle/PCK and its gate manifest;
   the normal production manifest has an assertion proving that bundle is absent;
 - the exported app displays separate world and branch pickers;
@@ -782,9 +795,19 @@ A subsequent storage-boundary review rejected both placing the backend in `App.C
 inventing an `App.Storage.Contracts` layer. The reconciled amendment instead uses the existing
 plate-projects Unify contracts at T1, one resident Godot-free `App.Storage` implementation at T3,
 and domain payloads in their existing T1 assemblies. It also corrected the earlier one-session
-draft to the pinned SDK's singleton-client/scoped-session model, made Activity use the same
+draft to the pinned SDK's singleton-root/explicit-child-session model, made Activity use the same
 SurrealDB runtime, and made the first storage relocation atomic so the Surreal closure can never be
 resident and collectible at the same revision.
+
+The 2026-07-16 fresh-context internal review and authorized OpenCode/GLM-5.2 cold review then
+disproved the original scoped DI ownership model against `SurrealDb.Net` 0.10.2 source. The SDK's
+scoped registration captures a lazy root client in a private factory closure; disposing its child
+sessions and provider cannot dispose that root engine. This revision reconciles the finding by
+adding a source-compatible singleton-lifetime overload to `plate-projects/unify-storage`, creating
+both children explicitly from the provider-owned root, requiring SurrealDB 3.0+, and adding the
+live exported-process world-reload/old-ALC gate at the relocation edge. It rejects the cold
+review's suggested double registration and manual root disposal: one Unify registration owns the
+root, and provider disposal is the root's sole disposal edge.
 
 ## Source-driven constraints
 
@@ -796,10 +819,11 @@ resident and collectible at the same revision.
   the server CLI. The implementation must use the version-pinned SDK and generated UnifyStorage
   adapters already present in the repository rather than reconstructing an SDK API from memory:
   https://surrealdb.com/docs/architecture
-- the pinned .NET SDK registers one singleton client and scoped sessions, and its multiple-session
-  surface shares the underlying connection. The two-session ownership above follows those
-  documented lifetimes rather than assuming one mutable session is a cross-subsystem concurrency
-  boundary:
+- the pinned .NET SDK's default scoped registration hides a root client inside a factory closure,
+  so provider disposal cannot reach it. The corrected design uses the plate-projects 0.1.2
+  singleton-lifetime overload, resolves one provider-owned root, and creates two explicit child
+  sessions through the SDK's documented multiple-session surface rather than assuming one mutable
+  session is a cross-subsystem concurrency boundary:
   https://surrealdb.com/docs/languages/dotnet/core/dependency-injection and
   https://surrealdb.com/docs/languages/dotnet/core/multiple-sessions
 - storage contracts, generated backend activation, and canonical encoding follow

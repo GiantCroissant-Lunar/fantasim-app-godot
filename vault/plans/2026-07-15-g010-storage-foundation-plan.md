@@ -12,13 +12,14 @@ committed conclusion deposit.
 
 **Architecture:** `App.Common` opens and owns one Godot-free T3 `App.Storage` runtime before any
 resident domain or collectible plugin starts. `App.Storage` uses the pinned
-`plate-projects/unify-storage` contracts/runtime and one `SurrealDb.Net` provider with one
-singleton client and two process-lifetime scopes/sessions: documents and truth/CAS. Registry and
-collectible consumers receive only non-owning `UnifyStorage.Abstractions` facades; generated
-adapters, SDK sessions, scopes, provider, and the runtime handle remain resident and private.
+`plate-projects/unify-storage` contracts/runtime and one `SurrealDb.Net` provider-owned singleton
+root client. It explicitly creates two process-lifetime child sessions: documents and truth/CAS.
+Registry and collectible consumers receive only non-owning `UnifyStorage.Abstractions` facades;
+generated adapters, SDK root/session objects, provider, and the runtime handle remain resident and
+private.
 
-**Tech Stack:** .NET 8, C# 12, `UnifyStorage.Abstractions` 0.1.1,
-`UnifyStorage.Generators` 0.1.1, `UnifyStorage.Runtime.SurrealDb` 0.1.1,
+**Tech Stack:** .NET 8, C# 12, `UnifyStorage.Abstractions` 0.1.2,
+`UnifyStorage.Generators` 0.1.2, `UnifyStorage.Runtime.SurrealDb` 0.1.2,
 `SurrealDb.Net` 0.10.2, ServiceArchi/PluginArchi 0.1.x, Akka.NET 1.5.69, xUnit 2.9.2,
 Godot 4.7, Taskfile bundle tooling, and UnifyBuild for the exported desktop gate.
 
@@ -34,13 +35,14 @@ Godot 4.7, Taskfile bundle tooling, and UnifyBuild for the exported desktop gate
   Surreal adapters.
 - `FantaSim.App.Storage` is a Godot-free resident T3 implementation. It is not a T1 contract and
   must not carry `[PluginSharedContract]`.
-- `App.Storage` owns one DI provider/singleton client and exactly two scoped
-  `ISurrealDbSession` instances. The document and truth adapters wrap different sessions with
-  `ownsClient: false`.
+- `App.Storage` owns one DI provider and its lazily resolved singleton `ISurrealDbClient`. It calls
+  `CreateSession` exactly twice and owns those two `ISurrealDbSession` children. The document and
+  truth adapters wrap different sessions with `ownsClient: false`.
 - Registry entries are non-owning facades. Disposing the `IConditionalKeyValueStore` facade is a
   no-op and must not close the generated adapter, session, or provider.
 - The only production connection key is `storage:surrealDb:connectionString`. Missing, malformed,
-  or unreachable configuration aborts startup before Activity or collectible plugin composition.
+  or unreachable configuration, or a SurrealDB server older than 3.0.0, aborts startup before
+  Activity or collectible plugin composition.
 - Existing `.litedb` files are never opened, imported, renamed, deleted, truncated, or rewritten.
 - App.Activity owns its subscription/worker only. It requires `IDocumentStore`, loads before
   registration/subscription, acknowledges a sequence only after successful upsert, drains its
@@ -58,8 +60,165 @@ Godot 4.7, Taskfile bundle tooling, and UnifyBuild for the exported desktop gate
   staging, export, and runtime startup have been reverified.
 - Follow RED→GREEN→REFACTOR. Record the failing output before production edits, keep commits
   Conventional, never use `--no-verify`, and do not integrate any intermediate dual-copy state.
+- The app must not call `AddSurreal(...)` directly or register both scoped and singleton SDK paths.
+  Task 0 first adds the singleton-lifetime overload to `plate-projects/unify-storage`; app code
+  consumes that one reviewed Unify entry point.
 - Execute the packet in an isolated native git worktree. The lead session reviews and integrates
   the complete packet only after every gate in Task 7 passes.
+
+---
+
+### Task 0: Make the plate-projects Surreal registration own its singleton root
+
+This is a separate, serial prerequisite packet in
+`/Users/apprenticegc/Work/lunar-horse/plate-projects/unify-storage`. It must be implemented and
+integrated before any app packet starts; app code may not work around the missing API by
+double-registering the SDK.
+
+**Files:**
+- Modify: `dotnet/src/UnifyStorage.Runtime.SurrealDb/ServiceCollectionExtensions.cs`
+- Create: `dotnet/tests/UnifyStorage.Runtime.SurrealDb.Tests/ServiceCollectionExtensionsTests.cs`
+- Modify: `build/build.config.json`
+
+**Interfaces:**
+- Preserves: `AddSurrealDbStorage(IServiceCollection, string)` with its existing scoped behavior
+  and binary signature.
+- Adds: `AddSurrealDbStorage(IServiceCollection, string, ServiceLifetime)`.
+- Produces: locally packed `UnifyStorage.*` 0.1.2 packages in
+  `/Users/apprenticegc/Work/lunar-horse/packages/nuget` through UnifyBuild.
+
+- [ ] **Step 1: Create an isolated sibling worktree for the prerequisite**
+
+The lead creates a branch/worktree at the same filesystem depth as the source repo so
+`../../packages/nuget` still resolves to the shared lunar-horse feed:
+
+```bash
+git -C /Users/apprenticegc/Work/lunar-horse/plate-projects/unify-storage \
+  worktree add -b feat/g010-surreal-singleton-root \
+  /Users/apprenticegc/Work/lunar-horse/plate-projects/unify-storage-g010-storage-lifetime-wt main
+```
+
+- [ ] **Step 2: Write the RED registration-contract tests**
+
+Create `ServiceCollectionExtensionsTests.cs` with the exact descriptor assertions:
+
+```csharp
+using Microsoft.Extensions.DependencyInjection;
+using SurrealDb.Net;
+using UnifyStorage.Runtime.SurrealDb;
+using Xunit;
+
+namespace UnifyStorage.Runtime.SurrealDb.Tests;
+
+public sealed class ServiceCollectionExtensionsTests
+{
+    private const string ConnectionString =
+        "Endpoint=http://127.0.0.1:8000;Namespace=fantasim;Database=app";
+
+    [Fact]
+    public void Default_overload_preserves_scoped_session_registration()
+    {
+        var services = new ServiceCollection();
+
+        services.AddSurrealDbStorage(ConnectionString);
+
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(ISurrealDbSession)
+            && descriptor.Lifetime == ServiceLifetime.Scoped);
+        Assert.DoesNotContain(services, descriptor =>
+            descriptor.ServiceType == typeof(ISurrealDbClient));
+    }
+
+    [Fact]
+    public void Singleton_overload_registers_provider_owned_root_without_scoped_sessions()
+    {
+        var services = new ServiceCollection();
+
+        services.AddSurrealDbStorage(ConnectionString, ServiceLifetime.Singleton);
+
+        Assert.Contains(services, descriptor =>
+            descriptor.ServiceType == typeof(ISurrealDbClient)
+            && descriptor.Lifetime == ServiceLifetime.Singleton);
+        Assert.DoesNotContain(services, descriptor =>
+            descriptor.ServiceType == typeof(ISurrealDbSession));
+    }
+}
+```
+
+Run:
+
+```bash
+dotnet test dotnet/tests/UnifyStorage.Runtime.SurrealDb.Tests/UnifyStorage.Runtime.SurrealDb.Tests.csproj \
+  --filter FullyQualifiedName~ServiceCollectionExtensionsTests
+```
+
+Expected: RED compile failure because the three-argument Unify overload does not exist.
+
+- [ ] **Step 3: Add the source-compatible lifetime overload**
+
+Keep the existing two-argument method and delegate it to the new overload so previously compiled
+callers retain the same method signature:
+
+```csharp
+public static SurrealDbBuilder AddSurrealDbStorage(
+    this IServiceCollection services,
+    string connectionString) =>
+    AddSurrealDbStorage(services, connectionString, ServiceLifetime.Scoped);
+
+public static SurrealDbBuilder AddSurrealDbStorage(
+    this IServiceCollection services,
+    string connectionString,
+    ServiceLifetime lifetime)
+{
+    if (services is null) throw new ArgumentNullException(nameof(services));
+    if (string.IsNullOrWhiteSpace(connectionString))
+        throw new ArgumentException(
+            "Connection string cannot be null or empty.", nameof(connectionString));
+
+    return services.AddSurreal(connectionString, lifetime);
+}
+```
+
+Do not register a second SDK branch and do not expose a new storage contract.
+
+- [ ] **Step 4: Run GREEN through UnifyBuild and the no-build focused test**
+
+```bash
+dotnet tool restore
+dotnet unify-build Compile
+dotnet test dotnet/tests/UnifyStorage.Runtime.SurrealDb.Tests/UnifyStorage.Runtime.SurrealDb.Tests.csproj \
+  --configuration Release --no-build \
+  --filter FullyQualifiedName~ServiceCollectionExtensionsTests
+```
+
+Expected: both facts pass; the default surface remains scoped and the new surface registers only
+the provider-owned root interface.
+
+- [ ] **Step 5: Version and commit the plate-projects packet**
+
+Change `build/build.config.json` `artifactsVersion` from `0.1.1` to `0.1.2`, then:
+
+```bash
+git add dotnet/src/UnifyStorage.Runtime.SurrealDb/ServiceCollectionExtensions.cs \
+  dotnet/tests/UnifyStorage.Runtime.SurrealDb.Tests/ServiceCollectionExtensionsTests.cs \
+  build/build.config.json
+git commit -m "feat(surrealdb): expose singleton root registration"
+```
+
+- [ ] **Step 6: Lead review, integration, and package proof**
+
+The lead reviews the worktree diff and verifier output, cherry-picks the packet into the
+authoritative `unify-storage` main checkout, then packs from that integrated checkout:
+
+```bash
+GITVERSION_MAJORMINORPATCH=0.1.2 dotnet unify-build Pack
+unzip -p ../../packages/nuget/UnifyStorage.Runtime.SurrealDb.0.1.2.nupkg \
+  UnifyStorage.Runtime.SurrealDb.nuspec
+```
+
+Expected: the local feed contains the 0.1.2 runtime, abstractions, and generator packages; the
+runtime nuspec depends on the same 0.1.2 Unify package family and `SurrealDb.Net` 0.10.2. Do not
+start Task 1 until the authoritative app restore resolves those exact local packages.
 
 ---
 
@@ -75,6 +234,8 @@ Godot 4.7, Taskfile bundle tooling, and UnifyBuild for the exported desktop gate
 - Create: `project/tests/App.Storage.Tests/App.Storage.Tests.csproj`
 - Create: `project/tests/App.Storage.Tests/SurrealDbConnectionSettingsTests.cs`
 - Create: `project/tests/App.Storage.Tests/NonOwningStoreFacadeTests.cs`
+- Create: `project/tests/App.Storage.Tests/ExternalStorageRuntimeLifetimeTests.cs`
+- Modify: `project/Directory.Packages.props`
 - Modify: `project/FantaSim.sln`
 
 **Interfaces:**
@@ -155,7 +316,13 @@ dotnet test project/tests/App.Storage.Tests/App.Storage.Tests.csproj
 Expected: FAIL because `App.Storage.csproj`, `SurrealDbConnectionSettings`, and the two facade types
 do not exist.
 
-- [ ] **Step 3: Add the T3 project and generator/package boundary**
+- [ ] **Step 3: Pin the locally packed Unify 0.1.2 family and add the T3 project**
+
+Update the app's central pins for `UnifyStorage.Abstractions`, `UnifyStorage.Generators`, and
+`UnifyStorage.Runtime.SurrealDb` from 0.1.1 to 0.1.2, and add
+`Microsoft.Extensions.Logging` 10.0.1 beside the existing logging-abstractions pin. Restore must resolve the Unify packages from
+`/Users/apprenticegc/Work/lunar-horse/packages/nuget`; do not add a direct source-project reference
+from the app repo.
 
 Create `App.Storage.csproj` with this project shape:
 
@@ -261,24 +428,20 @@ var settings = SurrealDbConnectionSettings.Parse(connectionString);
 var services = new ServiceCollection();
 services.AddSingleton(loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory)));
 services.AddLogging();
-services.AddSurrealDbStorage(settings.ConnectionString);
+services.AddSurrealDbStorage(settings.ConnectionString, ServiceLifetime.Singleton);
 var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
 
-var documentScope = provider.CreateAsyncScope();
-var truthScope = provider.CreateAsyncScope();
-var documentSession = documentScope.ServiceProvider.GetRequiredService<ISurrealDbSession>();
-var truthSession = truthScope.ServiceProvider.GetRequiredService<ISurrealDbSession>();
-if (ReferenceEquals(documentSession, truthSession))
-    throw new InvalidOperationException("Document and truth storage require distinct scoped sessions.");
+var rootClient = provider.GetRequiredService<ISurrealDbClient>();
+await rootClient.Connect(ct).ConfigureAwait(false);
+var documentSession = await rootClient.CreateSession(ct).ConfigureAwait(false);
+var truthSession = await rootClient.CreateSession(ct).ConfigureAwait(false);
+if (documentSession.SessionId is null
+    || truthSession.SessionId is null
+    || documentSession.SessionId == truthSession.SessionId)
+    throw new InvalidOperationException("Document and truth storage require distinct child sessions.");
 
-ct.ThrowIfCancellationRequested();
-await documentSession.Connect().ConfigureAwait(false);
-ct.ThrowIfCancellationRequested();
-await documentSession.Use(settings.Namespace, settings.Database).ConfigureAwait(false);
-ct.ThrowIfCancellationRequested();
-await truthSession.Connect().ConfigureAwait(false);
-ct.ThrowIfCancellationRequested();
-await truthSession.Use(settings.Namespace, settings.Database).ConfigureAwait(false);
+await documentSession.Use(settings.Namespace, settings.Database, ct).ConfigureAwait(false);
+await truthSession.Use(settings.Namespace, settings.Database, ct).ConfigureAwait(false);
 
 var documentAdapter = new SurrealDbDocumentStore(documentSession, ownsClient: false);
 var truthAdapter = new SurrealDbKeyValueStore(truthSession, ownsClient: false);
@@ -287,10 +450,26 @@ var truthAdapter = new SurrealDbKeyValueStore(truthSession, ownsClient: false);
 Use generated namespace `FantaSim.App.Storage.Generated.SurrealDb`. Construct public interface
 properties as `new NonOwningDocumentStore(documentAdapter)` and
 `new NonOwningConditionalKeyValueStore(truthAdapter)`. On any open failure, dispose created
-adapters, then truth scope, document scope, and provider. `DisposeAsync()` is idempotent via
-`Interlocked.Exchange`; it follows that same reverse order and never disposes either facade.
+adapters, then asynchronously dispose the truth and document child sessions, then asynchronously
+dispose the provider. Provider disposal is the only root-client disposal edge; never call
+`rootClient.DisposeAsync()` manually and then dispose its provider. `DisposeAsync()` is idempotent
+via `Interlocked.Exchange`, follows that same reverse order, and never disposes either facade.
+
+Store the root and both child sessions only in private fields. Add internal read-only
+`RootClientForTests`, `DocumentSessionForTests`, and `TruthSessionForTests` properties under the
+existing `InternalsVisibleTo` boundary. Log exact lifecycle markers after root connection, after
+both child sessions are ready, after both children close, and after provider/root disposal; no SDK
+object or generated type is logged or registered.
 
 - [ ] **Step 7: Run tests and add both projects to the solution**
+
+Add `ExternalStorageRuntimeLifetimeTests`. It returns without connecting only when
+`FANTASIM_STORAGE_TEST_CONNECTION_STRING` is absent. When Task 6 supplies that variable, it opens
+the real runtime and asserts the two non-null session ids are distinct, `root.Sessions()` reports
+those two ids, closing the runtime leaves both child and root `SessionState` values `Closed`, and a
+second runtime dispose is harmless. The executed branch writes
+`storage_runtime_external_executed=1` to the test output so the shell gate can reject an accidental
+no-op.
 
 Run:
 
@@ -301,12 +480,14 @@ dotnet sln project/FantaSim.sln add \
 dotnet test project/tests/App.Storage.Tests/App.Storage.Tests.csproj
 ```
 
-Expected: PASS, with no embedded-provider package in the restore graph.
+Expected: PASS, with no embedded-provider package in the restore graph. The external lifetime fact
+is exercised non-trivially in Task 6, not by introducing an embedded test provider here.
 
 - [ ] **Step 8: Commit Task 1**
 
 ```bash
-git add project/plugins/App.Storage project/tests/App.Storage.Tests project/FantaSim.sln
+git add project/plugins/App.Storage project/tests/App.Storage.Tests \
+  project/Directory.Packages.props project/FantaSim.sln
 git commit -m "feat(storage): add resident SurrealDB runtime"
 ```
 
@@ -445,7 +626,7 @@ Run:
 
 ```bash
 dotnet test project/tests/App.Common.Tests/App.Common.Tests.csproj
-dotnet build project/hosts/complete-app/complete-app.csproj
+dotnet unify-build Compile
 ```
 
 Expected: all Common tests pass and host compiles. Then commit:
@@ -607,7 +788,7 @@ handle with `_composition.RegisterResidentLifetime(...)` before starting the plu
 ```bash
 dotnet sln project/FantaSim.sln add project/tests/App.Activity.Tests/App.Activity.Tests.csproj
 dotnet test project/tests/App.Activity.Tests/App.Activity.Tests.csproj
-dotnet build project/hosts/complete-app/complete-app.csproj
+dotnet unify-build Compile
 git add project/plugins/App.Activity project/tests/App.Activity.Tests project/hosts/complete-app/Host.cs project/FantaSim.sln
 git commit -m "feat(activity): persist through resident document store"
 ```
@@ -798,6 +979,7 @@ git commit -m "refactor(world): borrow resident Unify storage"
 - Modify: `project/Directory.Packages.props`
 - Modify: `project/plugins/App.Common/App.Common.csproj`
 - Modify: `project/plugins/App.Activity/App.Activity.csproj`
+- Modify: `project/tests/App.Common.Tests/App.Common.Tests.csproj`
 - Modify: `project/hosts/complete-app/complete-app.csproj`
 - Modify: `project/hosts/complete-app/config/app.json`
 - Modify: `project/hosts/complete-app/config/shared-assembly-policy.json`
@@ -822,6 +1004,7 @@ Storage_and_Surreal_runtime_are_in_shared_and_common_exact_matches
 Storage_and_Surreal_runtime_are_absent_from_every_collectible_bundle
 AppWorld_has_only_the_Unify_abstraction_and_no_backend_generator_or_SDK_package
 AppStorage_owns_the_generator_runtime_and_SDK_packages
+Unify_package_family_is_pinned_to_0_1_2_and_runtime_exposes_singleton_lifetime_overload
 No_production_csproj_or_central_package_pin_references_LiteDB
 App_json_contains_only_storage_surrealDb_connectionString_for_persistence_backend_selection
 Embedded_in_memory_provider_is_absent_from_projects_policy_and_manifests
@@ -844,8 +1027,8 @@ Expected: FAIL on LiteDB pins, absent resident policy entries, and current colle
   `UnifyStorage.Abstractions`, and removes `UnifyStorage.Runtime.LiteDb`.
 - App.Activity removes `UnifyStorage.Runtime.LiteDb`.
 - Central packages remove `UnifyStorage.Runtime.LiteDb` and `SurrealDb.Embedded.InMemory`; keep the
-  exact four approved Unify/Surreal versions and add `Microsoft.Extensions.Logging` 10.0.1 beside
-  the already-pinned DependencyInjection and Logging.Abstractions packages required by
+  approved Unify 0.1.2 / Surreal 0.10.2 versions and retain the
+  `Microsoft.Extensions.Logging` 10.0.1 pin added by Task 1 for
   `ServiceCollection.AddLogging()`.
 - App.Common tests remove their LiteDB runtime package.
 - Host retains `System.Collections.Immutable` 10.0.1 and updates its comment to the now-resident
@@ -894,7 +1077,7 @@ files.
 Run in this order:
 
 ```bash
-dotnet build project/hosts/complete-app/complete-app.csproj
+dotnet unify-build Compile
 task bundle:world:build
 task bundle:common:build
 python3 -m unittest discover -s tools/bundles -p "test_*.py"
@@ -950,15 +1133,35 @@ Run: `tools/verify-durable-rotation-restart.sh`
 
 Expected before completing references/lifecycle wiring: FAIL at compile or missing Activity marker.
 
-- [ ] **Step 3: Add legacy-file byte preservation to the harness**
+- [ ] **Step 3: Enforce the server/session prerequisite and preserve legacy bytes**
 
-Before server A starts, create two sentinel files under `$evidence_dir/legacy/` named
+Before server A starts, capture `surreal version`, parse its leading semantic version, and fail if
+it is below 3.0.0. Write the full command output to `$evidence_dir/surreal.version`; the installed
+binary being present is not sufficient because `CreateSession`, `CloseSession`, and transactions
+in the pinned 0.10.2 SDK call `RequireMajorVersion(3, ...)`.
+
+Also before server A starts, create two sentinel files under `$evidence_dir/legacy/` named
 `activity-ledger.litedb` and `crust-cache.litedb`, record `shasum -a 256` and file sizes in
 `legacy.before`, and never pass those paths to a database API. After process B and server B stop,
 record `legacy.after`, compare with `cmp -s`, and fail on any difference. Add
 `legacy_files_unchanged=1` to `sequence.status`. The architecture gate from Task 5 proves no
 production code retains a LiteDB opener or path setting; this runtime sentinel proves the gate
 does not mutate unrelated legacy files.
+
+While server A is running, exercise the non-no-op lifetime fact against the same external endpoint:
+
+```bash
+FANTASIM_STORAGE_TEST_CONNECTION_STRING="$connection_string" \
+  dotnet test project/tests/App.Storage.Tests/App.Storage.Tests.csproj \
+  --filter FullyQualifiedName~ExternalStorageRuntimeLifetimeTests \
+  --logger "console;verbosity=detailed" \
+  | tee "$evidence_dir/storage-runtime-lifetime.log"
+rg -n "storage_runtime_external_executed=1" \
+  "$evidence_dir/storage-runtime-lifetime.log"
+```
+
+This proves the corrected Unify singleton registration yields one provider-owned root, two
+explicit children, and closed child/root states after runtime disposal against the real server.
 
 - [ ] **Step 4: Run the GREEN two-process proof and commit**
 
@@ -969,12 +1172,19 @@ git commit -m "test(storage): prove Surreal Activity restart"
 ```
 
 Expected: distinct Surreal server PIDs, write/read receipts, recovered rotation and Activity
-marker, unchanged legacy hashes, and `proof_complete=1`.
+marker, SurrealDB version >=3.0.0, `storage_runtime_external_executed=1`, unchanged legacy hashes,
+and `proof_complete=1`.
 
 ### Task 7: Run integration gates and deposit the foundation conclusion
 
 **Files:**
 - Create: `vault/handover/2026-07-15-g010-storage-foundation-handover.md`
+- Create: `vault/specs/evidence/2026-07-16-g010-storage-foundation-windowed/identity.txt`
+- Create: `vault/specs/evidence/2026-07-16-g010-storage-foundation-windowed/receipt.txt`
+- Create: `vault/specs/evidence/2026-07-16-g010-storage-foundation-windowed/app.log`
+- Create: `vault/specs/evidence/2026-07-16-g010-storage-foundation-windowed/surreal.log`
+- Create: `vault/specs/evidence/2026-07-16-g010-storage-foundation-windowed/before-reload.png`
+- Create: `vault/specs/evidence/2026-07-16-g010-storage-foundation-windowed/after-reload.png`
 - Modify: `vault/plans/2026-07-15-g010-storage-foundation-plan.md` checkboxes only after evidence exists
 
 **Interfaces:**
@@ -1016,23 +1226,89 @@ task bundle:world:build
 task bundle:common:build
 task bundle:stagetool:test
 task build:godot:desktop
+task bundles
+task bundle:install
 ```
 
 Expected: common/world staging succeeds, dual-copy audit is clean, and the exported desktop app
-contains one resident Storage/Surreal closure with no LiteDB or embedded-provider asset.
+contains one resident Storage/Surreal closure with no LiteDB or embedded-provider asset, and all
+bundle PCKs are installed beside that exact export.
 
-- [ ] **Step 4: Run static dependency absence checks**
+- [ ] **Step 4: Run the mandatory live exported world-reload/old-ALC gate**
+
+The lead runs this gate from the authoritative integrated app checkout, not the external agent's
+worktree. Bind all evidence to one export and PID:
 
 ```bash
-if rg -n "LiteDB|UnifyStorage.Runtime.LiteDb|SurrealDb.Embedded.InMemory" project \
+evidence="$PWD/vault/specs/evidence/2026-07-16-g010-storage-foundation-windowed"
+mkdir -p "$evidence"
+artifact_version="$(task --silent version:artifacts)"
+app="$PWD/build/_artifacts/$artifact_version/godot/osx/complete-app.app"
+exe="$app/Contents/MacOS/complete-app"
+test -x "$exe"
+
+db_dir="$(mktemp -d "${TMPDIR:-/tmp}/fantasim-g010-windowed.XXXXXX")"
+surreal start --no-banner --unauthenticated --bind 127.0.0.1:18082 \
+  "rocksdb:$db_dir" >"$evidence/surreal.log" 2>&1 &
+server_pid=$!
+
+remote__enabled=1 \
+storage__surrealDb__connectionString="Endpoint=http://127.0.0.1:18082;Namespace=fantasim;Database=app" \
+  "$exe" >"$evidence/app.log" 2>&1 &
+app_pid=$!
+
+{
+  printf 'repo=%s\n' "$PWD"
+  printf 'head=%s\n' "$(git rev-parse HEAD)"
+  printf 'app=%s\nexe=%s\napp_pid=%s\nserver_pid=%s\n' \
+    "$app" "$exe" "$app_pid" "$server_pid"
+  surreal version
+  lsof -a -p "$app_pid" -d txt -Fn
+} >"$evidence/identity.txt"
+```
+
+Wait until remote ingress and `App.Storage`/Activity/world startup are present in the app log.
+Capture the live viewport, rebuild/install the world PCK while keeping that same process open, and
+trigger the real command path:
+
+```bash
+python3 tools/fantasim-cmd.py cmd render.screenshot \
+  "{\"path\":\"$evidence/before-reload.png\"}"
+task bundle:world
+task bundle:install
+python3 tools/fantasim-cmd.py cmd resource.reload_bundle '{"bundleId":"world"}'
+rg -n "Bundle unloaded: world|Bundle loaded: world|Hot-reload: old ALC collected for bundle world|resource.reload_bundle: reloaded 'world'" \
+  "$evidence/app.log"
+python3 tools/fantasim-cmd.py cmd timeline.seek '{"tick":107000000}'
+python3 tools/fantasim-cmd.py cmd render.screenshot \
+  "{\"path\":\"$evidence/after-reload.png\"}"
+```
+
+The lead verifies both screenshots belong to the recorded PID and show a functional, non-splash
+window; the post-reload seek is the representative interaction. Close that exact window normally
+so Godot runs `_Notification`/composition disposal, then wait for the PID and stop the server.
+Record line-numbered proof that plugin/world shutdown precedes Activity's final acknowledged
+sequence, both child-session closes precede provider/root disposal, and process exit is clean.
+Write those lines plus `old_world_alc_collected=1`, `visible_interaction=1`, and
+`ordered_shutdown=1` to `receipt.txt`. A process restart, headless run, unit-only ALC test, or
+`kill -9` is not evidence.
+
+- [ ] **Step 5: Run targeted static dependency absence checks**
+
+```bash
+if rg -n "LiteDB|UnifyStorage.Runtime.LiteDb|SurrealDb.Embedded.InMemory" \
+  project/plugins project/hosts project/contracts project/bundles project/Directory.Packages.props \
   --glob '!**/bin/**' --glob '!**/obj/**'; then exit 1; fi
 if rg -n "SurrealDb.Net|UnifyStorage.Runtime.SurrealDb|UnifyStorageBackends" \
   project/plugins/App.World --glob '!**/bin/**' --glob '!**/obj/**'; then exit 1; fi
 ```
 
 Expected: both commands produce no matches and exit successfully through the enclosing `if` logic.
+Architecture-test source is deliberately excluded from this production-surface scan because its
+structured assertions name banned packages; the full architecture suite in Step 1 remains the
+authoritative test/policy gate.
 
-- [ ] **Step 5: Write the conclusion deposit**
+- [ ] **Step 6: Write the conclusion deposit**
 
 The handover records:
 
@@ -1041,21 +1317,23 @@ The handover records:
 - RED and GREEN command results with test counts;
 - external restart evidence directory, two server PIDs, Activity marker, and legacy hashes;
 - common/world manifest assembly lists and dual-copy result;
-- exported artifact path and the result of the resident-closure inspection;
+- exported artifact path, exact PID/lsof proof, before/after screenshots, world reload result,
+  old-ALC collection line, and ordered-shutdown receipt;
 - any negative result or nondeterministic failure without converting a retry into evidence;
 - explicit remaining G-010 work: exact selection, truth identity/digest binding, two-world cache/UI
-  separation, successor/legacy streams, UI epoch switching, changed-PCK window gate, and final ALC
-  collection in the integrated end gate.
+  separation, successor/legacy streams, UI epoch switching, and the final deliberately
+  changed-content world/timeline PCK window gate in the integrated end gate.
 
-- [ ] **Step 6: Commit the evidence deposit**
+- [ ] **Step 7: Commit the evidence deposit**
 
 ```bash
 git add vault/handover/2026-07-15-g010-storage-foundation-handover.md \
-  vault/plans/2026-07-15-g010-storage-foundation-plan.md
+  vault/plans/2026-07-15-g010-storage-foundation-plan.md \
+  vault/specs/evidence/2026-07-16-g010-storage-foundation-windowed
 git commit -m "docs(storage): deposit G-010 foundation evidence"
 ```
 
-- [ ] **Step 7: Hand the complete packet to the lead reviewer**
+- [ ] **Step 8: Hand the complete packet to the lead reviewer**
 
 Provide the worktree path, ordered commit list, `git diff <base>..HEAD --stat`, all verifier
 receipts, and any unresolved failure. Do not merge, cherry-pick, push, or start the later parallel
