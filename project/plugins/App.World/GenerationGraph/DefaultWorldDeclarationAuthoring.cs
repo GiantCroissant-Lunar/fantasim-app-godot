@@ -83,7 +83,9 @@ public static class DefaultWorldDeclarationAuthoring
         LawSet scienceLawSet,
         WorldGenerationRenderOptions opts)
     {
-        var graphBindings = WorldGenerationGraphDefaults.BuildFamily().LayerGraphBindings;
+        var graphBindings = WorldGenerationGraphDefaults.BuildFamily().LayerGraphBindings
+            ?? throw new System.InvalidOperationException(
+                "The default world generation graph must declare layer bindings.");
         var scienceLayers = scienceLawSet.Definition.Layers;
         var presenterScalars = BuildPresenterScalarProperties(opts);
 
