@@ -80,6 +80,19 @@
     <PackageReference Include="GiantCroissant.CrosscutFoundation.Persistence.Abstractions" Version="0.2.0" />
     <PackageReference Include="UnifySerialization.MessagePack.Runtime" Version="0.2.0" />
     <PackageReference Include="GiantCroissant.FantaSim.Mythosphere.Cosmology.Contracts" Version="0.1.13" Condition="'$(UseProjectReferences)' == 'false'" />
+
+    <!-- System.Collections.Immutable pin (F1 fix, 2026-07-15): the "System." prefix in
+         shared-assembly-policy.json routes this assembly name to the parent (host) ALC, and
+         HierarchicalPluginLoadContext binds it by simple name with no version check. The world
+         bundle's collectible SurrealDb.Net.dll and SurrealDb.Embedded.InMemory.dll both carry an
+         AssemblyRef of System.Collections.Immutable Version=10.0.0.0, so the host must serve a
+         copy at least that new: the net8.0 runtime pack's own 8.0.x copy would silently downgrade
+         what those bundle assemblies bind to (MissingMethodException/TypeLoadException on first
+         use of a 9.0+/10.0 member). A prior fix (3a4a67f) dropped this assembly from the world
+         bundle's collectible assemblyNames on the (verified false) premise that a shared CONTRACT
+         assembly required it; the real requirement is this bundle-vs-host version floor. Keep
+         this at or above the highest AssemblyRef version any world-bundle assembly requires. -->
+    <PackageReference Include="System.Collections.Immutable" Version="10.0.1" />
   </ItemGroup>
 
   <!-- Vendored phantom-camera addon (v0.11.0.2, GDScript at runtime). Its bundled C# wrapper sources

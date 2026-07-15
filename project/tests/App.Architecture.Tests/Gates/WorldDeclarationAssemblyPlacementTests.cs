@@ -1,6 +1,8 @@
+using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Xml.Linq;
 using FantaSim.App.Architecture.Tests.Helpers;
 using Xunit;
 
@@ -19,9 +21,13 @@ public sealed class WorldDeclarationAssemblyPlacementTests
     private const string Science = "FantaSim.Mythosphere.Cosmology.Science";
     private const string ImmutableCollections = "System.Collections.Immutable";
     private const string WorldExportContracts = "FantaSim.World.Export.Contracts";
+    private static readonly Version MinimumImmutableCollectionsVersion = new(10, 0);
 
     private static string ConfigPath(string fileName) =>
         Path.Combine(RepoRootFinder.FindRepoRoot(), "project", "hosts", "complete-app", "config", fileName);
+
+    private static string HostCsprojPath() =>
+        Path.Combine(RepoRootFinder.FindRepoRoot(), "project", "hosts", "complete-app", "complete-app.csproj");
 
     private static JsonDocument LoadConfig(string fileName)
     {
@@ -103,8 +109,21 @@ public sealed class WorldDeclarationAssemblyPlacementTests
         Assert.Contains(Science, names);
     }
 
+    /// <summary>
+    /// F1 fix (2026-07-15): the world bundle's SurrealDb stack (SurrealDb.Net.dll,
+    /// SurrealDb.Embedded.InMemory.dll, both staged collectible in world.pck) carries an
+    /// AssemblyRef of System.Collections.Immutable Version=10.0.0.0. The "System." prefix in
+    /// shared-assembly-policy.json routes that assembly name to the PARENT (host) ALC and
+    /// HierarchicalPluginLoadContext binds by simple name (no version check), so whatever the
+    /// host serves is what those bundle assemblies get. If the host only pins/ships the net8.0
+    /// runtime pack's 8.0.x copy, first use of a 9.0+/10.0 member throws
+    /// MissingMethodException/TypeLoadException. The host must therefore declare its own
+    /// System.Collections.Immutable reference at >= the version those bundle assemblies require,
+    /// AND the world bundle must keep omitting it from assemblyNames (a collectible override here
+    /// would reintroduce a second copy alongside the shared one it needs to match).
+    /// </summary>
     [Fact]
-    public void Immutable_collections_used_by_shared_contract_stay_parent_shared()
+    public void World_bundle_omits_immutable_collections_from_assemblyNames()
     {
         var worldBundle = GetWorldBundle();
         var names = worldBundle
@@ -114,6 +133,36 @@ public sealed class WorldDeclarationAssemblyPlacementTests
             .ToArray();
 
         Assert.DoesNotContain(ImmutableCollections, names);
+    }
+
+    [Fact]
+    public void Host_pins_immutable_collections_at_or_above_the_version_the_world_bundle_requires()
+    {
+        var hostCsprojPath = HostCsprojPath();
+        Assert.True(File.Exists(hostCsprojPath), $"Host csproj not found: {hostCsprojPath}");
+
+        var hostCsproj = XDocument.Load(hostCsprojPath);
+        var immutableRef = hostCsproj
+            .Descendants("PackageReference")
+            .FirstOrDefault(e => string.Equals((string?)e.Attribute("Include"), ImmutableCollections, StringComparison.Ordinal));
+
+        Assert.True(
+            immutableRef is not null,
+            $"{hostCsprojPath} must declare a PackageReference for {ImmutableCollections} so the " +
+            "parent ALC serves a version compatible with what the collectible world bundle's " +
+            "SurrealDb.Net/SurrealDb.Embedded.InMemory assemblies reference (AssemblyRef Version=10.0.0.0).");
+
+        var versionText = (string?)immutableRef!.Attribute("Version");
+        var parsed = Version.TryParse(versionText, out var version);
+        Assert.True(
+            parsed,
+            $"{ImmutableCollections} PackageReference in {hostCsprojPath} has no parseable Version (was '{versionText}').");
+
+        Assert.True(
+            version! >= MinimumImmutableCollectionsVersion,
+            $"{ImmutableCollections} must be pinned to >= {MinimumImmutableCollectionsVersion} in " +
+            $"{hostCsprojPath} (was {version}); the world bundle's SurrealDb.Net and " +
+            "SurrealDb.Embedded.InMemory assemblies carry an AssemblyRef of Version=10.0.0.0 for this assembly.");
     }
 
     [Fact]
