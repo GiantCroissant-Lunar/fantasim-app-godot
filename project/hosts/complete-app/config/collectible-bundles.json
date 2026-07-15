@@ -51,7 +51,6 @@
         "Semver",
         "SurrealDb.Embedded.InMemory",
         "SurrealDb.Net",
-        "System.Collections.Immutable",
         "System.IO.Pipelines",
         "System.Linq.AsyncEnumerable",
         "System.Reactive",

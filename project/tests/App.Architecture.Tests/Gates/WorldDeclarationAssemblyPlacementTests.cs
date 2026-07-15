@@ -17,6 +17,8 @@ public sealed class WorldDeclarationAssemblyPlacementTests
     private const string Contracts = "FantaSim.Mythosphere.Cosmology.Contracts";
     private const string Registry = "FantaSim.Mythosphere.Cosmology.Registry";
     private const string Science = "FantaSim.Mythosphere.Cosmology.Science";
+    private const string ImmutableCollections = "System.Collections.Immutable";
+    private const string WorldExportContracts = "FantaSim.World.Export.Contracts";
 
     private static string ConfigPath(string fileName) =>
         Path.Combine(RepoRootFinder.FindRepoRoot(), "project", "hosts", "complete-app", "config", fileName);
@@ -99,6 +101,52 @@ public sealed class WorldDeclarationAssemblyPlacementTests
             .Select(e => e.GetString())
             .ToArray();
         Assert.Contains(Science, names);
+    }
+
+    [Fact]
+    public void Immutable_collections_used_by_shared_contract_stay_parent_shared()
+    {
+        var worldBundle = GetWorldBundle();
+        var names = worldBundle
+            .GetProperty("assemblyNames")
+            .EnumerateArray()
+            .Select(e => e.GetString())
+            .ToArray();
+
+        Assert.DoesNotContain(ImmutableCollections, names);
+    }
+
+    [Fact]
+    public void World_export_contract_dependency_is_in_shared_policy_and_common_layer()
+    {
+        var doc = LoadConfig("shared-assembly-policy.json");
+        var shared = doc.RootElement
+            .GetProperty("exactMatches")
+            .EnumerateArray()
+            .Select(e => e.GetString())
+            .ToArray();
+        var common = doc.RootElement
+            .GetProperty("common")
+            .GetProperty("exactMatches")
+            .EnumerateArray()
+            .Select(e => e.GetString())
+            .ToArray();
+
+        Assert.Contains(WorldExportContracts, shared);
+        Assert.Contains(WorldExportContracts, common);
+    }
+
+    [Fact]
+    public void World_export_contract_dependency_is_not_collectible()
+    {
+        var worldBundle = GetWorldBundle();
+        var names = worldBundle
+            .GetProperty("assemblyNames")
+            .EnumerateArray()
+            .Select(e => e.GetString())
+            .ToArray();
+
+        Assert.DoesNotContain(WorldExportContracts, names);
     }
 
     [Fact]
