@@ -15,11 +15,11 @@ superpowers `writing-plans` / spec output should target `vault/plans` and `vault
 ## Rules — `.agent/rules/`
 
 - [bundle-hot-reload-verify](.agent/rules/bundle-hot-reload-verify.md) — 4-tier, bundle-oriented:
-  verify a feature by **hot-reloading the changed bundle in the already-open exported windowed
-  app** (`task run:exported` → edit a tier → `task bundle:<tier>` → `task bundle:install` →
-  watch-reload → confirm `old ALC collected`). Full build + re-run only for changes **outside a
-  collectible ALC** (resident/host code, T1 contracts, T4 seams, the native iii bridge, a new
-  `collectible-bundles.json` registration).
+  first bind verification to the intended worktree, commit, absolute executable, and PID; then
+  hot-reload a changed collectible plugin and require **both** lifecycle logs (`old ALC collected`)
+  and a fresh stable-scene screenshot plus representative interaction from that same PID. Duplicate
+  exports are a stop-and-ask condition, never a display-name guess. Full build + exact-path relaunch
+  is required for changes outside a collectible ALC.
 - [no-smoke-or-fake-production-code](.agent/rules/no-smoke-or-fake-production-code.md) — keep
   smoke checks, fake/demo assets, and verification-only harnesses out of production runtime
   composition; use tests/tools/harnesses for proofs, and keep app startup/config tied to real
@@ -31,5 +31,5 @@ Deployed into `.claude/skills/` and `.agents/skills/` by the sync (`task agent:s
 yokan-projects/fantasim-app-godot` from the workspace root). Use the one matching your task.
 
 - [verify-windowed](.agent/skills/04-tooling/verify-windowed/SKILL.md) — the full hot-reload
-  verification loop, the hot-reload-vs-build decision table, and the verification evidence
-  (incl. the `old ALC collected` gate).
+  verification loop, exact worktree/executable/PID identity gate, reload-vs-relaunch decision table,
+  and conjunctive lifecycle plus screenshot/interaction evidence.

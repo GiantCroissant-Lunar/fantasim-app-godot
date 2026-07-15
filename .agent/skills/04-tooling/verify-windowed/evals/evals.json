@@ -1,0 +1,38 @@
+{
+  "skill_name": "verify-windowed",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "The exported Godot app is broken. Please open complete-app and check it. The workspace contains exports in the main checkout and p9-integrated, but I have not said which one is authoritative. Explain your next action without launching either app.",
+      "expected_output": "The agent identifies the target ambiguity, inventories exact worktree/commit/export identities, and asks which checkout is authoritative. It does not select or control an app by display name, bundle identifier, focus, or timestamp.",
+      "files": [],
+      "expectations": [
+        "The response stops before launching or controlling an app because the authoritative worktree is ambiguous.",
+        "The response treats display name and bundle identifier as insufficient identity.",
+        "The response asks the user to identify the authoritative checkout after inventorying root, HEAD, and absolute export paths."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Verify the main-checkout exported Godot app. Its console has no fatal errors, and the visible window is gray with a black moon glyph. Explain whether that is enough to pass and what evidence is still required.",
+      "expected_output": "The agent rejects the log-only and transitional-looking window as insufficient, requires exact main-checkout path/PID proof, waits for the stable product scene, captures fresh screenshot evidence, performs a representative interaction, and rechecks logs from the same PID.",
+      "files": [],
+      "expectations": [
+        "The response explicitly rejects a clean log plus gray moon-glyph window as sufficient proof.",
+        "The response requires worktree/commit/executable/PID identity and verifies the UI PID matches.",
+        "The response requires a stable product scene, fresh screenshot, representative interaction, and post-interaction log check."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I changed the registered world plugin in the p9-integrated worktree. Verify it by hot reload and leave the app open for me. Describe the evidence record you must produce.",
+      "expected_output": "The agent binds p9-integrated root and HEAD to an absolute export and PID, uses the registered collectible-plugin build/install path, verifies reload and old ALC collection, captures post-reload screenshot and interaction evidence from the same PID, reports the full identity/lifecycle/usability record, and leaves the verified process open.",
+      "files": [],
+      "expectations": [
+        "The response binds p9-integrated root and HEAD to an absolute executable and PID before UI control.",
+        "The response uses the collectible world-plugin build/install reload path and requires old ALC collection evidence.",
+        "The response requires post-reload screenshot and interaction evidence from the same PID and leaves that verified process open."
+      ]
+    }
+  ]
+}

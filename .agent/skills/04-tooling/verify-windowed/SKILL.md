@@ -1,112 +1,175 @@
 ---
 name: verify-windowed
-description: Verify a fantasim-app-godot feature by hot-reloading the changed bundle in the already-open exported WINDOWED Godot app — the only gate that exercises the Godot seam and ALC collection. Build + re-run only for changes outside a collectible bundle (resident/host code, T1 contracts, T4 seams, the native iii bridge, a new bundle registration). Use after any change to a collectible tier (App.Stage / App.Assist / App.Timeline), or whenever you are about to claim a feature works.
-category: 04-tooling
-layer: tooling
-related_skills:
-  - "@unify-build"
-  - "@doubt-driven-development"
+description: Verify the intended fantasim-app-godot export by binding UI evidence to an exact worktree, commit, executable path, and PID, then exercising the stable windowed product scene. For collectible plugins, hot-reload the changed PCK and require both visual/interaction proof and the old-ALC-collected log. Use before claiming an exported app works, renders, reloads, or remains usable.
 ---
 
-# Verify in the Windowed App (Bundle Hot-Reload)
+# Verify the Exact Windowed Export
 
-## Overview
+## Outcome
 
-`fantasim-app-godot` is a 4-tier (T1 contracts · T2 services · T3 orchestrators · T4
-seams/hosts), bundle-oriented app. Collectible feature bundles — **App.Stage**,
-**App.Assist**, **App.Timeline** — ship as PCKs loaded into hot-reloadable
-`AssemblyLoadContext`s. Because they hot-reload, you verify a feature by **updating the
-bundle in an already-running windowed app**, not by rebuilding and relaunching every time.
+A runtime claim is valid only when all three facts refer to the same process:
 
-Headless proves wiring only. The **exported windowed app is the only gate** that exercises
-the Godot seam, renders, and shows whether the collectible ALC actually unloaded.
+1. **Identity:** the process executable belongs to the intended repository/worktree and commit.
+2. **Lifecycle:** startup/reload logs contain the expected evidence and no fatal error.
+3. **Usability:** a fresh post-startup/post-reload screenshot and representative interaction
+   succeed in the stable product scene.
 
-## When to Use
+Godot's splash/logo, a gray or blank window, and clean console output are intermediate signals.
+They do not establish usability.
 
-- After any change to a collectible tier (`App.Stage` / `App.Assist` / `App.Timeline`).
-- Before claiming a feature works, renders, or that a bundle hot-reloads/unloads.
-- Any time you would otherwise reach for a full rebuild to check a one-tier change.
+Use the workspace `unify-build` procedure for builds. Use doubt-driven review when runtime
+identity, plugin boundaries, or unload evidence remain uncertain.
 
-**When NOT to use (these need a full build + re-run instead — see the table below):** changes
-to resident/host code, T1 contracts, T4 seams, the native iii bridge, or the bundle registry.
+## Target Identity Gate — before launch or computer control
 
-## The Hot-Reload Loop
+This workspace may contain multiple `complete-app.app` exports with the same display name and
+bundle identifier. Resolve authority from the user request and active vault plan, never from
+window focus, timestamps, search order, or visual similarity.
 
-Keep the windowed app open the whole time. Per change, only steps 2–5 repeat.
+1. Record the intended checkout and commit:
 
-```
-1. task run:exported          # launch the WINDOWED app (console attached) — leave it open. NEVER --headless.
-2. <edit a collectible tier>  # App.Stage / App.Assist / App.Timeline
-3. task bundle:<tier>         # bundle:stage | bundle:assist | bundle:timeline
-                              #   (builds the tier DLL → stages it → exports the PCK)
-4. task bundle:install        # copies the exported PCK(s) next to the running app
-5. <observe>                  # App.Resource's file-watcher detects the PCK change and
-                              #   hot-reloads it (debounced). Verify the feature in-window
-                              #   AND confirm the `old ALC collected` log line.
-```
+   ```bash
+   REPO="$(git rev-parse --show-toplevel)"
+   HEAD="$(git rev-parse HEAD)"
+   git worktree list --porcelain
+   printf 'repo=%s\nhead=%s\n' "$REPO" "$HEAD"
+   ```
 
-`task bundles` re-exports all three tiers at once when you touched more than one.
+2. Resolve the exact built export from this checkout's task configuration; do not copy a path
+   or version from another worktree:
 
-## Handoff / Final State
+   ```bash
+   ARTIFACTS_VERSION="$(cd "$REPO" && task --silent version:artifacts)"
+   APP="$(cd "$REPO/build/_artifacts/$ARTIFACTS_VERSION/godot/osx/complete-app.app" && pwd -P)"
+   EXE="$APP/Contents/MacOS/complete-app"
+   BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")"
+   printf 'artifacts_version=%s\napp=%s\nexe=%s\nbundle_id=%s\n' \
+     "$ARTIFACTS_VERSION" "$APP" "$EXE" "$BUNDLE_ID"
+   ```
 
-Do not close the exported app between runtime verification iterations. If the user is
-continuing the session, asks to keep inspecting the app, or says to keep going, leave
-the windowed exported app running and report:
+   A missing directory means this checkout has no export at its configured version; build it or
+   resolve the intended artifact version explicitly. Do not fall back to another directory.
 
-- the app PID,
-- the log path,
-- the last verified command/reload evidence.
+3. Check candidate processes/exports. If more than one worktree/export matches and the requested
+   authority remains unclear, stop and ask the user which checkout is the target. Do not proceed
+   with a best guess.
 
-Only stop the app when verification is explicitly finished, the user asks you to close
-it, or the running process is no longer useful for the next step. If you do stop it,
-say why.
+4. Launch the exact executable detached, retaining its PID and log:
 
-Do not close the app just to satisfy Codex exec-session cleanup. If the app was launched
-from an attached `exec_command` session and should remain open, relaunch or keep it via a
-detached process before final, for example:
+   ```bash
+   LOG="/tmp/fantasim-windowed-$(date +%s).log"
+   nohup "$EXE" >"$LOG" 2>&1 &
+   PID=$!
+   printf 'pid=%s\nlog=%s\n' "$PID" "$LOG"
+   ```
 
-```bash
-LOG=/tmp/fantasim-windowed-$(date +%s).log
-APP="build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/complete-app"
-remote__enabled=true nohup "$APP" > "$LOG" 2>&1 &
-echo "pid=$! log=$LOG"
-```
+   Add only environment/configuration explicitly required by the active acceptance plan. Do not
+   silently change modes (for example, remote versus local) merely to make startup succeed.
 
-The handoff proof is the PID/log path plus the last successful command/reload evidence,
-not a closed process.
+5. Prove the PID owns the intended executable before observing its window:
 
-## Hot-Reload vs. Full Build — the decision
+   ```bash
+   ACTUAL_EXE="$(lsof -a -p "$PID" -d txt -Fn | sed -n 's/^n//p' | head -n 1)"
+   test "$ACTUAL_EXE" = "$EXE"
+   ```
 
-**Hot-reload** (steps above) when the change is **inside a collectible ALC** — the bundle
-DLL, its scene, or its manifest for App.Stage / App.Assist / App.Timeline.
+   If the path does not match, stop. Close only the wrong process that this agent launched;
+   never kill a pre-existing user process because its title or bundle ID matches.
 
-**Full build + re-run** — `task build:godot:desktop` → `task run:exported` — only when the
-change is **outside a collectible ALC**:
+6. Target UI/computer control by the absolute `.app` path where supported. Never target only
+   `complete-app`. A bundle ID is acceptable only after proving there is exactly one matching
+   process/export. Before every screenshot or interaction, compare the UI tool's reported PID
+   with `$PID`; if it cannot report one, confirm the foreground PID independently, for example:
 
-| Change | Why hot-reload can't cover it |
+   ```bash
+   FRONT_PID="$(osascript -e 'tell application "System Events" to unix id of first application process whose frontmost is true')"
+   test "$FRONT_PID" = "$PID"
+   ```
+
+Do not continue to lifecycle or visual verification until this identity gate passes.
+
+## Choose Reload or Relaunch
+
+Use the repository's `unify-build` procedure for builds. The verification choice is:
+
+| Change | Required runtime path |
 |---|---|
-| Resident / host code (`complete-app` Host, `App.Common`) | Loaded at app startup, not in a collectible ALC |
-| T1 contracts (`project/contracts/`) | Shared interfaces — consumers must recompile |
-| T4 seam projects (`App.*.Seam`) | Resident; Godot types live here and aren't reloaded |
-| Native iii bridge | `task bridge:build`, then relaunch — the gdext dylib loads at startup |
-| New bundle registration | The host reads `collectible-bundles.json` at startup |
+| Existing collectible plugin/bundle: its DLL, scene, manifest, or assets | Keep exact app open; build/install that bundle; verify reload |
+| Host/bootstrap composition | Full exported build; relaunch exact executable |
+| Shared contracts or shared policy/common assembly | Full exported build; relaunch exact executable |
+| T4 seam or Godot-resident integration | Full exported build; relaunch exact executable |
+| Native iii bridge | Build bridge and exported app as required; relaunch exact executable |
+| New/changed `collectible-bundles.json` registration | Full exported build; relaunch exact executable |
 
-When in doubt, prefer hot-reload first; if the change clearly isn't picked up, it's probably
-one of the rows above — then build.
+The source of truth for collectible plugins is `collectible-bundles.json`. Do not assume the
+only plugins are Stage, Assist, or Timeline, and do not relabel a plugin as resident merely to
+avoid the reload path.
 
-## Red Flags
+## Collectible-Plugin Reload Loop
 
-- Rebuilding the whole app for a single-tier change (slow; defeats the bundle design).
-- Verifying **headless** — a clean headless log proves wiring, never rendering or ALC collection.
-- Claiming hot-reload/unload **without** the windowed app AND the `old ALC collected` line.
-- Adding a new collectible bundle but skipping its `collectible-bundles.json` entry (the
-  `BundleHost` load-time lint will throw — by design; never weaken it).
+Keep the identity-proven windowed app open. Repeat steps 2–5 for each change:
 
-## Verification
+```text
+1. Exact exported app is running; identity record is complete.
+2. Edit an already-registered collectible plugin.
+3. Run the repository's task bundle:<tier> target for that plugin.
+4. Run task bundle:install so App.Resource observes the PCK change.
+5. Verify lifecycle logs and fresh in-window behavior from the same PID.
+```
 
-A feature/bundle claim is valid only when:
+The lifecycle gate requires the expected reload sequence, the `old ALC collected` line for the
+superseded context, and no fatal/unhandled error attributable to startup or reload.
 
-- [ ] The change was exercised in the **exported windowed app** (`task run:exported`), not headless.
-- [ ] For an in-bundle change: the new PCK was hot-reloaded via `task bundle:<tier>` + `task bundle:install`, and the behavior was observed in-window.
-- [ ] For a hot-reload/unload claim: the **`old ALC collected`** log line appeared after the reload cycle.
-- [ ] For an out-of-ALC change: a full `task build:godot:desktop` → `task run:exported` was run (hot-reload would silently not apply).
+## Visual and Interaction Gate
+
+After startup and again after the changed bundle reloads:
+
+1. Bring the identity-proven PID to the foreground and re-check the foreground/UI PID.
+2. Wait for splash/loading/transitional visuals to yield to the stable product scene.
+3. Take a fresh screenshot and retain its path or tool evidence.
+4. Perform the acceptance interaction stated by the active plan or changed feature.
+5. Confirm the resulting visible state is usable and expected; capture a second screenshot when
+   the interaction changes visible state.
+6. Re-check logs for fatal errors produced during the interaction.
+
+For infrastructure work with no new UI, use a harmless, already-documented product interaction
+that crosses the affected seam. Simply watching the window remain open is not an interaction.
+If no valid interaction is documented or discoverable, report the visual check as inconclusive
+and obtain the missing acceptance action; do not claim the app works.
+
+Immediate failures/inconclusive evidence include:
+
+- only a Godot splash, logo/glyph, gray window, blank window, spinner, or crash dialog;
+- a screenshot whose PID cannot be tied to the recorded executable;
+- an interaction performed before the reload or in a different app instance;
+- clean logs without a stable product scene and successful interaction;
+- a stable-looking scene with fatal startup/reload/interaction errors in the log.
+
+## Handoff Record
+
+If verification is ongoing or the user wants to inspect the result, leave the verified app open.
+Detach it from transient shell sessions if needed. Report all of:
+
+- repository/worktree root and `HEAD`;
+- absolute `.app` and executable paths plus bundle identifier;
+- verified PID and process-to-executable check;
+- log path and relevant lifecycle evidence;
+- fresh screenshot evidence after startup/reload;
+- representative interaction and observed result;
+- whether the process remains open.
+
+Close the app only when verification is explicitly finished or the user asks. State which PID
+was closed and why. Never close an unrelated process selected by display-name collision.
+
+## Claim Checklist
+
+- [ ] The authoritative repository/worktree was explicit; ambiguity among duplicate exports was resolved by the user/plan.
+- [ ] Repository root, `HEAD`, absolute app/executable path, bundle ID, PID, and log path were recorded.
+- [ ] The PID-to-executable check passed, and every UI observation used that same PID.
+- [ ] The selected reload/relaunch path matches the changed code's actual plugin/host boundary.
+- [ ] Startup/loading completed to the stable product scene in the exported windowed app.
+- [ ] A fresh post-startup/post-reload screenshot was captured.
+- [ ] A representative in-scope interaction succeeded visibly.
+- [ ] Logs contain the expected lifecycle evidence and no fatal error.
+- [ ] For hot reload, the changed behavior was exercised and `old ALC collected` appeared.
+- [ ] The handoff reports identity, lifecycle, and visual/interaction evidence; the app stays open when inspection continues.
