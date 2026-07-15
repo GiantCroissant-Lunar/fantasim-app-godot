@@ -79,7 +79,7 @@
          assemblies bind against. -->
     <PackageReference Include="GiantCroissant.CrosscutFoundation.Persistence.Abstractions" Version="0.2.0" />
     <PackageReference Include="UnifySerialization.MessagePack.Runtime" Version="0.2.0" />
-    <PackageReference Include="GiantCroissant.FantaSim.Mythosphere.Cosmology.Contracts" Version="0.1.13" Condition="'$(UseProjectReferences)' == 'false'" />
+    <PackageReference Include="GiantCroissant.FantaSim.Mythosphere.Cosmology.Contracts" Version="0.1.14" Condition="'$(UseProjectReferences)' == 'false'" />
 
     <!-- System.Collections.Immutable pin (F1 fix, 2026-07-15): the "System." prefix in
          shared-assembly-policy.json routes this assembly name to the parent (host) ALC, and

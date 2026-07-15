@@ -142,7 +142,7 @@
     <ProjectReference Include="$(FantaSimWorldRoot)\project\plugins\Mythosphere.Cosmology.Science\Mythosphere.Cosmology.Science.csproj" />
   </ItemGroup>
 
-  <!-- Cosmology hybrid (package mode): published 0.1.13 packages from the local feed. -->
+  <!-- Cosmology hybrid (package mode): published 0.1.14 packages from the local feed. -->
   <ItemGroup Condition="'$(UseProjectReferences)' != 'true'">
     <PackageReference Include="GiantCroissant.FantaSim.Mythosphere.Cosmology.Contracts" />
     <PackageReference Include="GiantCroissant.FantaSim.Mythosphere.Cosmology.Registry" />

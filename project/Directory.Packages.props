@@ -88,10 +88,10 @@
          names via the cartography csproj AssemblyName pins, so no type-identity split). -->
     <PackageVersion Include="GiantCroissant.FantaSim.Cartography.Globe.Core" Version="0.1.0" />
     <!-- Cosmology declaration registry: contracts (resident-shared), registry + science
-         (collectible world-bundle companions). Published at 0.1.13 from fantasim-world. -->
-    <PackageVersion Include="GiantCroissant.FantaSim.Mythosphere.Cosmology.Contracts" Version="0.1.13" />
-    <PackageVersion Include="GiantCroissant.FantaSim.Mythosphere.Cosmology.Registry" Version="0.1.13" />
-    <PackageVersion Include="GiantCroissant.FantaSim.Mythosphere.Cosmology.Science" Version="0.1.13" />
+         (collectible world-bundle companions). Published at 0.1.14 from fantasim-world. -->
+    <PackageVersion Include="GiantCroissant.FantaSim.Mythosphere.Cosmology.Contracts" Version="0.1.14" />
+    <PackageVersion Include="GiantCroissant.FantaSim.Mythosphere.Cosmology.Registry" Version="0.1.14" />
+    <PackageVersion Include="GiantCroissant.FantaSim.Mythosphere.Cosmology.Science" Version="0.1.14" />
   </ItemGroup>
 
   <ItemGroup>
