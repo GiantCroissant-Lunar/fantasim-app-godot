@@ -63,6 +63,8 @@ internal sealed partial class PlanetPresentationBinder
             BindPlateSurface(renderer, _currentDocument, _currentSurfaceViewMode);
             if (_explodedActive)
                 RebuildExplodedCrust();
+            if (_worldSlabAssemblyActive)
+                RebuildWorldSlabAssembly();
             return;
         }
 
@@ -79,6 +81,8 @@ internal sealed partial class PlanetPresentationBinder
         body.AddChild(_plateSurfaceRoot);
         if (_explodedActive)
             RebuildExplodedCrust();
+        if (_worldSlabAssemblyActive)
+            RebuildWorldSlabAssembly();
     }
 
     // M0 light refresh (spec §3.2): swap ONLY the globe snapshot to the playhead's reassigned

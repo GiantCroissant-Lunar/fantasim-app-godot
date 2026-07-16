@@ -438,10 +438,26 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
             RebuildMantleLayer();
         }
 
+        // Assembled-world slice 1 (north-star 2026-07-16): at the DEFAULT World view the per-plate
+        // solid slab assembly IS the world; the watertight sphere stays available behind the
+        // declared WorldSurfacePresentationProfile fallback. render.exploded (look-dev) keeps
+        // ownership of the solids while active; the mantle layer composes its own separated slabs
+        // (its derived view mode is MantleInterior, so the policy gate is already closed there).
+        bool worldSlabAssemblyActive = showsPlateFeatures
+            && !_explodedActive
+            && _currentDocument?.GlobeSnapshot is not null
+            && WorldSurfacePresentationPolicy.ShowsSlabAssembly(_worldSurfaceProfile, viewMode);
+        if (worldSlabAssemblyActive != _worldSlabAssemblyActive)
+        {
+            _worldSlabAssemblyActive = worldSlabAssemblyActive;
+            RebuildWorldSlabAssembly();
+        }
+
         // D1: the mantle-interior LAYER view hides the regular terrain surface (the separated slabs
-        // are the reference frame); the boundary wireframe stays visible as the locator.
+        // are the reference frame); the boundary wireframe stays visible as the locator. The World
+        // slab assembly likewise replaces the single-surface sphere while it is mounted.
         if (_plateSurfaceRoot is not null && GodotObject.IsInstanceValid(_plateSurfaceRoot))
-            _plateSurfaceRoot.Visible = showsPlateFeatures && !_mantleLayerActive;
+            _plateSurfaceRoot.Visible = showsPlateFeatures && !_mantleLayerActive && !_worldSlabAssemblyActive;
 
         bool mantleLocatorActive = _mantleLayerActive;
         if (_boundaryRenderer is not null && GodotObject.IsInstanceValid(_boundaryRenderer))
@@ -780,6 +796,14 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
         }
         _mantleLayerRoot = null;
         _mantleLayerActive = false;
+
+        if (_worldSlabAssemblyRoot is not null && GodotObject.IsInstanceValid(_worldSlabAssemblyRoot))
+        {
+            _worldSlabAssemblyRoot.GetParent()?.RemoveChild(_worldSlabAssemblyRoot);
+            _worldSlabAssemblyRoot.QueueFree();
+        }
+        _worldSlabAssemblyRoot = null;
+        _worldSlabAssemblyActive = false;
     }
 
     private void ReleasePlateSurfaceRenderer()
