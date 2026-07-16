@@ -103,6 +103,48 @@ severity — still owed.
 
 ---
 
+## Round-2 refinements (user, 2026-07-16 evening — after directives 1+2 shipped and gated)
+
+> "I think tunnel timeline is not shown all the time, and even we show as [Sketchfab exploded]
+> we also need to show as [Keeter biomes] so we can see how mountain, trench, volcano really
+> being formed by mantle convection, the flat plate is not what we want. Also plate movement
+> should be shown as well following how sketchfab shows... Besides, have we done chunked, tile
+> that is really adaptive? not all parts have to have same resolution, I still could not see
+> such LOD being really shown on the planet we have."
+
+- **1c — the tunnel is a PERSISTENT apparatus, not a mode.** Directive 1 shipped as
+  default-ON of an exclusive view mode; the refinement: the time apparatus must be legible
+  WHENEVER the user looks — through the boot window (today there are seconds of lane/world
+  view before the pending default-enable applies), through close planet inspection (at the F9
+  placeholder framing the planet fills the screen and the bore/rings/corridors disappear
+  behind it), and it must never silently drop. Design direction: planet inspection happens
+  INSIDE the tunnel context (zooming into the mounted planet must keep rings/corridors
+  readable — framing/scale design), and boot shows the tunnel apparatus from the first
+  rendered frame. Folds the F9 framing arc into directive-1 scope.
+- **3b — NO FLAT PLATES (verdict).** The shipped thick slabs render smooth-topped; the user
+  rejects that: slab TOPS must carry the FORMED relief — mountains/trenches/volcanoes as
+  products of convection/boundary processes, with Keeter-style bulk at crust scale. The
+  machinery exists and is not yet applied to the slab presentation: signed broad relief
+  (CellElevations, dry-crust design), context-modulated ridged detail (TectonicDetailSampler),
+  banded hypsometric ramp (north-star), thickness profile (RadialSectionProfile). The look
+  slice = marry these onto the exploded/mantle slab tops + wall lighting (the D3/M-B open
+  items), eye-judged against both references.
+- **3c — plate MOTION must read in the slab presentation.** The truth motion is real and
+  already drives the World view per tick (verified drift; 1 Gy sweeps). The slab/exploded
+  presentation must re-derive slab geometry per tick the same way, so scrubbing shows plates
+  moving as coherent thick pieces (Sketchfab grammar). User asked whether this is
+  "cartography, projection?" — answer recorded: NOT projections (those serve flat-map
+  readouts); partially cartography (fantasim-cartography's globe-surface/cap builders
+  generate the slab geometry); mainly presentation-side per-tick rebinding of slab pieces to
+  the moving plate frames.
+- **4b — honest LOD status (confirmed gap).** Adaptive-subdivision MACHINERY shipped
+  (threshold/relief-driven midpoint refinement in the surface builder, LOD-roadmap slice 2),
+  but what renders today is effectively uniform tessellation: there is NO view-dependent,
+  non-uniform, chunked/tiled LOD on the planet — the user is correct that it cannot be seen,
+  because it does not exist yet. Roadmap slice 5 ("real LOD") + directive 4's chunked/tiled
+  residency + the same-day adaptive-mantle directive are ONE design arc; S2
+  children/range/cover (shipped 2026-07-16 in unify-topology) is the enabling tile key.
+
 ## Execution notes
 
 - Order proposed by the lead session: (1) small spec + implementation for the tunnel-default
