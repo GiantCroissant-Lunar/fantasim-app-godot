@@ -46,6 +46,10 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
     private bool _builtOnce;
     private bool _tearingDown;
     private bool _disposed;
+    // Directive 1: a default-enable that lost the race against staged preparation, applied once
+    // at preparation completion. _pendingApplyInProgress makes that apply one-shot (no rebind loop).
+    private bool _pendingDefaultEnable;
+    private bool _pendingApplyInProgress;
     private int _generation;
     private SceneTree? _stagePreparationRetryTree;
     private Callable? _stagePreparationRetryCallable;
@@ -162,6 +166,7 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
 
         if (!enabled)
         {
+            _pendingDefaultEnable = false; // explicit disable always wins over a latent default
             FailSafeDisable("disabled", TunnelFineResetReason.Disabled);
             return new TunnelActivationResult(false, false, string.Empty);
         }
@@ -181,8 +186,14 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         if (!string.IsNullOrEmpty(reason))
         {
             FailSafeDisable("activation_failed", TunnelFineResetReason.Disabled);
-            // Preparation is independent from this failed request. It always mounts hidden and
-            // never records latent enable intent; the user must issue a later explicit command.
+            // Directive 1 (2026-07-16, supersedes the slice-1 "never record latent intent" rule):
+            // the tunnel is the DEFAULT time surface, so an enable that loses the boot/reload race
+            // against staged preparation arms a pending default-enable, applied once when
+            // preparation completes. One-shot: a failure DURING that completion apply does not
+            // re-arm (no rebind loop); the timeline's RuntimeChanged retry remains the outer belt.
+            // An explicit disable clears the pending flag (it always wins).
+            if (!_pendingApplyInProgress)
+                _pendingDefaultEnable = true;
             if (!_tearingDown)
                 Rebind();
             return new TunnelActivationResult(true, false, reason);
@@ -322,6 +333,23 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
         _stagePreparationRetryExhaustedLogged = false;
         _log.LogInformation("Tunnel presentation prepared hidden under stage Environment.");
         _worldBundleReload.MarkMounted();
+
+        if (_pendingDefaultEnable && !_disposed && !_tearingDown)
+        {
+            _pendingDefaultEnable = false;
+            _pendingApplyInProgress = true;
+            try
+            {
+                var applied = TrySetEnabled(true);
+                _log.LogInformation(
+                    "Tunnel pending default-enable applied at preparation completion: effective={Effective}, reason='{Reason}'.",
+                    applied.EffectiveEnabled, applied.FailureReason);
+            }
+            finally
+            {
+                _pendingApplyInProgress = false;
+            }
+        }
     }
 
     private bool TryAlignToPlanetBody(Node3D body, int gen)
