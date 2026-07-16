@@ -216,8 +216,16 @@ public sealed class LayerProjectionProfileResolverTests
         Assert.Equal(fitted / (1.0 / 6_371_000.0), resolved.ReliefAmplification, 9);
         Assert.Equal(0.5, resolved.HeightExponent);
         Assert.True(resolved.UseAdaptiveSurface);
-        Assert.Equal(1, resolved.AdaptiveSubdivisionMaxDepth);
-        Assert.Equal(0.012 * fitRatio, resolved.AdaptiveSubdivisionEdgeHeightDelta, 15);
-        Assert.Equal(0.25, resolved.AdaptiveSubdivisionFeatureWeightDelta);
+
+        // RE-PINNED 2026-07-16 (directive 4 slice 1, visible-adaptive-lod plan): the World view
+        // no longer inherits the crust profile's adaptive trio — it adopts the declared
+        // VisibleLodProfile (feature-weight-only splits, height splits disabled, depth 2) so the
+        // rendered planet is nonuniform: boundary band refined, interiors coarse. Diagnostic
+        // views still use the declared crust values (covered by the crust-view tests).
+        var visibleLod = VisibleLodProfile.BuildOptions();
+        Assert.Equal(visibleLod.MaxDepth, resolved.AdaptiveSubdivisionMaxDepth);
+        Assert.Equal(visibleLod.EdgeHeightDeltaThreshold, resolved.AdaptiveSubdivisionEdgeHeightDelta);
+        Assert.Equal(visibleLod.FeatureWeightDeltaThreshold, resolved.AdaptiveSubdivisionFeatureWeightDelta);
+        _ = fitRatio; // fit ratio still governs the crust-view threshold scaling, asserted elsewhere
     }
 }

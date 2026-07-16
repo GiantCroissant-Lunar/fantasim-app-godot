@@ -380,6 +380,13 @@ public sealed class GlobePlateSurfaces
                 : 0.0;
         }
 
+        // MEAN gather: each vertex gets the average feature weight of all incident faces.
+        // This creates a weight GRADIENT: pure boundary vertices (all incident faces are boundary)
+        // get ~1.0, boundary-adjacent vertices (1-2 boundary faces among 5-6) get ~0.17-0.33, and
+        // deep interior vertices get 0.0. With the feature-weight threshold set above the gradient
+        // tail, splits fire ONLY at the high-weight boundary ring and stop before propagating into
+        // the deep interior. MAX gather was tried and rejected: it stamps every shared vertex
+        // with 1.0, which propagates the split signal through the entire shared-vertex graph.
         var globalVertexWeights = GlobeSurfaceBuilder.GatherVertexHeights(
             _globalVertices.Length,
             _globalTriangles,

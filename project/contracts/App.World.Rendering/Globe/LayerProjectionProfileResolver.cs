@@ -1,4 +1,5 @@
 using FantaSim.App.World.Composition;
+using FantaSim.Cartography.Globe;
 
 namespace FantaSim.App.World.Globe;
 
@@ -56,6 +57,14 @@ public static class LayerProjectionProfileResolver
         double metresToUnitRadius = Math.Min(declaredScale, fitCap);
         double fitRatio = metresToUnitRadius / declaredScale;
 
+        // Directive 4 slice 1 (vault/plans/2026-07-16-visible-adaptive-lod-slice-plan.md): the
+        // WORLD view adopts the declared nonuniform profile — splits driven ONLY by the coarse
+        // causal feature-weight criterion, so the boundary band refines (>=3x density,
+        // headless-tested) while interiors stay coarse under the declared budget. Diagnostic
+        // views keep their declared profile values. Migrating these numbers into control-plane
+        // world parameters is the recorded follow-up.
+        AdaptiveSubdivisionOptions? visibleLod = worldLens ? VisibleLodProfile.BuildOptions() : null;
+
         return new ResolvedLayerProjection(
             Profile: crust,
             BaseRadius: crust.BaseRadius,
@@ -65,9 +74,9 @@ public static class LayerProjectionProfileResolver
             ReliefAmplification: metresToUnitRadius / crust.TrueScaleMetresToUnitRadius,
             HeightExponent: heightExponent,
             UseAdaptiveSurface: terrainView && crust.SurfaceSubdivision == SurfaceSubdivisionMode.Adaptive,
-            AdaptiveSubdivisionMaxDepth: crust.AdaptiveSubdivisionMaxDepth,
-            AdaptiveSubdivisionEdgeHeightDelta: crust.AdaptiveSubdivisionEdgeHeightDelta * fitRatio,
-            AdaptiveSubdivisionFeatureWeightDelta: crust.AdaptiveSubdivisionFeatureWeightDelta,
+            AdaptiveSubdivisionMaxDepth: visibleLod?.MaxDepth ?? crust.AdaptiveSubdivisionMaxDepth,
+            AdaptiveSubdivisionEdgeHeightDelta: visibleLod?.EdgeHeightDeltaThreshold ?? crust.AdaptiveSubdivisionEdgeHeightDelta * fitRatio,
+            AdaptiveSubdivisionFeatureWeightDelta: visibleLod?.FeatureWeightDeltaThreshold ?? crust.AdaptiveSubdivisionFeatureWeightDelta,
             PreservesCellProvenance: crust.PreservesCellProvenance,
             MaxDisplacementUnitRadius: crust.MaxDisplacementUnitRadius);
     }

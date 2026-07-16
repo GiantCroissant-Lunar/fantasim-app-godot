@@ -21,6 +21,7 @@ public static class RenderComposition
     public const string CutawayCommandId = "render.cutaway";
     public const string ExplodedCommandId = "render.exploded";
     public const string MantleCommandId = "render.mantle";
+    public const string LodDebugCommandId = "render.lod";
 
     public static IRenderCompositionHandle ComposeRender(HostCompositionContext ctx, Godot.Node hostNode)
     {
@@ -38,7 +39,7 @@ public static class RenderComposition
         if (commandService is null)
         {
             log.LogWarning("Render: no command IService registered; render.screenshot will be inert.");
-            return new RenderCompositionHandle(captureNode, registered: false, new CutawayTargetHolder(), new ExplodedTargetHolder(), new MantleTargetHolder());
+            return new RenderCompositionHandle(captureNode, registered: false, new CutawayTargetHolder(), new ExplodedTargetHolder(), new MantleTargetHolder(), new LodDebugTargetHolder());
         }
 
         commandService.Register(
@@ -230,8 +231,68 @@ public static class RenderComposition
                 return Task.FromResult<string?>(MantleAlias.BuildResultJson(ok, req.Enabled, rejection));
             });
 
-        log.LogInformation("registered: render.screenshot (viewport capture), render.cutaway (wedge), render.exploded (solid crust), render.mantle (deprecated mantle-layer alias).");
-        return new RenderCompositionHandle(captureNode, registered: true, cutawayTarget, explodedTarget, mantleTarget);
+        var lodDebugTarget = new LodDebugTargetHolder();
+        commandService.Register(
+            new FantaSim.App.Command.CommandDescriptor(
+                Id: LodDebugCommandId,
+                Title: "LOD debug overlay",
+                Description: "Toggles the adaptive LOD debug overlay. Payload: {\"mode\":\"off\"|\"wireframe\"|\"density\"}. wireframe renders plate-cap mesh edges as wireframe; density color-codes triangles by graph-distance-to-boundary. Default: {\"mode\":\"off\"} (clear).",
+                Category: "render"),
+            (payloadJson, cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                LodDebugRequest req;
+                try
+                {
+                    req = LodDebugRequestParser.Parse(payloadJson);
+                }
+                catch (ArgumentException ex)
+                {
+                    return Task.FromResult<string?>(JsonSerializer.Serialize(new { ok = false, error = ex.Message }));
+                }
+
+                var target = lodDebugTarget.Target;
+                if (target is null)
+                {
+                    // Slice-1 fallback: no binder-side overlay is wired yet. Wireframe is served
+                    // product-wide via the viewport's debug draw (sufficient for the falsifiable
+                    // nonuniform-tessellation gate); density needs the per-triangle overlay and
+                    // reports not-implemented honestly instead of no-op'ing.
+                    if (req.Mode == LodDebugMode.Density)
+                    {
+                        return Task.FromResult<string?>(JsonSerializer.Serialize(new
+                        {
+                            ok = false,
+                            error = "density overlay not implemented in slice 1 (wireframe is)",
+                        }));
+                    }
+
+                    captureNode.GetViewport().DebugDraw = req.Mode == LodDebugMode.Wireframe
+                        ? Godot.Viewport.DebugDrawEnum.Wireframe
+                        : Godot.Viewport.DebugDrawEnum.Disabled;
+                    log.LogInformation("render.lod: viewport debug draw set ({Mode}).", req.Mode);
+                    return Task.FromResult<string?>(JsonSerializer.Serialize(new
+                    {
+                        ok = true,
+                        mode = req.Mode.ToString().ToLowerInvariant(),
+                        inactive = req.IsInactive,
+                        surface = "viewport-debug-draw",
+                    }));
+                }
+
+                target(req.Mode);
+                log.LogInformation("render.lod: mode={Mode}", req.Mode);
+                return Task.FromResult<string?>(JsonSerializer.Serialize(new
+                {
+                    ok = true,
+                    mode = req.Mode.ToString().ToLowerInvariant(),
+                    inactive = req.IsInactive,
+                }));
+            });
+
+        log.LogInformation("registered: render.screenshot (viewport capture), render.cutaway (wedge), render.exploded (solid crust), render.mantle (deprecated mantle-layer alias), render.lod (wireframe/density debug toggle).");
+        return new RenderCompositionHandle(captureNode, registered: true, cutawayTarget, explodedTarget, mantleTarget, lodDebugTarget);
     }
 }
 
@@ -251,6 +312,8 @@ public interface IRenderCompositionHandle : IDisposable
 
     void SetExplodedTarget(Action<double>? target);
     void SetMantleTarget(Func<bool, string?>? target);
+
+    void SetLodDebugTarget(Action<LodDebugMode>? target);
 }
 
 internal sealed class RenderCompositionHandle : IRenderCompositionHandle
@@ -260,6 +323,7 @@ internal sealed class RenderCompositionHandle : IRenderCompositionHandle
     private readonly CutawayTargetHolder _cutawayTarget;
     private readonly ExplodedTargetHolder _explodedTarget;
     private readonly MantleTargetHolder _mantleTarget;
+    private readonly LodDebugTargetHolder _lodDebugTarget;
     private bool _disposed;
 
     public RenderCompositionHandle(
@@ -267,13 +331,15 @@ internal sealed class RenderCompositionHandle : IRenderCompositionHandle
         bool registered,
         CutawayTargetHolder cutawayTarget,
         ExplodedTargetHolder explodedTarget,
-        MantleTargetHolder mantleTarget)
+        MantleTargetHolder mantleTarget,
+        LodDebugTargetHolder lodDebugTarget)
     {
         _captureNode = captureNode;
         _registered = registered;
         _cutawayTarget = cutawayTarget;
         _explodedTarget = explodedTarget;
         _mantleTarget = mantleTarget;
+        _lodDebugTarget = lodDebugTarget;
     }
 
     public bool Registered => _registered;
@@ -287,6 +353,7 @@ internal sealed class RenderCompositionHandle : IRenderCompositionHandle
         registry?.TryGet<FantaSim.App.Command.IService>()?.Unregister(RenderComposition.CutawayCommandId);
         registry?.TryGet<FantaSim.App.Command.IService>()?.Unregister(RenderComposition.ExplodedCommandId);
         registry?.TryGet<FantaSim.App.Command.IService>()?.Unregister(RenderComposition.MantleCommandId);
+        registry?.TryGet<FantaSim.App.Command.IService>()?.Unregister(RenderComposition.LodDebugCommandId);
     }
 
     public void SetCutawayTarget(Action<double, double>? target)
@@ -296,6 +363,9 @@ internal sealed class RenderCompositionHandle : IRenderCompositionHandle
         => _explodedTarget.Target = target;
     public void SetMantleTarget(Func<bool, string?>? target)
         => _mantleTarget.Target = target;
+
+    public void SetLodDebugTarget(Action<LodDebugMode>? target)
+        => _lodDebugTarget.Target = target;
 
     public void Dispose()
     {
@@ -326,4 +396,9 @@ internal sealed class ExplodedTargetHolder
 internal sealed class MantleTargetHolder
 {
     public Func<bool, string?>? Target { get; set; }
+}
+
+internal sealed class LodDebugTargetHolder
+{
+    public Action<LodDebugMode>? Target { get; set; }
 }
