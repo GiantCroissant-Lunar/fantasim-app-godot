@@ -172,11 +172,34 @@ internal sealed partial class PlanetPresentationBinder
         var solids = PlateSolidBuilder.Build(slabCaps, thickness, _radialProfile.ThicknessDepthScale());
         var exploded = PlateSolidBuilder.ApplyExplodedFactor(solids, centroids, factor);
 
+        AddSlabMeshInstances(
+            root,
+            slabCaps,
+            exploded,
+            centroids,
+            factor * PlateSolidBuilder.DefaultMaxOffset,
+            slabPerPlateVertexColors);
+
+        return root;
+    }
+
+    // Shared per-plate slab mesh emission for the solid-slab family (exploded look-dev crust, the
+    // mantle layer's separated slabs, and the default World slab assembly): for each cap, the TOP
+    // (attributed cap surface DTO with the plate's radial offset baked into positions) and the
+    // BOTTOM+WALLS (the PlateSolidBuilder output, lit strata material). The solids list is parallel
+    // to slabCaps and already carries the radial translation; offsetMag re-applies the SAME offset
+    // to the TOP DTO positions so tops and walls stay welded.
+    private void AddSlabMeshInstances(
+        Node3D root,
+        IReadOnlyList<PlateCap> slabCaps,
+        IReadOnlyList<PlateSolid> solids,
+        IReadOnlyList<PlateSolidCentroid> centroids,
+        double offsetMag,
+        IReadOnlyDictionary<int, RampColor[]> slabPerPlateVertexColors)
+    {
         var byPlate = new Dictionary<int, PlateSolidCentroid>(centroids.Count);
         foreach (var c in centroids)
             byPlate[c.PlateId] = c;
-
-        var offsetMag = factor * PlateSolidBuilder.DefaultMaxOffset;
 
         for (int i = 0; i < slabCaps.Count; i++)
         {
@@ -184,7 +207,7 @@ internal sealed partial class PlanetPresentationBinder
             if (!byPlate.TryGetValue(cap.PlateId, out var centroid))
                 continue;
 
-            var solid = exploded[i];
+            var solid = solids[i];
 
             var topDto = BuildExplodedTopDto(cap, centroid, offsetMag, slabPerPlateVertexColors);
             root.AddChild(BuildExplodedMeshInstance($"Plate{cap.PlateId}_Top", topDto, HypsoPlateMaterialOverride));
@@ -192,8 +215,6 @@ internal sealed partial class PlanetPresentationBinder
             var solidDto = BuildExplodedSolidDto(cap, solid);
             root.AddChild(BuildExplodedSolidMeshInstance($"Plate{cap.PlateId}_Solid", solidDto, PlanetShaderLibrary.SlabWallStrataMaterial));
         }
-
-        return root;
     }
 
     // Directive 3b: builds the formed-relief slab TOP caps via SlabTopReliefComposer (the pure seam
