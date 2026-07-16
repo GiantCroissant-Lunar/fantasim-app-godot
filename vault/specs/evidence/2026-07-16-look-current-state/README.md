@@ -44,9 +44,14 @@ real window showed the 2D timeline while the summary claimed tunnel. OS-level ve
    then `Tunnel pending default-enable applied at preparation completion: effective=True`.
    So default-on lands only after world preparation, via the out-of-band path.
 4. **BUT the boot framing does not READ as a tunnel.** At default zoom the planet fills the
-   entire window; rings/lanes are off-screen (only floating ka badges hint at them). The
-   tunnel reads as the hero mockup only after ~2× `tunnel_zoom` out. **Defect for the tunnel
-   arc: boot framing should present the tunnel reading, not a full-frame planet close-up.**
+   entire window; rings/lanes are off-screen (only floating ka badges hint at them). **Defect
+   for the tunnel arc: boot framing should present the tunnel reading, not a full-frame
+   planet close-up.**
+5. **`timeline.tunnel_zoom` from the boot (tick-0, magma-ocean) state did NOT recover the
+   tunnel reading** — two `direction:-1` calls left the planet still full-frame (larger,
+   off-center) with a "preview unavailable" badge; the ring/lane reading was only ever
+   achieved from a COMMITTED seeked tick (the 22:13 OS screenshot). Second framing defect,
+   or a zoom-direction/semantics gap — needs the tunnel arc's attention.
 
 Discipline this encodes: an "X is on screen" claim is valid only against an OS-level
 screenshot taken at claim time with no state changes after it; in-app viewport captures
