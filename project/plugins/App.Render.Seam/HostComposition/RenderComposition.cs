@@ -187,16 +187,18 @@ public static class RenderComposition
                 }));
             });
 
-        // M-A: render.mantle — mirrors render.cutaway. The binder mounts later (world bundle load),
-        // so the handler closes over a mutable target Host.cs wires via SetMantleTarget. Null target
-        // = binder not yet mounted; the command reports that. Empty payload => enabled=true (the
-        // common "turn it on" case); {"enabled":false} clears the view.
+        // DEPRECATED render.mantle alias (directive 2, 2026-07-16): mantle convection is a LAYER, not
+        // an x-ray mode. The command survives only as a loud deprecated alias over the geosphere.mantle
+        // layer selection (the same path as timeline.select_layer). Mirrors render.cutaway: the binder
+        // mounts later (world bundle load), so the handler closes over a mutable target Host.cs wires
+        // via SetMantleTarget. The target returns null on success or a rejection message; MantleAlias
+        // builds the deprecation-noted result JSON (ok:false + message on rejection, never a no-op).
         var mantleTarget = new MantleTargetHolder();
         commandService.Register(
             new FantaSim.App.Command.CommandDescriptor(
                 Id: MantleCommandId,
-                Title: "Mantle x-ray view",
-                Description: "Toggles the mantle x-ray view (ghosted crust + cold/warm convection isosurfaces). Payload: {\"enabled\":true|false}. Default: {\"enabled\":true}.",
+                Title: "Mantle layer (deprecated alias)",
+                Description: "DEPRECATED alias for timeline.select_layer geosphere/geosphere.mantle. Routes to the mantle LAYER selection (composed interior + separated crust slabs; no x-ray ghost shell). Payload: {\"enabled\":true|false}. Default: {\"enabled\":true}. The result carries a deprecation note.",
                 Category: "render"),
             (payloadJson, cancellationToken) =>
             {
@@ -222,16 +224,13 @@ public static class RenderComposition
                     }));
                 }
 
-                target(req.Enabled);
-                log.LogInformation("render.mantle: enabled={Enabled}", req.Enabled);
-                return Task.FromResult<string?>(JsonSerializer.Serialize(new
-                {
-                    ok = true,
-                    enabled = req.Enabled,
-                }));
+                string? rejection = target(req.Enabled);
+                bool ok = rejection is null;
+                log.LogInformation("render.mantle (deprecated alias): enabled={Enabled} ok={Ok}", req.Enabled, ok);
+                return Task.FromResult<string?>(MantleAlias.BuildResultJson(ok, req.Enabled, rejection));
             });
 
-        log.LogInformation("registered: render.screenshot (viewport capture), render.cutaway (wedge), render.exploded (solid crust), render.mantle (x-ray).");
+        log.LogInformation("registered: render.screenshot (viewport capture), render.cutaway (wedge), render.exploded (solid crust), render.mantle (deprecated mantle-layer alias).");
         return new RenderCompositionHandle(captureNode, registered: true, cutawayTarget, explodedTarget, mantleTarget);
     }
 }
@@ -251,7 +250,7 @@ public interface IRenderCompositionHandle : IDisposable
     void SetCutawayTarget(Action<double, double>? target);
 
     void SetExplodedTarget(Action<double>? target);
-    void SetMantleTarget(Action<bool>? target);
+    void SetMantleTarget(Func<bool, string?>? target);
 }
 
 internal sealed class RenderCompositionHandle : IRenderCompositionHandle
@@ -295,7 +294,7 @@ internal sealed class RenderCompositionHandle : IRenderCompositionHandle
 
     public void SetExplodedTarget(Action<double>? target)
         => _explodedTarget.Target = target;
-    public void SetMantleTarget(Action<bool>? target)
+    public void SetMantleTarget(Func<bool, string?>? target)
         => _mantleTarget.Target = target;
 
     public void Dispose()
@@ -326,5 +325,5 @@ internal sealed class ExplodedTargetHolder
 
 internal sealed class MantleTargetHolder
 {
-    public Action<bool>? Target { get; set; }
+    public Func<bool, string?>? Target { get; set; }
 }

@@ -18,7 +18,7 @@ public class PresentationPluginTests
         public void Rebind() { }
         public void UpdateCutaway(double azimuthDeg, double widthDeg) { }
         public void UpdateExploded(double factor) { }
-        public void UpdateMantle(bool enabled) { }
+        public string? RequestMantleLayerAlias(bool enabled) => null;
         public void Dispose() => Disposed = true;
     }
 

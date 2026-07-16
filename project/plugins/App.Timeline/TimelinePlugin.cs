@@ -775,15 +775,9 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
         return false;
     }
 
+    // Shared by select_layer/toggle_layer and the render.mantle alias so all three reject through one predicate.
     private static bool IsLayerActive(ITimelineController controller, string sphereId, string layerId)
-    {
-        var schedule = string.Equals(sphereId, "atmosphere", StringComparison.Ordinal)
-            ? controller.AtmosphereSchedule
-            : controller.GeosphereSchedule;
-
-        return schedule.RegimeAt(controller.Tick)?.ActiveLayers.Any(layer =>
-            string.Equals(layer.Value, layerId, StringComparison.Ordinal)) == true;
-    }
+        => LayerActivation.IsLayerActive(controller, sphereId, layerId);
 }
 
 internal sealed class TimelineFaceContext : ITimelineFaceContext, IDisposable

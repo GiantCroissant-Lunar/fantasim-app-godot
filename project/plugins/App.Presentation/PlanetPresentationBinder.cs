@@ -346,8 +346,7 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
         // active wedge must survive regime/snapshot refreshes, so re-apply uniforms + faces here.
         UpdateCutawayPlateShader();
         RebuildCutawayFaces();
-        // M-A: ditto for the mantle x-ray isosurfaces — re-sample at the playhead tick after rebind.
-        RebuildMantleXray();
+        // The mantle-interior layer re-mounts via ApplyTimelineTick's composition reconcile (no separate x-ray rebind).
         ApplyTimelineTick(_timeline.Tick);
 
         _log.LogInformation(
@@ -439,22 +438,18 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
             RebuildMantleLayer();
         }
 
-        // M-A look-loop: GeometryInstance3D.Transparency proved unreliable against the custom
-        // hypso/continents shaders in the exported app (surface stayed opaque — windowed gate
-        // 2026-07-07). Do what the reference imagery does instead: HIDE the terrain surface in
-        // mantle view; the x-ray root carries its own translucent ghost shell + the boundary
-        // wireframe stays visible as the locator. D1: the mantle-interior LAYER view likewise
-        // hides the regular surface (the separated slabs are the reference frame instead).
+        // D1: the mantle-interior LAYER view hides the regular terrain surface (the separated slabs
+        // are the reference frame); the boundary wireframe stays visible as the locator.
         if (_plateSurfaceRoot is not null && GodotObject.IsInstanceValid(_plateSurfaceRoot))
-            _plateSurfaceRoot.Visible = showsPlateFeatures && !_mantleXrayActive && !_mantleLayerActive;
+            _plateSurfaceRoot.Visible = showsPlateFeatures && !_mantleLayerActive;
 
-        bool mantleLocatorActive = _mantleXrayActive || _mantleLayerActive;
+        bool mantleLocatorActive = _mantleLayerActive;
         if (_boundaryRenderer is not null && GodotObject.IsInstanceValid(_boundaryRenderer))
         {
             _boundaryRenderer.Visible = showBoundaries || mantleLocatorActive;
-            // M-A / D1: restyle the boundary arcs (thin desaturated filaments) whenever a mantle
-            // view is active. Idempotent, and the rebind path reconstructs this renderer fresh so
-            // the style re-applies here on the first ApplyTimelineTick after mount.
+            // D1: restyle the boundary arcs (thin desaturated filaments) whenever the mantle layer is
+            // active. Idempotent, and the rebind path reconstructs this renderer fresh so the style
+            // re-applies here on the first ApplyTimelineTick after mount.
             _boundaryRenderer.ApplyMantleViewStyle(mantleLocatorActive);
         }
 
@@ -464,8 +459,8 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
         if (_mantle is not null && GodotObject.IsInstanceValid(_mantle))
         {
             _mantle.MaterialOverride = ResolveMantleMaterial(RegimeSurfaceResolver.Resolve(regimeId));
-            // M-A: the opaque interior mantle sphere would occlude the x-ray isosurfaces; the x-ray
-            // mounts its own dark core sphere at the CMB radius instead. D1: same for the layer view.
+            // D1: the opaque interior mantle sphere would occlude the layer view's isosurfaces; the
+            // layer mounts its own dark core sphere at the CMB radius instead.
             _mantle.Visible = !mantleLocatorActive && MantleSurfaceGate.IsVisible(
                 viewMode,
                 platesShown: showsPlateFeatures,
@@ -777,13 +772,6 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
             _cutawayFaceRoot.QueueFree();
         }
         _cutawayFaceRoot = null;
-
-        if (_mantleXrayRoot is not null && GodotObject.IsInstanceValid(_mantleXrayRoot))
-        {
-            _mantleXrayRoot.GetParent()?.RemoveChild(_mantleXrayRoot);
-            _mantleXrayRoot.QueueFree();
-        }
-        _mantleXrayRoot = null;
 
         if (_mantleLayerRoot is not null && GodotObject.IsInstanceValid(_mantleLayerRoot))
         {

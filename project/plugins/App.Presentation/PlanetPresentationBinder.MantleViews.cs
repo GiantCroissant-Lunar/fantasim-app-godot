@@ -7,16 +7,12 @@ using WorldService = FantaSim.App.World.IService;
 
 namespace FantaSim.App.Presentation;
 
-// Mantle x-ray (M-A) + mantle-interior LAYER (D1) views. Split from PlanetPresentationBinder
-// 2026-07-11 (vault/plans/2026-07-11-planet-presentation-binder-split-plan.md).
+// Mantle-interior LAYER view (D1) + the DEPRECATED render.mantle alias entry (directive 2,
+// 2026-07-16). Split from PlanetPresentationBinder 2026-07-11 (planet-presentation-binder-split).
+// The x-ray/ghost-shell presentation that preceded the layer path has been retired; render.mantle
+// now routes to the geosphere.mantle layer selection (same path as timeline.select_layer).
 internal sealed partial class PlanetPresentationBinder
 {
-    // M-A mantle x-ray state (inactive by default). _mantleXrayRoot holds the dark core sphere plus
-    // the four isosurface MeshInstance3Ds (cold/warm x outer/inner) sampled from the engine's
-    // volumetric MantleAnomalyField at the current tick.
-    private Node3D? _mantleXrayRoot;
-    private bool _mantleXrayActive;
-
     // D1 mantle-interior LAYER view state (inactive by default). _mantleLayerRoot holds the composed
     // tree from MantleInteriorViewComposer: core sphere + four isosurfaces + separated crust slabs
     // (NO ghost shell — the slabs are the reference frame). Driven by viewMode == MantleInterior,
@@ -30,72 +26,52 @@ internal sealed partial class PlanetPresentationBinder
     // the core-sphere radius (CMB × mantle scale) feeds the mantle interior backdrop.
     private RadialSectionProfile _radialProfile = RadialSectionProfile.Default;
 
-    // M-A: entry from render.mantle. enabled=true samples the conditioned convection field at the
-    // playhead tick and mounts cold/warm isosurface meshes; enabled=false clears them and restores the
-    // plate surface. The ghosted crust + boundary wireframe visibility is applied through the standard
-    // ApplyTimelineTick path (which checks _mantleXrayActive), mirroring how cutaway re-applies.
-    public void UpdateMantle(bool enabled)
+    // render.mantle DEPRECATED ALIAS (directive 2): routes the legacy command to the geosphere.mantle
+    // LAYER selection — the exact same code path as timeline.select_layer. enabled=true selects the
+    // mantle layer (firing LayerSelectionChanged -> RebuildMantleLayer); enabled=false removes it via
+    // the layer path's toggle. Returns null on success, or a rejection message when the mantle layer
+    // is not active at the current tick (the shared LayerActivation predicate — never a silent no-op).
+    // The resident render seam turns this into the deprecation-noted result JSON (see MantleAlias).
+    public string? RequestMantleLayerAlias(bool enabled)
     {
         if (_disposed)
-            return;
+            return null;
 
-        _mantleXrayActive = enabled;
-        RebuildMantleXray();
-        ApplyTimelineTick(_timeline.Tick);
-    }
+        const string sphereId = "geosphere";
+        const string layerId = "geosphere.mantle";
 
-    // M-A: free the old mantle x-ray root; if active, sample the volumetric field at the playhead
-    // tick and mount the four isosurface meshes + dark core sphere under PlanetBody.
-    private void RebuildMantleXray()
-    {
-        if (_mantleXrayRoot is not null && GodotObject.IsInstanceValid(_mantleXrayRoot))
+        if (!enabled)
         {
-            _mantleXrayRoot.GetParent()?.RemoveChild(_mantleXrayRoot);
-            _mantleXrayRoot.QueueFree();
-        }
-        _mantleXrayRoot = null;
-
-        if (!_mantleXrayActive)
-            return;
-
-        if (_activeRoot is null || !GodotObject.IsInstanceValid(_activeRoot))
-            return;
-
-        var body = _activeRoot.GetNodeOrNull<Node3D>("PlanetBody");
-        if (body is null)
-            return;
-
-        var world = _registry.TryGet<WorldService>();
-        if (world is null)
-        {
-            _log.LogWarning("Mantle x-ray skipped: world service is not registered.");
-            return;
+            // Deselect: remove mantle from the active set via the layer path's toggle (D5). Idempotent
+            // when mantle is already inactive. Mirrors the layer-selection path; introduces no new state.
+            bool mantleActive = false;
+            foreach (var layer in _timeline.ActiveLayers)
+            {
+                if (string.Equals(layer.SphereId, sphereId, StringComparison.Ordinal)
+                    && string.Equals(layer.LayerId, layerId, StringComparison.Ordinal))
+                {
+                    mantleActive = true;
+                    break;
+                }
+            }
+            if (mantleActive)
+                _timeline.ToggleLayer(sphereId, layerId);
+            return null;
         }
 
-        FantaSim.App.World.MantleIsosurfaceSet set;
-        try
-        {
-            set = world.GetMantleIsosurfacesAsync(_timeline.Tick);
-        }
-        catch (Exception ex)
-        {
-            _log.LogError(ex, "Mantle x-ray sampling failed at t={Tick}: {Message}", _timeline.Tick, ex.Message);
-            return;
-        }
+        // Activate: reject loudly through the shared predicate (same check as timeline.select_layer)
+        // when the mantle layer is inactive at the current tick. Otherwise drive the layer selection,
+        // which reconciles the composed mantle-interior view with separated crust slabs (no ghost shell).
+        if (!LayerActivation.IsLayerActive(_timeline, sphereId, layerId))
+            return $"Layer '{layerId}' in sphere '{sphereId}' is not active at tick {_timeline.Tick}.";
 
-        _mantleXrayRoot = BuildMantleXrayRoot(set);
-        body.AddChild(_mantleXrayRoot);
-        _log.LogInformation(
-            "Mantle x-ray mounted at t={Tick}: cold outer/inner={ColdOuter}/{ColdInner} verts, warm outer/inner={WarmOuter}/{WarmInner} verts.",
-            _timeline.Tick,
-            set.ColdOuter.Vertices.Length / 3, set.ColdInner.Vertices.Length / 3,
-            set.WarmOuter.Vertices.Length / 3, set.WarmInner.Vertices.Length / 3);
+        _timeline.SelectLayer(sphereId, layerId);
+        return null;
     }
 
     // D1: free the old mantle-interior layer root; if active, sample the volumetric field at the
     // playhead tick and mount the composed tree (core sphere + four isosurfaces + separated crust
-    // slabs, NO ghost shell) via MantleInteriorViewComposer. Mirrors RebuildMantleXray's lifecycle
-    // but composes the slabs instead of ghosting the surface. Called on view-mode transition into
+    // slabs, NO ghost shell) via MantleInteriorViewComposer. Called on view-mode transition into
     // MantleInterior (reconciled in ApplyTimelineTick).
     private void RebuildMantleLayer()
     {
@@ -146,7 +122,7 @@ internal sealed partial class PlanetPresentationBinder
         slabRoot.Scale = Vector3.One * 0.5f;
 
         // Four isosurface entries (opaque inner cores first, translucent outer halos last) — the
-        // same material singletons and BuildIsosurfaceNode the x-ray path uses.
+        // same material singletons and BuildIsosurfaceNode the retired x-ray path used.
         var entries = new List<MantleInteriorViewComposer.IsosurfaceEntry>(4);
         if (!set.ColdInner.IsEmpty)
             entries.Add(new(BuildIsosurfaceNode("ColdInner", set.ColdInner, ColdInnerMaterial), RenderPriority: 0));
@@ -169,46 +145,6 @@ internal sealed partial class PlanetPresentationBinder
             set.WarmOuter.Vertices.Length / 3, set.WarmInner.Vertices.Length / 3,
             slabRoot.GetChildCount());
     }
-
-    // The four method-lock surfaces plus stage dressing (spec ingredient 6): opaque INNER cores
-    // (deep blue slab hearts / red-orange plume hearts, drawn in the opaque pass), translucent
-    // OUTER halos (drawn in the transparent pass with explicit render priority AFTER opaques),
-    // and the dark core sphere at the CMB radius. All geometry is unit-sphere; the root applies
-    // the house globe scale (x2, matching the plate surface and cutaway nodes).
-    private Node3D BuildMantleXrayRoot(FantaSim.App.World.MantleIsosurfaceSet set)
-    {
-        var root = new Node3D { Name = "MantleXray", Scale = Vector3.One * 2.0f };
-        root.AddChild(BuildCoreSphere());
-        if (!set.ColdInner.IsEmpty)
-            root.AddChild(BuildIsosurfaceNode("ColdInner", set.ColdInner, ColdInnerMaterial));
-        if (!set.WarmInner.IsEmpty)
-            root.AddChild(BuildIsosurfaceNode("WarmInner", set.WarmInner, WarmInnerMaterial));
-        if (!set.ColdOuter.IsEmpty)
-            root.AddChild(BuildIsosurfaceNode("ColdOuter", set.ColdOuter, ColdOuterMaterial));
-        if (!set.WarmOuter.IsEmpty)
-            root.AddChild(BuildIsosurfaceNode("WarmOuter", set.WarmOuter, WarmOuterMaterial));
-        root.AddChild(BuildGhostShell());
-        return root;
-    }
-
-    // Translucent ghost shell at the surface radius — the reference-image framing device: the
-    // viewer sees the interior THROUGH a faint skin that still reads as "the planet". Drawn last
-    // in the transparent pass (priority above the outer isosurfaces), back faces culled so the
-    // far side doesn't double the haze.
-    private static MeshInstance3D BuildGhostShell() => new()
-    {
-        Name = "GhostShell",
-        Mesh = new SphereMesh { Radius = 1.0f, Height = 2.0f, RadialSegments = 96, Rings = 48 },
-        MaterialOverride = new StandardMaterial3D
-        {
-            Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
-            AlbedoColor = new Color(0.75f, 0.82f, 0.9f, 0.10f),
-            Roughness = 0.9f,
-            Metallic = 0.0f,
-            CullMode = BaseMaterial3D.CullModeEnum.Back,
-            RenderPriority = 3,
-        },
-    };
 
     // Dark core sphere at the CMB radius — the backdrop the anomaly volumes read against. D3: the
     // geometric radius comes from _radialProfile (CMB × mantle depth scale), not a 0.55 literal.
@@ -260,7 +196,8 @@ internal sealed partial class PlanetPresentationBinder
     }
 
     // M-B: per-cell crust thickness in metres, with the SAME null/mean fallback BuildCutawayFaces
-    // uses so the solid reads when the document has no materialized thickness yet.
+    // uses so the solid reads when the document has no materialized thickness yet. Shared with the
+    // cutaway/exploded path (BuildExplodedSolidCrust).
     private IReadOnlyList<double> ResolveCrustThicknessMetres(PlanetPresentationDocument document)
     {
         var crustThickness = document.CellCrustThickness;

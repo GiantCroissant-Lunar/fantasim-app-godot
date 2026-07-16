@@ -19,9 +19,9 @@ namespace FantaSim.App.Presentation;
 /// framing device, explicitly rejected by D1 in favor of the separated slabs).</para>
 ///
 /// <para>The root is scaled <c>x2</c> to match the house globe scale (<c>PlateSurfaceRenderer</c>,
-/// <c>BuildMantleXrayRoot</c>, <c>BuildCutawayFaceSector</c>) so the composed tree aligns with the
-/// regular plate surface and cutaway nodes. All piece nodes are parented under this root; the
-/// binder parents the root under <c>PlanetBody</c>.</para>
+/// <c>BuildCutawayFaceSector</c>) so the composed tree aligns with the regular plate surface and
+/// cutaway nodes. All piece nodes are parented under this root; the binder parents the root under
+/// <c>PlanetBody</c>.</para>
 /// </remarks>
 internal static class MantleInteriorViewComposer
 {

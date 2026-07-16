@@ -19,11 +19,14 @@ public interface IPlanetPresentation : IDisposable
     void UpdateExploded(double factor);
 
     /// <summary>
-    /// M-A mantle x-ray view (render.mantle ingress). enabled=false clears. This is the AGENT
-    /// look-dev knob; the USER-reachable path is the <c>geosphere.mantle</c> timeline layer (D1),
-    /// which resolves to <c>GlobeViewMode.MantleInterior</c> and composes the M-A interior with
-    /// separated crust slabs (no ghost shell). Keep this for look-dev iteration; surface the layer
-    /// for end users.
+    /// DEPRECATED render.mantle alias (directive 2, 2026-07-16): mantle convection is a LAYER, not an
+    /// "x-ray" mode. This routes the legacy command to the <c>geosphere.mantle</c> layer selection —
+    /// the exact same code path as <c>timeline.select_layer</c> (it calls
+    /// <c>ITimelineController.SelectLayer</c>, which reconciles the composed mantle-interior view
+    /// with separated crust slabs, no ghost shell). Returns <c>null</c> on success; a rejection
+    /// message when the mantle layer is not active at the current tick (loud failure, never a silent
+    /// no-op). The caller (the resident render seam) wraps this into the deprecation-noted result
+    /// JSON. <paramref name="enabled"/> = false deselects the mantle layer via the layer path's toggle.
     /// </summary>
-    void UpdateMantle(bool enabled);
+    string? RequestMantleLayerAlias(bool enabled);
 }

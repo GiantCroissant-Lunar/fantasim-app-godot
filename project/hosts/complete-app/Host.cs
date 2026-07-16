@@ -778,7 +778,7 @@ public partial class Host : Node
             _planetPresentation.Rebind();
             _renderComposition?.SetCutawayTarget(_planetPresentation.UpdateCutaway);
             _renderComposition?.SetExplodedTarget(_planetPresentation.UpdateExploded);
-            _renderComposition?.SetMantleTarget(_planetPresentation.UpdateMantle);
+            _renderComposition?.SetMantleTarget(_planetPresentation.RequestMantleLayerAlias);
 
             // Tunnel slice-1: resolved+rebound alongside the planet presentation on every (re)bind
             // of the world bundle. It has no render-ingress targets to wire.
