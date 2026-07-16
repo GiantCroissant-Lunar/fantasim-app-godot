@@ -124,6 +124,62 @@ public sealed class TunnelDefaultTimeSurfaceTests
         Assert.True(proxy.HudVisible);
     }
 
+    [Fact]
+    public async Task BootOrdering_TunnelRegistersAfterInit_RuntimeChangedRetryEnables()
+    {
+        // Live-boot defect (2026-07-16 windowed gate): "composition activated" precedes
+        // "ITunnelPresentation registered", so the init-time re-assert finds no tunnel and the
+        // one-shot chance is gone. A later RuntimeChanged completion must retry the default-on.
+        var registry = new ServiceRegistry();
+        var proxy = new FakeFaceProxy();
+        var resource = new FakeResourceService { WorldLoaded = true };
+        registry.Register<ITimelineController>(new FakeTimelineController());
+        registry.Register<FantaSim.App.Resource.IService>(resource);
+
+        await InitializePluginAsync(registry, proxy);
+
+        // World bundle (and its tunnel binder) registers only AFTER the first compose.
+        var tunnel = new FakeTunnelPresentation(
+            enabled => new TunnelActivationResult(enabled, enabled, string.Empty),
+            initiallyEnabled: false);
+        registry.Register<ITunnelPresentation>(tunnel);
+        Assert.False(tunnel.IsEnabled);
+
+        resource.RaiseRuntimeChanged(); // bundle-load completion signal
+
+        Assert.True(tunnel.IsEnabled, "RuntimeChanged completion must retry the default-on assert");
+        Assert.False(proxy.HudVisible, "HUD must derive hidden after the retry enables the tunnel");
+    }
+
+    [Fact]
+    public async Task BootOrdering_EnableFailsWhilePreparing_RuntimeChangedRetryEnables()
+    {
+        // Second live-boot shape: the binder IS registered but still "prepared hidden under
+        // stage Environment" — TrySetEnabled fails transiently. The failure must not be
+        // terminal; the next RuntimeChanged completion retries.
+        var registry = new ServiceRegistry();
+        var proxy = new FakeFaceProxy();
+        var resource = new FakeResourceService { WorldLoaded = true };
+        var preparing = true;
+        var tunnel = new FakeTunnelPresentation(
+            enabled => preparing
+                ? new TunnelActivationResult(enabled, false, "binder still preparing under stage")
+                : new TunnelActivationResult(enabled, enabled, string.Empty),
+            initiallyEnabled: false);
+        registry.Register<ITimelineController>(new FakeTimelineController());
+        registry.Register<ITunnelPresentation>(tunnel);
+        registry.Register<FantaSim.App.Resource.IService>(resource);
+
+        await InitializePluginAsync(registry, proxy);
+        Assert.False(tunnel.IsEnabled);
+
+        preparing = false;
+        resource.RaiseRuntimeChanged();
+
+        Assert.True(tunnel.IsEnabled, "retry after the binder finishes preparing must enable");
+        Assert.False(proxy.HudVisible);
+    }
+
     private static (IRegistry, FakeCommandService, FakeFaceProxy, FakeTunnelPresentation) ComposeWithControllerAndTunnel()
     {
         var registry = new ServiceRegistry();

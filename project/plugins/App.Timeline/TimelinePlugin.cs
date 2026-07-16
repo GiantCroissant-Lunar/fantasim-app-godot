@@ -265,6 +265,12 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             : TunnelModeEvent.EnableFailed;
         var decision = TunnelModePolicy.Decide(modeEvent, result.EffectiveEnabled, _modeEpoch);
         _modeEpoch = decision.ModeEpoch;
+
+        // One line per ATTEMPT (not per skip) so a lost default-on is diagnosable from the boot
+        // log — the 2026-07-16 gate failure was invisible without this.
+        _log?.LogInformation(
+            "Tunnel default-on assert: effective={Effective}, failureReason='{Reason}', epoch={Epoch}.",
+            result.EffectiveEnabled, result.FailureReason, decision.ModeEpoch);
     }
 
     private void ApplyHudState(TimelineHudState state)
@@ -599,7 +605,36 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
     }
 
     private void OnResourceRuntimeChanged(object? sender, EventArgs args)
-        => TryConsumePendingWorldRebind();
+    {
+        TryConsumePendingWorldRebind();
+
+        // Boot-ordering retry (2026-07-16 windowed-gate defect): at initial load the world
+        // bundle — and its tunnel binder — registers AFTER the first compose, and the binder
+        // can still be preparing when the compose-time re-assert fires, so a one-shot attempt
+        // silently loses the default-on. Every bundle-change completion is a natural retry
+        // point; the re-assert is idempotent and terminal once enabled or user-disabled.
+        RetryTunnelDefaultOn();
+    }
+
+    private void RetryTunnelDefaultOn()
+    {
+        lock (_lifecycleGate)
+        {
+            if (_shutdown)
+                return;
+
+            var epochBefore = _modeEpoch;
+            ReAssertTunnelDefaultOn();
+            if (_modeEpoch == epochBefore)
+                return;
+
+            // The re-assert acted (enable succeeded or failed loudly) outside ComposeTimeline,
+            // so re-derive HUD visibility here the same way the compose path does.
+            var tunnelEffective =
+                _registry?.TryGet<FantaSim.App.Presentation.ITunnelPresentation>()?.IsEnabled ?? false;
+            ApplyHudState(new TimelineHudState(!tunnelEffective, _modeEpoch));
+        }
+    }
 
     internal bool TryConsumePendingWorldRebind()
     {
