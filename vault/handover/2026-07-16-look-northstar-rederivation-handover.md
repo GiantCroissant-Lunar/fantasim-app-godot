@@ -116,16 +116,19 @@ motivation for detail-as-conditioned-field).
 
 ## 5. In flight at session end
 
-- **born-rough crust slice** (plan `vault/plans/2026-07-16-born-rough-crust-plan.md`,
-  worktree `yokan-projects/.worktrees/lf-born-rough`): plate-anchored deterministic birth
-  roughness, age-conditioned, derived-only. First zai dispatch DIED to the known Sisyphus
-  early-exit flake (zero work); retry running with anti-fanout instruction (log:
-  `.agent/logs/opencode/lf-born-rough-retry-20260716.log`). Lead flow on completion: review
-  diff → apply to main → suite → full export → windowed gate (rocky body at stagnant-lid
-  tick; no onset pop; texture rides drifting plates). NOTE: its amplitude numbers were
-  written under the OLD north-star budgets — after the §2 re-derivation they will need
-  re-tuning upward; the architecture (plate-anchored, conditioned, deterministic) is
-  independent of the budget numbers and stays.
+- **born-rough crust slice: LANDED on main @b12ed79** (retry after the first dispatch died
+  to the documented Sisyphus early-exit flake). BirthRoughnessField/Profile
+  (contracts/App.World.Rendering/Globe/) + PlateFrameSampler/Service wiring; the elegant
+  bit: the sampler's EXISTING Lagrangian source map supplies the plate-material coordinate
+  (onset-frame source-cell center), so texture rides drifting plates with no new rotation
+  plumbing. Four TDD invariants + full suite green. **Windowed gate DEFERRED to the
+  re-derivation session on purpose** — the amplitude floor/ceiling were written under the
+  OLD budgets and will re-tune against the reference image; gating the look twice is waste.
+  Two recorded limits: (a) pre-onset regimes materialize NO crust in the presentation
+  runtime (flat-zero by truth-side property) — the "ALL THE TIME" criterion therefore ALSO
+  needs the stagnant-lid/magma-ocean surface story in the re-derivation, not just bigger
+  numbers; (b) the UnifyMaths.Numerics 0.1.5 FEED package predates @ae6bb90 (no FbmNoise3
+  inside) — dev builds use project-ref; republish the package before any package-mode build.
 - Two background task chips from the morning (relief-fabric doc reconciliation — user
   started it; unify-topology CMake Windows-path fix — pending).
 - App instance PID 49401 may still be open at tick 200M (mantle slab view).
