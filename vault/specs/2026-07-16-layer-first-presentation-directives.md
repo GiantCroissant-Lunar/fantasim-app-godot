@@ -145,6 +145,38 @@ severity — still owed.
   residency + the same-day adaptive-mantle directive are ONE design arc; S2
   children/range/cover (shipped 2026-07-16 in unify-topology) is the enabling tile key.
 
+## Round-3 refinements (user, 2026-07-16 late — after the slab-relief/LOD windowed gates)
+
+- **DECISION LOCKED: ABSOLUTE relief scale.** The user chose absolute over auto-fit: heights
+  on screen stay proportional to truth heights, so mountains visibly GROW as time scrubs.
+  The auto-fit mode is NOT wanted as default (may exist later as an explicit toggle at most).
+- **3d — CRUST IS BORN ROUGH ("it is not egg shell after all").** User, verbatim intent:
+  "I don't think the plate is created flat naturally... mountain being grown is just one part
+  of the truth... even the very initial plate, crust should being shown in noise form."
+  Collision-grown orogeny is HALF the relief story; the other half is BIRTH ROUGHNESS —
+  solidification texture, impact history, pre-plate surface — present from the first tick
+  crust exists, in EVERY crust-bearing regime (stagnant-lid included, before mobile-plate).
+  THIS is the standing motivation behind the terrain-diffusion research deposit
+  (fantasim-hub vault/research/2026-07-16-terrain-diffusion-evaluation.md): detail as a
+  deterministic conditioned field.
+  - **Plate-anchored, not sphere-fixed:** the existing WorldPeaks interior fabric is
+    documented sphere-fixed (texture does not drift with plates — the known defect from the
+    2026-07-02 arc spec). Birth roughness must be sampled in the PLATE-MATERIAL frame
+    (vertex position rotated back by the plate's rotation-at-tick) so every plate carries its
+    texture as it moves. This simultaneously retires the sphere-fixed defect.
+  - **Derived, not truth (this slice):** a pure deterministic function of (plate-material
+    coordinate, crust age at tick, world seed, declared params) — recomputable, no truth
+    events. The truth-side successor (impact/erosion fields) remains the A4-adjacent roadmap
+    item; this is the honest derived stand-in that finally rides plates.
+  - **Conditioned (terrain-diffusion §3.4):** amplitude/character conditioned on the causal
+    context — crust age (young solidified crust vs old battered surface) and continental
+    fraction — declared parameters, never eye-tuned constants in code.
+  - **North-star reconciliation (the lock stands):** the 2026-07-05 planet-look north-star's
+    "no everywhere-crumple, interior fabric <= 0.15x belts" is an AMPLITUDE BUDGET for the
+    World view, not a zero-texture rule. Birth roughness lives INSIDE that budget in the
+    World view; the slab/exploded view renders it at its own declared scale. Do not
+    re-litigate the lock; obey it.
+
 ## Execution notes
 
 - Order proposed by the lead session: (1) small spec + implementation for the tunnel-default
