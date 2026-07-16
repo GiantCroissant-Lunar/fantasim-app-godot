@@ -62,6 +62,10 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
     private bool _worldRebindPending;
     private long _modeEpoch;
 
+    // Directive 1: tunnel is the default time surface. This flag survives world reloads so the
+    // re-assert after recompose does not clobber an explicit user disable (the :225 residue trap).
+    private bool _userExplicitlyDisabled;
+
     public TimelinePlugin()
         : this(static () => new DeferredTimelineFace())
     {
@@ -222,6 +226,8 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
 
         RegisterTimelineCommands(controller, timelineService);
 
+        ReAssertTunnelDefaultOn();
+
         // World reloads reset the tunnel binder to disabled (slice-1 residue) and this compose
         // reruns on every world rebind -- re-deriving HUD visibility here keeps the 2D face and
         // the 3D tunnel consistent across reloads (rotating-tunnel design §4a).
@@ -236,6 +242,29 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
     {
         var tunnelEnabled = _registry?.TryGet<FantaSim.App.Presentation.ITunnelPresentation>()?.IsEnabled ?? false;
         ApplyHudState(new TimelineHudState(!tunnelEnabled, _modeEpoch));
+    }
+
+    private void ReAssertTunnelDefaultOn()
+    {
+        if (_userExplicitlyDisabled)
+            return;
+
+        var tunnel = _registry?.TryGet<FantaSim.App.Presentation.ITunnelPresentation>();
+        if (tunnel is null || tunnel.IsEnabled)
+            return;
+
+        // Skip if a world/stage reload is in progress — the binder would fail closed and the
+        // completion rebind will call ComposeTimeline again, re-asserting then.
+        if (_resource?.IsRuntimeChangeInProgress("world") == true
+            || _resource?.IsRuntimeChangeInProgress("stage") == true)
+            return;
+
+        var result = tunnel.TrySetEnabled(true);
+        var modeEvent = result.EffectiveEnabled
+            ? TunnelModeEvent.EnableSucceeded
+            : TunnelModeEvent.EnableFailed;
+        var decision = TunnelModePolicy.Decide(modeEvent, result.EffectiveEnabled, _modeEpoch);
+        _modeEpoch = decision.ModeEpoch;
     }
 
     private void ApplyHudState(TimelineHudState state)
@@ -427,6 +456,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
 
                 lock (_lifecycleGate)
                 {
+                    _userExplicitlyDisabled = !enabled;
                     // Method-local only: the world-bundle binder may unload independently and must
                     // never be retained by the timeline bundle after this synchronous call.
                     var tunnel = _registry?.TryGet<ITunnelPresentation>();

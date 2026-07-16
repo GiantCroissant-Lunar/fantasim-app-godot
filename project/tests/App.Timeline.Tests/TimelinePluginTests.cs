@@ -237,7 +237,9 @@ public sealed class TimelinePluginTests
         Assert.True(payload["requested"]!.GetValue<bool>());
         Assert.True(payload["effective"]!.GetValue<bool>());
         Assert.Equal(string.Empty, payload["failureReason"]!.GetValue<string>());
-        Assert.Equal(1L, payload["modeEpoch"]!.GetValue<long>());
+        // Default-on (directive 1): the proactive enable during compose advances the epoch to 1;
+        // this explicit re-enable advances it to 2.
+        Assert.Equal(2L, payload["modeEpoch"]!.GetValue<long>());
         Assert.False(proxy.HudVisible);
     }
 
@@ -298,7 +300,8 @@ public sealed class TimelinePluginTests
         Assert.False(payload["effective"]!.GetValue<bool>());
         Assert.Equal("tunnel activation superseded by resource loss", payload["failureReason"]!.GetValue<string>());
         Assert.False(tunnel.IsEnabled);
-        Assert.Equal(2, tunnel.TrySetEnabledCalls);
+        // Default-on: proactive enable (1) + explicit enable (2) + superseded disable (3).
+        Assert.Equal(3, tunnel.TrySetEnabledCalls);
         Assert.True(modeOwner.CurrentHudSafety.ForceHudVisible);
         Assert.True(proxy.HudVisible);
     }
@@ -326,6 +329,14 @@ public sealed class TimelinePluginTests
         var plugin = new TimelinePlugin(() => proxy);
         await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
 
+        // Default-on's proactive enable triggered the fake's BeginWithoutNotification; clear it
+        // so the explicit enable below is the call that overlaps a fresh resource begin.
+        resource.CompleteRuntimeChange("world");
+        await commands.ExecuteAsync(new CommandRequest(
+            TimelinePlugin.TunnelViewCommandId,
+            new JsonObject { ["enabled"] = false }.ToJsonString()));
+        Assert.False(tunnel.IsEnabled);
+
         var result = await commands.ExecuteAsync(new CommandRequest(
             TimelinePlugin.TunnelViewCommandId,
             new JsonObject { ["enabled"] = true }.ToJsonString()));
@@ -334,7 +345,6 @@ public sealed class TimelinePluginTests
         Assert.False(payload["effective"]!.GetValue<bool>());
         Assert.Equal("tunnel activation superseded by resource loss", payload["failureReason"]!.GetValue<string>());
         Assert.False(tunnel.IsEnabled);
-        Assert.Equal(2, tunnel.TrySetEnabledCalls);
         Assert.True(proxy.HudVisible);
     }
 
@@ -368,7 +378,8 @@ public sealed class TimelinePluginTests
         Assert.False(payload["effective"]!.GetValue<bool>());
         Assert.Equal("tunnel activation superseded by resource loss", payload["failureReason"]!.GetValue<string>());
         Assert.False(tunnel.IsEnabled);
-        Assert.Equal(2, tunnel.TrySetEnabledCalls);
+        // Default-on: proactive enable (1) + explicit enable (2) + superseded disable (3).
+        Assert.Equal(3, tunnel.TrySetEnabledCalls);
         Assert.True(proxy.HudVisible);
     }
 
@@ -520,6 +531,13 @@ public sealed class TimelinePluginTests
 
         var plugin = new TimelinePlugin(() => proxy);
         await plugin.InitializeAsync(new FakeContext(BuildProvider(registry)));
+
+        // Default-on enabled the tunnel during compose; explicitly disable to test the
+        // zoom-rejected-when-disabled path.
+        await commands.ExecuteAsync(new CommandRequest(
+            TimelinePlugin.TunnelViewCommandId,
+            new JsonObject { ["enabled"] = false }.ToJsonString()));
+        Assert.False(tunnel.IsEnabled);
 
         var result = await commands.ExecuteAsync(new CommandRequest(
             TimelinePlugin.TunnelZoomCommandId,
@@ -753,6 +771,8 @@ public sealed class TimelinePluginTests
         public bool IsRuntimeChangeInProgress(string id) => _runtimeChanges.Contains(id);
 
         public void BeginWithoutNotification(string id) => _runtimeChanges.Add(id);
+
+        public void CompleteRuntimeChange(string id) => _runtimeChanges.Remove(id);
 
         public void RaiseRuntimeChanging(string bundleId, ResourceRuntimeOperation operation)
             => RuntimeChanging?.Invoke(this, new ResourceRuntimeChangingEventArgs(bundleId, operation));
