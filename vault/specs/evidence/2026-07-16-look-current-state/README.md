@@ -27,6 +27,31 @@ Judge against the binding registry: `vault/reference/README.md`.
 | `07-tunnel-timeline-wide.png` | tick 100M, tunnel view, zoomed out | The tunnel timeline product shot: planet centered, lanes (Coupled Climate/Crust/Magma Ocean/Mantle/Plate) with ka badges, playhead rings, vertical-exaggeration readout. |
 | `08-young-world-tick20M.png` | tick 20M committed, stagnant-lid | **The open failure, proven live:** stagnant-lid still renders the smooth eggshell — no crust surface materializes pre-onset, so born-rough cannot show. The user's "bulk everywhere at EVERY tick" criterion fails in this regime today. |
 
+## Boot-default OS-level test (added same evening, after user challenge)
+
+The user challenged "the tunnel timeline is live and default" — correctly: the capture
+sequence had run `timeline.tunnel_view {"enabled":false}` for shot 08 and left it off, so the
+real window showed the 2D timeline while the summary claimed tunnel. OS-level verification
+(computer-use screenshots of the actual macOS window, not viewport captures) then established:
+
+1. **Claim-time state: user was right.** OS screenshot showed the 2D HUD (Play/Fit,
+   `scrubbing : stagnant-lid : 200 ka`).
+2. **Tunnel works when enabled**: after `tunnel_view {"enabled":true}`, the OS screenshot
+   shows the full tunnel reading (rings, lanes, faceted planet centered).
+3. **Fresh relaunch with ZERO tunnel commands** (PID 68442, exe-verified, log
+   `/tmp/fantasim-boot-default-test-1784211317.log`): boot log shows THREE failed asserts —
+   `Tunnel default-on assert: effective=False, failureReason='tunnel mount unavailable'` —
+   then `Tunnel pending default-enable applied at preparation completion: effective=True`.
+   So default-on lands only after world preparation, via the out-of-band path.
+4. **BUT the boot framing does not READ as a tunnel.** At default zoom the planet fills the
+   entire window; rings/lanes are off-screen (only floating ka badges hint at them). The
+   tunnel reads as the hero mockup only after ~2× `tunnel_zoom` out. **Defect for the tunnel
+   arc: boot framing should present the tunnel reading, not a full-frame planet close-up.**
+
+Discipline this encodes: an "X is on screen" claim is valid only against an OS-level
+screenshot taken at claim time with no state changes after it; in-app viewport captures
+prove renderability, not what the user sees. Restore any state you toggled for captures.
+
 ## Deltas vs the acceptance criterion (registry §criterion)
 
 1. Lumpy silhouette: NOT met anywhere — silhouette clamp still in force (re-derivation item).

@@ -27,6 +27,9 @@ cartoon/realistic shader toggle). Its properties — these ARE the acceptance cr
 > this image — plus kenny.wtf renders). This image itself is owed a user deposit as
 > `vault/reference/2026-07-16-user-reference-cartoon-planet.png`; until then its verbal spec
 > below binds. No agent may claim "no reference image exists to align with."
+> Same-evening current-state renders (born-rough export, identity-gated, incl. the OS-level
+> tunnel boot-default test and its framing defect):
+> [`vault/specs/evidence/2026-07-16-look-current-state/`](../specs/evidence/2026-07-16-look-current-state/README.md).
 
 - **Bulk everywhere.** Every part of the surface carries chunky, visible relief. No smooth
   regions. The terrain has physical presence at planet scale (the Keeter reference from the
