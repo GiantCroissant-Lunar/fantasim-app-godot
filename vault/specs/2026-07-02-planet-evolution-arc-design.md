@@ -1,5 +1,19 @@
 # Planet evolution arc — design
 
+> **AUDIT (2026-07-16, code-verified):** §5c-i's everywhere-relief fabric bullet (17,000 →
+> ~2,500 m-std base fabric) is SUPERSEDED — see the dated amendment inside §5c-i. The
+> 2026-07-05 north-star (user choice) reversed fabric-as-base (calm interiors, ≤0.5%
+> silhouette budget, "no everywhere-crumple"), and the p9b retune (commit 4cfd9ae,
+> 2026-07-13: WorldPeaks 172, 250 m residual cap) implements it. The 2026-07-06 audit line
+> below predates that retune; its "relief fabric CURRENT" claim no longer holds. Lens +
+> cutaway doctrine remain CURRENT.
+>
+> **SUPERSEDED IN TURN (2026-07-17):** the 2026-07-05 north-star this audit defers to was
+> itself retired by the user-led re-derivation — the world is now the split-slab assembly
+> (`vault/specs/2026-07-16-assembled-world-northstar.md`); the 0.5%R silhouette budget
+> survives only on the legacy sphere fallback path. This note stands as history of the
+> sphere-era calibration conflict.
+
 > **AUDIT (2026-07-06, code-verified):** core doctrine (cutaway, h^0.5 lens, relief fabric) CURRENT; §2's amendment (plate focus → PlateIdentity caps) is superseded by M0 — `geosphere.plate` defaults to `GlobeViewMode.Continents`, PlateIdentity via `globe:plateView=identity`; sub-projects B/C partly folded into the attempt-8 roadmap. _(See the authority index in `vault/README.md`.)_
 
 
@@ -174,6 +188,26 @@ jittered regions + NOAA-style ramp, water incidental.)
   is sphere-fixed (sampled on base positions), so it does not drift with plates; the
   truth-side replacement (roughness from crust age / impact fields) is the A4-adjacent
   roadmap item that will.
+- **AMENDED 2026-07-16 — the bullet above is SUPERSEDED (calibration investigation,
+  user-ratified this date).** Two days after this lock, the north-star
+  (`2026-07-05-planet-look-north-star.md`, "APPROVED direction (user choice, 2026-07-05)")
+  reversed fabric-as-base: silhouette budget ≤0.5% of radius post-lens (§1), interior
+  fabric ≤0.15× belt amplitude — "most of the surface is calm; that calm is what makes
+  belts read" (§3), anti-goal "no everywhere-crumple". The locked calibration here
+  (17,000 → ~2,500 m-std ≈ 2.5% of radius) exceeds the entire north-star silhouette budget
+  ~5× at std and ~9× at extremes, so the two cannot coexist. Shipped code follows the
+  north-star via the p9b retune (commit 4cfd9ae, 2026-07-13): `PlateSurfaceReliefFabric.
+  WorldPeaks.Amplitude = 172` with `TectonicDetailSampler`'s 250 m residual cap
+  (`MaxResidualAmplitudeMetres`, ≤⅓ of the smallest mandatory 800 m boundary signal) and
+  0.15 interior multiplier; 172 is tuned so mountain ×1.45 ≈ the 250 cap (not a typo /
+  unit bug — truth `CellElevations` and noise are both metres, summed pre-lens). Measured
+  shipped chain: interior resolved bound = min(min(172, 250)·0.15, 250) = 25.8 m →
+  ~3.9 m-std (extremes ~12 m); belts up to ~249 m bound ≈ 37 m-std. All of this is
+  test-locked in `PlateSurfaceReliefFabricTests` (which cite north-star §1/§3 directly).
+  Consequence: do NOT "restore" 17,000 — it would regress the approved direction. The
+  standing "ball with strips" verdict is not a fabric-amplitude defect under the
+  north-star; its assigned cure is attempt-8 P3 (legible calibrated tones/relief —
+  color-first, north-star §2).
 
 ## 6. Verification
 
