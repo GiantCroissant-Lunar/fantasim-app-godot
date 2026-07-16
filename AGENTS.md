@@ -12,6 +12,12 @@ taxonomy: `architecture/` (evergreen design) · `specs/` (dated concept-lock) ·
 superpowers `writing-plans` / spec output should target `vault/plans` and `vault/specs`
 (not `docs/superpowers/`).
 
+**Look / presentation work:** [`vault/reference/README.md`](vault/reference/README.md) is the
+**binding registry of user-given visual references** (deposited pixels + verbal specs). Read
+it BEFORE any look proposal or look gate; entries bind even when a file is MISSING, and every
+look render is judged against them by the user's eye — never claim no reference exists, and
+deposit any new user-given reference artifact there in the same session it is given.
+
 ## Rules — `.agent/rules/`
 
 - [bundle-hot-reload-verify](.agent/rules/bundle-hot-reload-verify.md) — 4-tier, bundle-oriented:

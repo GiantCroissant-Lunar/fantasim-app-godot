@@ -21,6 +21,13 @@ planet ("cartoon mode" screenshot from a procedural-planet-generator tool; UI sl
 Scale_factor 1.1, Height shift 1, Mesh Flatness 0.7, smoothing normals 21%, water level,
 cartoon/realistic shader toggle). Its properties — these ARE the acceptance criterion:
 
+> **Registry note (added 2026-07-16, same session):** the binding reference registry is
+> [`vault/reference/README.md`](../reference/README.md). The sibling references are now
+> DEPOSITED there as pixels (`mattkeeter-planets-biomes.png` — the same aesthetic family as
+> this image — plus kenny.wtf renders). This image itself is owed a user deposit as
+> `vault/reference/2026-07-16-user-reference-cartoon-planet.png`; until then its verbal spec
+> below binds. No agent may claim "no reference image exists to align with."
+
 - **Bulk everywhere.** Every part of the surface carries chunky, visible relief. No smooth
   regions. The terrain has physical presence at planet scale (the Keeter reference from the
   same day is the same aesthetic family — as is kenny.wtf, referenced in the ORIGINAL
