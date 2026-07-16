@@ -1,5 +1,6 @@
 using FantaSim.App.World;
 using FantaSim.App.World.Composition;
+using FantaSim.App.World.Globe;
 using FantaSim.App.World.Rendering;
 using Godot;
 using Microsoft.Extensions.Logging;
@@ -25,6 +26,12 @@ internal sealed partial class PlanetPresentationBinder
     // document-carried profile can override. Thickness exaggeration here feeds PlateSolidBuilder;
     // the core-sphere radius (CMB × mantle scale) feeds the mantle interior backdrop.
     private RadialSectionProfile _radialProfile = RadialSectionProfile.Default;
+
+    // Directive 3b: the declared slab-view RELIEF profile for formed relief on slab TOPS. The slab
+    // caps sample the same truth + sampler + ramp as the World view, displaced by this profile's
+    // ratio-locked exaggeration (ReliefThicknessScaleMultiple × _radialProfile.ThicknessDepthScale).
+    // Pairs with _radialProfile: thickness (walls) + relief (tops) compose without double-scaling.
+    private SlabTopReliefProfile _slabProfile = SlabTopReliefProfile.Default;
 
     // render.mantle DEPRECATED ALIAS (directive 2): routes the legacy command to the geosphere.mantle
     // LAYER selection — the exact same code path as timeline.select_layer. enabled=true selects the

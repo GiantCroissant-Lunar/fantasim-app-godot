@@ -1,5 +1,6 @@
 using FantaSim.App.World;
 using FantaSim.App.World.Composition;
+using FantaSim.App.World.Dto;
 using FantaSim.App.World.Globe;
 using FantaSim.App.World.Rendering;
 using Godot;
@@ -138,9 +139,14 @@ internal sealed partial class PlanetPresentationBinder
     // M-B: per-plate SOLID crust. Two MeshInstance3Ds per plate under a single root: the TOP (the
     // attributed cap surface DTO — same Continents/terrain colors as the hidden single-surface —
     // with the plate's explode offset baked into positions) and the BOTTOM+WALLS (the
-    // PlateSolidBuilder output, dark unlit material). Both Scale = Vector3.One * 2.0f to match
+    // PlateSolidBuilder output, lit strata material). Both Scale = Vector3.One * 2.0f to match
     // PlateSurfaceRenderer and BuildCutawayFaceSector. No per-plate GPU rotation exists in this
     // path, so a baked position offset is exactly correct.
+    //
+    // Directive 3b: the slab TOPS carry formed relief from the SAME truth + sampler + ramp as the
+    // World view, displaced by the slab view's DECLARED exaggeration (SlabTopReliefProfile, ratio-
+    // locked with RadialSectionProfile) — NOT _lastCaps, which are tuned for the full-globe
+    // silhouette (relief clamped to 0.5%R) and read as smooth on the exaggerated slabs.
     private Node3D BuildExplodedSolidCrust(double? factorOverride = null)
     {
         var root = new Node3D { Name = "ExplodedCrust" };
@@ -150,22 +156,20 @@ internal sealed partial class PlanetPresentationBinder
         if (document is null || snapshot is null)
             return root;
 
-        var caps = _lastCaps;
         var centroids = _lastCentroids;
-        if (caps is null || centroids is null)
+        if (centroids is null)
             return root;
 
-        // D1: the mantle-interior layer passes MantleLayerExplodeFactor so the slabs detach at a
-        // modest, profile-declared fraction of DefaultMaxOffset. render.exploded passes null so
-        // the agent look-dev knob (_explodedFactor) stays in control of that path.
+        var (slabCaps, slabPerPlateVertexColors) = BuildSlabTopCaps(document, snapshot);
+
         double factor = factorOverride ?? _explodedFactor;
 
         var thickness = ResolveCrustThicknessMetres(document);
         // D3: the slab thickness exaggeration is EXPLICIT and distinct from the surface relief
-        // exaggeration (_lastExaggeration). The profile exposes the metres-to-unit-radius scale
-        // PlateSolidBuilder expects (CrustThicknessExaggeration / PlanetRadiusMetres), so 30 km of
-        // crust reads as ~0.038R slab walls — independent of the ~3e-5 surface relief lens.
-        var solids = PlateSolidBuilder.Build(caps, thickness, _radialProfile.ThicknessDepthScale());
+        // exaggeration. The profile exposes the metres-to-unit-radius scale PlateSolidBuilder expects
+        // (CrustThicknessExaggeration / PlanetRadiusMetres), so 30 km of crust reads as ~0.038R slab
+        // walls. The slab relief (in slabCaps' top positions) acts on disjoint vertices — no compounding.
+        var solids = PlateSolidBuilder.Build(slabCaps, thickness, _radialProfile.ThicknessDepthScale());
         var exploded = PlateSolidBuilder.ApplyExplodedFactor(solids, centroids, factor);
 
         var byPlate = new Dictionary<int, PlateSolidCentroid>(centroids.Count);
@@ -174,28 +178,70 @@ internal sealed partial class PlanetPresentationBinder
 
         var offsetMag = factor * PlateSolidBuilder.DefaultMaxOffset;
 
-        for (int i = 0; i < caps.Count; i++)
+        for (int i = 0; i < slabCaps.Count; i++)
         {
-            var cap = caps[i];
+            var cap = slabCaps[i];
             if (!byPlate.TryGetValue(cap.PlateId, out var centroid))
                 continue;
 
             var solid = exploded[i];
 
-            var topDto = BuildExplodedTopDto(cap, centroid, offsetMag);
+            var topDto = BuildExplodedTopDto(cap, centroid, offsetMag, slabPerPlateVertexColors);
             root.AddChild(BuildExplodedMeshInstance($"Plate{cap.PlateId}_Top", topDto, HypsoPlateMaterialOverride));
 
             var solidDto = BuildExplodedSolidDto(cap, solid);
-            root.AddChild(BuildExplodedSolidMeshInstance($"Plate{cap.PlateId}_Solid", solidDto, PlanetShaderLibrary.ExplodedCrustDarkMaterial));
+            root.AddChild(BuildExplodedSolidMeshInstance($"Plate{cap.PlateId}_Solid", solidDto, PlanetShaderLibrary.SlabWallStrataMaterial));
         }
 
         return root;
     }
 
+    // Directive 3b: builds the formed-relief slab TOP caps via SlabTopReliefComposer (the pure seam
+    // that marries CellElevations + TectonicDetailSampler + the slab's declared exaggeration), and
+    // the topology-aligned vertex colors from the SAME GlobePlateSurfaces instance. The slab caps'
+    // shared-vertex topology must match the coloring arrays; building both from one instance holds by
+    // construction, even when the World path used adaptive surfaces (_lastCaps would have a different
+    // vertex count). Non-terrain colorings (Continents/PlateIdentity) are cell-parallel or flat and
+    // need no slab alignment.
+    private (IReadOnlyList<PlateCap> Caps, IReadOnlyDictionary<int, RampColor[]> VertexColors) BuildSlabTopCaps(
+        PlanetPresentationDocument document,
+        WorldGlobeSnapshot snapshot)
+    {
+        var slabSurfaces = SlabTopReliefComposer.BuildPlateSurfaces(snapshot, document.CellFeatures, _slabProfile);
+        var elevations = ResolveSlabTopElevations(document, snapshot);
+
+        var caps = slabSurfaces.BuildSurfaces(
+            elevations,
+            exaggeration: _slabProfile.MetresToUnitRadius(_radialProfile),
+            maxDisplacementUnitRadius: _slabProfile.MaxDisplacementUnitRadius);
+
+        var vertexColors = _lastIsTerrain && _lastPerCellColor is { Count: > 0 }
+            ? PlateSurfaceMeshFactory.BuildPerPlateVertexColors(
+                slabSurfaces,
+                _lastPerCellColor as RampColor[] ?? Array.Empty<RampColor>())
+            : new Dictionary<int, RampColor[]>();
+
+        return (caps, vertexColors);
+    }
+
+    // Same elevation resolution as BindPlateSurface: for terrain, use CellElevations when present and
+    // length-matched, else flat-zero. The slab relief is the SAME truth the World surface reads.
+    private static IReadOnlyList<double> ResolveSlabTopElevations(PlanetPresentationDocument document, WorldGlobeSnapshot snapshot)
+    {
+        return document.CellElevations is { } cellElevations && cellElevations.Count == snapshot.CellCount
+            ? cellElevations
+            : new double[snapshot.CellCount];
+    }
+
     // M-B: same PlateCapMeshBuilder.Build* branch the surface uses (cached inputs), with the plate's
     // explode offset baked into the DTO positions (uniform per-plate translation — correct because
-    // there is NO per-plate GPU rotation in this path).
-    private PlateCapMeshDto BuildExplodedTopDto(PlateCap cap, PlateSolidCentroid centroid, double offsetMag)
+    // there is NO per-plate GPU rotation in this path). The vertex colors come from the slab-aligned
+    // dictionary (terrain) or the cached cell-parallel arrays (Continents/PlateIdentity).
+    private PlateCapMeshDto BuildExplodedTopDto(
+        PlateCap cap,
+        PlateSolidCentroid centroid,
+        double offsetMag,
+        IReadOnlyDictionary<int, RampColor[]> slabPerPlateVertexColors)
     {
         var dx = centroid.CentroidDirection.X * offsetMag;
         var dy = centroid.CentroidDirection.Y * offsetMag;
@@ -204,7 +250,7 @@ internal sealed partial class PlanetPresentationBinder
         PlateCapMeshDto dto = _lastIsTerrain
             ? PlateCapMeshBuilder.BuildTerrain(
                 cap,
-                _lastPerPlateVertexColors!,
+                slabPerPlateVertexColors,
                 _lastPerCellEmission!,
                 _lastJitter,
                 _lastColorMode,
@@ -232,31 +278,75 @@ internal sealed partial class PlanetPresentationBinder
 
     // M-B: BOTTOM + SIDE WALLS from the exploded solid. The solid's Triangles = [top | bottom | walls]
     // concatenated; top+bottom each have cap.Surface.Triangles.Length indices; walls follow. We deref
-    // the bottom+wall triangle range into a non-indexed Vector3 list (unlit dark material needs no
-    // normals/UV).
+    // the bottom+wall triangle range into a non-indexed Vector3 list and compute flat per-face normals
+    // (one normal per triangle, assigned to its 3 vertices) so the lit SlabWallStrataMaterial shades
+    // the thickness under lighting (directive 3b — the M-B "wall lighting" open item).
     private static PlateCapMeshDto BuildExplodedSolidDto(PlateCap cap, PlateSolid solid)
     {
         int topIndexCount = cap.Surface.Triangles.Length;
         int bottomWallIndexCount = solid.Triangles.Length - topIndexCount;
+        int triangleCount = bottomWallIndexCount / 3;
 
         var positions = new float[bottomWallIndexCount * 3];
+        var normals = new float[bottomWallIndexCount * 3];
         int w = 0;
-        for (int t = topIndexCount; t < solid.Triangles.Length; t++)
+        for (int t = 0; t < triangleCount; t++)
         {
-            int idx = solid.Triangles[t];
-            var p = solid.Positions[idx];
-            positions[w++] = (float)p.X;
-            positions[w++] = (float)p.Y;
-            positions[w++] = (float)p.Z;
+            int i0 = solid.Triangles[topIndexCount + (t * 3) + 0];
+            int i1 = solid.Triangles[topIndexCount + (t * 3) + 1];
+            int i2 = solid.Triangles[topIndexCount + (t * 3) + 2];
+            var p0 = solid.Positions[i0];
+            var p1 = solid.Positions[i1];
+            var p2 = solid.Positions[i2];
+
+            positions[w + 0] = (float)p0.X;
+            positions[w + 1] = (float)p0.Y;
+            positions[w + 2] = (float)p0.Z;
+            positions[w + 3] = (float)p1.X;
+            positions[w + 4] = (float)p1.Y;
+            positions[w + 5] = (float)p1.Z;
+            positions[w + 6] = (float)p2.X;
+            positions[w + 7] = (float)p2.Y;
+            positions[w + 8] = (float)p2.Z;
+
+            // Flat face normal: normalize((p1-p0) x (p2-p0)). The solid's winding makes walls face
+            // outward and the bottom face inward, so the normals point the correct way for lighting.
+            double ux = p1.X - p0.X, uy = p1.Y - p0.Y, uz = p1.Z - p0.Z;
+            double vx = p2.X - p0.X, vy = p2.Y - p0.Y, vz = p2.Z - p0.Z;
+            double nx = (uy * vz) - (uz * vy);
+            double ny = (uz * vx) - (ux * vz);
+            double nz = (ux * vy) - (uy * vx);
+            double len = Math.Sqrt((nx * nx) + (ny * ny) + (nz * nz));
+            float fnx, fny, fnz;
+            if (len > 1e-12)
+            {
+                fnx = (float)(nx / len);
+                fny = (float)(ny / len);
+                fnz = (float)(nz / len);
+            }
+            else
+            {
+                fnx = 0f;
+                fny = 0f;
+                fnz = 1f;
+            }
+
+            for (int k = 0; k < 3; k++)
+            {
+                normals[w + (k * 3) + 0] = fnx;
+                normals[w + (k * 3) + 1] = fny;
+                normals[w + (k * 3) + 2] = fnz;
+            }
+            w += 9;
         }
 
         return new PlateCapMeshDto(
             PlateId: cap.PlateId,
             NormalMode: PlateCapMeshNormalMode.Flat,
             VertexCount: bottomWallIndexCount,
-            TriangleCount: bottomWallIndexCount / 3,
+            TriangleCount: triangleCount,
             Positions: positions,
-            Normals: Array.Empty<float>(),
+            Normals: normals,
             Colors: Array.Empty<float>(),
             Uv2: Array.Empty<float>());
     }
@@ -297,20 +387,23 @@ internal sealed partial class PlanetPresentationBinder
         };
     }
 
-    // M-B: BOTTOM+WALLS instance — unlit dark material needs only positions (no normals/UV). Matches
-    // BuildCutawayFaceSector's ArrayMesh shape exactly.
+    // M-B: BOTTOM+WALLS instance — positions + flat per-face normals (lit strata material needs
+    // normals to shade thickness under lighting).
     private static MeshInstance3D BuildExplodedSolidMeshInstance(string name, PlateCapMeshDto dto, Material material)
     {
         var vertices = new Vector3[dto.VertexCount];
+        var normals = new Vector3[dto.VertexCount];
         for (int i = 0; i < dto.VertexCount; i++)
         {
             int v3 = i * 3;
             vertices[i] = new Vector3(dto.Positions[v3 + 0], dto.Positions[v3 + 1], dto.Positions[v3 + 2]);
+            normals[i] = new Vector3(dto.Normals[v3 + 0], dto.Normals[v3 + 1], dto.Normals[v3 + 2]);
         }
 
         var arrays = new Godot.Collections.Array();
         arrays.Resize((int)Mesh.ArrayType.Max);
         arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+        arrays[(int)Mesh.ArrayType.Normal] = normals;
 
         var mesh = new ArrayMesh();
         mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);

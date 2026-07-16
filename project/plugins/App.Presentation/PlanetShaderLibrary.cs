@@ -312,6 +312,21 @@ void fragment() {
         CullMode = BaseMaterial3D.CullModeEnum.Disabled,
     };
 
+    // Directive 3b (M-B open item "wall lighting"): LIT strata-tinted material for the slab walls so
+    // thickness reads under lighting instead of as a flat black void. The tint follows the cutaway
+    // strata CrustColor (warm brown 0.42/0.28/0.16) darkened for the wall context — the walls ARE the
+    // crust cross-section, so they read as crustal rock, not generic dark fill. Lit (default shading)
+    // with cull_disabled so the slab interiors are visible; roughness 0.9 for a rock read. Flat
+    // per-face normals are generated in BuildExplodedSolidDto.
+    public static readonly Material SlabWallStrataMaterial = new StandardMaterial3D
+    {
+        AlbedoColor = new Color(0.30f, 0.20f, 0.12f),
+        ShadingMode = BaseMaterial3D.ShadingModeEnum.PerPixel,
+        CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+        Roughness = 0.9f,
+        Metallic = 0.0f,
+    };
+
     public static Shader MagmaShader => _magmaShader ??= new Shader { Code = MagmaShaderCode };
     public static Shader StagnantShader => _stagnantShader ??= new Shader { Code = StagnantShaderCode };
     public static Shader HypsoPlateShader => _hypsoPlateShader ??= new Shader { Code = HypsoPlateShaderCode };
