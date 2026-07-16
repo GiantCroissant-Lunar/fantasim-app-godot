@@ -49,6 +49,12 @@ severity — still owed.
   hand-listing.
 - Consistent with D-doctrine "mantle = LAYER w/ thick-slab crust" (D1–D8c) — this directive
   makes the app's command surface and composition obey what the doctrine already said.
+- **Code-grounded (verified live 2026-07-16, same sitting):** the layer path ALREADY EXISTS —
+  wave 5 shipped `geosphere.mantle` → `GlobeViewMode.MantleInterior` (composed interior +
+  separated thick slabs, no ghost shell; screenshots 20260716-094522/094554 prove it). The
+  directive's target is the RESIDUE: the superseded `render.mantle` x-ray path (ghost shell,
+  screenshots 20260716-091111/091206) still lives on the command surface alongside it. Work =
+  retire/unify the x-ray path into the layer path, not build a layer path.
 
 ## Directive 3 — Exploded view: crust detail with real thickness
 
