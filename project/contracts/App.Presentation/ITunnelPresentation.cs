@@ -20,4 +20,12 @@ public interface ITunnelPresentation : IDisposable
     TunnelZoomResult TrySetZoom(int direction);
 
     bool IsEnabled { get; }
+
+    /// <summary>Raised when effective enablement changes OUT OF BAND — i.e. not as the synchronous
+    /// result of a caller's own TrySetEnabled (directive 1: the binder self-applies a pending
+    /// default-enable when staged preparation completes after a lost boot/reload race). Payload is
+    /// the new IsEnabled. ALC DISCIPLINE (boom-hud lesson): subscribers in OTHER bundles hold a
+    /// delegate into this binder's ALC — they MUST unsubscribe on world RuntimeChanging and on
+    /// their own shutdown, or the old ALC is pinned across reloads.</summary>
+    event Action<bool>? EnabledChangedOutOfBand;
 }

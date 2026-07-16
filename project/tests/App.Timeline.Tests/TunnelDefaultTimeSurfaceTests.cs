@@ -180,6 +180,36 @@ public sealed class TunnelDefaultTimeSurfaceTests
         Assert.False(proxy.HudVisible);
     }
 
+    [Fact]
+    public async Task OutOfBandBinderEnable_HidesHudWithoutRecompose()
+    {
+        // Round-3 windowed gate: the binder's pending default-enable succeeded at preparation
+        // completion, but the lane HUD stayed visible — the timeline never observed the
+        // out-of-band transition. The EnabledChangedOutOfBand subscription must re-derive HUD.
+        var registry = new ServiceRegistry();
+        var proxy = new FakeFaceProxy();
+        var resource = new FakeResourceService { WorldLoaded = true };
+        var preparing = true;
+        var tunnel = new FakeTunnelPresentation(
+            enabled => preparing
+                ? new TunnelActivationResult(enabled, false, "tunnel mount unavailable")
+                : new TunnelActivationResult(enabled, enabled, string.Empty),
+            initiallyEnabled: false);
+        registry.Register<ITimelineController>(new FakeTimelineController());
+        registry.Register<ITunnelPresentation>(tunnel);
+        registry.Register<FantaSim.App.Resource.IService>(resource);
+
+        await InitializePluginAsync(registry, proxy);
+        Assert.False(tunnel.IsEnabled);
+        Assert.True(proxy.HudVisible, "HUD honestly visible while the boot enable keeps failing");
+
+        // Staged preparation completes; the binder self-applies the pending default-enable.
+        preparing = false;
+        tunnel.SimulateOutOfBandEnable();
+
+        Assert.False(proxy.HudVisible, "HUD must hide when the out-of-band enable is observed");
+    }
+
     private static (IRegistry, FakeCommandService, FakeFaceProxy, FakeTunnelPresentation) ComposeWithControllerAndTunnel()
     {
         var registry = new ServiceRegistry();
@@ -340,6 +370,16 @@ public sealed class TunnelDefaultTimeSurfaceTests
         /// <summary>Simulates the world-reload residue: the binder tears down and _enabled
         /// resets to false (the slice-1 residue at TimelinePlugin.cs:225).</summary>
         public void SimulateReloadResetToDisabled() => IsEnabled = false;
+
+        public event Action<bool>? EnabledChangedOutOfBand;
+
+        /// <summary>Simulates the binder self-applying its pending default-enable when staged
+        /// preparation completes (directive 1) — an enable no other bundle initiated.</summary>
+        public void SimulateOutOfBandEnable()
+        {
+            IsEnabled = true;
+            EnabledChangedOutOfBand?.Invoke(true);
+        }
 
         public void Dispose() { }
     }

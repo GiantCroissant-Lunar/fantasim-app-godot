@@ -130,6 +130,7 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             _log?.LogInformation("TimelinePlugin: shutdown started.");
 
             UnsubscribeResourceEvents();
+            DropTunnelOutOfBandSubscription();
             UnregisterTimelineCommands();
             SeverTimelineService(unbindProxy: true);
 
@@ -246,6 +247,11 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
 
     private void ReAssertTunnelDefaultOn()
     {
+        // Track the binder's out-of-band enablement (the pending default-enable applied at
+        // preparation completion) regardless of the user-disable flag — subscription management
+        // is orthogonal to whether we assert.
+        EnsureTunnelOutOfBandSubscription();
+
         if (_userExplicitlyDisabled)
             return;
 
@@ -567,6 +573,10 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
             if (_shutdown)
                 return;
 
+            // The outgoing bundle's binder must not be retained across the change (ALC pin) —
+            // the retry/resubscribe path re-acquires the replacement after RuntimeChanged.
+            DropTunnelOutOfBandSubscription();
+
             var tunnel = _registry?.TryGet<ITunnelPresentation>();
             if (timelineChanging)
             {
@@ -614,6 +624,52 @@ public sealed partial class TimelinePlugin : ILifecyclePlugin
         // silently loses the default-on. Every bundle-change completion is a natural retry
         // point; the re-assert is idempotent and terminal once enabled or user-disabled.
         RetryTunnelDefaultOn();
+    }
+
+    // The binder instance we subscribed to for out-of-band enablement. World-bundle object:
+    // MUST be dropped on world RuntimeChanging and shutdown or the old ALC is pinned (boom-hud
+    // lesson). Guarded by _lifecycleGate.
+    private FantaSim.App.Presentation.ITunnelPresentation? _tunnelEventSource;
+
+    private void EnsureTunnelOutOfBandSubscription()
+    {
+        var tunnel = _registry?.TryGet<FantaSim.App.Presentation.ITunnelPresentation>();
+        if (ReferenceEquals(tunnel, _tunnelEventSource))
+            return;
+
+        DropTunnelOutOfBandSubscription();
+        if (tunnel is null)
+            return;
+
+        tunnel.EnabledChangedOutOfBand += OnTunnelEnabledChangedOutOfBand;
+        _tunnelEventSource = tunnel;
+    }
+
+    private void DropTunnelOutOfBandSubscription()
+    {
+        if (_tunnelEventSource is null)
+            return;
+        _tunnelEventSource.EnabledChangedOutOfBand -= OnTunnelEnabledChangedOutOfBand;
+        _tunnelEventSource = null;
+    }
+
+    private void OnTunnelEnabledChangedOutOfBand(bool enabled)
+    {
+        lock (_lifecycleGate)
+        {
+            if (_shutdown)
+                return;
+
+            var decision = TunnelModePolicy.Decide(
+                enabled ? TunnelModeEvent.EnableSucceeded : TunnelModeEvent.EnableFailed,
+                enabled,
+                _modeEpoch);
+            _modeEpoch = decision.ModeEpoch;
+            ApplyHudState(new TimelineHudState(!enabled, _modeEpoch));
+            _log?.LogInformation(
+                "Tunnel out-of-band enablement observed: enabled={Enabled}, epoch={Epoch}.",
+                enabled, _modeEpoch);
+        }
     }
 
     private void RetryTunnelDefaultOn()

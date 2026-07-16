@@ -715,6 +715,8 @@ public sealed class TimelinePluginTests
 
         public void Rebind() { }
 
+        public event Action<bool>? EnabledChangedOutOfBand { add { } remove { } }
+
         public TunnelActivationResult TrySetEnabled(bool enabled)
         {
             TrySetEnabledCalls++;

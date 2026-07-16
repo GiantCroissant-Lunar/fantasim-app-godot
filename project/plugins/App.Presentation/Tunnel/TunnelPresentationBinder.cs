@@ -50,6 +50,9 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
     // at preparation completion. _pendingApplyInProgress makes that apply one-shot (no rebind loop).
     private bool _pendingDefaultEnable;
     private bool _pendingApplyInProgress;
+
+    /// <inheritdoc />
+    public event Action<bool>? EnabledChangedOutOfBand;
     private int _generation;
     private SceneTree? _stagePreparationRetryTree;
     private Callable? _stagePreparationRetryCallable;
@@ -344,6 +347,13 @@ internal sealed partial class TunnelPresentationBinder : ITunnelPresentation
                 _log.LogInformation(
                     "Tunnel pending default-enable applied at preparation completion: effective={Effective}, reason='{Reason}'.",
                     applied.EffectiveEnabled, applied.FailureReason);
+                if (applied.EffectiveEnabled)
+                {
+                    // Out-of-band from every other bundle's perspective — let observers (the
+                    // timeline HUD) re-derive. Raised outside TrySetEnabled so synchronous callers
+                    // never see their own change echoed.
+                    EnabledChangedOutOfBand?.Invoke(true);
+                }
             }
             finally
             {
