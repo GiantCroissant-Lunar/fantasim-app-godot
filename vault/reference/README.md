@@ -35,6 +35,8 @@ user's eye — agents do not self-certify look.
 | `2026-07-16-user-reference-geometry-gray.png` | same tool, untextured mesh render (800×800, flat gray) | user, 2026-07-16 | Shape-only sibling of the above. Same status: reading UNDER RE-DERIVATION — an earlier "match this gray shape exactly" gate written here was a premature agent paraphrase and was retracted the same evening. |
 | `sketchfab-exploded-tectonic-plates.jpeg` | sketchfab.com/3d-models/exploded-view-of-tectonic-plates-e9eeeeab3ba844aabf6b9f88b7ea8bc3 (by linajakaite; URL recovered from user 2026-07-16 evening) | user, 2026-07-16 directive; step 1 of the user's assembled-world walkthrough | Plates as discrete thick slabs; incandescent molten seams at EVERY boundary; the assembled globe visibly carries its parts (assembled ↔ exploded interaction). Verbal spec: directives spec, Reference 1. Reading refinement in progress in the re-derivation talk. |
 
+| `2026-07-16-user-reference-thick-crust-planet.png` | user, step 2 of the assembled-world walkthrough (2026-07-16 evening) | user | Crust as THICK material sitting visibly ON the sphere — deliberately unrealistic thickness-to-core scale (user: "not realistic scale compare to planet core"); side walls/cliff edges visible where crust ends; user's combine instruction verbatim: "I want to see the sketchfab demonstrated plate which has crust thickness but splited, so we can see how mountain, trench is formed. How plate A is under plate b and moved." Water/biome colors NOT the takeaway. |
+
 `2026-07-06-p2-continents-drift.gif` is an agent-produced capture (P2 evidence, not a user
 reference) — kept here for history.
 
