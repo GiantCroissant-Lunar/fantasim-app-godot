@@ -45,6 +45,18 @@
 
   <ItemGroup>
     <PackageReference Include="UnifyMaths" />
+    <!-- UnifyMaths.Numerics (FbmNoise3/GradientNoise3): the house noise primitive. Added 2026-07-16
+         for birth-roughness crust (directive 3d) — BirthRoughnessField samples FbmNoise3.SampleDirection
+         in the plate-material frame instead of the sphere-fixed cartography NoiseRelief wrapper.
+
+         NOTE: the 0.1.5 FEED package predates the FbmNoise3 commit (@ae6bb90, 2026-07-16) and contains
+         NONE of FbmNoise3/FbmNoiseParams/GradientNoise3. Dev/test (UseProjectReferences=true, the
+         default) consumes the source directly via this project ref, mirroring how fantasim-cartography
+         is consumed ($(YokanProjectsRoot)). The feed package must be republished at 0.1.5+ (with the
+         @ae6bb90 commit) before PACKAGE-mode (UseProjectReferences=false) builds can compile this. The
+         UnifyMaths.Numerics project is self-contained (no UnifyMaths-core dependency), so this project
+         ref introduces no transitive type-identity conflict with the UnifyMaths package ref above. -->
+    <ProjectReference Include="$(PlateProjectsRoot)\unify-maths\dotnet\src\UnifyMaths.Numerics\UnifyMaths.Numerics.csproj" />
     <!-- Cartography impl (GlobeSurfaceBuilder, NoiseRelief) from the local feed; the two
          cartography contracts above stay project refs and carry the same assembly names. -->
     <PackageReference Include="GiantCroissant.FantaSim.Cartography.Globe.Core" />

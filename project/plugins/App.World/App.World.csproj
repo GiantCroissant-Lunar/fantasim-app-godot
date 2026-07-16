@@ -63,6 +63,12 @@
   <ItemGroup>
     <ProjectReference Include="$(YokanProjectsRoot)\fantasim-cartography\project\contracts\Cartography.Shared\Cartography.Shared.csproj" />
     <ProjectReference Include="$(YokanProjectsRoot)\fantasim-cartography\project\contracts\Cartography.Globe\Cartography.Globe.csproj" />
+    <!-- UnifyMaths.Numerics (FbmNoise3/GradientNoise3): consumed transitively via App.World.Rendering
+         (BirthRoughnessProfile exposes FbmNoiseParams). Referenced directly here because the plugin
+         manipulates BirthRoughnessProfile (and thus FbmNoiseParams) in Service.cs; the 0.1.5 FEED
+         package predates the FbmNoise3 commit (@ae6bb90), so the source project ref is required in
+         dev/test (UseProjectReferences=true). See App.World.Rendering.csproj for the republish note. -->
+    <ProjectReference Include="$(PlateProjectsRoot)\unify-maths\dotnet\src\UnifyMaths.Numerics\UnifyMaths.Numerics.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

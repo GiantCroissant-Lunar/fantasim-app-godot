@@ -949,13 +949,26 @@ public sealed class Service : IService, IDisposable
         var cellFeatures = BuildCellFeatures(
             products.Materialization.Tessellation.CellCount,
             sampledFeatures);
+
+        // Directive 3d — plate-anchored birth roughness: a derived, deterministic noise field sampled
+        // in the PLATE-MATERIAL frame (rides drifting plates), amplitude-conditioned on crust age. It
+        // enters the SAME elevation-side composition both the World and slab paths consume (added onto
+        // CellElevations here), inside the north-star interior-fabric budget. The seed flows from the
+        // world render options so each world gets its own realization.
+        var birthRoughnessProfile = BirthRoughnessProfile.Default with
+        {
+            Noise = BirthRoughnessProfile.Default.Noise with { Seed = renderOptions.Seed },
+        };
+        var birthRoughness = sampler.SampleBirthRoughnessAt(arcTick, stateForSampling, birthRoughnessProfile);
+
         var cellElevations = sampler.SampleElevationsAt(
             currentGlobe,
             sampledState,
             sampledFeatures,
             currentArcs,
             renderOptions.BoundaryProfiles,
-            renderOptions.HydrosphereMode);
+            renderOptions.HydrosphereMode,
+            birthRoughnessByCell: birthRoughness);
 
         var cellCrustThickness = products.Materialization.BuildCrustThickness(
             products.GlobeAtSnapshot, arcTick, _logger);

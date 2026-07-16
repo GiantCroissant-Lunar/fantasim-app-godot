@@ -131,6 +131,56 @@ public sealed class PlateFrameSampler
         return SampleSourceAssignmentCore(tick, stateByTick, out _, out _);
     }
 
+    /// <summary>
+    /// Plate-anchored BIRTH ROUGHNESS (directive 3d) per cell at <paramref name="tick"/>: a derived,
+    /// deterministic elevation component (metres) sampled in the PLATE-MATERIAL frame. For each cell
+    /// the source map (<see cref="SampleSourceAssignmentAt"/>) identifies the onset-frame cell whose
+    /// material arrived there under plate rotation; that source cell's onset center
+    /// (<c>_centers[sourceCell]</c>) IS the plate-material coordinate, so the texture RIDES the plate
+    /// by construction — retiring the sphere-fixed interior-fabric defect. Amplitude is conditioned on
+    /// the MATERIAL's crust age + continental fraction (both carried with the material, like
+    /// <see cref="SampleAt"/>). At/before onset the source map is identity, so the material frame
+    /// equals the base-sphere frame (no discontinuous jump at the stagnant-lid -> mobile-plate boundary).
+    /// </summary>
+    /// <param name="tick">The query tick (drives the forward rotation that the source map inverts).</param>
+    /// <param name="stateByTick">Crust state keyed by tick (the same map <see cref="SampleAt"/> consumes).</param>
+    /// <param name="profile">The declared birth-roughness profile (floor/ceiling/age-ref + noise shape).</param>
+    /// <returns>Per-cell birth-roughness elevation in metres (length = CellCount). Zero for gap-filled cells with no source material.</returns>
+    public double[] SampleBirthRoughnessAt(
+        long tick,
+        IReadOnlyDictionary<long, IReadOnlyDictionary<int, CellCrustState>> stateByTick,
+        BirthRoughnessProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(stateByTick);
+        ArgumentNullException.ThrowIfNull(profile);
+        if (tick < 0) throw new ArgumentOutOfRangeException(nameof(tick));
+
+        int n = _tessellation.CellCount;
+        var result = new double[n];
+        if (!stateByTick.TryGetValue(tick, out var tickState) || tickState.Count == 0)
+            return result;
+
+        var sourceMap = SampleSourceAssignmentCore(tick, stateByTick, out var delta, out var tickStateResolved);
+        foreach (var (cell, sourceCell) in sourceMap)
+        {
+            if (sourceCell < 0)
+                continue;
+            var materialCoord = _centers[sourceCell];
+            // Age + continental fraction travel with the MATERIAL (read off the source cell), matching
+            // SampleAt's transport — reading the target cell's state would advect texture away from
+            // the material that owns it.
+            if (tickStateResolved.TryGetValue(sourceCell, out var s))
+            {
+                result[cell] = BirthRoughnessField.Sample(materialCoord, s.CrustAgeTicks, s.ContinentalFraction, profile);
+            }
+            else
+            {
+                result[cell] = BirthRoughnessField.Sample(materialCoord, delta, 0.0, profile);
+            }
+        }
+        return result;
+    }
+
     private Dictionary<int, int> SampleSourceAssignmentCore(
         long tick,
         IReadOnlyDictionary<long, IReadOnlyDictionary<int, CellCrustState>> stateByTick,
@@ -285,7 +335,8 @@ public sealed class PlateFrameSampler
         IReadOnlyDictionary<int, CrustFeature> sampledFeatures,
         IReadOnlyList<PlateBoundaryArc> boundaryArcs,
         BoundaryProfileParameters boundaryProfiles,
-        CellElevationHydrosphereMode hydrosphereMode)
+        CellElevationHydrosphereMode hydrosphereMode,
+        double[]? birthRoughnessByCell = null)
     {
         ArgumentNullException.ThrowIfNull(currentGlobe);
         ArgumentNullException.ThrowIfNull(sampledState);
@@ -299,7 +350,7 @@ public sealed class PlateFrameSampler
                 nameof(currentGlobe));
         }
 
-        return BuildElevations(currentGlobe, sampledState, sampledFeatures, boundaryArcs, boundaryProfiles, hydrosphereMode);
+        return BuildElevations(currentGlobe, sampledState, sampledFeatures, boundaryArcs, boundaryProfiles, hydrosphereMode, birthRoughnessByCell);
     }
 
     private double[] BuildElevations(
@@ -308,7 +359,8 @@ public sealed class PlateFrameSampler
         IReadOnlyDictionary<int, CrustFeature> features,
         IReadOnlyList<PlateBoundaryArc> boundaryArcs,
         BoundaryProfileParameters boundaryProfiles,
-        CellElevationHydrosphereMode hydrosphereMode)
+        CellElevationHydrosphereMode hydrosphereMode,
+        double[]? birthRoughnessByCell)
     {
         int n = _tessellation.CellCount;
         var elevations = new double[n];
@@ -327,7 +379,10 @@ public sealed class PlateFrameSampler
             if (state.TryGetValue(cell, out var s))
             {
                 var sample = new CrustSample(s.ContinentalFraction, s.OrogenicPressure, s.VolcanicActivity, s.CrustAgeTicks);
-                elevations[cell] = CellElevationSystem.Derive(sample, hydrosphereMode) + boundaryContributions[cell];
+                double birth = birthRoughnessByCell is not null && cell < birthRoughnessByCell.Length
+                    ? birthRoughnessByCell[cell]
+                    : 0.0;
+                elevations[cell] = CellElevationSystem.Derive(sample, hydrosphereMode) + boundaryContributions[cell] + birth;
             }
         }
 
