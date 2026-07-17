@@ -14,9 +14,9 @@ namespace FantaSim.App.World.Globe;
 /// </summary>
 public sealed class TectonicDetailSampler
 {
-    public const double DefaultInteriorAmplitudeMultiplier = 0.28;
+    public const double DefaultInteriorAmplitudeMultiplier = 0.65;
 
-    public const double MaxResidualAmplitudeMetres = 250.0;
+    public const double MaxResidualAmplitudeMetres = 1500.0;
 
     public const double SmallestMandatoryBoundarySignalMetres = 800.0;
 

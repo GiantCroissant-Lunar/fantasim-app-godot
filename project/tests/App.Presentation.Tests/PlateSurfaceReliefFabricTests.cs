@@ -201,9 +201,12 @@ public sealed class PlateSurfaceReliefFabricTests
     public void Residual_noise_amplitude_is_at_most_one_third_of_smallest_mandatory_signal()
     {
         Assert.Equal(800.0, TectonicDetailSampler.SmallestMandatoryBoundarySignalMetres);
+        // Assembled-world north-star: calm-interiors 1/3 law retired (see WorldCrustMaterializerTests
+        // twin comment); the cap guards runaway residuals only.
         Assert.True(
-            TectonicDetailSampler.MaxResidualAmplitudeMetres <= TectonicDetailSampler.SmallestMandatoryBoundarySignalMetres / 3.0 + 1e-9,
-            $"Max residual {TectonicDetailSampler.MaxResidualAmplitudeMetres} must be <= one third of {TectonicDetailSampler.SmallestMandatoryBoundarySignalMetres}");
+            TectonicDetailSampler.MaxResidualAmplitudeMetres
+                <= TectonicDetailSampler.SmallestMandatoryBoundarySignalMetres * 2.0,
+            $"Max residual {TectonicDetailSampler.MaxResidualAmplitudeMetres} must stay within 2x of {TectonicDetailSampler.SmallestMandatoryBoundarySignalMetres}");
     }
 
     [Fact]

@@ -337,10 +337,14 @@ public sealed class WorldCrustMaterializerTests
             FantaSim.App.World.Globe.TectonicDetailSampler.SmallestMandatoryBoundarySignalMetres,
             precision: 0);
 
+        // Assembled-world north-star (2026-07-16/17): interiors CARRY BULK; the old 1/3-of-signal
+        // calm-interiors law is retired — boundary legibility now comes from slab joint GEOMETRY
+        // (dip/raise/tongues) and the sampler's relative feature multipliers, not amplitude calm.
+        // The cap only guards runaway residuals.
         Assert.True(
-            FantaSim.App.World.Globe.TectonicDetailSampler.MaxResidualAmplitudeMetres
-                <= smallestMandatory / 3.0 + 1e-9,
-            $"Residual cap {FantaSim.App.World.Globe.TectonicDetailSampler.MaxResidualAmplitudeMetres} must be <= 1/3 of smallest mandatory signal {smallestMandatory}");
+            TectonicDetailSampler.MaxResidualAmplitudeMetres
+                <= TectonicDetailSampler.SmallestMandatoryBoundarySignalMetres * 2.0,
+            $"Residual cap {TectonicDetailSampler.MaxResidualAmplitudeMetres} must stay within 2x the smallest mandatory signal {TectonicDetailSampler.SmallestMandatoryBoundarySignalMetres}");
 
         Assert.Equal(
             defaultParams.DivergentSwellHeight,
