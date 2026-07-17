@@ -25,7 +25,7 @@ in cutaway/exploded mode; that is Slice C.
 
 ## Exact source, export, and process
 
-- Repository HEAD:
+- Exported implementation HEAD:
   `4be950886b6b6bfe34f1246d0948fa0c4db6ddb8`
 - Exported application:
   `build/_artifacts/0.1.2/godot/osx/complete-app.app`
