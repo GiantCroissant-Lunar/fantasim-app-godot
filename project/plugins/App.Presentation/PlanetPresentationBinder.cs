@@ -440,18 +440,12 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
             RebuildMantleLayer();
         }
 
-        // Assembled-world slice 1 (north-star 2026-07-16): at the DEFAULT World view the per-plate
-        // solid slab assembly IS the world; the watertight sphere stays available behind the
-        // declared WorldSurfacePresentationProfile fallback. render.exploded (look-dev) keeps
-        // ownership of the solids while active; the mantle layer composes its own separated slabs
-        // (its derived view mode is MantleInterior, so the policy gate is already closed there).
-        bool worldSlabAssemblyActive = showsPlateFeatures
-            && !_explodedActive
-            && _currentDocument?.GlobeSnapshot is not null
-            && WorldSurfacePresentationPolicy.ShowsSlabAssembly(_worldSurfaceProfile, viewMode);
-        if (worldSlabAssemblyActive != _worldSlabAssemblyActive)
+        // Crust-volume Slice B: the normal World view is the adaptive OUTER ENVELOPE. The radial
+        // slab assembly is retained only as extraction scaffolding for the later cutaway/exploded
+        // migration; it is no longer an assembled-world owner and buried underlap stays hidden.
+        if (_worldSlabAssemblyActive)
         {
-            _worldSlabAssemblyActive = worldSlabAssemblyActive;
+            _worldSlabAssemblyActive = false;
             RebuildWorldSlabAssembly();
         }
 
@@ -607,8 +601,8 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
         _regimeRefreshPending = false;
      }
 
-    // Computes per-cell color (world or crust ramp with trench/ridge accent baked in) and
-    // per-cell volcanic emission intensity, from the document's crust elevation + feature data. The
+        // Computes per-cell color (world or crust ramp with trench/ridge accent baked in) and
+        // per-cell volcanic emission intensity from the caller's selected elevation + feature owner. The
     // world view uses WorldTerrainRamp (bare-rock product palette) modulated by the continental
     // ProvinceTint (cells indexed by CellId supply the sample direction); the crust diagnostic uses
     // HypsometricTint, un-tinted. Falls back to a neutral mid-ramp tint when crust data is absent.
@@ -618,7 +612,8 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
     // outside this refactor's edit scope. See AGENT-SUMMARY.md.
     private static (RampColor[] Colors, float[] Emission) BuildCellAppearance(
         int cellCount,
-        PlanetPresentationDocument document,
+        IReadOnlyList<double>? elevations,
+        IReadOnlyList<CellCrustFeature>? features,
         GlobeViewMode viewMode,
         IReadOnlyList<GlobeCell>? cells)
     {
@@ -627,7 +622,6 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
         bool isWorld = viewMode == GlobeViewMode.World;
         bool showsVolcanicGlow = PlateSurfaceEmissionPolicy.ShowsVolcanicGlow(viewMode);
 
-        var elevations = document.CellElevations;
         if (elevations is null || elevations.Count != cellCount)
         {
             var fallbackRamp = isWorld
@@ -644,7 +638,6 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
             : null;
         var cellCenters = provinceTint is not null ? PlateSurfaceMeshFactory.BuildCellCenters(cellCount, cells!) : null;
 
-        var features = document.CellFeatures;
         var rampColors = isWorld
             ? WorldTerrainRamp.ComputeColors(elevations)
             : HypsometricTint.ComputeColors(elevations);

@@ -157,23 +157,33 @@ internal sealed partial class PlanetPresentationBinder
 
     private void BindPlateSurface(PlateSurfaceRenderer renderer, PlanetPresentationDocument document, GlobeViewMode viewMode)
     {
-        var snapshot = document.GlobeSnapshot!;
         // P1 + W1: view mode selects cap appearance — World (composed product) and HypsometricTerrain
         // (crust diagnostic) both displace by elevation; PlateIdentity is flat. World uses a tuned
         // noise amplitude (sub-cell detail that buries the cell grid) + the WorldTerrainRamp + per-
         // vertex tint jitter; HypsometricTerrain uses the diagnostic crust palette.
         bool isTerrain = viewMode is GlobeViewMode.World or GlobeViewMode.HypsometricTerrain;
         bool isWorld = viewMode == GlobeViewMode.World;
+        var volume = isTerrain ? document.CrustVolume : null;
+
+        // Slice B ownership gate: when a solid-crust state exists, the adaptive surface reads the
+        // globe, outer envelope, and tectonic feature context directly from that state. A World
+        // view without solid crust stays flat; it never falls through to independently authored
+        // legacy geology. Compatibility projections remain only for non-World diagnostics.
+        var snapshot = volume?.Globe ?? document.GlobeSnapshot!;
+        IReadOnlyList<double>? elevations = volume?.OuterElevationsMetresByCell
+            ?? (!isWorld && isTerrain ? document.CellElevations : null);
+        IReadOnlyList<CellCrustFeature>? features = volume?.FeaturesByCell
+            ?? (!isWorld && isTerrain ? document.CellFeatures : null);
 
         var relief = PlateSurfaceReliefFabric.ForView(viewMode);
         _plateSurfaces = new GlobePlateSurfaces(
             snapshot,
             noise: relief,
-            detailSampler: PlateSurfaceMeshFactory.BuildTectonicDetailSampler(snapshot, document.CellFeatures, relief, viewMode, isTerrain));
+            detailSampler: PlateSurfaceMeshFactory.BuildTectonicDetailSampler(snapshot, features, relief, viewMode, isTerrain));
 
-        IReadOnlyList<double> elevations = isTerrain
-            ? (document.CellElevations is { } cellElevations && cellElevations.Count == snapshot.CellCount
-                ? cellElevations
+        elevations = isTerrain
+            ? (elevations is { } outerEnvelope && outerEnvelope.Count == snapshot.CellCount
+                ? outerEnvelope
                 : new double[snapshot.CellCount])
             : new double[snapshot.CellCount];
 
@@ -184,7 +194,7 @@ internal sealed partial class PlanetPresentationBinder
             worldHeightExponent: WorldHeightExponent);
         bool useAdaptiveSurface = projection.UseAdaptiveSurface;
         var featureWeights = useAdaptiveSurface
-            ? PlateSurfaceMeshFactory.BuildAdaptiveFeatureWeights(snapshot.CellCount, document.CellFeatures)
+            ? PlateSurfaceMeshFactory.BuildAdaptiveFeatureWeights(snapshot.CellCount, features)
             : null;
         // Silhouette budget (north-star spec §1): planet views clamp the finalized radial
         // displacement to the profile's declared cap so the limb stays a circle. Diagnostic views
@@ -210,7 +220,12 @@ internal sealed partial class PlanetPresentationBinder
                 maxDisplacementUnitRadius: maxDisp);
 
         var (perCellColor, perCellEmission) = isTerrain
-            ? BuildCellAppearance(snapshot.CellCount, document, viewMode, isWorld ? snapshot.Cells : null)
+            ? BuildCellAppearance(
+                snapshot.CellCount,
+                elevations,
+                features,
+                viewMode,
+                isWorld ? snapshot.Cells : null)
             : (Array.Empty<RampColor>(), Array.Empty<float>());
 
         var colorMode = PlateSurfaceColorModePolicy.ForView(viewMode);
@@ -260,6 +275,7 @@ internal sealed partial class PlanetPresentationBinder
         var material = HypsoPlateMaterialOverride;
         PlateSurfaceMaterialTuning.ForView(viewMode).ApplyTo(material);
         renderer.SetMeshes(meshes, material);
+        renderer.SetMeta("crustVolumeDigest", volume?.Digest ?? "none");
 
         // M-B: cache the build inputs so UpdateExploded can rebuild byte-identical TOP DTOs (same
         // Continents/terrain colors + emission) and the solid thickness exaggeration matches the
@@ -280,8 +296,10 @@ internal sealed partial class PlanetPresentationBinder
         _lastContinentsFrontier = continentsFrontier;
 
         _log.LogInformation(
-            "Planet plate surface bound: view={ViewMode}, subdivision={Subdivision}, plates={PlateCount}, triangles={TriangleCount}, meshVertices={VertexCount}, scale={Scale}, trueScale={TrueScale}, amplification={Amplification}x, frequency={Frequency}.",
+            "Planet outer envelope bound: view={ViewMode}, source={Source}, crustVolumeDigest={CrustVolumeDigest}, buriedUnderlap=hidden, subdivision={Subdivision}, plates={PlateCount}, triangles={TriangleCount}, meshVertices={VertexCount}, scale={Scale}, trueScale={TrueScale}, amplification={Amplification}x, frequency={Frequency}.",
             viewMode,
+            volume is null ? "compatibility" : nameof(CrustVolumeState),
+            volume?.Digest ?? "none",
             useAdaptiveSurface ? "adaptive" : "fixed",
             caps.Count,
             caps.Sum(cap => cap.Surface.TriangleCount),
