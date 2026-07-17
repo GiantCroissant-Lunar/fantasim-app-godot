@@ -31,13 +31,15 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
     // World-view height lens (look-dev 2026-07-03, knobbly-limb references): sign(h)*|h|^0.5 * scale.
     // The elevation field is ~±500..1,400 m interiors under 21,000+ m orogenic extremes — a ratio no
     // LINEAR lens can render (interiors invisible or peaks become spears). The sqrt profile compresses
-    // ~48:1 to ~7:1: interiors ~1.9% of radius (knobbly limb), peaks ~7.5% (proportionate). The S2
+    // ~48:1 to ~7:1. The assembled-reference pass raises the existing labeled lens so ordinary
+    // generated boundary relief reads at roughly 3-5% of radius instead of disappearing at 1-2%;
+    // rare 20 km-class extremes remain proportionate rather than becoming linear spikes. The S2
     // indicator names the profile (VerticalScaleLabel profile overload) — the lens is labeled, never
     // hidden. The crust DIAGNOSTIC view stays strictly linear on document.VerticalExaggeration:
     // diagnostics must not bend the scale. PROBE pending user sign-off — S1 doctrine amendment
     // (non-linear labeled lens) is a design decision, not a default.
     private const double WorldHeightExponent = 0.5;
-    private const double WorldHeightScale = 0.0005;
+    private const double WorldHeightScale = 0.0008;
 
     private readonly IRegistry _registry;
     private readonly ResourceService _resource;
