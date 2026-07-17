@@ -209,7 +209,7 @@ internal sealed partial class PlanetPresentationBinder
     {
         var crustThickness = document.CellCrustThickness;
         if (crustThickness is { Count: > 0 })
-            return crustThickness;
+            return ApplyDisplayedThicknessFloor(crustThickness);
 
         double meanCrust = CutawayStratumProfile.DefaultCrustThicknessMetres;
         var snapshot = document.GlobeSnapshot;
@@ -219,6 +219,27 @@ internal sealed partial class PlanetPresentationBinder
         var fallback = new double[cellCount];
         Array.Fill(fallback, meanCrust);
         return fallback;
+    }
+
+    // The displayed-thickness floor: sim metres are truth, but the SLAB LOOK is fantasy-scale by
+    // doctrine — a slab never renders thinner than DisplayedThicknessFloorUnitRadius regardless of
+    // the per-cell crust metres (the 8x/36x multiplier alone under-delivers when the engine's
+    // per-cell values sit far below the 30 km the profile doc assumes; verified 2026-07-17).
+    private IReadOnlyList<double> ApplyDisplayedThicknessFloor(IReadOnlyList<double> metres)
+    {
+        double scale = _radialProfile.ThicknessDepthScale();
+        if (scale <= 0.0)
+            return metres;
+        double floorMetres = RadialSectionProfile.DefaultDisplayedThicknessFloorUnitRadius / scale;
+        var floored = new double[metres.Count];
+        bool changed = false;
+        for (int i = 0; i < metres.Count; i++)
+        {
+            double v = metres[i];
+            if (v < floorMetres) { v = floorMetres; changed = true; }
+            floored[i] = v;
+        }
+        return changed ? floored : metres;
     }
     private ShaderMaterial? _coldInnerMaterial;
     private ShaderMaterial? _coldOuterMaterial;

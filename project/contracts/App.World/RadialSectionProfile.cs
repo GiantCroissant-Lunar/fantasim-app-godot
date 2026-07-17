@@ -74,6 +74,15 @@ public sealed record RadialSectionProfile(
     /// <summary>Default crust-thickness exaggeration: 30 km × 36.0 / 6,371 km ≈ 0.170R — MASSIVE chunks, not tiles (eye-tuned 2026-07-17 per the user's explicit non-realistic-scale directive: pieces whose thickness rivals their width; raised from 8.0).</summary>
     public const double DefaultCrustThicknessExaggeration = 36.0;
 
+    /// <summary>
+    /// Displayed slab-thickness FLOOR in unit-radius: whatever the sim's per-cell crust metres
+    /// are, a slab never renders thinner than this. This — not the exaggeration multiplier — is
+    /// what guarantees the user's non-realistic chunk scale ("this is not realistic scale compare
+    /// to planet core"): pieces whose thickness rivals their width. Eye-tuned 2026-07-17.
+    /// </summary>
+    public const double DefaultDisplayedThicknessFloorUnitRadius = 0.12;
+
+
     /// <summary>Default mantle depth scale: 1.0 (mantle keeps physical depth).</summary>
     public const double DefaultMantleDepthScale = 1.0;
 
