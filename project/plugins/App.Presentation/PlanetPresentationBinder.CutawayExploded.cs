@@ -193,6 +193,17 @@ internal sealed partial class PlanetPresentationBinder
 
         var exploded = PlateSolidBuilder.ApplyExplodedFactor(solids, centroids, factor);
 
+        // Slice 4 (structural): the exploded world is thick pieces around a SMALLER interior —
+        // never a planet-size ball under a skin (the ball-under-skin misread, 2026-07-17). The
+        // core gives the separated shell something to read against; material eye-tuned later.
+        var coreMesh = new MeshInstance3D
+        {
+            Name = "ExplodedCore",
+            Mesh = new SphereMesh { Radius = 0.55f, Height = 1.1f, RadialSegments = 48, Rings = 24 },
+            MaterialOverride = PlanetShaderLibrary.BuildBaseMantleMaterial(),
+        };
+        root.AddChild(coreMesh);
+
         AddSlabMeshInstances(
             root,
             slabCaps,

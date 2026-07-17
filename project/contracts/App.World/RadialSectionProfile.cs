@@ -19,7 +19,7 @@ namespace FantaSim.App.World;
 /// <para><b>RATIO LOCK (user directive, verbatim intent).</b> The crust thickness gets "its OWN
 /// scaling so it is amplified — while PRESERVING the ratio to mantle thickness, which has a
 /// DIFFERENT scaling." The default knobs below yield a fixed displayed crust:mantle proportion
-/// (see <see cref="DisplayedCrustToMantleRatio"/>): 30 km × 8.0 / 6,371 km ≈ 0.0377R of crust
+/// (see <see cref="DisplayedCrustToMantleRatio"/>): 30 km × 36.0 / 6,371 km ≈ 0.170R of crust
 /// against (1 − 0.55) × 1.0 = 0.45R of mantle depth, i.e. ratio ≈ 0.0837. A unit test
 /// (<c>RadialSectionProfileTests</c>) PINS this default; any future knob change that silently breaks
 /// the proportion fails that test and forces a conscious decision (re-tune the knobs, or re-pin the
@@ -56,10 +56,10 @@ public sealed record RadialSectionProfile(
 
     /// <summary>
     /// Amplifies ONLY the crust thickness for display (default 8.0). At 8.0, 30 km of crust maps to
-    /// ~0.0377R — clearly visible slab walls against the 0.45R mantle depth. Independent of the
+    /// ~0.170R — chunk-scale slab walls against the 0.45R mantle depth (eye-tuned 2026-07-17). Independent of the
     /// surface relief exaggeration (which amplifies elevation, not thickness).
     /// </summary>
-    double CrustThicknessExaggeration = 8.0,
+    double CrustThicknessExaggeration = 36.0,
 
     /// <summary>
     /// Scales the mantle's displayed depth (default 1.0 — mantle keeps physical depth). The mantle
@@ -71,8 +71,8 @@ public sealed record RadialSectionProfile(
     /// <summary>Canonical Earth-like CMB at 0.55R.</summary>
     public const double DefaultCmbRadiusFraction = 0.55;
 
-    /// <summary>Default crust-thickness exaggeration: 30 km × 8.0 / 6,371 km ≈ 0.0377R (visible slab walls).</summary>
-    public const double DefaultCrustThicknessExaggeration = 8.0;
+    /// <summary>Default crust-thickness exaggeration: 30 km × 36.0 / 6,371 km ≈ 0.170R — MASSIVE chunks, not tiles (eye-tuned 2026-07-17 per the user's explicit non-realistic-scale directive: pieces whose thickness rivals their width; raised from 8.0).</summary>
+    public const double DefaultCrustThicknessExaggeration = 36.0;
 
     /// <summary>Default mantle depth scale: 1.0 (mantle keeps physical depth).</summary>
     public const double DefaultMantleDepthScale = 1.0;

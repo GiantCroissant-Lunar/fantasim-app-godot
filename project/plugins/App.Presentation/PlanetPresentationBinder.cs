@@ -457,7 +457,7 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
         // are the reference frame); the boundary wireframe stays visible as the locator. The World
         // slab assembly likewise replaces the single-surface sphere while it is mounted.
         if (_plateSurfaceRoot is not null && GodotObject.IsInstanceValid(_plateSurfaceRoot))
-            _plateSurfaceRoot.Visible = showsPlateFeatures && !_mantleLayerActive && !_worldSlabAssemblyActive;
+            _plateSurfaceRoot.Visible = showsPlateFeatures && !_mantleLayerActive && !_worldSlabAssemblyActive && !_explodedActive;
 
         bool mantleLocatorActive = _mantleLayerActive;
         if (_boundaryRenderer is not null && GodotObject.IsInstanceValid(_boundaryRenderer))

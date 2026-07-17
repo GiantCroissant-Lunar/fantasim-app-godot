@@ -12,7 +12,9 @@ public sealed class RadialSectionProfileTests
 {
     // The pinned default ratio: 30 km × 8.0 / 6,371 km ≈ 0.03767R of crust against
     // (1 − 0.55) × 1.0 = 0.45R of mantle depth → 0.03767 / 0.45 ≈ 0.08371.
-    private const double ExpectedDefaultRatio = 0.0837;
+    // Eye-tuned 2026-07-17 with DefaultCrustThicknessExaggeration 8->36 (user's non-realistic-
+    // scale directive): 30 km x 36 / 6,371 km / 0.45R mantle ~= 0.3767.
+    private const double ExpectedDefaultRatio = 0.3767;
     private const double RatioTolerance = 0.0005;
 
     [Fact]
