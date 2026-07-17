@@ -164,6 +164,12 @@ internal sealed partial class PlanetPresentationBinder
 
         var centroids = _lastCentroids ?? PlateSolidBuilder.ComputeCentroids(snapshot);
         var (slabCaps, slabPerPlateVertexColors) = BuildSlabTopCaps(document, snapshot);
+        // V1: plate-solid tops carry the same boundary-concentrated smooth-shaded tessellation as
+        // the assembled envelope, regardless of explode factor.
+        var boundaryConcentratedTopCaps = BuildBoundaryConcentratedTopCaps(
+            slabCaps,
+            volume,
+            BoundaryConcentrationOptions.Default);
         double factor = factorOverride ?? _explodedFactor;
 
         if (_explodedFocusConvergent)
@@ -172,6 +178,7 @@ internal sealed partial class PlanetPresentationBinder
                 root,
                 volume,
                 slabCaps,
+                boundaryConcentratedTopCaps,
                 centroids,
                 factor,
                 slabPerPlateVertexColors);
@@ -199,7 +206,8 @@ internal sealed partial class PlanetPresentationBinder
             exploded,
             centroids,
             factor * PlateSolidBuilder.DefaultMaxOffset,
-            slabPerPlateVertexColors);
+            slabPerPlateVertexColors,
+            boundaryConcentratedTopCapsByPlate: boundaryConcentratedTopCaps);
         _log.LogInformation(
             "Exploded crust volume mounted: digest={Digest}, factor={Factor:R}, plates={PlateCount}.",
             volume.Digest,
@@ -212,6 +220,7 @@ internal sealed partial class PlanetPresentationBinder
         Node3D root,
         CrustVolumeState volume,
         IReadOnlyList<PlateCap> slabCaps,
+        IReadOnlyDictionary<int, PlateCap> boundaryConcentratedTopCaps,
         IReadOnlyList<PlateSolidCentroid> centroids,
         double factor,
         IReadOnlyDictionary<int, RampColor[]> slabPerPlateVertexColors)
@@ -246,6 +255,13 @@ internal sealed partial class PlanetPresentationBinder
             return;
         }
 
+        var focusedTopCaps = new Dictionary<int, PlateCap>(2);
+        foreach (var cap in focusedCaps)
+        {
+            if (boundaryConcentratedTopCaps.TryGetValue(cap.PlateId, out var subdivided))
+                focusedTopCaps[cap.PlateId] = subdivided;
+        }
+
         var assembledSolids = PlateSolidBuilder.Build(focusedCaps, volume);
         var displayedSolids = assembledSolids.ToArray();
         int overridingIndex = Array.FindIndex(
@@ -272,7 +288,8 @@ internal sealed partial class PlanetPresentationBinder
             focusedCentroids,
             offsetMag: 0.0,
             slabPerPlateVertexColors: slabPerPlateVertexColors,
-            offsetMagnitudeByPlate: offsetByPlate);
+            offsetMagnitudeByPlate: offsetByPlate,
+            boundaryConcentratedTopCapsByPlate: focusedTopCaps);
         OrientFocusedConvergentRoot(root, volume, proof.BoundaryArcIndex);
 
         root.SetMeta("crustVolumeDigest", volume.Digest);
@@ -329,12 +346,63 @@ internal sealed partial class PlanetPresentationBinder
         root.Basis = sourceFrame.Transposed();
     }
 
+    // V1 "closed skin": produces the per-plate boundary-concentrated top caps by running the pure
+    // <see cref="BoundaryConcentratedSubdivider"/> over each fixed volume-derived cap. The solid
+    // builder keeps the FIXED caps (its top-index range keys on their triangle count); only the
+    // TOP DTO consumes the subdivided caps. Returns an empty dictionary when there is no volume or
+    // no boundary-near cell — callers fall back to the fixed cap unchanged.
+    private static IReadOnlyDictionary<int, PlateCap> BuildBoundaryConcentratedTopCaps(
+        IReadOnlyList<PlateCap> fixedCaps,
+        CrustVolumeState? volume,
+        BoundaryConcentrationOptions? options = null)
+    {
+        if (volume is null || fixedCaps.Count == 0)
+            return new Dictionary<int, PlateCap>();
+
+        var byPlate = new Dictionary<int, PlateCap>(fixedCaps.Count);
+        foreach (var cap in fixedCaps)
+        {
+            var result = BoundaryConcentratedSubdivider.Subdivide(cap, volume, options);
+            byPlate[cap.PlateId] = result.Cap;
+        }
+        return byPlate;
+    }
+
+    private static IReadOnlyDictionary<int, PlateCap> BuildBoundaryConcentratedTopCaps(
+        IReadOnlyList<PlateCap> fixedCaps,
+        CrustVolumeState? volume,
+        BoundaryConcentrationOptions? options,
+        out int totalSubdividedSourceTriangles,
+        out int totalTopTriangles)
+    {
+        totalSubdividedSourceTriangles = 0;
+        totalTopTriangles = 0;
+        if (volume is null || fixedCaps.Count == 0)
+            return new Dictionary<int, PlateCap>();
+
+        var byPlate = new Dictionary<int, PlateCap>(fixedCaps.Count);
+        foreach (var cap in fixedCaps)
+        {
+            var result = BoundaryConcentratedSubdivider.Subdivide(cap, volume, options);
+            byPlate[cap.PlateId] = result.Cap;
+            totalSubdividedSourceTriangles += result.SubdividedSourceTriangles;
+            totalTopTriangles += result.TotalTriangles;
+        }
+        return byPlate;
+    }
+
     // Shared per-plate slab mesh emission for the solid-slab family (exploded look-dev crust, the
     // mantle layer's separated slabs, and the default World slab assembly): for each cap, the TOP
     // (attributed cap surface DTO with the plate's radial offset baked into positions) and the
     // BOTTOM+WALLS (the PlateSolidBuilder output, lit strata material). The solids list is parallel
     // to slabCaps and already carries the radial translation; offsetMag re-applies the SAME offset
     // to the TOP DTO positions so tops and walls stay welded.
+    //
+    // V1 "closed skin": <paramref name="boundaryConcentratedTopCapsByPlate"/> carries, per plate, a
+    // boundary-concentrated subdivision of the fixed cap used for the solid. When present the TOP
+    // DTO is built from it (smooth-shaded, denser near arcs); the solid and the BOTTOM+WALLS DTO
+    // still use the FIXED cap, whose triangle count is what the solid builder's top-index range
+    // keys on. Pass null to render tops at the fixed cap's resolution (pre-V1 behaviour).
     private void AddSlabMeshInstances(
         Node3D root,
         IReadOnlyList<PlateCap> slabCaps,
@@ -342,7 +410,8 @@ internal sealed partial class PlanetPresentationBinder
         IReadOnlyList<PlateSolidCentroid> centroids,
         double offsetMag,
         IReadOnlyDictionary<int, RampColor[]> slabPerPlateVertexColors,
-        IReadOnlyDictionary<int, double>? offsetMagnitudeByPlate = null)
+        IReadOnlyDictionary<int, double>? offsetMagnitudeByPlate = null,
+        IReadOnlyDictionary<int, PlateCap>? boundaryConcentratedTopCapsByPlate = null)
     {
         var byPlate = new Dictionary<int, PlateSolidCentroid>(centroids.Count);
         foreach (var c in centroids)
@@ -363,8 +432,17 @@ internal sealed partial class PlanetPresentationBinder
                 plateOffsetMag = focusedOffset;
             }
 
+            // V1: top DTO reads the boundary-concentrated cap when one was produced for this plate;
+            // otherwise it falls back to the fixed cap. The solid path always pairs with the fixed
+            // cap (its top-index range is cap.Surface.Triangles.Length — a subdivided cap would
+            // desync that range and crack the walls).
+            var topCap = boundaryConcentratedTopCapsByPlate is not null
+                && boundaryConcentratedTopCapsByPlate.TryGetValue(cap.PlateId, out var subdividedTop)
+                    ? subdividedTop
+                    : cap;
+
             var topDto = BuildExplodedTopDto(
-                cap,
+                topCap,
                 centroid,
                 plateOffsetMag,
                 slabPerPlateVertexColors);

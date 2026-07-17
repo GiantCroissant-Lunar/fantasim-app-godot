@@ -52,6 +52,8 @@ internal sealed partial class PlanetPresentationBinder
 
     // The World crust assembly uses the same state-derived caps and closed solids as the exploded
     // view, with zero translation. Ordinary contacts remain closed and buried material is occluded.
+    // V1 "closed skin": slab tops are smooth-shaded (FacetedSlabTops default flipped) and carry
+    // boundary-concentrated tessellation so the cell grid stops reading at globe distance.
     private Node3D BuildWorldSlabAssemblyRoot()
     {
         var root = new Node3D { Name = "WorldCrustVolumeAssembly" };
@@ -64,6 +66,12 @@ internal sealed partial class PlanetPresentationBinder
         var centroids = _lastCentroids ?? PlateSolidBuilder.ComputeCentroids(snapshot);
         var (caps, perPlateVertexColors) = BuildSlabTopCaps(document, snapshot);
         var solids = PlateSolidBuilder.Build(caps, volume);
+        var boundaryConcentratedTopCaps = BuildBoundaryConcentratedTopCaps(
+            caps,
+            volume,
+            BoundaryConcentrationOptions.Default,
+            out int subdividedSourceTriangles,
+            out int totalTopTriangles);
         var interior = new MeshInstance3D
         {
             Name = "InteriorContext",
@@ -78,7 +86,15 @@ internal sealed partial class PlanetPresentationBinder
             solids,
             centroids,
             offsetMag: 0.0,
-            slabPerPlateVertexColors: perPlateVertexColors);
+            slabPerPlateVertexColors: perPlateVertexColors,
+            boundaryConcentratedTopCapsByPlate: boundaryConcentratedTopCaps);
+        _log.LogInformation(
+            "World envelope: smooth-shaded tris={TriangleCount} boundary-concentrated={BoundaryConcentratedCellTriangles}, "
+                + "digest={Digest}, plates={PlateCount}, contactGap=0.",
+            totalTopTriangles,
+            subdividedSourceTriangles,
+            volume.Digest,
+            solids.Count);
         _log.LogInformation(
             "Assembled crust volume mounted: digest={Digest}, plates={PlateCount}, contactGap=0.",
             volume.Digest,

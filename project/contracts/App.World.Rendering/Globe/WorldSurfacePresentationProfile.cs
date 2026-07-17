@@ -64,12 +64,14 @@ public sealed record WorldSurfacePresentationProfile(
     /// lead + user EYE gate tunes this; the agent does not self-certify the look.
     /// </summary>
     /// <summary>
-    /// When true (default), slab TOPS render with FLAT (faceted) normals — the chunky legible
-    /// geometry the assembled-world north-star demands (clause 7; the user's gray-geometry and
-    /// Keeter references) — instead of the sphere-era smooth normals. Eye-tuned presentation
-    /// switch, not physics.
+    /// V1 "closed skin" (vault/specs/2026-07-18-visual-fidelity-slices-decision.md): slab TOPS render
+    /// with the cap's smoothed per-vertex normals so the assembled globe stops reading as flat
+    /// triangular facets (design §7.1). The earlier faceted-chunky default is superseded by that user
+    /// decision. Side walls stay flat (hard crease) — they are rendered through
+    /// <c>BuildExplodedSolidDto</c>, which computes per-face normals independently of this switch.
+    /// Eye-tuned presentation switch, not physics.
     /// </summary>
-    public bool FacetedSlabTops { get; init; } = true;
+    public bool FacetedSlabTops { get; init; } = false;
 
     public const double DefaultSlabJointGapUnitRadius = 0.035;
 
