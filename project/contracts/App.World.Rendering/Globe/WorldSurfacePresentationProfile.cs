@@ -71,7 +71,7 @@ public sealed record WorldSurfacePresentationProfile(
     /// </summary>
     public bool FacetedSlabTops { get; init; } = true;
 
-    public const double DefaultSlabJointGapUnitRadius = 0.02;
+    public const double DefaultSlabJointGapUnitRadius = 0.035;
 
     /// <summary>The default profile: slab assembly with the default joint gap.</summary>
     public static WorldSurfacePresentationProfile Default { get; } = new(

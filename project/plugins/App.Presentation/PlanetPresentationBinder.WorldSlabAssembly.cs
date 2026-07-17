@@ -112,6 +112,17 @@ internal sealed partial class PlanetPresentationBinder
                 _worldSurfaceProfile);
         }
 
+        // The molten interior beneath the assembled slabs: every joint gap glows orange from
+        // within (acceptance image behavior). Sits just under the slab undersides.
+        var moltenGlow = new MeshInstance3D
+        {
+            Name = "MoltenInterior",
+            Mesh = new SphereMesh { Radius = 0.86f, Height = 1.72f, RadialSegments = 48, Rings = 24 },
+            MaterialOverride = PlanetShaderLibrary.BuildMoltenInteriorMaterial(),
+            Scale = Vector3.One * 2.0f,
+        };
+        root.AddChild(moltenGlow);
+
         AddSlabMeshInstances(
             root,
             slabCaps,

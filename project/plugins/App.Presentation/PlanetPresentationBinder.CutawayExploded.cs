@@ -199,8 +199,9 @@ internal sealed partial class PlanetPresentationBinder
         var coreMesh = new MeshInstance3D
         {
             Name = "ExplodedCore",
-            Mesh = new SphereMesh { Radius = 0.55f, Height = 1.1f, RadialSegments = 48, Rings = 24 },
-            MaterialOverride = PlanetShaderLibrary.BuildBaseMantleMaterial(),
+            Mesh = new SphereMesh { Radius = 0.8f, Height = 1.6f, RadialSegments = 48, Rings = 24 },
+            MaterialOverride = PlanetShaderLibrary.BuildMoltenInteriorMaterial(),
+            Scale = Vector3.One * 2.0f,
         };
         root.AddChild(coreMesh);
 

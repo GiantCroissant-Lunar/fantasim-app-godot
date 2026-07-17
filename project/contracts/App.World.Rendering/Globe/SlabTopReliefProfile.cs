@@ -74,7 +74,7 @@ public sealed record SlabTopReliefProfile(
         Octaves: 6,
         Lacunarity: 2.0,
         Gain: 0.5,
-        Amplitude: 172.0,
+        Amplitude: 1400.0,
         Ridged: false);
 
     /// <summary>The default slab relief profile (all defaults above).</summary>

@@ -53,10 +53,11 @@ public sealed class WorldSlabAssemblyTests
         Assert.InRange(profile.SlabJointGapUnitRadius, 0.004, 0.08);
 
         // A JOINT, not an explosion: far smaller than the exploded view's radial translation.
-        // Factor widened 0.05 -> 0.10 with the 2026-07-17 eye-tune (gap 0.02R): still an order
-        // below the exploded translation, but wide enough to read as separated slabs from orbit.
+        // Factor 0.05 -> 0.10 -> 0.15 across the 2026-07-17 eye-tunes (gap 0.02 -> 0.035R per the
+        // acceptance image 2026-07-17-user-reference-assembled-final.png: seams wide enough to
+        // glow). Still well below the exploded translation.
         Assert.True(
-            profile.SlabJointGapUnitRadius < PlateSolidBuilder.DefaultMaxOffset * 0.10,
+            profile.SlabJointGapUnitRadius < PlateSolidBuilder.DefaultMaxOffset * 0.15,
             $"the joint gap ({profile.SlabJointGapUnitRadius}R) must be far smaller than the exploded translation "
             + $"({PlateSolidBuilder.DefaultMaxOffset}R) or the assembled world reads as exploded");
     }

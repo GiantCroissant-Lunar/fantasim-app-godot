@@ -353,6 +353,19 @@ void fragment() {
 
     public static ShaderMaterial BuildStagnantMantleMaterial() => new() { Shader = StagnantShader };
 
+    // The reference-image molten interior: every open joint glows from beneath. Emissive-only
+    // cue (eye-tuned 2026-07-17, acceptance image 2026-07-17-user-reference-assembled-final.png).
+    public static StandardMaterial3D BuildMoltenInteriorMaterial() =>
+        new()
+        {
+            AlbedoColor = new Color(0.85f, 0.28f, 0.02f),
+            EmissionEnabled = true,
+            Emission = new Color(1.0f, 0.38f, 0.05f),
+            EmissionEnergyMultiplier = 2.6f,
+            Roughness = 1.0f,
+            Metallic = 0.0f,
+        };
+
     public static StandardMaterial3D BuildBaseMantleMaterial() =>
         new()
         {
