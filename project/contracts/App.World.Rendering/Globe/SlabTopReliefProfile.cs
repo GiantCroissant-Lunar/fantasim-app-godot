@@ -80,7 +80,7 @@ public sealed record SlabTopReliefProfile(
     /// <summary>The default slab relief profile (all defaults above).</summary>
     public static SlabTopReliefProfile Default { get; } = new(
         BaseNoise: DefaultBaseNoise,
-        InteriorAmplitudeMultiplier: 0.15,
+        InteriorAmplitudeMultiplier: 0.9,
         ActiveAmplitudeMultiplier: 1.0,
         RidgeActiveFeatures: true,
         ReliefThicknessScaleMultiple: DefaultReliefThicknessScaleMultiple);
