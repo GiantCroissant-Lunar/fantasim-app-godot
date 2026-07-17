@@ -87,39 +87,17 @@ internal sealed record WorldCrustMaterialization(
             if (!Result.StateByTick.TryGetValue(tick, out var state) || state.Count == 0)
                 return (null, null);
 
-            int n = Result.Tessellation.CellCount;
-            var elevations = new double[n];
-            var features = new CellCrustFeature[n];
             Result.FeaturesByTick.TryGetValue(tick, out var featureMap);
 
-            var boundaryContributions = BoundaryProfileContribution.Build(
+            var surfaceData = PlateFrameSampler.BuildSurfaceData(
                 globeAtOnset,
-                arcsAtOnset,
                 state,
                 featureMap,
+                arcsAtOnset,
                 Spec.BoundaryProfiles,
-                out var boundaryField);
-
-            for (int cell = 0; cell < n; cell++)
-            {
-                if (state.TryGetValue(cell, out var s))
-                {
-                    var sample = new CrustSample(
-                        s.ContinentalFraction, s.OrogenicPressure, s.VolcanicActivity, s.CrustAgeTicks);
-                    elevations[cell] = CellElevationSystem.Derive(sample, Spec.HydrosphereMode) + boundaryContributions[cell];
-                }
-
-                if (featureMap is not null && featureMap.TryGetValue(cell, out var f))
-                    features[cell] = CrustFeatureContractMapper.ToCellFeature(f);
-
-                var boundaryFeature = BoundaryProfileShape.SurfaceFeature(
-                    boundaryField[cell],
-                    Spec.BoundaryProfiles);
-                if (boundaryFeature.Kind != TectonicFeatureKind.None.ToWireByte())
-                    features[cell] = boundaryFeature;
-            }
-
-            return (elevations, features);
+                Spec.HydrosphereMode,
+                birthRoughnessByCell: null);
+            return (surfaceData.Elevations, surfaceData.Features);
         }
         catch (Exception ex)
         {

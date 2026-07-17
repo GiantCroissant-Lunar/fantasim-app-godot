@@ -943,10 +943,6 @@ public sealed class Service : IService, IDisposable
             currentGlobe.Cells,
             sampledFeatures,
             sampledState);
-        var cellFeatures = BuildCellFeatures(
-            products.Materialization.Tessellation.CellCount,
-            sampledFeatures);
-
         // Directive 3d — plate-anchored birth roughness: a derived, deterministic noise field sampled
         // in the PLATE-MATERIAL frame (rides drifting plates), amplitude-conditioned on crust age. It
         // enters the SAME elevation-side composition both the World and slab paths consume (added onto
@@ -958,7 +954,7 @@ public sealed class Service : IService, IDisposable
         };
         var birthRoughness = sampler.SampleBirthRoughnessAt(arcTick, stateForSampling, birthRoughnessProfile);
 
-        var cellElevations = sampler.SampleElevationsAt(
+        var surfaceData = sampler.SampleSurfaceDataAt(
             currentGlobe,
             sampledState,
             sampledFeatures,
@@ -966,6 +962,8 @@ public sealed class Service : IService, IDisposable
             renderOptions.BoundaryProfiles,
             renderOptions.HydrosphereMode,
             birthRoughnessByCell: birthRoughness);
+        var cellElevations = surfaceData.Elevations;
+        var cellFeatures = surfaceData.Features;
 
         var cellCrustThickness = products.Materialization.BuildCrustThickness(
                 products.GlobeAtSnapshot,
@@ -1355,26 +1353,6 @@ public sealed class Service : IService, IDisposable
         rgba[i + 1] = color.G;
         rgba[i + 2] = color.B;
         rgba[i + 3] = 255;
-    }
-
-    private static IReadOnlyList<CellCrustFeature> BuildCellFeatures(
-        int cellCount,
-        IReadOnlyDictionary<int, CrustFeature>? featureMap)
-    {
-        if (cellCount <= 0)
-            return Array.Empty<CellCrustFeature>();
-
-        var result = new CellCrustFeature[cellCount];
-        if (featureMap is null || featureMap.Count == 0)
-            return result;
-
-        foreach (var (cellId, feature) in featureMap)
-        {
-            if (cellId >= 0 && cellId < result.Length)
-                result[cellId] = CrustFeatureContractMapper.ToCellFeature(feature);
-        }
-
-        return result;
     }
 
     private sealed record PlanetPresentationRuntime(

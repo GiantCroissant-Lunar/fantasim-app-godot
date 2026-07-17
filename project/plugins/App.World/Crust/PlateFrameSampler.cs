@@ -337,6 +337,28 @@ public sealed class PlateFrameSampler
         BoundaryProfileParameters boundaryProfiles,
         CellElevationHydrosphereMode hydrosphereMode,
         double[]? birthRoughnessByCell = null)
+        => SampleSurfaceDataAt(
+            currentGlobe,
+            sampledState,
+            sampledFeatures,
+            boundaryArcs,
+            boundaryProfiles,
+            hydrosphereMode,
+            birthRoughnessByCell).Elevations;
+
+    /// <summary>
+    /// Builds the authoritative current-frame surface projection: elevations and their typed visible tectonic
+    /// consequences from one resolved boundary field. Callers must consume both results together so the rendered
+    /// relief, feature-aware subdivision, and appearance accents cannot drift onto parallel derivation paths.
+    /// </summary>
+    public (double[] Elevations, CellCrustFeature[] Features) SampleSurfaceDataAt(
+        WorldGlobeSnapshot currentGlobe,
+        IReadOnlyDictionary<int, CellCrustState> sampledState,
+        IReadOnlyDictionary<int, CrustFeature> sampledFeatures,
+        IReadOnlyList<PlateBoundaryArc> boundaryArcs,
+        BoundaryProfileParameters boundaryProfiles,
+        CellElevationHydrosphereMode hydrosphereMode,
+        double[]? birthRoughnessByCell = null)
     {
         ArgumentNullException.ThrowIfNull(currentGlobe);
         ArgumentNullException.ThrowIfNull(sampledState);
@@ -350,29 +372,39 @@ public sealed class PlateFrameSampler
                 nameof(currentGlobe));
         }
 
-        return BuildElevations(currentGlobe, sampledState, sampledFeatures, boundaryArcs, boundaryProfiles, hydrosphereMode, birthRoughnessByCell);
+        return BuildSurfaceData(
+            currentGlobe,
+            sampledState,
+            sampledFeatures,
+            boundaryArcs,
+            boundaryProfiles,
+            hydrosphereMode,
+            birthRoughnessByCell);
     }
 
-    private double[] BuildElevations(
+    internal static (double[] Elevations, CellCrustFeature[] Features) BuildSurfaceData(
         WorldGlobeSnapshot currentGlobe,
         IReadOnlyDictionary<int, CellCrustState> state,
-        IReadOnlyDictionary<int, CrustFeature> features,
+        IReadOnlyDictionary<int, CrustFeature>? features,
         IReadOnlyList<PlateBoundaryArc> boundaryArcs,
         BoundaryProfileParameters boundaryProfiles,
         CellElevationHydrosphereMode hydrosphereMode,
         double[]? birthRoughnessByCell)
     {
-        int n = _tessellation.CellCount;
+        int n = currentGlobe.CellCount;
         var elevations = new double[n];
+        var surfaceFeatures = new CellCrustFeature[n];
 
-        var boundaryContributions = boundaryArcs.Count > 0
-            ? BoundaryProfileContribution.Build(
+        IReadOnlyList<CellBoundarySample>? boundaryField = null;
+        var boundaryContributions = boundaryArcs.Count == 0
+            ? new double[n]
+            : BoundaryProfileContribution.Build(
                 currentGlobe,
                 boundaryArcs,
                 state,
                 features,
-                boundaryProfiles)
-            : new double[n];
+                boundaryProfiles,
+                out boundaryField);
 
         for (int cell = 0; cell < n; cell++)
         {
@@ -384,8 +416,20 @@ public sealed class PlateFrameSampler
                     : 0.0;
                 elevations[cell] = CellElevationSystem.Derive(sample, hydrosphereMode) + boundaryContributions[cell] + birth;
             }
+
+            if (features is not null && features.TryGetValue(cell, out var feature))
+                surfaceFeatures[cell] = CrustFeatureContractMapper.ToCellFeature(feature);
+
+            if (boundaryField is not null)
+            {
+                var boundaryFeature = BoundaryProfileShape.SurfaceFeature(
+                    boundaryField[cell],
+                    boundaryProfiles);
+                if (boundaryFeature.Kind != TectonicFeatureKind.None.ToWireByte())
+                    surfaceFeatures[cell] = boundaryFeature;
+            }
         }
 
-        return elevations;
+        return (elevations, surfaceFeatures);
     }
 }
