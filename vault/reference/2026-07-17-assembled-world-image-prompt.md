@@ -170,3 +170,40 @@ Load-bearing phrases: "edges keep the shapes of their interactions" (kills plain
 asteroids); "diving tongue beneath / mountain ridge riding above" (Vigil subduction pair,
 readable while separated); "facing edges mirror each other's jagged outlines" (pieces
 provably one sphere).
+
+
+---
+
+# v5 — overlap IS the relationship (fourth correction)
+
+v4's generation still produced unrelated rocks. Root cause identified in the PROMPT LANGUAGE:
+"lifted outward by an equal distance" — uniform radial explosion destroys relationships by
+construction. User: "Each piece should be related to other piece, but the image shows they
+have no part interact with another."
+
+The relationship = OVERLAP: at every boundary one plate's edge extends UNDERNEATH the
+neighbor's raised edge; the separation opens a thin lit gap BETWEEN the overlapping surfaces
+(roof shingles pulled slightly apart — not rocks flung apart).
+
+## Prompt B v5 — EXPLODED as overlapping shingles
+
+A stylized planet gently pulled apart into seven thick tectonic plates, only slightly
+separated — the pieces stay close together, still clearly forming a sphere, with a glowing
+molten orange core showing through the narrow gaps between them. The defining feature: at
+every boundary, neighboring plates OVERLAP like roof shingles — the edge of one plate extends
+inward and slides UNDERNEATH the raised edge of its neighbor, leaving a thin glowing gap
+between the lower plate's top surface and the upper plate's underside, so it is obvious which
+plate lies under and which rides above. In the foreground, one overlap is prominent: a lower
+plate's long edge reaching deep beneath its neighbor's thick overhanging lip, that lip
+crumpled upward into a mountain ridge. Each plate is a thick slab of layered rock strata with
+chunky faceted dry rocky terrain on top; their outlines are irregular and jagged, their sizes
+all different. Matte clay game-art render, cartoon shader, soft key light, dark space
+background, square format.
+
+Negative: rocks scattered far apart, isolated floating islands, equal uniform explosion, no
+overlapping edges, plain vertical cut edges, jigsaw shapes, symmetrical arrangement, water,
+rivers, trees, buildings, clouds, text, blur
+
+NOTE (standing): if v5 also misses, stop iterating words — the app's renderer becomes the
+reference-maker: implement interaction-preserving edges in the exploded path and screenshot
+THAT. Only the app knows the true plate relationships.
