@@ -19,6 +19,10 @@ internal sealed partial class PlanetPresentationBinder
     // document-carried profile can override consciously.
     private WorldSurfacePresentationProfile _worldSurfaceProfile = WorldSurfacePresentationProfile.Default;
 
+    // Slice-2 declared joint-mechanics parameters (subduction dip, overriding margin raise, edge
+    // band width, divergent widening, structural clearance floor) — all eye-tuned via the user gate.
+    private SlabJointMechanicsProfile _jointMechanicsProfile = SlabJointMechanicsProfile.Default;
+
     // The mounted assembly root (under PlanetBody) and its reconcile flag. Driven by the
     // WorldSurfacePresentationPolicy gate in ApplyTimelineTick; entering/leaving the World view
     // (or flipping the declared presentation) builds/frees the root — the RebuildMantleLayer /
@@ -82,6 +86,25 @@ internal sealed partial class PlanetPresentationBinder
             _radialProfile.ThicknessDepthScale(),
             _worldSurfaceProfile);
 
+        // Slice 2: joint mechanics — convergent underride (subducting edge dips below the
+        // overriding margin, trench at the dive line), divergent widen, transform identity.
+        // Kind + polarity come from the document's existing boundary data (contracts-tier).
+        var boundaryArcs = document.BoundaryArcs;
+        if (boundaryArcs is { Count: > 0 })
+        {
+            var joints = SlabJointClassifier.Classify(boundaryArcs, document.BoundarySections);
+            solids = WorldSlabAssemblyComposer.ShapeSlabJoints(
+                solids,
+                joints,
+                _jointMechanicsProfile,
+                centroids,
+                _worldSurfaceProfile.SlabJointGapUnitRadius);
+            _log?.LogInformation(
+                "World slab joints shaped: joints={JointCount}, convergent={ConvergentCount}.",
+                joints.Count,
+                CountConvergent(joints));
+        }
+
         AddSlabMeshInstances(
             root,
             slabCaps,
@@ -91,5 +114,16 @@ internal sealed partial class PlanetPresentationBinder
             slabPerPlateVertexColors);
 
         return root;
+    }
+
+    private static int CountConvergent(IReadOnlyList<SlabJointClassification> joints)
+    {
+        int n = 0;
+        for (int i = 0; i < joints.Count; i++)
+        {
+            if (joints[i].Kind == SlabJointKind.Convergent)
+                n++;
+        }
+        return n;
     }
 }
