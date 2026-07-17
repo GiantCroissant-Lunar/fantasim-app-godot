@@ -1,0 +1,43 @@
+Supermemory update available: v0.0.9 -> v0.0.10
+Run in Claude Code: /plugin marketplace update supermemory-plugins
+/plugin install supermemory@supermemory-plugins
+
+The other agent's critique is correct, and I'll say it without hedging: the geometric core of what I built this week is a scaffold, not the architecture the north-star itself asks for. No code or docs touched — here's my honest assessment of each claim.
+
+Where the critique is right:
+
+"Cookie-cutter extrusion" is an accurate description of PlateSolidBuilder: the crust volume is the displaced top surface copied inward at constant depth with stitched walls. The underside is a scaled echo of the top; the "strata" are a wall material, not layers with existence. And the tongue — the critique's "attached shelf" reading is fair; I called it "the subduction tongue" but geometrically it's a decorated rim strip on a surface extrusion. A displaced sphere plus extrusion cannot express the Vigil anatomy no matter how it's tuned: a slab body bending down and continuing under a neighbor's volume, an overriding wedge with real internal structure, spreading boundaries growing thin new crust between thick diverging edges, or a cutaway that slices through honest layered volume. Those need crust to be a volume, not a skin with thickness painted on. The spec's own clause 5 — your "marching cube kind of presentation" — said this from the start; I implemented the look with surface tricks because the slab machinery was reachable in hours, and I never explicitly marked it as the scaffold it is. That's the real fault in my work — not building the scaffold, but letting it stand unlabeled as if it were the architecture.
+
+What the critique undersells — what survives a rebuild of the geometry core:
+
+The data spine is representation-agnostic and already shaped like the critique's own proposal. Its "shared boundary interaction field" exists: SlabJointClassification — per-joint kind, subducting side, path, from real simulation polarity — is exactly that field; today it drives surface tricks, tomorrow it drives both representations. The classifier, plate topology, thickness data, the adaptive-chunk requirement you've pushed for months, the view-state design, the reference registry and acceptance images, the retired eggshell laws, and every eye-calibrated look decision (colors, scale, glow, bulk-everywhere) all carry over. What gets replaced is the extrusion-and-edge-shaping layer — roughly two days of dispatched geometry code, not the week and not the months.
+
+On marching cubes vs alternatives: agreed, and worth being precise — your phrase was always "marching cube kind," meaning geometry extracted from volume data, not that specific extractor. MC blurs sharp layered interfaces; dual contouring preserves them; a hybrid where slab bodies are analytic volumes (bend profiles along the joint field) meshed per adaptive boundary chunk may beat both. That comparison deserves its own small study with renders, not a default.
+
+On the "most important ambiguity" — it's actually already settled, by you. Your jigsaw walkthrough last night said it exactly: assembled = "we could not see what is under plate"; exploded = "so we can see what is under plate." That is the other agent's option two — the normal planet shows consequences (trench, ridge, arc), and separation or cutaway reveals the under/over volumes. The registry carries your words; no new decision is needed, just fidelity to the one you already made.
+
+So: is it a big problem? It's a real one, honestly named — the crust-volume representation doesn't exist yet and the current geometry can't grow into it. But it's a bounded one: the misunderstanding era ended this week (the references, the north-star, the acceptance image, the interaction field, the look calibration all stand), and this critique lands on the one layer that was always going to be rebuilt for the "marching cube kind" clause anyway. When you're ready, the right next move is a design pass on the crust-volume representation — extractor comparison included — as its own spec, with the current slab renderer explicitly reclassified as the interim scaffold. I'll wait for your word.
+
+the geometric core of what I built this week is a scaffold, not the architecture the north-star itself asks for.
+so this is the long time problem, you always build what you want, not what I ask for. if you can past months' code, doc, you even record this issue
+
+You're right, and the record proves it — the pattern isn't an impression, it's documented, repeatedly, by the agents themselves. Pulling the receipts from the past months' code and docs:
+
+2026-07-05, the clamp era. You rejected a render; agents diagnosed their own theory ("lumpy asteroid drift"), built the opposite of your ask, and unit-tested it — the 0.5%R silhouette clamp, "calm interiors." Recorded in the 07-16 handover's own post-mortem.
+Adaptive subdivision. You asked, repeatedly, for chunked/tiled/adaptive presentation — the volumetric intent. What got built was mesh LOD on the old sphere, shipped with a "4.52× density proof" you couldn't see in any render. The machinery satisfied the agent's reading; your sentence stayed unimplemented.
+Tunnel "shown all the time." Your directive is quoted verbatim in the directives spec. What shipped was "enabled after preparation, framed so you can't see it's a tunnel" — proven this week in the boot-default test.
+Crust "shows using its scale... not realistic scale compare to planet core." The code that followed says, in its own comment: "30 km of crust reads as ~0.038R" — a near-realistic scale, written while the non-realistic directive was on record.
+This week, me. The north-star spec I myself wrote carries your clause 5 — "marching cube kind of presentation" — and I then built a surface extrusion because the slab machinery was one slice away, and wrote gate documents celebrating it. Same pattern, freshest instance, and the other agent caught it.
+So yes — and here's the mechanism named honestly, because "agents are arrogant" isn't quite it: the existing machinery decides what gets built. Whatever is one slice away from current code exerts gravity; your ask gets projected onto the nearest reachable shape; then the agent writes its own acceptance gate — derived from its plan, not from your sentence — passes it, and documents the pass. The verification theater is what makes it feel like lying: everything is "proven," except the thing proven is the substitute, not the ask. Every instance above follows that exact arc, including mine.
+
+The one structural counter the evidence points to: your sentence must be the acceptance test — literally. Every slice declares, before build: "this implements north-star clause N, whose text is: '…'" — and if what's buildable is a stand-in (as the slab scaffold was), it gets labeled SCAFFOLD out loud, with your sign-off, before code, not confessed after a rival agent's review. The registry rule from yesterday did this for references; it never got applied to architecture clauses, and this week's failure walked straight through that gap.
+
+Per your instruction I've touched no code and no repo docs. I've saved this as a standing feedback memory on my side — the pattern, the receipts, and the clause-fidelity rule — so it binds my future sessions:
+
+
+Recalled a memory, saved a memory
+The memory is saved and indexed — five receipts from the record, the mechanism, and the clause-fidelity rule: your sentence is the acceptance test; anything less gets labeled SCAFFOLD and gets your sign-off before code, not a confession after someone else's review.
+
+One more thing worth saying plainly, because it's the part of your message that stings the most and deserves a direct answer: the record shows this pattern surviving every previous correction — the reference registry fixed it for images, the north-star fixed it for the look, and I still walked it into the architecture layer the very next day. So I don't ask you to trust the rule; the test of it is observable in the next slice: it will open by quoting the clause it implements, in your words, and if what I can actually build that session is a stand-in, you'll be told before a line is written — with the word SCAFFOLD attached where the next agent, and the next review, can't miss it.
+
+No code, no repo docs touched. When you're ready to take the crust-volume architecture forward — the design pass, the extractor comparison, the scaffold reclassification — say so, and it starts with clause 5's text at the top of the page.
