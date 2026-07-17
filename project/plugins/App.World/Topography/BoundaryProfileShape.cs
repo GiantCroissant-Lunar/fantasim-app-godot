@@ -1,4 +1,5 @@
 using System;
+using FantaSim.App.World.Dto;
 
 namespace FantaSim.App.World.Topography;
 
@@ -11,7 +12,8 @@ namespace FantaSim.App.World.Topography;
 /// <para>Shapes (Earth-like defaults in <see cref="BoundaryProfileParameters.Default"/>):</para>
 /// <list type="bullet">
 /// <item><b>Convergent subduction (asymmetric):</b> deep trench on the subducting (down-going) side tapering
-/// from the boundary; uplift volcanic arc set back onto the overriding side.</item>
+/// from the boundary; a thickened overriding wedge at the boundary and an uplift volcanic arc set back onto
+/// the overriding side.</item>
 /// <item><b>Convergent collision (symmetric):</b> symmetric uplift band (continent–continent; no subduction).</item>
 /// <item><b>Divergent (symmetric):</b> broad swell rising toward the boundary with a narrow axial rift notch
 /// at it (the crest sits below the flanks). Far-field subsidence is already handled by crust-age deepening.</item>
@@ -41,9 +43,41 @@ public static class BoundaryProfileShape
         };
     }
 
-    // Asymmetric trench (subducting side, signed distance <= 0) + arc (overriding side, signed distance > 0).
-    // The trench is deepest at the boundary and tapers across TrenchHalfWidth; the arc peaks at ArcSetback
-    // onto the overriding plate and tapers across ArcHalfWidth.
+    /// <summary>
+    /// Classifies the visible surface consequence produced by the same boundary sample and profile parameters
+    /// used by <see cref="Contribution"/>. This keeps relief, adaptive refinement, and appearance accents on one
+    /// causal boundary grammar instead of deriving a parallel feature map.
+    /// </summary>
+    public static CellCrustFeature SurfaceFeature(in CellBoundarySample s, in BoundaryProfileParameters p)
+    {
+        if (!s.Found) return default;
+        if (s.CellPlateId != s.ArcPlateA && s.CellPlateId != s.ArcPlateB) return default;
+
+        return s.Kind switch
+        {
+            PlateBoundaryKind.Convergent => s.IsCollision
+                ? Feature(
+                    TectonicFeatureKind.Mountain,
+                    p.ConvergentCollisionHeight == 0.0
+                        ? 0.0
+                        : Falloff(Math.Abs(s.SignedDistanceRad), p.ConvergentCollisionHalfWidthRad))
+                : ConvergentSubductionFeature(s.SignedDistanceRad, p),
+            PlateBoundaryKind.Divergent => Feature(
+                TectonicFeatureKind.Ridge,
+                DivergentFeatureMagnitude(s.SignedDistanceRad, p)),
+            PlateBoundaryKind.Transform => Feature(
+                TectonicFeatureKind.Fault,
+                p.TransformScarpAmplitude == 0.0
+                    ? 0.0
+                    : Falloff(Math.Abs(s.SignedDistanceRad), p.TransformHalfWidthRad)),
+            _ => default,
+        };
+    }
+
+    // Asymmetric trench (subducting side, signed distance <= 0) + thickened overriding wedge and set-back arc
+    // (signed distance > 0). The trench is deepest at the boundary and tapers across TrenchHalfWidth. The
+    // already-calibrated collision uplift controls express crustal thickening at the overriding wedge without
+    // creating a second parameter family; the volcanic arc remains a distinct peak at ArcSetback.
     private static double ConvergentSubduction(double signed, in BoundaryProfileParameters p)
     {
         if (signed <= 0.0)
@@ -52,8 +86,53 @@ public static class BoundaryProfileShape
             return p.ConvergentTrenchDepth * Falloff(d, p.ConvergentTrenchHalfWidthRad);
         }
 
+        double wedge = p.ConvergentCollisionHeight
+                     * Falloff(signed, p.ConvergentCollisionHalfWidthRad);
         double u = signed - p.ConvergentArcSetbackRad;
-        return p.ConvergentArcHeight * Falloff(u, p.ConvergentArcHalfWidthRad);
+        double arc = p.ConvergentArcHeight * Falloff(u, p.ConvergentArcHalfWidthRad);
+        return wedge + arc;
+    }
+
+    private static CellCrustFeature ConvergentSubductionFeature(
+        double signed,
+        in BoundaryProfileParameters p)
+    {
+        if (signed <= 0.0)
+        {
+            return Feature(
+                TectonicFeatureKind.Trench,
+                p.ConvergentTrenchDepth == 0.0
+                    ? 0.0
+                    : Falloff(-signed, p.ConvergentTrenchHalfWidthRad));
+        }
+
+        double arc = p.ConvergentArcHeight == 0.0
+            ? 0.0
+            : Falloff(
+                signed - p.ConvergentArcSetbackRad,
+                p.ConvergentArcHalfWidthRad);
+        if (arc > 0.0)
+            return Feature(TectonicFeatureKind.VolcanicArc, arc);
+
+        return Feature(
+            TectonicFeatureKind.Mountain,
+            p.ConvergentCollisionHeight == 0.0
+                ? 0.0
+                : Falloff(signed, p.ConvergentCollisionHalfWidthRad));
+    }
+
+    private static double DivergentFeatureMagnitude(
+        double signed,
+        in BoundaryProfileParameters p)
+    {
+        double d = Math.Abs(signed);
+        double swell = p.DivergentSwellHeight == 0.0
+            ? 0.0
+            : Falloff(d, p.DivergentSwellHalfWidthRad);
+        double rift = p.DivergentRiftNotchDepth == 0.0
+            ? 0.0
+            : Falloff(d, p.DivergentRiftHalfWidthRad);
+        return Math.Max(swell, rift);
     }
 
     // Symmetric collision uplift (both sides identical): peaks at the boundary, tapers across CollisionHalfWidth.
@@ -90,4 +169,9 @@ public static class BoundaryProfileShape
         if (Math.Abs(distance) >= halfWidth) return 0.0;
         return 0.5 * (1.0 + Math.Cos(Math.PI * distance / halfWidth));
     }
+
+    private static CellCrustFeature Feature(TectonicFeatureKind kind, double magnitude)
+        => magnitude > 0.0
+            ? new CellCrustFeature(kind.ToWireByte(), magnitude)
+            : default;
 }

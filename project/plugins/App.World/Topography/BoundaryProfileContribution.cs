@@ -27,6 +27,20 @@ public static class BoundaryProfileContribution
         IReadOnlyDictionary<int, CellCrustState> state,
         IReadOnlyDictionary<int, CrustFeature>? features,
         BoundaryProfileParameters parameters)
+        => Build(globe, arcs, state, features, parameters, out _);
+
+    /// <summary>
+    /// Builds the contribution and returns the canonical boundary field that produced it. Consumers that also
+    /// need the boundary's typed surface consequence can reuse this field rather than recomputing or maintaining
+    /// a parallel nearest-boundary representation.
+    /// </summary>
+    public static double[] Build(
+        WorldGlobeSnapshot globe,
+        IReadOnlyList<PlateBoundaryArc> arcs,
+        IReadOnlyDictionary<int, CellCrustState> state,
+        IReadOnlyDictionary<int, CrustFeature>? features,
+        BoundaryProfileParameters parameters,
+        out IReadOnlyList<CellBoundarySample> field)
     {
         ArgumentNullException.ThrowIfNull(globe);
         ArgumentNullException.ThrowIfNull(arcs);
@@ -34,7 +48,7 @@ public static class BoundaryProfileContribution
         ArgumentNullException.ThrowIfNull(parameters);
 
         var resolvedArcs = ConvergentPolarity.Attach(arcs, globe.Cells, features, state);
-        var field = CellBoundaryField.Build(globe.Cells, resolvedArcs);
+        field = CellBoundaryField.Build(globe.Cells, resolvedArcs);
 
         var contributions = new double[globe.CellCount];
         for (int c = 0; c < contributions.Length; c++)

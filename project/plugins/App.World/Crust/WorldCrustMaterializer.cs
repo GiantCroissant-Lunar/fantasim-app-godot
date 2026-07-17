@@ -97,7 +97,8 @@ internal sealed record WorldCrustMaterialization(
                 arcsAtOnset,
                 state,
                 featureMap,
-                Spec.BoundaryProfiles);
+                Spec.BoundaryProfiles,
+                out var boundaryField);
 
             for (int cell = 0; cell < n; cell++)
             {
@@ -110,6 +111,12 @@ internal sealed record WorldCrustMaterialization(
 
                 if (featureMap is not null && featureMap.TryGetValue(cell, out var f))
                     features[cell] = CrustFeatureContractMapper.ToCellFeature(f);
+
+                var boundaryFeature = BoundaryProfileShape.SurfaceFeature(
+                    boundaryField[cell],
+                    Spec.BoundaryProfiles);
+                if (boundaryFeature.Kind != TectonicFeatureKind.None.ToWireByte())
+                    features[cell] = boundaryFeature;
             }
 
             return (elevations, features);
