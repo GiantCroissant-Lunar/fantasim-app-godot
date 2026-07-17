@@ -432,3 +432,50 @@ NEXT SESSION GOAL:
 **NEXT SESSION GOAL:** Slice A — canonical boundary authority and volume-state skeleton; gate is
 zero production dependencies on slab mirror types plus one stable state digest from the exported
 app.
+
+### 2026-07-17 / Slice A — canonical authority and volume-state skeleton
+
+**ESTABLISHED:**
+
+- `PlateBoundaryArc` now owns canonical boundary kind, convergence, polarity, overriding plate,
+  underriding plate, and pressure mechanics used by production.
+- `CrustVolumeState` is the single immutable materialized owner of the coupled tick, globe,
+  canonical arcs, elevations, thickness, features, continental fractions, and deterministic
+  digest.
+- `WorldCrustMaterializer` is the sole external construction seam. Presentation compatibility
+  accessors project from `PlanetPresentationDocument.CrustVolume` instead of storing parallel
+  products.
+- The exported app at HEAD `55aefc798b82206d285d3350e4b2fd5957708b65` passed an A → B → A
+  timeline gate: tick 107,000,000 returned digest
+  `67031039ada9c499b981994e731b1caa36d1eccaa82fa4cd81b09a99e6f95c7e` before and after
+  tick 112,000,000 produced a different digest.
+- PID 12461 remains open on `127.0.0.1:19317`; stderr and Godot error logs are empty.
+- Full commands, hashes, log paths, ownership searches, and viewport are deposited in
+  `vault/specs/evidence/2026-07-17-crust-volume-slice-a/`.
+
+**DISPROVEN:**
+
+- A successful compile did not prove the old appended subduction-tongue renderer was compatible
+  with canonical per-segment arcs. The first exported run crashed because the scaffold inferred
+  original top-vertex count from a mesh that earlier segments had already expanded.
+- Keeping that scaffold as a temporary second geometry authority was not viable. Production calls
+  were retired; assembled mode hides buried underlap, and a later slice will extract real cutaway
+  geometry from `CrustVolumeState`.
+- The exact-process viewport is alive but visually unacceptable: it is too close and dominated by
+  existing exploded geometry. Slice A therefore makes no visual-success claim.
+
+**TYPE OWNERSHIP:**
+
+- Added exactly one domain owner: `CrustVolumeState`.
+- Deleted four mirror owners: `SlabJointClassification`, `SlabJointClassifier`, `SlabJointKind`,
+  and `SlabJointPolarity`.
+- Source audit shows one external `CrustVolumeState.Create(...)` caller, no retired mirror-type
+  references, no legacy per-product assignments, and no production caller of
+  `ShapeSubductionTongues(...)`.
+
+**USER VERDICT:** architecture approved; visual verdict for the generated planet remains pending
+and is explicitly not satisfied by this slice.
+
+**NEXT SESSION GOAL:** Slice B — generate the assembled outer envelope from `CrustVolumeState` so
+one complete unobstructed globe shows legible large-scale relief while buried underlap remains
+hidden; gate is an exported-app screenshot plus the same A → B → A identity proof.
