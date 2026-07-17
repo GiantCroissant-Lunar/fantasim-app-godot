@@ -134,3 +134,39 @@ game-art render, cartoon shader, soft key light, dark space background, square f
 Negative: jigsaw tabs, puzzle knobs, rounded puzzle pieces, uniform piece sizes, complete
 closed sphere, touching pieces, water, rivers, lakes, trees, forests, buildings, clouds,
 text, blur
+
+
+---
+
+# v4 — exploded view carries the BOUNDARY RELATIONSHIPS (third correction; Vigil grammar)
+
+v3's exploded generation read as unrelated floating rocks: every edge a plain vertical cut.
+User: "each piece(plate) should have some parts related to other piece(plate) like how [the
+USGS Vigil cross-section] shows. So we can see plate is under, above another one."
+Assembled Prompt A v3 stands unchanged; only the exploded prompt revises.
+
+## Prompt B v4 — EXPLODED with interaction-shaped edges
+
+A stylized planet in exploded view: its rocky shell divided into tectonic plates — large
+irregular angular fragments, sizes varying greatly from huge quarter-sphere plates down to
+small slivers — each lifted outward from the planet's center so open space separates the
+pieces, revealing a glowing molten orange core sphere at the center. Each plate is a thick
+slab: layered rock strata on its carved side walls, chunky faceted dry rocky terrain on top.
+Most importantly, the plates' edges keep the shapes of their interactions, like a 3D geology
+textbook cross-section: where two plates collide, one plate's edge bends DOWNWARD like a
+diving tongue, reaching in beneath the neighboring plate's edge, which is raised and thickened
+into a mountain ridge riding ABOVE the diving tongue — so even with the pieces pulled apart
+you can clearly see which plate goes under and which rides over. Facing edges of neighboring
+plates mirror each other's jagged outlines, so the pieces obviously belong together. At a
+spreading boundary, the two facing edges are thin and freshly formed, angled down toward the
+glowing interior. Matte clay game-art render, cartoon shader, soft key light, dark space
+background, square format.
+
+Negative: independent floating asteroid chunks, plain straight vertical cut edges, unrelated
+rocks, jigsaw tabs, puzzle shapes, uniform piece sizes, complete closed sphere, touching
+pieces, water, rivers, trees, forests, buildings, clouds, text, blur
+
+Load-bearing phrases: "edges keep the shapes of their interactions" (kills plain-cut
+asteroids); "diving tongue beneath / mountain ridge riding above" (Vigil subduction pair,
+readable while separated); "facing edges mirror each other's jagged outlines" (pieces
+provably one sphere).
