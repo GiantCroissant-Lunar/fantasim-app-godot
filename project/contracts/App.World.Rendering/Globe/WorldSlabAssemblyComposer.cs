@@ -133,12 +133,12 @@ public static class WorldSlabAssemblyComposer
         var shapedJoints = new List<(SlabJointClassification Joint, Vector3D[] Arc, double EffectiveDip)>(joints.Count);
         foreach (var joint in joints)
         {
-            if (joint.Kind == PlateBoundaryKind.Inactive) continue;
-            if (joint.ArcPoints.Count < 2) continue;
-            var arc = new Vector3D[joint.ArcPoints.Count];
+            if (joint.Kind == SlabJointKind.Inactive) continue;
+            if (joint.Path.Count < 2) continue;
+            var arc = new Vector3D[joint.Path.Count];
             for (int i = 0; i < arc.Length; i++)
             {
-                var p = joint.ArcPoints[i];
+                var p = joint.Path[i];
                 var v = new Vector3D(p.X, p.Y, p.Z);
                 double len = v.Length();
                 arc[i] = len > Epsilon ? v * (1.0 / len) : v;
@@ -243,7 +243,7 @@ public static class WorldSlabAssemblyComposer
     {
         foreach (var j in joints)
         {
-            if (j.Kind != PlateBoundaryKind.Inactive && j.ArcPoints.Count >= 2)
+            if (j.Kind != SlabJointKind.Inactive && j.Path.Count >= 2)
                 return true;
         }
         return false;
@@ -272,7 +272,7 @@ public static class WorldSlabAssemblyComposer
         Dictionary<int, Vector3D> centroidByPlate,
         Vector3D[] arc)
     {
-        if (joint.Kind != PlateBoundaryKind.Convergent) return profile.SubductionDipUnitRadius;
+        if (joint.Kind != SlabJointKind.Convergent) return profile.SubductionDipUnitRadius;
         if (joint.SubductingPlateId is not int subductingId) return profile.SubductionDipUnitRadius;
         int overridingId = joint.PlateA == subductingId ? joint.PlateB : joint.PlateA;
 
@@ -326,7 +326,7 @@ public static class WorldSlabAssemblyComposer
         Dictionary<int, Vector3D> centroidByPlate,
         double jointGapUnitRadius)
     {
-        if (joint.Kind == PlateBoundaryKind.Convergent)
+        if (joint.Kind == SlabJointKind.Convergent)
         {
             if (joint.SubductingPlateId == plateId)
             {
@@ -337,7 +337,7 @@ public static class WorldSlabAssemblyComposer
             return u * (profile.OverridingMarginRaiseUnitRadius * w);
         }
 
-        if (joint.Kind == PlateBoundaryKind.Divergent)
+        if (joint.Kind == SlabJointKind.Divergent)
         {
             // Widen the gap: extra translation along this plate's centroid direction (the SAME
             // separation direction the base joint gap uses), scaled by (multiplier - 1) * gap.

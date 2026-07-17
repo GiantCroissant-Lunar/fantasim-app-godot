@@ -194,7 +194,7 @@ public sealed class WorldSlabJointMechanicsTests
         Assert.True(defaultSeparation > 0.0, $"default joint gap must be positive; was {defaultSeparation:G5}");
 
         // Divergent shaping widens the gap at this joint.
-        var divergent = fixture.ConvergentJoint with { Kind = PlateBoundaryKind.Divergent, SubductingPlateId = null };
+        var divergent = fixture.ConvergentJoint with { Kind = SlabJointKind.Divergent, SubductingPlateId = null };
         var shaped = WorldSlabAssemblyComposer.ShapeSlabJoints(
             fixture.GappedSolids,
             new[] { divergent },
@@ -214,7 +214,7 @@ public sealed class WorldSlabJointMechanicsTests
     public void Transform_joint_shaping_is_bit_identical_to_slice1_assembly()
     {
         var fixture = NonCoaxialTwoPlateFixture(subductingPlateId: 0, overridingPlateId: 1);
-        var transform = fixture.ConvergentJoint with { Kind = PlateBoundaryKind.Transform, SubductingPlateId = null };
+        var transform = fixture.ConvergentJoint with { Kind = SlabJointKind.Transform, SubductingPlateId = null };
 
         var shaped = WorldSlabAssemblyComposer.ShapeSlabJoints(
             fixture.GappedSolids,
@@ -405,19 +405,19 @@ public sealed class WorldSlabJointMechanicsTests
                 SubductingPlateId: 0, IsCollision: false),
         };
 
-        var joints = SlabJointClassifier.Build(arcs, sections);
+        var joints = SlabJointClassifier.Classify(arcs, sections);
 
         // One classification per active pair (the two convergent segments collapse into one pair).
         Assert.Equal(2, joints.Count);
 
-        var convergent = joints.Single(j => j.Kind == PlateBoundaryKind.Convergent);
+        var convergent = joints.Single(j => j.Kind == SlabJointKind.Convergent);
         Assert.Equal(0, convergent.PlateA);
         Assert.Equal(1, convergent.PlateB);
         Assert.Equal(0, convergent.SubductingPlateId);
         Assert.False(convergent.IsCollision);
-        Assert.True(convergent.ArcPoints.Count >= 2);
+        Assert.True(convergent.Path.Count >= 2);
 
-        var transform = joints.Single(j => j.Kind == PlateBoundaryKind.Transform);
+        var transform = joints.Single(j => j.Kind == SlabJointKind.Transform);
         Assert.Null(transform.SubductingPlateId);
         Assert.False(transform.IsCollision);
     }
@@ -433,10 +433,10 @@ public sealed class WorldSlabJointMechanicsTests
             new PlateBoundaryArc(2, 3, PlateBoundaryKind.Convergent, new[] { Unit(1, 0, 0), Unit(0, 1, 0) }),
         };
 
-        var joints = SlabJointClassifier.Build(arcs, sections: null);
+        var joints = SlabJointClassifier.Classify(arcs, sections: null);
 
         var joint = Assert.Single(joints);
-        Assert.Equal(PlateBoundaryKind.Convergent, joint.Kind);
+        Assert.Equal(SlabJointKind.Convergent, joint.Kind);
         Assert.Null(joint.SubductingPlateId);
         Assert.False(joint.IsCollision);
     }
@@ -498,10 +498,10 @@ public sealed class WorldSlabJointMechanicsTests
         var joint = new SlabJointClassification(
             PlateA: lo,
             PlateB: hi,
-            Kind: PlateBoundaryKind.Convergent,
+            Kind: SlabJointKind.Convergent,
             SubductingPlateId: subductingPlateId,
             IsCollision: false,
-            ArcPoints: new[] { a, b });
+            Path: new[] { a, b });
 
         return new NonCoaxialFixture
         {

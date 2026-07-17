@@ -4,39 +4,6 @@ using FantaSim.App.World.Dto;
 namespace FantaSim.App.World.Globe;
 
 /// <summary>
-/// One plate pair's resolved joint classification consumed by the slab-edge shaper (assembled-world
-/// slice 2, vault/specs/2026-07-16-assembled-world-northstar.md clause 3). This is the NARROW SEAM
-/// between <b>joint classification</b> (which pair, which kind, which side subducts) and <b>edge
-/// shaping</b> (geometry): the shaper reads ONLY this record and never the boundary-data sources.
-/// </summary>
-/// <remarks>
-/// <para>A sibling dispatch is building a fuller classifier; the lead session swaps it in at
-/// integration. Until then <see cref="SlabJointClassifier"/> produces these records from the
-/// existing boundary data (<see cref="PlateBoundaryArc"/> + <see cref="Composition.BoundarySectionDocument"/>),
-/// and tests construct them directly so the geometry proofs are independent of how classifications
-/// are produced.</para>
-/// <para>Pure, Godot-free value. Two classifications with equal fields are equal.</para>
-/// </remarks>
-/// <param name="PlateA">The lower plate id of the pair (<c>PlateA &lt; PlateB</c>), matching <see cref="PlateBoundaryArc"/>.</param>
-/// <param name="PlateB">The higher plate id of the pair.</param>
-/// <param name="Kind">Motion-derived boundary type at the snapshot tick. <see cref="PlateBoundaryKind.Inactive"/>
-/// joints are ignored by the shaper (no geometry change).</param>
-/// <param name="SubductingPlateId">For a convergent SUBDUCTION only: the plate id that is subducting
-/// (down-going). Null for collision, divergent, transform, or a convergent pair whose polarity the
-/// pipeline has not yet resolved (the shaper then treats it as collision-free symmetric uplift).</param>
-/// <param name="IsCollision">True for a continent-continent convergent boundary (symmetric uplift,
-/// no trench/arc). Both sides raise; neither subducts.</param>
-/// <param name="ArcPoints">Ordered unit-sphere points along the joint's boundary arc (at least two).
-/// The shaper localises each slab's edge band by angular distance to these points.</param>
-public sealed record SlabJointClassification(
-    int PlateA,
-    int PlateB,
-    PlateBoundaryKind Kind,
-    int? SubductingPlateId,
-    bool IsCollision,
-    IReadOnlyList<GlobeVec3> ArcPoints);
-
-/// <summary>
 /// The DECLARED slab-joint mechanics parameters (assembled-world slice 2): the eye-tuned magnitudes
 /// that turn a convergent / divergent / transform joint classification into slab-edge GEOMETRY.
 /// Mirrors the <see cref="WorldSurfacePresentationProfile"/> pattern — every look number is a named
