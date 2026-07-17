@@ -345,9 +345,32 @@ internal sealed partial class PlanetPresentationBinder
         double normalRadialDotMean = normalRadialDotCount == 0
             ? 0.0
             : normalRadialDotSum / normalRadialDotCount;
+        double elevationMin = elevations.Count == 0 ? 0.0 : elevations.Min();
+        double elevationMax = elevations.Count == 0 ? 0.0 : elevations.Max();
+        string featureCounts = features is null
+            ? "none"
+            : string.Join(
+                ",",
+                Enumerable.Range(0, 6).Select(kind =>
+                    $"{((TectonicFeatureKind)kind)}={features.Count(feature => feature.Kind == kind)}"));
+        string featureMagnitudeMaxima = features is null
+            ? "none"
+            : string.Join(
+                ",",
+                Enumerable.Range(1, 5).Select(kind =>
+                {
+                    var samples = features.Where(feature => feature.Kind == kind).ToArray();
+                    return $"{((TectonicFeatureKind)kind)}={(samples.Length == 0 ? 0.0 : samples.Max(feature => feature.Magnitude))}";
+                }));
+        string boundaryArcCounts = volume is null
+            ? "none"
+            : string.Join(
+                ",",
+                Enum.GetValues<PlateBoundaryKind>().Select(kind =>
+                    $"{kind}={volume.BoundaryArcs.Count(arc => arc.Kind == kind)}"));
 
         _log.LogInformation(
-            "Planet outer envelope bound: view={ViewMode}, source={Source}, crustVolumeDigest={CrustVolumeDigest}, buriedUnderlap=hidden, subdivision={Subdivision}, plates={PlateCount}, triangles={TriangleCount}, meshVertices={VertexCount}, scale={Scale}, trueScale={TrueScale}, amplification={Amplification}x, frequency={Frequency}, cellColorRange=[{CellColorMin},{CellColorMax}], meshColorRange=[{MeshColorMin},{MeshColorMax}], radiusRange=[{RadiusMin},{RadiusMax}], normalRadialDot=[{NormalRadialDotMin},{NormalRadialDotMean},{NormalRadialDotMax}].",
+            "Planet outer envelope bound: view={ViewMode}, source={Source}, crustVolumeDigest={CrustVolumeDigest}, buriedUnderlap=hidden, subdivision={Subdivision}, plates={PlateCount}, triangles={TriangleCount}, meshVertices={VertexCount}, scale={Scale}, trueScale={TrueScale}, amplification={Amplification}x, frequency={Frequency}, elevationMetres=[{ElevationMin},{ElevationMax}], features=[{FeatureCounts}], featureMagnitudeMax=[{FeatureMagnitudeMaxima}], boundaryArcs=[{BoundaryArcCounts}], cellColorRange=[{CellColorMin},{CellColorMax}], meshColorRange=[{MeshColorMin},{MeshColorMax}], radiusRange=[{RadiusMin},{RadiusMax}], normalRadialDot=[{NormalRadialDotMin},{NormalRadialDotMean},{NormalRadialDotMax}].",
             viewMode,
             volume is null ? "compatibility" : nameof(CrustVolumeState),
             volume?.Digest ?? "none",
@@ -359,6 +382,11 @@ internal sealed partial class PlanetPresentationBinder
             projection.TrueScaleMetresToUnitRadius,
             projection.ReliefAmplification,
             snapshot.Frequency,
+            elevationMin,
+            elevationMax,
+            featureCounts,
+            featureMagnitudeMaxima,
+            boundaryArcCounts,
             cellColorMin,
             cellColorMax,
             meshColorMin,
