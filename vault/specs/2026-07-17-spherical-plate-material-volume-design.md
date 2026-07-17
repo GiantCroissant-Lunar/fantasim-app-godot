@@ -391,6 +391,12 @@ shell, and mobile plate with multiple interacting volumes. A -> B -> A reproduce
 
 ## 13. Replacement delivery sequence
 
+> **Amended 2026-07-18:** after A0 passed structurally and B0 failed the visual gate, the user
+> chose visual-fidelity slices V1→V3 as the continuation — see
+> `2026-07-18-visual-fidelity-slices-decision.md`. The tessellation/shading portion of §8
+> needed for a closed, cell-invisible skin moves ahead of full A/B visual acceptance; the rest
+> of step 4 remains deferred.
+
 The old Slice C is frozen. It must not proceed on top of the rejected radial Slice A/B semantics.
 
 1. **Replacement A0 — state semantics.** Replace `CrustVolumeState` internals with the spherical
