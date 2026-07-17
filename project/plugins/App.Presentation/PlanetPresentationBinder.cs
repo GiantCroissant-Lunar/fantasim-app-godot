@@ -24,7 +24,9 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
     private const string StageBundleId = "stage";
     private const string WorldBundleId = "world";
     private static readonly NodePath PlanetLayerMountPath = new("Environment/PlanetMount/Planet/LayerMounts");
-    private static readonly Vector3 PlanetBodyPreviewOffset = new(0.8f, 0.0f, 0.0f);
+    // Keep the complete assembled globe inside the stage's unobstructed upper viewport while the
+    // timeline remains available below. The old right-only offset left half the globe behind the HUD.
+    private static readonly Vector3 PlanetBodyPreviewOffset = new(0.0f, 1.55f, 0.0f);
 
     // World-view height lens (look-dev 2026-07-03, knobbly-limb references): sign(h)*|h|^0.5 * scale.
     // The elevation field is ~±500..1,400 m interiors under 21,000+ m orogenic extremes — a ratio no
