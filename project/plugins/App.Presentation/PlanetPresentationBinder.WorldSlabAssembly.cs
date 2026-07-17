@@ -98,7 +98,7 @@ internal sealed partial class PlanetPresentationBinder
                 boundaryArcs,
                 _jointMechanicsProfile);
             _log?.LogInformation(
-                "World slab joints shaped from canonical arcs: segments={SegmentCount}, convergent={ConvergentCount}, tongues chained.",
+                "World slab joints shaped from canonical arcs: segments={SegmentCount}, convergent={ConvergentCount}, buriedUnderlap=hidden.",
                 boundaryArcs.Count,
                 CountConvergent(boundaryArcs));
         }

@@ -218,9 +218,9 @@ public static class WorldSlabAssemblyComposer
     }
 
     /// <summary>
-    /// Convenience overload: slice-1 assembly + slice-2 joint shaping + slice-3 subduction tongues
-    /// in one call (extend-alongside the slice-1 <see cref="BuildAssembly"/> — the existing 5-arg
-    /// overload is unchanged). Callers get tongues without a new call site.
+    /// Convenience overload: slice-1 assembly plus slice-2 joint shaping in one call. Buried
+    /// subduction geometry is intentionally omitted from this assembled scaffold; the canonical
+    /// crust-volume extractor owns that geometry.
     /// </summary>
     public static IReadOnlyList<PlateSolid> BuildAssembly(
         IReadOnlyList<PlateCap> caps,
@@ -234,8 +234,7 @@ public static class WorldSlabAssemblyComposer
     {
         ArgumentNullException.ThrowIfNull(profile);
         var gapped = BuildAssembly(caps, centroids, crustThicknessByCellMetres, thicknessDepthScale, profile, baseRadius);
-        var shaped = ShapeSlabJoints(gapped, joints, jointProfile, centroids, profile.SlabJointGapUnitRadius, baseRadius);
-        return ShapeSubductionTongues(shaped, joints, jointProfile, baseRadius);
+        return ShapeSlabJoints(gapped, joints, jointProfile, centroids, profile.SlabJointGapUnitRadius, baseRadius);
     }
 
     /// <summary>

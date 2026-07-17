@@ -171,10 +171,9 @@ internal sealed partial class PlanetPresentationBinder
         // walls. The slab relief (in slabCaps' top positions) acts on disjoint vertices — no compounding.
         var solids = PlateSolidBuilder.Build(slabCaps, thickness, _radialProfile.ThicknessDepthScale());
 
-        // Slices 2+3 in the exploded family too: joint dip/raise + subduction tongues are shaped
-        // BEFORE the radial explode translation, so the separated plates keep their overlap pairs —
-        // the subducting tongue hangs visibly below the overriding lip with space between them
-        // (the registry's v5 shingle-overlap definition; tongues ride their plate's vertices).
+        // Keep the temporary radial solids joint-shaped, but do not append the retired tongue
+        // scaffold. Continuous buried underlap will come from the canonical crust-volume extractor;
+        // showing a false ribbon here would contradict the state even in an exploded view.
         var explodedArcs = document.BoundaryArcs;
         if (explodedArcs is { Count: > 0 })
         {
@@ -184,10 +183,6 @@ internal sealed partial class PlanetPresentationBinder
                 _jointMechanicsProfile,
                 centroids,
                 _worldSurfaceProfile.SlabJointGapUnitRadius);
-            solids = WorldSlabAssemblyComposer.ShapeSubductionTongues(
-                solids,
-                explodedArcs,
-                _jointMechanicsProfile);
         }
 
         var exploded = PlateSolidBuilder.ApplyExplodedFactor(solids, centroids, factor);
