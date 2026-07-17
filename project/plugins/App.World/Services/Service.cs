@@ -984,12 +984,48 @@ public sealed class Service : IService, IDisposable
             currentGlobe,
             currentArcs,
             arcTick,
+            renderOptions.Seed,
+            family.Revision,
+            renderOptions.VerticalExaggeration,
+            renderOptions.BoundaryProfiles,
             cellElevations,
             cellCrustThickness,
             cellFeatures,
             sampledFractions);
+        bool requiresUnderlapProof = currentArcs.Any(arc =>
+            arc.Kind == PlateBoundaryKind.Convergent
+            && !arc.IsCollision
+            && arc.SubductingPlateId is not null);
+        if (requiresUnderlapProof)
+        {
+            if (!crustVolume.TryFindConvergentUnderlapProof(out var proof))
+            {
+                throw new InvalidOperationException(
+                    $"Crust volume {crustVolume.Digest} has convergent polarity but no ordered "
+                  + "overriding/down-going ray intervals.");
+            }
+
+            _logger.LogInformation(
+                "Crust underlap proof: digest={Digest}, arc={BoundaryArc}, "
+              + "overriding={OverridingPlate}, downGoing={SubductingPlate}, "
+              + "downGoingCell={SubductingCell}, "
+              + "overridingInterval=[{OverEnter:R},{OverExit:R}], "
+              + "downGoingInterval=[{DownEnter:R},{DownExit:R}].",
+                crustVolume.Digest,
+                proof.BoundaryArcIndex,
+                proof.OverridingPlateId,
+                proof.SubductingPlateId,
+                proof.SubductingCellId,
+                proof.OverridingEnter,
+                proof.OverridingExit,
+                proof.SubductingEnter,
+                proof.SubductingExit);
+        }
+
         _logger.LogInformation(
-            "Crust volume state materialized: tick={Tick}, cells={CellCount}, arcs={ArcCount}, digest={Digest}.",
+            "Crust volume state materialized: algorithm={Algorithm}, tick={Tick}, "
+          + "cells={CellCount}, arcs={ArcCount}, digest={Digest}.",
+            crustVolume.AlgorithmVersion,
             crustVolume.Tick,
             crustVolume.CellCount,
             crustVolume.BoundaryArcs.Count,

@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using FantaSim.App.Ecs.Cells;
@@ -9,8 +12,10 @@ using FantaSim.App.Ecs.Systems;
 using FantaSim.App.World;
 using FantaSim.App.World.Composition;
 using FantaSim.App.World.Dto;
+using FantaSim.App.World.Globe;
 using FantaSim.App.World.Persistence;
 using FantaSim.App.World.Topography;
+using FantaSim.Cartography.Globe;
 using FantaSim.Geosphere.Crust;
 using FantaSim.Geosphere.Plate.Topology;
 using FantaSim.World.Fields;
@@ -18,6 +23,7 @@ using FantaSim.World.TruthStream;
 using Microsoft.Extensions.Logging;
 using UnifyCell;
 using UnifyGeometry.Spherical;
+using UnifyMaths;
 
 namespace FantaSim.App.World.Crust;
 
@@ -37,6 +43,10 @@ internal sealed record WorldCrustMaterialization(
         WorldGlobeSnapshot globe,
         IReadOnlyList<PlateBoundaryArc> boundaryArcs,
         long tick,
+        int seed,
+        int graphRevision,
+        double verticalExaggeration,
+        BoundaryProfileParameters profiles,
         IReadOnlyList<double> outerElevationsMetresByCell,
         IReadOnlyList<double> crustThicknessMetresByCell,
         IReadOnlyList<CellCrustFeature> featuresByCell,
@@ -50,15 +60,197 @@ internal sealed record WorldCrustMaterialization(
                 "A solid crust volume cannot precede the materialization rotation reference tick.");
         }
 
+        ArgumentNullException.ThrowIfNull(profiles);
+        if (!double.IsFinite(verticalExaggeration) || verticalExaggeration <= 0.0)
+            throw new ArgumentOutOfRangeException(nameof(verticalExaggeration));
+        ValidateVisualParameters(profiles);
+
+        var topology = new GlobePlateSurfaces(
+            globe,
+            noise: new NoiseParams(Amplitude: 0.0));
+        var cornerMetres = topology.BuildSharedCornerMetres(outerElevationsMetresByCell);
+        double referenceThickness = MedianPositive(crustThicknessMetresByCell);
+        var outerCandidates = new GlobeVec3[globe.CellCount * 3];
+        var innerCandidates = new GlobeVec3[globe.CellCount * 3];
+        for (int face = 0; face < globe.Cells.Count; face++)
+        {
+            var cell = globe.Cells[face];
+            double thicknessRatio = referenceThickness <= 0.0
+                ? 1.0
+                : Math.Clamp(
+                    crustThicknessMetresByCell[cell.CellId] / referenceThickness,
+                    0.65,
+                    1.50);
+            double visualThickness =
+                profiles.VisualCrustThicknessUnitRadius * thicknessRatio;
+            for (int corner = 0; corner < 3; corner++)
+            {
+                int index = (cell.CellId * 3) + corner;
+                var baseCorner = corner switch
+                {
+                    0 => cell.C0,
+                    1 => cell.C1,
+                    _ => cell.C2,
+                };
+                var controlSample = CellBoundaryField.SampleDirection(
+                    baseCorner,
+                    cell.PlateId,
+                    boundaryArcs);
+                Vector3D unit = ToVector(baseCorner).Normalize();
+                double radius = 1.0 + (cornerMetres[index] * verticalExaggeration);
+                Vector3D outer = unit * radius;
+                Vector3D inner = outer - (unit * visualThickness);
+                ApplyConvergentDeformation(
+                    controlSample,
+                    profiles,
+                    unit,
+                    ref outer,
+                    ref inner);
+                outerCandidates[index] = ToGlobe(outer);
+                innerCandidates[index] = ToGlobe(inner);
+            }
+        }
+
+        var welded = topology.WeldPlateCorners(outerCandidates, innerCandidates);
+        string parameterDigest =
+            ComputeVolumeParameterDigest(verticalExaggeration, profiles);
         return CrustVolumeState.Create(
             tick,
+            seed,
+            graphRevision,
+            topology.TopologyDigest,
+            parameterDigest,
             globe,
             boundaryArcs,
+            welded.Outer,
+            welded.Inner,
             outerElevationsMetresByCell,
             crustThicknessMetresByCell,
             featuresByCell,
             continentalFractionByCell);
     }
+
+    private static void ApplyConvergentDeformation(
+        in CellBoundarySample sample,
+        in BoundaryProfileParameters profiles,
+        Vector3D unit,
+        ref Vector3D outer,
+        ref Vector3D inner)
+    {
+        if (!sample.Found
+            || sample.Kind != PlateBoundaryKind.Convergent
+            || sample.IsCollision
+            || sample.SubductingPlateId is not int subductingPlateId)
+        {
+            return;
+        }
+
+        double bendHalfWidth = Math.Max(
+            profiles.ConvergentTrenchHalfWidthRad * 2.0,
+            profiles.ConvergentArcSetbackRad + profiles.ConvergentArcHalfWidthRad);
+        double distance = Math.Abs(sample.SignedDistanceRad);
+        if (distance > bendHalfWidth)
+            return;
+        double normalizedDistance = Math.Clamp(distance / bendHalfWidth, 0.0, 1.0);
+        if (sample.CellPlateId == subductingPlateId)
+        {
+            double bend = Math.Sin(Math.PI * SmoothStep(normalizedDistance));
+            Vector3D intoOwningPlate = ToVector(sample.AcrossBoundaryDirection);
+            Vector3D towardOverridingPlate = intoOwningPlate * -1.0;
+            Vector3D shift =
+                (towardOverridingPlate
+                    * profiles.ConvergentSlabUnderlapLengthUnitRadius
+                    * bend)
+              - (unit * profiles.ConvergentSlabDepthUnitRadius * bend * bend);
+            outer += shift;
+            inner += shift;
+            return;
+        }
+
+        double root = SmoothStep(1.0 - normalizedDistance);
+        inner -= unit * profiles.ConvergentOverridingRootDepthUnitRadius * root;
+    }
+
+    private static double SmoothStep(double value)
+    {
+        double t = Math.Clamp(value, 0.0, 1.0);
+        return t * t * (3.0 - (2.0 * t));
+    }
+
+    private static double MedianPositive(IReadOnlyList<double> values)
+    {
+        var positive = values
+            .Where(value => double.IsFinite(value) && value > 0.0)
+            .OrderBy(value => value)
+            .ToArray();
+        if (positive.Length == 0)
+            return 0.0;
+        int middle = positive.Length / 2;
+        return positive.Length % 2 == 1
+            ? positive[middle]
+            : (positive[middle - 1] + positive[middle]) * 0.5;
+    }
+
+    private static void ValidateVisualParameters(BoundaryProfileParameters p)
+    {
+        double[] values =
+        {
+            p.VisualCrustThicknessUnitRadius,
+            p.ConvergentSlabUnderlapLengthUnitRadius,
+            p.ConvergentSlabDepthUnitRadius,
+            p.ConvergentOverridingRootDepthUnitRadius,
+            p.ConvergentVolcanoConeHeight,
+            p.ConvergentVolcanoPeriodPoints,
+            p.ConvergentVolcanoSharpness,
+        };
+        if (values.Any(value => !double.IsFinite(value) || value < 0.0))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(p),
+                "Visual deformation parameters must be finite and non-negative.");
+        }
+    }
+
+    private static string ComputeVolumeParameterDigest(
+        double verticalExaggeration,
+        BoundaryProfileParameters p)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(verticalExaggeration);
+            writer.Write(p.ConvergentTrenchDepth);
+            writer.Write(p.ConvergentTrenchHalfWidthRad);
+            writer.Write(p.ConvergentArcHeight);
+            writer.Write(p.ConvergentArcSetbackRad);
+            writer.Write(p.ConvergentArcHalfWidthRad);
+            writer.Write(p.ConvergentCollisionHeight);
+            writer.Write(p.ConvergentCollisionHalfWidthRad);
+            writer.Write(p.DivergentSwellHeight);
+            writer.Write(p.DivergentSwellHalfWidthRad);
+            writer.Write(p.DivergentRiftNotchDepth);
+            writer.Write(p.DivergentRiftHalfWidthRad);
+            writer.Write(p.TransformScarpAmplitude);
+            writer.Write(p.TransformHalfWidthRad);
+            writer.Write(p.TransformScarpPeriodPoints);
+            writer.Write(p.VisualCrustThicknessUnitRadius);
+            writer.Write(p.ConvergentSlabUnderlapLengthUnitRadius);
+            writer.Write(p.ConvergentSlabDepthUnitRadius);
+            writer.Write(p.ConvergentOverridingRootDepthUnitRadius);
+            writer.Write(p.ConvergentVolcanoConeHeight);
+            writer.Write(p.ConvergentVolcanoPeriodPoints);
+            writer.Write(p.ConvergentVolcanoSharpness);
+        }
+        return Convert.ToHexString(
+                SHA256.HashData(stream.GetBuffer().AsSpan(0, checked((int)stream.Length))))
+            .ToLowerInvariant();
+    }
+
+    private static Vector3D ToVector(GlobeVec3 point)
+        => new(point.X, point.Y, point.Z);
+
+    private static GlobeVec3 ToGlobe(Vector3D point)
+        => new((float)point.X, (float)point.Y, (float)point.Z);
 
     /// <summary>
     /// Projects the materialized crust state at <paramref name="tick"/> into presentation cell

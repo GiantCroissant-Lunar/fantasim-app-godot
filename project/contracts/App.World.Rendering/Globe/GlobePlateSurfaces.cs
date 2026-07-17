@@ -1,10 +1,14 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using FantaSim.App.World.Dto;
 using FantaSim.App.World.Rendering;
 using FantaSim.Cartography.Globe;
 using FantaSim.Cartography.Globe.Core;
 using FantaSim.Cartography.Shared;
+using UnifyMaths;
 
 namespace FantaSim.App.World.Globe;
 
@@ -102,6 +106,8 @@ public sealed class GlobePlateSurfaces
     private readonly int[] _globalTriangles;
     private readonly int[] _globalCellIds;
 
+    public string TopologyDigest { get; }
+
     /// <summary>
     /// Builds and caches the watertight per-plate topology from <paramref name="snapshot"/>. Plates with
     /// no cells are omitted. Plate caps are returned in ascending <see cref="GlobeCell.PlateId"/> order.
@@ -124,12 +130,116 @@ public sealed class GlobePlateSurfaces
         Func<CartesianPoint3, double>? detailSampler = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
+        TopologyDigest = ComputeTopologyDigest(snapshot);
         _builder = builder ?? new GlobeSurfaceBuilder();
         _adaptiveBuilder = _builder as IAdaptiveGlobeSurfaceBuilder ?? new AdaptiveGlobeSurfaceBuilder(_builder);
         var peaks = noise ?? DefaultPeaks;
         _detailSampler = detailSampler ?? (pos => NoiseRelief.Sample(pos, peaks));
         (_globalVertices, _globalTriangles, _globalCellIds) = BuildGlobalTopology(snapshot);
         _plates = BuildPlateTopologies(snapshot, _detailSampler, _globalVertices);
+    }
+
+    public double[] BuildSharedCornerMetres(IReadOnlyList<double> elevationsByCell)
+    {
+        var perPlate = BuildPlateVertexMetres(elevationsByCell);
+        var result = new double[_globalCellIds.Length * 3];
+        for (int p = 0; p < _plates.Count; p++)
+        {
+            var plate = _plates[p];
+            for (int face = 0; face < plate.CellIds.Length; face++)
+            {
+                int cellId = plate.CellIds[face];
+                for (int corner = 0; corner < 3; corner++)
+                {
+                    int localVertex = plate.LocalTriangles[(face * 3) + corner];
+                    result[(cellId * 3) + corner] = perPlate[p][localVertex];
+                }
+            }
+        }
+        return result;
+    }
+
+    public (GlobeVec3[] Outer, GlobeVec3[] Inner) WeldPlateCorners(
+        IReadOnlyList<GlobeVec3> outerCandidatesByCellCorner,
+        IReadOnlyList<GlobeVec3> innerCandidatesByCellCorner)
+    {
+        int expected = _globalCellIds.Length * 3;
+        if (outerCandidatesByCellCorner.Count != expected)
+            throw new ArgumentException(
+                "Outer candidates must contain three points per cell.",
+                nameof(outerCandidatesByCellCorner));
+        if (innerCandidatesByCellCorner.Count != expected)
+            throw new ArgumentException(
+                "Inner candidates must contain three points per cell.",
+                nameof(innerCandidatesByCellCorner));
+
+        var outer = new GlobeVec3[expected];
+        var inner = new GlobeVec3[expected];
+        foreach (var plate in _plates)
+        {
+            var outerSums = new Vector3D[plate.LocalVertices.Length];
+            var innerSums = new Vector3D[plate.LocalVertices.Length];
+            var counts = new int[plate.LocalVertices.Length];
+            for (int face = 0; face < plate.CellIds.Length; face++)
+            {
+                int cellId = plate.CellIds[face];
+                for (int corner = 0; corner < 3; corner++)
+                {
+                    int localVertex = plate.LocalTriangles[(face * 3) + corner];
+                    int source = (cellId * 3) + corner;
+                    outerSums[localVertex] += ToVector(outerCandidatesByCellCorner[source]);
+                    innerSums[localVertex] += ToVector(innerCandidatesByCellCorner[source]);
+                    counts[localVertex]++;
+                }
+            }
+
+            for (int face = 0; face < plate.CellIds.Length; face++)
+            {
+                int cellId = plate.CellIds[face];
+                for (int corner = 0; corner < 3; corner++)
+                {
+                    int localVertex = plate.LocalTriangles[(face * 3) + corner];
+                    int target = (cellId * 3) + corner;
+                    double inverse = 1.0 / counts[localVertex];
+                    outer[target] = ToGlobe(outerSums[localVertex] * inverse);
+                    inner[target] = ToGlobe(innerSums[localVertex] * inverse);
+                }
+            }
+        }
+
+        ValidateClosedOuterContacts(outer);
+        return (outer, inner);
+    }
+
+    private void ValidateClosedOuterContacts(IReadOnlyList<GlobeVec3> outer)
+    {
+        var assigned = new bool[_globalVertices.Length];
+        var globalPoint = new Vector3D[_globalVertices.Length];
+        foreach (var plate in _plates)
+        {
+            for (int face = 0; face < plate.CellIds.Length; face++)
+            {
+                int cellId = plate.CellIds[face];
+                for (int corner = 0; corner < 3; corner++)
+                {
+                    int localVertex = plate.LocalTriangles[(face * 3) + corner];
+                    int globalVertex = plate.LocalToGlobal[localVertex];
+                    Vector3D point = ToVector(outer[(cellId * 3) + corner]);
+                    if (!assigned[globalVertex])
+                    {
+                        assigned[globalVertex] = true;
+                        globalPoint[globalVertex] = point;
+                        continue;
+                    }
+
+                    if ((globalPoint[globalVertex] - point).Length() > 1e-6)
+                    {
+                        throw new InvalidOperationException(
+                            $"Outer contact at global vertex {globalVertex} is open.");
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>The plate ids that have at least one cell (ascending), in cap order.</summary>
@@ -415,6 +525,42 @@ public sealed class GlobePlateSurfaces
         }
         return mapped;
     }
+
+    private static string ComputeTopologyDigest(WorldGlobeSnapshot snapshot)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write(snapshot.CellCount);
+            for (int index = 0; index < snapshot.Cells.Count; index++)
+            {
+                var cell = snapshot.Cells[index];
+                writer.Write(index);
+                writer.Write(cell.CellId);
+                writer.Write(cell.PlateId);
+                Write(cell.C0);
+                Write(cell.C1);
+                Write(cell.C2);
+            }
+
+            void Write(GlobeVec3 point)
+            {
+                writer.Write(point.X);
+                writer.Write(point.Y);
+                writer.Write(point.Z);
+            }
+        }
+
+        return Convert.ToHexString(
+                SHA256.HashData(stream.GetBuffer().AsSpan(0, checked((int)stream.Length))))
+            .ToLowerInvariant();
+    }
+
+    private static Vector3D ToVector(GlobeVec3 point)
+        => new(point.X, point.Y, point.Z);
+
+    private static GlobeVec3 ToGlobe(Vector3D point)
+        => new((float)point.X, (float)point.Y, (float)point.Z);
 
     // --- cached per-plate topology (built once) ----------------------------------------------------
 
