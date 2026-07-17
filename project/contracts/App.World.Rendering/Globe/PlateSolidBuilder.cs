@@ -133,6 +133,8 @@ public static class PlateSolidBuilder
     /// </param>
     /// <param name="baseRadius">The unit-sphere base radius (default 1.0, matching <see cref="GlobeSurfaceBuilder.DefaultRadius"/>).</param>
     /// <returns>One <see cref="PlateSolid"/> per input cap, in the SAME order as <paramref name="caps"/>.</returns>
+    [Obsolete(
+        "Migration-only radial extrusion. Default assembled/exploded projections must use CrustVolumeState.")]
     public static IReadOnlyList<PlateSolid> Build(
         IReadOnlyList<PlateCap> caps,
         IReadOnlyList<double> crustThicknessByCellMetres,
@@ -149,6 +151,27 @@ public static class PlateSolidBuilder
         var result = new PlateSolid[caps.Count];
         for (int p = 0; p < caps.Count; p++)
             result[p] = BuildOneSolid(caps[p], crustThicknessByCellMetres, exaggeration, baseRadius);
+        return result;
+    }
+
+    /// <summary>Extracts closed plate solids from the canonical deformed material state.</summary>
+    public static IReadOnlyList<PlateSolid> Build(
+        IReadOnlyList<PlateCap> caps,
+        CrustVolumeState volume)
+    {
+        ArgumentNullException.ThrowIfNull(caps);
+        ArgumentNullException.ThrowIfNull(volume);
+        var result = new PlateSolid[caps.Count];
+        for (int p = 0; p < caps.Count; p++)
+        {
+            if (caps[p].VertexProvenance is not null)
+            {
+                throw new ArgumentException(
+                    "A0/B0 volume extraction accepts fixed caps only.",
+                    nameof(caps));
+            }
+            result[p] = BuildOneSolid(caps[p], volume);
+        }
         return result;
     }
 
@@ -230,6 +253,61 @@ public static class PlateSolidBuilder
 
     // --- solid construction ---------------------------------------------------------------------
 
+    private static PlateSolid BuildOneSolid(PlateCap cap, CrustVolumeState volume)
+    {
+        var surface = cap.Surface;
+        int vertexCount = surface.VertexCount;
+        var positions = new CartesianPoint3[vertexCount * 2];
+        Array.Copy(surface.Positions, positions, vertexCount);
+        var assigned = new bool[vertexCount];
+        var originalDirections = new GlobeVec3[vertexCount];
+        for (int face = 0; face < cap.CellIds.Length; face++)
+        {
+            int cellId = cap.CellIds[face];
+            for (int corner = 0; corner < 3; corner++)
+            {
+                int localVertex = surface.Triangles[(face * 3) + corner];
+                var point = volume.InnerPointAtCellCorner(cellId, corner);
+                var inner = new CartesianPoint3(point.X, point.Y, point.Z);
+                var sourceCell = volume.Globe.Cells[cellId];
+                var original = corner switch
+                {
+                    0 => sourceCell.C0,
+                    1 => sourceCell.C1,
+                    _ => sourceCell.C2,
+                };
+                if (assigned[localVertex])
+                {
+                    var existing = positions[vertexCount + localVertex];
+                    double delta =
+                        Math.Abs(existing.X - inner.X)
+                      + Math.Abs(existing.Y - inner.Y)
+                      + Math.Abs(existing.Z - inner.Z);
+                    if (delta > 1e-5)
+                    {
+                        throw new InvalidOperationException(
+                            "Plate-local inner controls are not welded.");
+                    }
+                    continue;
+                }
+
+                positions[vertexCount + localVertex] = inner;
+                originalDirections[localVertex] = original;
+                assigned[localVertex] = true;
+            }
+        }
+
+        if (Array.Exists(assigned, value => !value))
+            throw new InvalidOperationException("A plate cap contains an unassigned volume vertex.");
+        return new PlateSolid(
+            cap.PlateId,
+            positions,
+            BuildSolidTriangles(
+                surface.Triangles,
+                vertexCount,
+                originalDirections));
+    }
+
     private static PlateSolid BuildOneSolid(
         PlateCap cap,
         IReadOnlyList<double> crustThicknessByCellMetres,
@@ -307,6 +385,46 @@ public static class PlateSolidBuilder
         return new PlateSolid(cap.PlateId, positions, triangles);
     }
 
+    private static int[] BuildSolidTriangles(
+        int[] topTriangles,
+        int vertexCount,
+        GlobeVec3[] originalDirections)
+    {
+        int faceCount = topTriangles.Length / 3;
+        var bottomTriangles = new int[topTriangles.Length];
+        for (int face = 0; face < faceCount; face++)
+        {
+            int a = topTriangles[(face * 3) + 0];
+            int b = topTriangles[(face * 3) + 1];
+            int c = topTriangles[(face * 3) + 2];
+            bottomTriangles[(face * 3) + 0] = vertexCount + a;
+            bottomTriangles[(face * 3) + 1] = vertexCount + c;
+            bottomTriangles[(face * 3) + 2] = vertexCount + b;
+        }
+
+        var rimEdges = ExtractRimEdges(topTriangles, vertexCount);
+        var wallTriangles = BuildWallTriangles(
+            rimEdges,
+            vertexCount,
+            originalDirections);
+        var triangles =
+            new int[topTriangles.Length + bottomTriangles.Length + wallTriangles.Length];
+        Array.Copy(topTriangles, 0, triangles, 0, topTriangles.Length);
+        Array.Copy(
+            bottomTriangles,
+            0,
+            triangles,
+            topTriangles.Length,
+            bottomTriangles.Length);
+        Array.Copy(
+            wallTriangles,
+            0,
+            triangles,
+            topTriangles.Length + bottomTriangles.Length,
+            wallTriangles.Length);
+        return triangles;
+    }
+
     // Extract the plate's RIM: undirected edges that appear in EXACTLY ONE top triangle. Each rim
     // edge carries the DIRECTED edge (u, v) as it appeared in its single owning triangle, so the
     // wall winding is deterministic (CCW for the top face's outward normal -> wall normal points
@@ -379,7 +497,10 @@ public static class PlateSolidBuilder
     // (u, v) emits the quad (u, v, N+v, N+u): triangles (u, v, N+v) and (u, N+v, N+u). The loop chain
     // is only needed for deterministic OUTPUT ORDER (the wall set is the same regardless of order),
     // but a stable order makes the triangles array deterministic across runs.
-    private static int[] BuildWallTriangles(List<DirectedRimEdge> rimEdges, int n)
+    private static int[] BuildWallTriangles(
+        List<DirectedRimEdge> rimEdges,
+        int n,
+        GlobeVec3[]? originalDirections = null)
     {
         if (rimEdges.Count == 0)
             return Array.Empty<int>();
@@ -452,14 +573,39 @@ public static class PlateSolidBuilder
             int u = ordered[i].U;
             int v = ordered[i].V;
             int b = (i * 6);
-            triangles[b + 0] = u;
-            triangles[b + 1] = v;
-            triangles[b + 2] = n + v;
-            triangles[b + 3] = u;
-            triangles[b + 4] = n + v;
-            triangles[b + 5] = n + u;
+            bool uIsCanonicalLower = originalDirections is null
+                || CompareOriginalDirection(
+                    originalDirections[u],
+                    originalDirections[v]) <= 0;
+            if (uIsCanonicalLower)
+            {
+                triangles[b + 0] = u;
+                triangles[b + 1] = v;
+                triangles[b + 2] = n + v;
+                triangles[b + 3] = u;
+                triangles[b + 4] = n + v;
+                triangles[b + 5] = n + u;
+            }
+            else
+            {
+                triangles[b + 0] = u;
+                triangles[b + 1] = v;
+                triangles[b + 2] = n + u;
+                triangles[b + 3] = v;
+                triangles[b + 4] = n + v;
+                triangles[b + 5] = n + u;
+            }
         }
         return triangles;
+    }
+
+    private static int CompareOriginalDirection(GlobeVec3 left, GlobeVec3 right)
+    {
+        int byX = left.X.CompareTo(right.X);
+        if (byX != 0)
+            return byX;
+        int byY = left.Y.CompareTo(right.Y);
+        return byY != 0 ? byY : left.Z.CompareTo(right.Z);
     }
 
     private readonly record struct DirectedRimEdge(int U, int V);

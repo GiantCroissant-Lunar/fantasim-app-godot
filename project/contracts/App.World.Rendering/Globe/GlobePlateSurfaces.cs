@@ -294,6 +294,81 @@ public sealed class GlobePlateSurfaces
         return caps;
     }
 
+    public IReadOnlyList<PlateCap> BuildVolumeSurfaces(CrustVolumeState volume)
+    {
+        ArgumentNullException.ThrowIfNull(volume);
+        if (!string.Equals(
+            volume.TopologyDigest,
+            TopologyDigest,
+            StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "Volume cell order, plate ownership, corners, or topology does not match this globe.",
+                nameof(volume));
+        }
+
+        var caps = new PlateCap[_plates.Count];
+        for (int p = 0; p < _plates.Count; p++)
+        {
+            var plate = _plates[p];
+            var directions = new CartesianPoint3[plate.LocalVertices.Length];
+            var radialOffsets = new double[plate.LocalVertices.Length];
+            var assigned = new bool[plate.LocalVertices.Length];
+            for (int face = 0; face < plate.CellIds.Length; face++)
+            {
+                int cellId = plate.CellIds[face];
+                for (int corner = 0; corner < 3; corner++)
+                {
+                    int localVertex = plate.LocalTriangles[(face * 3) + corner];
+                    var point = volume.OuterPointAtCellCorner(cellId, corner);
+                    var vector = new Vector3D(point.X, point.Y, point.Z);
+                    double radius = vector.Length();
+                    if (radius <= 1e-12)
+                    {
+                        throw new InvalidOperationException(
+                            "A volume outer control reached the origin.");
+                    }
+
+                    var direction = vector * (1.0 / radius);
+                    var cartesian =
+                        new CartesianPoint3(direction.X, direction.Y, direction.Z);
+                    double offset = radius - GlobeSurfaceBuilder.DefaultRadius;
+                    if (assigned[localVertex])
+                    {
+                        var existing = directions[localVertex];
+                        double delta =
+                            Math.Abs(existing.X - cartesian.X)
+                          + Math.Abs(existing.Y - cartesian.Y)
+                          + Math.Abs(existing.Z - cartesian.Z)
+                          + Math.Abs(radialOffsets[localVertex] - offset);
+                        if (delta > 1e-5)
+                        {
+                            throw new InvalidOperationException(
+                                "Plate-local state controls are not welded.");
+                        }
+                        continue;
+                    }
+
+                    directions[localVertex] = cartesian;
+                    radialOffsets[localVertex] = offset;
+                    assigned[localVertex] = true;
+                }
+            }
+
+            var surface = _builder.Build(
+                directions,
+                plate.LocalTriangles,
+                radialOffsets,
+                GlobeSurfaceBuilder.DefaultRadius);
+            caps[p] = new PlateCap(
+                plate.PlateId,
+                plate.CellIds,
+                surface,
+                VertexProvenance: null);
+        }
+        return caps;
+    }
+
     public IReadOnlyList<PlateCap> BuildAdaptiveSurfaces(
         IReadOnlyList<double> elevationsByCell,
         double exaggeration,
