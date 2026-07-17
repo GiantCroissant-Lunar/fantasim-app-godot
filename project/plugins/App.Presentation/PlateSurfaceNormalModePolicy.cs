@@ -5,10 +5,12 @@ namespace FantaSim.App.Presentation;
 
 internal static class PlateSurfaceNormalModePolicy
 {
-    // North-star spec §4: smooth (or blended) normals for World + crust diagnostic; flat faceting is
-    // reserved for explicitly diagnostic views (PlateIdentity).
+    // The assembled-world reference is deliberately chunky/faceted: flat normals let the existing
+    // adaptive crust-volume triangles carry relief in the lighting instead of smoothing the
+    // mountain/trench/ridge belts back into a ball. The crust diagnostic keeps smooth normals so it
+    // remains a field-inspection view rather than a second assembled-world appearance.
     public static PlateCapMeshNormalMode ForView(GlobeViewMode viewMode)
-        => viewMode is GlobeViewMode.World or GlobeViewMode.HypsometricTerrain
+        => viewMode == GlobeViewMode.HypsometricTerrain
             ? PlateCapMeshNormalMode.Smooth
             : PlateCapMeshNormalMode.Flat;
 }
