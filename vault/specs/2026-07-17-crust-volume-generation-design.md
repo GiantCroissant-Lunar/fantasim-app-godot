@@ -1,9 +1,9 @@
 # Crust-volume generation: one geological state, two projections
 
 **Status:** SUPERSEDED AS IMPLEMENTATION AUTHORITY on 2026-07-17 after the user rejected
-the delivered Slice A/B representation. Preserve this document as design history only. A
-replacement plate-material deformation design is under user review and must be approved in
-writing before a new implementation plan begins.
+the delivered Slice A/B representation. Preserve this document as design history only. Its
+replacement is `2026-07-17-spherical-plate-material-volume-design.md`, which must pass its
+written-spec review before a new implementation plan begins.
 
 ### Supersession findings
 
