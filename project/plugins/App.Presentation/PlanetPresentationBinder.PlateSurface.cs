@@ -230,10 +230,9 @@ internal sealed partial class PlanetPresentationBinder
 
         var colorMode = PlateSurfaceColorModePolicy.ForView(viewMode);
         var normalMode = PlateSurfaceNormalModePolicy.ForView(viewMode);
-        // Per-vertex color envelope (world terrain): smooth per-cell ramp colours across cell AND
-        // plate boundaries so terrain reads as Gouraud-shaded gradients instead of chunky per-cell
-        // triangles. The crust diagnostic intentionally bypasses this smoothing and uses source-cell
-        // facet colours so the dry crust stays readable from the front face, not only on the limb.
+        // The assembled World and crust diagnostic preserve source-cell facet colours so plate-scale
+        // relief and tectonic belts read as discrete crust geometry rather than a smoothed paint
+        // envelope. Other projections may still opt into the interpolated vertex envelope.
         var perPlateVertexColors = isTerrain && colorMode == PlateCapMeshColorMode.VertexEnvelope
             ? PlateSurfaceMeshFactory.BuildPerPlateVertexColors(_plateSurfaces!, perCellColor)
             : new Dictionary<int, RampColor[]>();
