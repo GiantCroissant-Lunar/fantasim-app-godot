@@ -476,8 +476,10 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
         {
             _mantle.MaterialOverride = ResolveMantleMaterial(RegimeSurfaceResolver.Resolve(regimeId));
             // D1: the opaque interior mantle sphere would occlude the layer view's isosurfaces; the
-            // layer mounts its own dark core sphere at the CMB radius instead.
-            _mantle.Visible = !mantleLocatorActive && MantleSurfaceGate.IsVisible(
+            // layer mounts its own dark core sphere at the CMB radius instead. Exploded crust likewise
+            // owns its interior context; keeping the ordinary mantle sphere would falsely fill the
+            // separated plate volumes and hide their bottom/side geometry.
+            _mantle.Visible = !mantleLocatorActive && !_explodedActive && MantleSurfaceGate.IsVisible(
                 viewMode,
                 platesShown: showsPlateFeatures,
                 hasPlateSurface: _plateSurfaceRoot is not null && GodotObject.IsInstanceValid(_plateSurfaceRoot));

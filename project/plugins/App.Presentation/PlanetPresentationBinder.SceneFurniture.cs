@@ -144,7 +144,11 @@ internal sealed partial class PlanetPresentationBinder
             return;
 
         var state = AtmosphereRimStateMapper.Map(_timeline.AtmosphereSchedule, tick);
-        bool visible = state.Exists && WorldViewContentGate.IsActive(_timeline.SelectedLayer);
+        // Exploded crust owns the whole visual interior. The ordinary atmosphere sphere would fill
+        // every separation gap and make the plate volumes read as a skin over another globe.
+        bool visible = state.Exists
+            && WorldViewContentGate.IsActive(_timeline.SelectedLayer)
+            && !_explodedActive;
         _atmosphereRim.Visible = visible;
 
         if (!visible)

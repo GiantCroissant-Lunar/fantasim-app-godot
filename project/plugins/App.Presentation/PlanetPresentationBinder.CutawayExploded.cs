@@ -23,7 +23,8 @@ internal sealed partial class PlanetPresentationBinder
     private bool _explodedActive;
     private double _explodedFactor;
     private Node3D? _explodedCrustRoot;
-    private Material? _neutralCrustEvidenceMaterial;
+    private Material? _neutralCrustTopEvidenceMaterial;
+    private Material? _neutralCrustSolidEvidenceMaterial;
 
     // W3a: per-instance plate material so the cutaway wedge uniforms are binder-scoped (a static
     // singleton would let one binder's cutaway leak into another). Lazily built; the wedge uniforms
@@ -222,17 +223,19 @@ internal sealed partial class PlanetPresentationBinder
             root.AddChild(BuildExplodedMeshInstance(
                 $"Plate{cap.PlateId}_Top",
                 topDto,
-                ResolveCrustGeometryMaterial(HypsoPlateMaterialOverride)));
+                ResolveCrustGeometryMaterial(HypsoPlateMaterialOverride, isSolid: false)));
 
             var solidDto = BuildExplodedSolidDto(cap, solid);
             root.AddChild(BuildExplodedSolidMeshInstance(
                 $"Plate{cap.PlateId}_Solid",
                 solidDto,
-                ResolveCrustGeometryMaterial(PlanetShaderLibrary.SlabWallStrataMaterial)));
+                ResolveCrustGeometryMaterial(
+                    PlanetShaderLibrary.SlabWallStrataMaterial,
+                    isSolid: true)));
         }
     }
 
-    private Material ResolveCrustGeometryMaterial(Material productionMaterial)
+    private Material ResolveCrustGeometryMaterial(Material productionMaterial, bool isSolid)
     {
         if (!string.Equals(
                 System.Environment.GetEnvironmentVariable("FANTASIM_NEUTRAL_CRUST_GEOMETRY"),
@@ -242,13 +245,25 @@ internal sealed partial class PlanetPresentationBinder
             return productionMaterial;
         }
 
-        return _neutralCrustEvidenceMaterial ??= new StandardMaterial3D
+        ref Material? cached = ref isSolid
+            ? ref _neutralCrustSolidEvidenceMaterial
+            : ref _neutralCrustTopEvidenceMaterial;
+        if (cached is not null)
+            return cached;
+
+        float tone = isSolid ? 0.30f : 0.70f;
+        cached = new StandardMaterial3D
         {
-            AlbedoColor = new Color(0.64f, 0.64f, 0.64f, 1.0f),
+            AlbedoColor = new Color(tone, tone, tone, 1.0f),
             Roughness = 0.92f,
             Metallic = 0.0f,
             VertexColorUseAsAlbedo = false,
+            // Geometry-only evidence must not turn the camera-facing half of the shell black when
+            // the production key light happens to be behind it. Godot's unshaded mode preserves the
+            // neutral albedo while depth testing still proves shell closure and plate overlap.
+            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
         };
+        return cached;
     }
 
     // Directive 3b: builds the formed-relief slab TOP caps via SlabTopReliefComposer (the pure seam

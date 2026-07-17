@@ -1009,6 +1009,8 @@ public sealed class Service : IService, IDisposable
                 "Crust underlap proof: digest={Digest}, arc={BoundaryArc}, "
               + "overriding={OverridingPlate}, downGoing={SubductingPlate}, "
               + "downGoingCell={SubductingCell}, "
+              + "rayOrigin=({RayOriginX:R},{RayOriginY:R},{RayOriginZ:R}), "
+              + "rayDirection=({RayDirectionX:R},{RayDirectionY:R},{RayDirectionZ:R}), "
               + "overridingInterval=[{OverEnter:R},{OverExit:R}], "
               + "downGoingInterval=[{DownEnter:R},{DownExit:R}].",
                 crustVolume.Digest,
@@ -1016,6 +1018,12 @@ public sealed class Service : IService, IDisposable
                 proof.OverridingPlateId,
                 proof.SubductingPlateId,
                 proof.SubductingCellId,
+                proof.RayOrigin.X,
+                proof.RayOrigin.Y,
+                proof.RayOrigin.Z,
+                proof.RayDirection.X,
+                proof.RayDirection.Y,
+                proof.RayDirection.Z,
                 proof.OverridingEnter,
                 proof.OverridingExit,
                 proof.SubductingEnter,
