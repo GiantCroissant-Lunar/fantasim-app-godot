@@ -1,8 +1,7 @@
 # Spherical plate-material volumes — replacement Slice A/B design
 
-**Status:** DESIGN APPROVED by the user in conversation on 2026-07-17. Written-spec review is
-pending. No implementation or implementation plan is authorized by this document until that
-review passes.
+**Status:** USER APPROVED, including written-spec review, on 2026-07-17. This document is the
+implementation-planning authority for Replacement A0/B0.
 
 This specification replaces the implementation authority of
 `2026-07-17-crust-volume-generation-design.md`. That earlier document remains as design history
@@ -424,8 +423,8 @@ is deliberately smaller than the whole project but exercises the hardest semanti
 
 This design is complete only when:
 
-- the user approves this written specification;
-- it is committed;
+- the user has approved this written specification;
+- that approval is recorded in the committed specification;
 - the next step uses `writing-plans` to plan Replacement A0/B0 without adding a parallel domain
   authority.
 
