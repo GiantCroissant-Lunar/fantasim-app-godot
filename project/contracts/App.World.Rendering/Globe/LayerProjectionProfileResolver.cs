@@ -45,15 +45,20 @@ public static class LayerProjectionProfileResolver
         double declaredScale = worldLens ? worldMetresToUnitRadius : crust.MetresToUnitRadius;
         double heightExponent = worldLens ? worldHeightExponent : crust.HeightExponent;
 
-        // Silhouette budget fit (north-star spec §1): the declared scale is FITTED so the profile's
-        // reference max relief maps to at most the budget — the clamp in GlobePlateSurfaces then
-        // only guards outliers instead of saturating the whole field into a plateau shell. Pure
-        // arithmetic from declared values (budget / refMax^exponent); no eye-tuned numbers. The
-        // adaptive edge threshold is declared in post-lens display units, so it scales by the same
-        // ratio to keep the split behaviour invariant under the fit.
-        double fitCap = double.IsInfinity(crust.MaxDisplacementUnitRadius)
+        // The 0.5%-radius silhouette budget belongs to the secondary watertight/diagnostic crust
+        // projection. The assembled World is now a crust-volume outer envelope: its approved
+        // north-star explicitly retires that old smooth-sphere cap so the existing World lens can
+        // make tectonic consequences legible. Both views still sample the same geological state.
+        double maxDisplacementUnitRadius = worldLens
             ? double.PositiveInfinity
-            : crust.MaxDisplacementUnitRadius / Math.Pow(crust.ReferenceMaxReliefMetres, heightExponent);
+            : crust.MaxDisplacementUnitRadius;
+
+        // A view that declares a silhouette budget fits its scale so reference relief maps within
+        // that budget; the final clamp then only guards outliers. The adaptive edge threshold is
+        // declared in post-lens display units, so it follows the same ratio.
+        double fitCap = double.IsInfinity(maxDisplacementUnitRadius)
+            ? double.PositiveInfinity
+            : maxDisplacementUnitRadius / Math.Pow(crust.ReferenceMaxReliefMetres, heightExponent);
         double metresToUnitRadius = Math.Min(declaredScale, fitCap);
         double fitRatio = metresToUnitRadius / declaredScale;
 
@@ -78,7 +83,7 @@ public static class LayerProjectionProfileResolver
             AdaptiveSubdivisionEdgeHeightDelta: visibleLod?.EdgeHeightDeltaThreshold ?? crust.AdaptiveSubdivisionEdgeHeightDelta * fitRatio,
             AdaptiveSubdivisionFeatureWeightDelta: visibleLod?.FeatureWeightDeltaThreshold ?? crust.AdaptiveSubdivisionFeatureWeightDelta,
             PreservesCellProvenance: crust.PreservesCellProvenance,
-            MaxDisplacementUnitRadius: crust.MaxDisplacementUnitRadius);
+            MaxDisplacementUnitRadius: maxDisplacementUnitRadius);
     }
 
     private static PlanetLayerProjectionProfile ResolveCrustProfile(PlanetPresentationDocument document)

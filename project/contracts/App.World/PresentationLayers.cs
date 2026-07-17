@@ -62,7 +62,10 @@ public sealed record PlanetLayerProjectionProfile(
     public const string UnitSphereDisplacementUnit = "unit-sphere-displacement";
     public const double EarthLikePlanetRadiusMetres = 6_371_000.0;
 
-    /// <summary>North-star spec §1: the stylized silhouette allowance (0.5% of base radius).</summary>
+    /// <summary>
+    /// Stylized silhouette allowance for the secondary watertight/diagnostic crust projection
+    /// (0.5% of base radius). The assembled crust-volume World deliberately does not use this cap.
+    /// </summary>
     public const double DefaultSilhouetteBudgetUnitRadius = 0.005;
 
     /// <summary>Default <see cref="ReferenceMaxReliefMetres"/>: ±500 m envelope + strongest fabric belt.</summary>

@@ -196,9 +196,9 @@ internal sealed partial class PlanetPresentationBinder
         var featureWeights = useAdaptiveSurface
             ? PlateSurfaceMeshFactory.BuildAdaptiveFeatureWeights(snapshot.CellCount, features)
             : null;
-        // Silhouette budget (north-star spec §1): planet views clamp the finalized radial
-        // displacement to the profile's declared cap so the limb stays a circle. Diagnostic views
-        // that do not declare a cap keep the +inf default (legacy unclamped behaviour).
+        // The resolved projection owns whether this view has a silhouette clamp. The assembled
+        // crust-volume World is intentionally uncapped; secondary watertight/diagnostic projections
+        // may retain a declared budget.
         var maxDisp = projection.MaxDisplacementUnitRadius;
         var caps = useAdaptiveSurface
             ? _plateSurfaces.BuildAdaptiveSurfaces(
