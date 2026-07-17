@@ -22,6 +22,7 @@ internal sealed partial class PlanetPresentationBinder
     // M-B exploded solid-crust state (inactive until render.exploded is invoked at least once).
     private bool _explodedActive;
     private double _explodedFactor;
+    private bool _explodedFocusConvergent;
     private Node3D? _explodedCrustRoot;
     private Material? _neutralCrustTopEvidenceMaterial;
     private Material? _neutralCrustSolidEvidenceMaterial;
@@ -51,17 +52,18 @@ internal sealed partial class PlanetPresentationBinder
         ApplyTimelineTick(_timeline.Tick);
     }
 
-    // M-B: entry from render.exploded. Factor 0 = assembled solid crust (solids in place, thickness
-    // and side walls visible at the silhouette); factor in (0,1] radially translates each plate along
-    // its area-weighted centroid direction. Activation hides the single-surface plate root and shows
-    // the per-plate solid slabs instead; there is no deactivate path for M-B (spec: activation only).
-    public void UpdateExploded(double factor)
+    // M-B: entry from render.exploded. Factor 0 keeps solids in place. Whole-globe mode translates
+    // every plate along its centroid; focused mode isolates the proven convergent pair and translates
+    // only the overriding complete plate. Activation hides the single-surface plate root and shows
+    // per-plate solids instead; there is no deactivate path for M-B (spec: activation only).
+    public void UpdateExploded(double factor, bool focusConvergent)
     {
         if (_disposed)
             return;
 
         _explodedActive = true;
         _explodedFactor = factor;
+        _explodedFocusConvergent = focusConvergent;
         RebuildExplodedCrust();
         ApplyTimelineTick(_timeline.Tick);
     }
@@ -163,6 +165,19 @@ internal sealed partial class PlanetPresentationBinder
         var centroids = _lastCentroids ?? PlateSolidBuilder.ComputeCentroids(snapshot);
         var (slabCaps, slabPerPlateVertexColors) = BuildSlabTopCaps(document, snapshot);
         double factor = factorOverride ?? _explodedFactor;
+
+        if (_explodedFocusConvergent)
+        {
+            BuildFocusedConvergentCrust(
+                root,
+                volume,
+                slabCaps,
+                centroids,
+                factor,
+                slabPerPlateVertexColors);
+            return root;
+        }
+
         var solids = PlateSolidBuilder.Build(slabCaps, volume);
         var exploded = PlateSolidBuilder.ApplyExplodedFactor(solids, centroids, factor);
 
@@ -193,6 +208,122 @@ internal sealed partial class PlanetPresentationBinder
         return root;
     }
 
+    private void BuildFocusedConvergentCrust(
+        Node3D root,
+        CrustVolumeState volume,
+        IReadOnlyList<PlateCap> slabCaps,
+        IReadOnlyList<PlateSolidCentroid> centroids,
+        double factor,
+        IReadOnlyDictionary<int, RampColor[]> slabPerPlateVertexColors)
+    {
+        if (!volume.TryFindConvergentUnderlapProof(out var proof))
+        {
+            _log.LogWarning(
+                "Focused convergent crust skipped: digest={Digest} has no convergent underlap proof.",
+                volume.Digest);
+            return;
+        }
+
+        var focusedCaps = slabCaps
+            .Where(cap =>
+                cap.PlateId == proof.OverridingPlateId
+                || cap.PlateId == proof.SubductingPlateId)
+            .ToArray();
+        var focusedCentroids = centroids
+            .Where(centroid =>
+                centroid.PlateId == proof.OverridingPlateId
+                || centroid.PlateId == proof.SubductingPlateId)
+            .ToArray();
+
+        if (focusedCaps.Length != 2 || focusedCentroids.Length != 2)
+        {
+            _log.LogWarning(
+                "Focused convergent crust skipped: digest={Digest} arc={ArcIndex} expected two complete plates; caps={CapCount} centroids={CentroidCount}.",
+                volume.Digest,
+                proof.BoundaryArcIndex,
+                focusedCaps.Length,
+                focusedCentroids.Length);
+            return;
+        }
+
+        var assembledSolids = PlateSolidBuilder.Build(focusedCaps, volume);
+        var displayedSolids = assembledSolids.ToArray();
+        int overridingIndex = Array.FindIndex(
+            displayedSolids,
+            solid => solid.PlateId == proof.OverridingPlateId);
+        var overridingCentroid = focusedCentroids
+            .Single(centroid => centroid.PlateId == proof.OverridingPlateId);
+
+        displayedSolids[overridingIndex] = PlateSolidBuilder.ApplyExplodedFactor(
+            new[] { displayedSolids[overridingIndex] },
+            new[] { overridingCentroid },
+            factor)[0];
+
+        var offsetByPlate = new Dictionary<int, double>
+        {
+            [proof.OverridingPlateId] = factor * PlateSolidBuilder.DefaultMaxOffset,
+            [proof.SubductingPlateId] = 0.0,
+        };
+
+        AddSlabMeshInstances(
+            root,
+            focusedCaps,
+            displayedSolids,
+            focusedCentroids,
+            offsetMag: 0.0,
+            slabPerPlateVertexColors: slabPerPlateVertexColors,
+            offsetMagnitudeByPlate: offsetByPlate);
+        OrientFocusedConvergentRoot(root, volume, proof.BoundaryArcIndex);
+
+        root.SetMeta("crustVolumeDigest", volume.Digest);
+        root.SetMeta("focusBoundaryArcIndex", proof.BoundaryArcIndex);
+        root.SetMeta("overridingPlateId", proof.OverridingPlateId);
+        root.SetMeta("subductingPlateId", proof.SubductingPlateId);
+        _log.LogInformation(
+            "Focused convergent crust mounted: digest={Digest}, arc={ArcIndex}, overridingPlate={OverridingPlateId}, downGoingPlate={SubductingPlateId}, factor={Factor:R}, plates=2.",
+            volume.Digest,
+            proof.BoundaryArcIndex,
+            proof.OverridingPlateId,
+            proof.SubductingPlateId,
+            factor);
+    }
+
+    private static void OrientFocusedConvergentRoot(
+        Node3D root,
+        CrustVolumeState volume,
+        int boundaryArcIndex)
+    {
+        var points = volume.BoundaryArcs[boundaryArcIndex].Points;
+        int middle = points.Count / 2;
+        int previous = Math.Max(0, middle - 1);
+        int next = Math.Min(points.Count - 1, middle + 1);
+
+        var middlePoint = points[middle];
+        var outward = new Vector3(
+            (float)middlePoint.X,
+            (float)middlePoint.Y,
+            (float)middlePoint.Z).Normalized();
+        var previousPoint = points[previous];
+        var nextPoint = points[next];
+        var rawTangent = new Vector3(
+            (float)(nextPoint.X - previousPoint.X),
+            (float)(nextPoint.Y - previousPoint.Y),
+            (float)(nextPoint.Z - previousPoint.Z));
+        var tangent = (
+            rawTangent - outward * rawTangent.Dot(outward)
+        ).Normalized();
+        var across = outward.Cross(tangent).Normalized();
+
+        if (!outward.IsFinite() || !tangent.IsFinite() || !across.IsFinite())
+            return;
+
+        // A Node3D basis is relative to its parent; applying one basis to this common root rotates
+        // both complete plates identically and preserves their relative generated relationship.
+        // Source: https://docs.godotengine.org/en/4.7/tutorials/3d/using_transforms.html
+        var sourceFrame = new Basis(tangent, across, outward).Orthonormalized();
+        root.Basis = sourceFrame.Transposed();
+    }
+
     // Shared per-plate slab mesh emission for the solid-slab family (exploded look-dev crust, the
     // mantle layer's separated slabs, and the default World slab assembly): for each cap, the TOP
     // (attributed cap surface DTO with the plate's radial offset baked into positions) and the
@@ -205,7 +336,8 @@ internal sealed partial class PlanetPresentationBinder
         IReadOnlyList<PlateSolid> solids,
         IReadOnlyList<PlateSolidCentroid> centroids,
         double offsetMag,
-        IReadOnlyDictionary<int, RampColor[]> slabPerPlateVertexColors)
+        IReadOnlyDictionary<int, RampColor[]> slabPerPlateVertexColors,
+        IReadOnlyDictionary<int, double>? offsetMagnitudeByPlate = null)
     {
         var byPlate = new Dictionary<int, PlateSolidCentroid>(centroids.Count);
         foreach (var c in centroids)
@@ -219,7 +351,18 @@ internal sealed partial class PlanetPresentationBinder
 
             var solid = solids[i];
 
-            var topDto = BuildExplodedTopDto(cap, centroid, offsetMag, slabPerPlateVertexColors);
+            double plateOffsetMag = offsetMag;
+            if (offsetMagnitudeByPlate is not null
+                && offsetMagnitudeByPlate.TryGetValue(cap.PlateId, out double focusedOffset))
+            {
+                plateOffsetMag = focusedOffset;
+            }
+
+            var topDto = BuildExplodedTopDto(
+                cap,
+                centroid,
+                plateOffsetMag,
+                slabPerPlateVertexColors);
             root.AddChild(BuildExplodedMeshInstance(
                 $"Plate{cap.PlateId}_Top",
                 topDto,
