@@ -315,9 +315,39 @@ internal sealed partial class PlanetPresentationBinder
             ? 0.0
             : caps.Max(cap => cap.Surface.Positions.Max(point =>
                 Math.Sqrt((point.X * point.X) + (point.Y * point.Y) + (point.Z * point.Z))));
+        double normalRadialDotMin = 1.0;
+        double normalRadialDotMax = -1.0;
+        double normalRadialDotSum = 0.0;
+        int normalRadialDotCount = 0;
+        foreach (var mesh in meshes)
+        {
+            for (int vertex = 0; vertex < mesh.VertexCount; vertex++)
+            {
+                int offset = vertex * 3;
+                double px = mesh.Positions[offset + 0];
+                double py = mesh.Positions[offset + 1];
+                double pz = mesh.Positions[offset + 2];
+                double nx = mesh.Normals[offset + 0];
+                double ny = mesh.Normals[offset + 1];
+                double nz = mesh.Normals[offset + 2];
+                double denominator = Math.Sqrt((px * px) + (py * py) + (pz * pz))
+                    * Math.Sqrt((nx * nx) + (ny * ny) + (nz * nz));
+                if (denominator <= 1e-12)
+                    continue;
+
+                double dot = ((px * nx) + (py * ny) + (pz * nz)) / denominator;
+                normalRadialDotMin = Math.Min(normalRadialDotMin, dot);
+                normalRadialDotMax = Math.Max(normalRadialDotMax, dot);
+                normalRadialDotSum += dot;
+                normalRadialDotCount++;
+            }
+        }
+        double normalRadialDotMean = normalRadialDotCount == 0
+            ? 0.0
+            : normalRadialDotSum / normalRadialDotCount;
 
         _log.LogInformation(
-            "Planet outer envelope bound: view={ViewMode}, source={Source}, crustVolumeDigest={CrustVolumeDigest}, buriedUnderlap=hidden, subdivision={Subdivision}, plates={PlateCount}, triangles={TriangleCount}, meshVertices={VertexCount}, scale={Scale}, trueScale={TrueScale}, amplification={Amplification}x, frequency={Frequency}, cellColorRange=[{CellColorMin},{CellColorMax}], meshColorRange=[{MeshColorMin},{MeshColorMax}], radiusRange=[{RadiusMin},{RadiusMax}].",
+            "Planet outer envelope bound: view={ViewMode}, source={Source}, crustVolumeDigest={CrustVolumeDigest}, buriedUnderlap=hidden, subdivision={Subdivision}, plates={PlateCount}, triangles={TriangleCount}, meshVertices={VertexCount}, scale={Scale}, trueScale={TrueScale}, amplification={Amplification}x, frequency={Frequency}, cellColorRange=[{CellColorMin},{CellColorMax}], meshColorRange=[{MeshColorMin},{MeshColorMax}], radiusRange=[{RadiusMin},{RadiusMax}], normalRadialDot=[{NormalRadialDotMin},{NormalRadialDotMean},{NormalRadialDotMax}].",
             viewMode,
             volume is null ? "compatibility" : nameof(CrustVolumeState),
             volume?.Digest ?? "none",
@@ -334,6 +364,9 @@ internal sealed partial class PlanetPresentationBinder
             meshColorMin,
             meshColorMax,
             radiusMin,
-            radiusMax);
+            radiusMax,
+            normalRadialDotMin,
+            normalRadialDotMean,
+            normalRadialDotMax);
     }
 }
