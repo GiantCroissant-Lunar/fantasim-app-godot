@@ -34,8 +34,8 @@ Godot export. Outer verification uses `dotnet unify-build`, not a hand-authored 
 ## 2. Session-sized delivery slices
 
 The overall planet is a project arc, not one session goal. Work proceeds through falsifiable slices.
-The current implementation slice is **Slice A**. Later slices do not begin until the preceding
-visual or structural gate is deposited.
+Slices A and B are complete; the next implementation slice is **Slice C**. Later slices do not
+begin until the preceding visual or structural gate is deposited.
 
 ### Slice A — canonical boundary authority and volume-state skeleton
 
@@ -479,3 +479,52 @@ and is explicitly not satisfied by this slice.
 **NEXT SESSION GOAL:** Slice B — generate the assembled outer envelope from `CrustVolumeState` so
 one complete unobstructed globe shows legible large-scale relief while buried underlap remains
 hidden; gate is an exported-app screenshot plus the same A → B → A identity proof.
+
+### 2026-07-17 / Slice B — assembled outer envelope
+
+**ESTABLISHED:**
+
+- The default World renderer consumes `CrustVolumeState` through the existing adaptive surface
+  path and reports `buriedUnderlap=hidden`; it no longer uses the radial slab assembly as its
+  default geometry owner.
+- The shared boundary field now creates both elevation and existing `CellCrustFeature` outputs.
+  The 107M state contains mountains, volcanic arcs, trenches, ridges, and faults and renders
+  12,098 adaptive triangles with radius range
+  `[0.9765938209198253,1.033694838392382]`.
+- The exact app exported at HEAD `4be950886b6b6bfe34f1246d0948fa0c4db6ddb8` passed the visual
+  gate in
+  `vault/specs/evidence/2026-07-17-crust-volume-slice-b/tick-107m-world-final-export-yaw90.png`.
+- The clean exported process passed A → B → A:
+  `bcda1c210caaa745cf9c4f2985465fdb4d36bf8ebd1fad90fd8cc27dab68e59f` →
+  `649746119a0e97fa5df58c434187fe8250a837560a686c6aa13edbc8016ef1c8` →
+  `bcda1c210caaa745cf9c4f2985465fdb4d36bf8ebd1fad90fd8cc27dab68e59f`.
+- UnifyBuild desktop export and all bundle builds completed with zero errors. No test runner was
+  invoked and no test was added.
+
+**DISPROVEN:**
+
+- Merely binding the envelope did not make geology legible: the old world silhouette clamp,
+  smooth normals, and smoothed colors produced a near-spherical brown ball.
+- `render.exploded` factor zero is not a way to disable that view; it activates the obsolete
+  assembled solid-crust path and can occlude the outer envelope.
+- `Service` was not using the supposedly authoritative feature projection. It independently
+  authored `CellCrustFeature[]`, suppressing mountains and volcanic arcs in production even while
+  elevation shaping succeeded.
+
+**TYPE OWNERSHIP:**
+
+- Added no class, record, struct, interface, or enum in the Slice B commit range.
+- Removed the duplicate production feature-authoring path and deleted `BuildCellFeatures(...)`.
+  `PlateFrameSampler.SampleSurfaceDataAt(...)` is now the shared elevation/feature projection.
+- Evolved `BoundaryProfileShape`, `CrustAccentMapper`, and existing presentation policies in
+  place. `CrustVolumeState` remains the single canonical geology state.
+- No test file changed. Full ownership audit and negative captures are deposited in
+  `vault/specs/evidence/2026-07-17-crust-volume-slice-b/`.
+
+**USER VERDICT:** approved architecture and Slice B execution; final screenshot is deposited for
+direct visual review. This slice does not claim the continuous cutaway underlap required by Slice C.
+
+**NEXT SESSION GOAL:** Slice C — evolve the existing `PlateSolid`/`PlateSolidBuilder` boundary into
+one continuous convergent plate-volume extraction whose same-tick assembled view hides underlap
+while cutaway/exploded reveals it; gate is paired exported-app captures with the same
+`CrustVolumeState` digest and no appended strip.
