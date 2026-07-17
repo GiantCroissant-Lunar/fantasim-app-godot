@@ -1,7 +1,34 @@
 # Crust-volume generation: one geological state, two projections
 
-**Status:** USER APPROVED in conversation on 2026-07-17. The user explicitly approved
-implementation immediately and explicitly suspended new test authoring for this arc.
+**Status:** SUPERSEDED AS IMPLEMENTATION AUTHORITY on 2026-07-17 after the user rejected
+the delivered Slice A/B representation. Preserve this document as design history only. A
+replacement plate-material deformation design is under user review and must be approved in
+writing before a new implementation plan begins.
+
+### Supersession findings
+
+The delivered Slice A/B work disproved that this document was specific enough to prevent another
+radial-shell substitution:
+
+- `CrustVolumeState` was populated with per-cell outer elevation, radial thickness, and feature
+  arrays. Its density query described one radial column; it did not define non-radial plate
+  material or permit separate overriding and down-going plate intersections along one direction.
+- The assembled path displaced spherical plate caps from those elevation arrays. It therefore
+  remained a heightfield presentation rather than the visible envelope of already-deformed solid
+  plate volumes.
+- The exploded path continued to extrude those caps radially. The production code explicitly
+  deferred continuous buried underlap, so separating the plates could not reveal plate-on-plate or
+  plate-under-plate anatomy that did not exist in the state.
+- Passing builds, deterministic digests, and existing tests established engineering consistency
+  of the scaffold. They did not establish the user's visual or geological acceptance gate.
+
+The user additionally clarified that color and literal crust-to-core units are not acceptance
+concerns. The binding assembled target is now
+`vault/reference/2026-07-17-user-reference-closed-contact-assembled-planet.jpg`: ordinary plate
+contacts form a closed outer envelope; coherent large tectonic forms and readable fine relief must
+both live on the crust geometry. The assembled view occludes buried crust, while the whole-globe
+radial exploded view must reveal the same stored plate volumes and their actual under/over
+relationships.
 
 **Binding product authority:**
 
