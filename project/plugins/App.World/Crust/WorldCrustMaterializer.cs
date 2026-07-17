@@ -71,7 +71,13 @@ internal sealed record WorldCrustMaterialization(
         var cornerMetres = topology.BuildSharedCornerMetres(outerElevationsMetresByCell);
         double referenceThickness = MedianPositive(crustThicknessMetresByCell);
         var outerCandidates = new GlobeVec3[globe.CellCount * 3];
-        var innerCandidates = new GlobeVec3[globe.CellCount * 3];
+        var innerBaseCandidates = new GlobeVec3[globe.CellCount * 3];
+        var innerDeformationCandidates = new GlobeVec3[globe.CellCount * 3];
+        var cellBoundarySamples = CellBoundaryField.Build(globe.Cells, boundaryArcs);
+        var cornerBoundaryAgreement = topology.BuildPlateCornerAgreement(
+            cellBoundarySamples
+                .Select(sample => sample.BoundaryArcIndex)
+                .ToArray());
         for (int face = 0; face < globe.Cells.Count; face++)
         {
             var cell = globe.Cells[face];
@@ -83,6 +89,11 @@ internal sealed record WorldCrustMaterialization(
                     1.50);
             double visualThickness =
                 profiles.VisualCrustThicknessUnitRadius * thicknessRatio;
+            var cellBoundarySample = cellBoundarySamples[cell.CellId];
+            var cellSideHint = new GlobeVec3(
+                cell.C0.X + cell.C1.X + cell.C2.X,
+                cell.C0.Y + cell.C1.Y + cell.C2.Y,
+                cell.C0.Z + cell.C1.Z + cell.C2.Z);
             for (int corner = 0; corner < 3; corner++)
             {
                 int index = (cell.CellId * 3) + corner;
@@ -95,39 +106,90 @@ internal sealed record WorldCrustMaterialization(
                 var controlSample = CellBoundaryField.SampleDirection(
                     baseCorner,
                     cell.PlateId,
-                    boundaryArcs);
+                    boundaryArcs,
+                    cellSideHint,
+                    cellBoundarySample.BoundaryArcIndex);
+                if (controlSample.Found && cellBoundarySample.Found)
+                {
+                    controlSample = controlSample with
+                    {
+                        AcrossBoundaryDirection = cellBoundarySample.AcrossBoundaryDirection,
+                        AlongBoundaryDirection = cellBoundarySample.AlongBoundaryDirection,
+                    };
+                }
                 Vector3D unit = ToVector(baseCorner).Normalize();
                 double radius = 1.0 + (cornerMetres[index] * verticalExaggeration);
                 Vector3D outer = unit * radius;
-                Vector3D inner = outer - (unit * visualThickness);
-                ApplyConvergentDeformation(
-                    controlSample,
-                    profiles,
-                    unit,
-                    ref outer,
-                    ref inner);
+                Vector3D innerBase = outer - (unit * visualThickness);
+                Vector3D inner = innerBase;
+                if (cornerBoundaryAgreement[index])
+                {
+                    ApplyConvergentDeformation(
+                        controlSample,
+                        profiles,
+                        unit,
+                        ref outer,
+                        ref inner);
+                }
                 outerCandidates[index] = ToGlobe(outer);
-                innerCandidates[index] = ToGlobe(inner);
+                innerBaseCandidates[index] = ToGlobe(innerBase);
+                innerDeformationCandidates[index] = ToGlobe(inner - innerBase);
             }
         }
 
-        var welded = topology.WeldPlateCorners(outerCandidates, innerCandidates);
-        string parameterDigest =
-            ComputeVolumeParameterDigest(verticalExaggeration, profiles);
-        return CrustVolumeState.Create(
-            tick,
-            seed,
-            graphRevision,
-            topology.TopologyDigest,
-            parameterDigest,
-            globe,
-            boundaryArcs,
-            welded.Outer,
-            welded.Inner,
-            outerElevationsMetresByCell,
-            crustThicknessMetresByCell,
-            featuresByCell,
-            continentalFractionByCell);
+        ArgumentException? lastInversion = null;
+        double[] deformationScales =
+        {
+            1.0,
+            0.875,
+            0.75,
+            0.625,
+            0.5,
+            0.375,
+            0.25,
+            0.125,
+        };
+        foreach (double deformationScale in deformationScales)
+        {
+            var scaledInnerCandidates = new GlobeVec3[innerBaseCandidates.Length];
+            for (int i = 0; i < scaledInnerCandidates.Length; i++)
+            {
+                Vector3D inner = ToVector(innerBaseCandidates[i])
+                    + (ToVector(innerDeformationCandidates[i]) * deformationScale);
+                scaledInnerCandidates[i] = ToGlobe(inner);
+            }
+
+            var welded = topology.WeldPlateCorners(outerCandidates, scaledInnerCandidates);
+            string parameterDigest = ComputeVolumeParameterDigest(
+                verticalExaggeration,
+                profiles,
+                deformationScale);
+            try
+            {
+                return CrustVolumeState.Create(
+                    tick,
+                    seed,
+                    graphRevision,
+                    topology.TopologyDigest,
+                    parameterDigest,
+                    globe,
+                    boundaryArcs,
+                    welded.Outer,
+                    welded.Inner,
+                    outerElevationsMetresByCell,
+                    crustThicknessMetresByCell,
+                    featuresByCell,
+                    continentalFractionByCell);
+            }
+            catch (ArgumentException ex) when (IsMaterialWedgeInversion(ex))
+            {
+                lastInversion = ex;
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Convergent deformation could not preserve valid material wedges at the minimum visual scale.",
+            lastInversion);
     }
 
     private static void ApplyConvergentDeformation(
@@ -145,24 +207,33 @@ internal sealed record WorldCrustMaterialization(
             return;
         }
 
+        // The outer contact is the assembled globe and must stay closed.  The down-going
+        // continuation therefore begins below the hinge by deforming the inner material
+        // controls only.  Make the transition wider than the underlap/depth displacement so
+        // the inner mapping remains monotone instead of folding a cell back across itself.
         double bendHalfWidth = Math.Max(
             profiles.ConvergentTrenchHalfWidthRad * 2.0,
-            profiles.ConvergentArcSetbackRad + profiles.ConvergentArcHalfWidthRad);
+            Math.Max(
+                profiles.ConvergentArcSetbackRad + profiles.ConvergentArcHalfWidthRad,
+                Math.Max(
+                    profiles.ConvergentSlabUnderlapLengthUnitRadius,
+                    profiles.ConvergentSlabDepthUnitRadius) * 4.0));
         double distance = Math.Abs(sample.SignedDistanceRad);
         if (distance > bendHalfWidth)
             return;
         double normalizedDistance = Math.Clamp(distance / bendHalfWidth, 0.0, 1.0);
         if (sample.CellPlateId == subductingPlateId)
         {
-            double bend = Math.Sin(Math.PI * SmoothStep(normalizedDistance));
+            double hingeInfluence = SmoothStep(1.0 - normalizedDistance);
             Vector3D intoOwningPlate = ToVector(sample.AcrossBoundaryDirection);
             Vector3D towardOverridingPlate = intoOwningPlate * -1.0;
             Vector3D shift =
                 (towardOverridingPlate
                     * profiles.ConvergentSlabUnderlapLengthUnitRadius
-                    * bend)
-              - (unit * profiles.ConvergentSlabDepthUnitRadius * bend * bend);
-            outer += shift;
+                    * hingeInfluence)
+              - (unit
+                    * profiles.ConvergentSlabDepthUnitRadius
+                    * hingeInfluence);
             inner += shift;
             return;
         }
@@ -213,7 +284,8 @@ internal sealed record WorldCrustMaterialization(
 
     private static string ComputeVolumeParameterDigest(
         double verticalExaggeration,
-        BoundaryProfileParameters p)
+        BoundaryProfileParameters p,
+        double deformationScale)
     {
         using var stream = new MemoryStream();
         using (var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
@@ -240,11 +312,19 @@ internal sealed record WorldCrustMaterialization(
             writer.Write(p.ConvergentVolcanoConeHeight);
             writer.Write(p.ConvergentVolcanoPeriodPoints);
             writer.Write(p.ConvergentVolcanoSharpness);
+            writer.Write(deformationScale);
         }
         return Convert.ToHexString(
                 SHA256.HashData(stream.GetBuffer().AsSpan(0, checked((int)stream.Length))))
             .ToLowerInvariant();
     }
+
+    private static bool IsMaterialWedgeInversion(ArgumentException exception)
+        => exception.Message.StartsWith("Cell ", StringComparison.Ordinal)
+            && exception.Message.Contains(" tetrahedron ", StringComparison.Ordinal)
+            && exception.Message.EndsWith(
+                " is degenerate or inverted.",
+                StringComparison.Ordinal);
 
     private static Vector3D ToVector(GlobeVec3 point)
         => new(point.X, point.Y, point.Z);

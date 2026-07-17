@@ -211,6 +211,62 @@ public sealed class GlobePlateSurfaces
         return (outer, inner);
     }
 
+    /// <summary>
+    /// Projects one per-cell deformation label onto the cached plate-local shared vertices. A corner
+    /// agrees only when every incident cell on that plate selected the same label. Material deformation
+    /// can use the result to suppress conflicting boundary frames at multi-arc junctions before welding.
+    /// </summary>
+    public bool[] BuildPlateCornerAgreement(IReadOnlyList<int> labelByCell)
+    {
+        ArgumentNullException.ThrowIfNull(labelByCell);
+        if (labelByCell.Count != _globalCellIds.Length)
+        {
+            throw new ArgumentException(
+                "Labels must contain one value per cell.",
+                nameof(labelByCell));
+        }
+
+        var result = new bool[_globalCellIds.Length * 3];
+        foreach (var plate in _plates)
+        {
+            var vertexLabels = new int[plate.LocalVertices.Length];
+            var vertexSeen = new bool[plate.LocalVertices.Length];
+            var vertexAgrees = new bool[plate.LocalVertices.Length];
+            Array.Fill(vertexAgrees, true);
+
+            for (int face = 0; face < plate.CellIds.Length; face++)
+            {
+                int cellId = plate.CellIds[face];
+                int label = labelByCell[cellId];
+                for (int corner = 0; corner < 3; corner++)
+                {
+                    int localVertex = plate.LocalTriangles[(face * 3) + corner];
+                    if (!vertexSeen[localVertex])
+                    {
+                        vertexSeen[localVertex] = true;
+                        vertexLabels[localVertex] = label;
+                    }
+                    else if (vertexLabels[localVertex] != label)
+                    {
+                        vertexAgrees[localVertex] = false;
+                    }
+                }
+            }
+
+            for (int face = 0; face < plate.CellIds.Length; face++)
+            {
+                int cellId = plate.CellIds[face];
+                for (int corner = 0; corner < 3; corner++)
+                {
+                    int localVertex = plate.LocalTriangles[(face * 3) + corner];
+                    result[(cellId * 3) + corner] = vertexAgrees[localVertex];
+                }
+            }
+        }
+
+        return result;
+    }
+
     private void ValidateClosedOuterContacts(IReadOnlyList<GlobeVec3> outer)
     {
         var assigned = new bool[_globalVertices.Length];

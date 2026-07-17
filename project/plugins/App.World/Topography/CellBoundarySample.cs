@@ -38,6 +38,12 @@ public readonly record struct CellBoundarySample(
     int? SubductingPlateId,
     bool IsCollision)
 {
+    /// <summary>
+    /// Index of the selected arc in the sampled arc collection. Material-control callers use this
+    /// to keep every corner of one cell on the same boundary frame at junctions.
+    /// </summary>
+    public int BoundaryArcIndex { get; init; } = -1;
+
     public GlobeVec3 NearestBoundaryPoint { get; init; }
 
     /// <summary>Unit tangent along the ordered boundary polyline.</summary>

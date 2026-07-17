@@ -127,7 +127,8 @@ public static class CellBoundaryField
                 arc,
                 arcVecs[bestArc],
                 bestPoint,
-                distance);
+                distance,
+                bestArc);
         }
         return result;
     }
@@ -140,7 +141,9 @@ public static class CellBoundaryField
     public static CellBoundarySample SampleDirection(
         GlobeVec3 direction,
         int plateId,
-        IReadOnlyList<PlateBoundaryArc> arcs)
+        IReadOnlyList<PlateBoundaryArc> arcs,
+        GlobeVec3? sideHintDirection = null,
+        int? preferredArcIndex = null)
     {
         ArgumentNullException.ThrowIfNull(arcs);
         var sampleDirection = Unit(direction);
@@ -153,6 +156,9 @@ public static class CellBoundaryField
         var arcVecs = new Vector3D[arcs.Count][];
         for (int a = 0; a < arcs.Count; a++)
         {
+            if (preferredArcIndex is int preferred && a != preferred)
+                continue;
+
             var points = arcs[a].Points;
             var vectors = new Vector3D[points.Count];
             for (int i = 0; i < points.Count; i++)
@@ -180,13 +186,17 @@ public static class CellBoundaryField
         if (bestArc < 0)
             return NotFound(plateId);
 
+        Vector3D frameDirection = sideHintDirection is GlobeVec3 sideHint
+            ? Unit(sideHint)
+            : sampleDirection;
         return CreateSample(
-            sampleDirection,
+            frameDirection,
             plateId,
             arcs[bestArc],
             arcVecs[bestArc],
             bestPoint,
-            Math.Acos(Math.Clamp(bestDot, -1.0, 1.0)));
+            Math.Acos(Math.Clamp(bestDot, -1.0, 1.0)),
+            bestArc);
     }
 
     /// <summary>
@@ -215,7 +225,8 @@ public static class CellBoundaryField
         PlateBoundaryArc arc,
         IReadOnlyList<Vector3D> arcPoints,
         int pointIndex,
-        double distance)
+        double distance,
+        int boundaryArcIndex)
     {
         int? subductingId = arc.Kind == PlateBoundaryKind.Convergent
             ? arc.SubductingPlateId
@@ -244,6 +255,7 @@ public static class CellBoundaryField
             subductingId,
             isCollision)
         {
+            BoundaryArcIndex = boundaryArcIndex,
             NearestBoundaryPoint = ToGlobeVec(frame.Point),
             AlongBoundaryDirection = ToGlobeVec(frame.Along),
             AcrossBoundaryDirection = ToGlobeVec(frame.Across),
