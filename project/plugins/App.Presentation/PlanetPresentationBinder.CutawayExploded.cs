@@ -170,6 +170,27 @@ internal sealed partial class PlanetPresentationBinder
         // (CrustThicknessExaggeration / PlanetRadiusMetres), so 30 km of crust reads as ~0.038R slab
         // walls. The slab relief (in slabCaps' top positions) acts on disjoint vertices — no compounding.
         var solids = PlateSolidBuilder.Build(slabCaps, thickness, _radialProfile.ThicknessDepthScale());
+
+        // Slices 2+3 in the exploded family too: joint dip/raise + subduction tongues are shaped
+        // BEFORE the radial explode translation, so the separated plates keep their overlap pairs —
+        // the subducting tongue hangs visibly below the overriding lip with space between them
+        // (the registry's v5 shingle-overlap definition; tongues ride their plate's vertices).
+        var explodedArcs = document.BoundaryArcs;
+        if (explodedArcs is { Count: > 0 })
+        {
+            var joints = SlabJointClassifier.Classify(explodedArcs, document.BoundarySections);
+            solids = WorldSlabAssemblyComposer.ShapeSlabJoints(
+                solids,
+                joints,
+                _jointMechanicsProfile,
+                centroids,
+                _worldSurfaceProfile.SlabJointGapUnitRadius);
+            solids = WorldSlabAssemblyComposer.ShapeSubductionTongues(
+                solids,
+                joints,
+                _jointMechanicsProfile);
+        }
+
         var exploded = PlateSolidBuilder.ApplyExplodedFactor(solids, centroids, factor);
 
         AddSlabMeshInstances(

@@ -79,30 +79,37 @@ internal sealed partial class PlanetPresentationBinder
 
         var (slabCaps, slabPerPlateVertexColors) = BuildSlabTopCaps(document, snapshot);
         var thickness = ResolveCrustThicknessMetres(document);
-        var solids = WorldSlabAssemblyComposer.BuildAssembly(
-            slabCaps,
-            centroids,
-            thickness,
-            _radialProfile.ThicknessDepthScale(),
-            _worldSurfaceProfile);
 
-        // Slice 2: joint mechanics — convergent underride (subducting edge dips below the
-        // overriding margin, trench at the dive line), divergent widen, transform identity.
-        // Kind + polarity come from the document's existing boundary data (contracts-tier).
+        // Slices 2+3: joint mechanics + subduction tongues via the chaining composer overload —
+        // convergent underride (dip + raised margin + the watertight tongue reaching under the
+        // overriding lip), divergent widen, transform identity. Kind + polarity come from the
+        // document's existing boundary data (contracts-tier).
         var boundaryArcs = document.BoundaryArcs;
+        IReadOnlyList<FantaSim.App.World.Globe.PlateSolid> solids;
         if (boundaryArcs is { Count: > 0 })
         {
             var joints = SlabJointClassifier.Classify(boundaryArcs, document.BoundarySections);
-            solids = WorldSlabAssemblyComposer.ShapeSlabJoints(
-                solids,
-                joints,
-                _jointMechanicsProfile,
+            solids = WorldSlabAssemblyComposer.BuildAssembly(
+                slabCaps,
                 centroids,
-                _worldSurfaceProfile.SlabJointGapUnitRadius);
+                thickness,
+                _radialProfile.ThicknessDepthScale(),
+                _worldSurfaceProfile,
+                joints,
+                _jointMechanicsProfile);
             _log?.LogInformation(
-                "World slab joints shaped: joints={JointCount}, convergent={ConvergentCount}.",
+                "World slab joints shaped: joints={JointCount}, convergent={ConvergentCount}, tongues chained.",
                 joints.Count,
                 CountConvergent(joints));
+        }
+        else
+        {
+            solids = WorldSlabAssemblyComposer.BuildAssembly(
+                slabCaps,
+                centroids,
+                thickness,
+                _radialProfile.ThicknessDepthScale(),
+                _worldSurfaceProfile);
         }
 
         AddSlabMeshInstances(
