@@ -276,7 +276,9 @@ internal sealed partial class PlanetPresentationBinder
                 _lastJitter,
                 _lastColorMode,
                 _lastPerCellColor,
-                _lastNormalMode)
+                _worldSurfaceProfile.FacetedSlabTops
+                    ? PlateCapMeshNormalMode.Flat
+                    : _lastNormalMode)
             : _lastViewMode == GlobeViewMode.Continents
                 ? PlateCapMeshBuilder.BuildContinents(
                     cap,

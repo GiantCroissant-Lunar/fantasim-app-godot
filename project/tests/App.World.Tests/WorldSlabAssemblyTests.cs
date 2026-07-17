@@ -48,7 +48,9 @@ public sealed class WorldSlabAssemblyTests
         // retune is a conscious decision, and in the 0.004–0.008 unit-radius band the slice locks.
         Assert.Equal(WorldSurfacePresentationProfile.DefaultSlabJointGapUnitRadius, profile.SlabJointGapUnitRadius);
         Assert.True(profile.SlabJointGapUnitRadius > 0.0, "the joint gap must be positive — slabs must not touch");
-        Assert.InRange(profile.SlabJointGapUnitRadius, 0.004, 0.008);
+        // Eye-tuned band, widened 2026-07-17 (user eye-fail: 0.006R read as hairline cracks,
+        // not separated slabs). The ceiling keeps the gap far below the exploded translation.
+        Assert.InRange(profile.SlabJointGapUnitRadius, 0.004, 0.08);
 
         // A JOINT, not an explosion: far smaller than the exploded view's radial translation.
         Assert.True(

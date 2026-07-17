@@ -63,7 +63,15 @@ public sealed record WorldSurfacePresentationProfile(
     /// at ~1.7% of the exploded view's 0.35R max translation it stays unmistakably a JOINT. The
     /// lead + user EYE gate tunes this; the agent does not self-certify the look.
     /// </summary>
-    public const double DefaultSlabJointGapUnitRadius = 0.006;
+    /// <summary>
+    /// When true (default), slab TOPS render with FLAT (faceted) normals — the chunky legible
+    /// geometry the assembled-world north-star demands (clause 7; the user's gray-geometry and
+    /// Keeter references) — instead of the sphere-era smooth normals. Eye-tuned presentation
+    /// switch, not physics.
+    /// </summary>
+    public bool FacetedSlabTops { get; init; } = true;
+
+    public const double DefaultSlabJointGapUnitRadius = 0.02;
 
     /// <summary>The default profile: slab assembly with the default joint gap.</summary>
     public static WorldSurfacePresentationProfile Default { get; } = new(

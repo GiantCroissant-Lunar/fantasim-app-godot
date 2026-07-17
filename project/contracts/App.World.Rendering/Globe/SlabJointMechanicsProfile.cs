@@ -50,8 +50,8 @@ public sealed record SlabJointMechanicsProfile(
     /// <summary>Eye-tuned default subduction dip (0.06R).</summary>
     public const double DefaultSubductionDipUnitRadius = 0.06;
 
-    /// <summary>Eye-tuned default overriding margin raise (0.012R).</summary>
-    public const double DefaultOverridingMarginRaiseUnitRadius = 0.012;
+    /// <summary>Eye-tuned default overriding margin raise (0.03R; raised from 0.012R after the 2026-07-17 eye-fail — collision edges must carry visible bulk).</summary>
+    public const double DefaultOverridingMarginRaiseUnitRadius = 0.03;
 
     /// <summary>Eye-tuned default edge-band half-width (0.12 rad).</summary>
     public const double DefaultEdgeBandHalfWidthRad = 0.12;
