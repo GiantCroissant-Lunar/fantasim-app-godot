@@ -207,3 +207,16 @@ rivers, trees, buildings, clouds, text, blur
 NOTE (standing): if v5 also misses, stop iterating words — the app's renderer becomes the
 reference-maker: implement interaction-preserving edges in the exploded path and screenshot
 THAT. Only the app knows the true plate relationships.
+
+
+---
+
+# TRACK CLOSED (2026-07-17): renderer-as-reference activated
+
+Five generations (v1-v5) could not compose the overlap relationship. User decision point:
+"do you want to create another prompt or go to app adjustment directly?" → APP DIRECTLY.
+The app knows which plate subducts under which; the diffusion model only guesses. The
+acceptance reference for the exploded state will be produced BY the app once the subduction
+tongue ships (slice 3). The v5 shingle-overlap definition remains the binding verbal spec:
+separation must PRESERVE the overlap pairs — plate A's surface continuing under plate B's lip
+with light between them.
