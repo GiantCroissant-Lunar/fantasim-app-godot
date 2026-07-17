@@ -5,13 +5,8 @@ using Microsoft.Extensions.Logging;
 
 namespace FantaSim.App.Presentation;
 
-// Assembled-world slice 1 (vault/specs/2026-07-16-assembled-world-northstar.md): the DEFAULT World
-// view presents the per-plate SOLID slab assembly — "the normal complete sphere could not see how
-// convergent, divergent, transform being presented. But the split part with thickness can." The
-// watertight-sphere World path stays available behind the declared WorldSurfacePresentationProfile
-// fallback; the slab path reuses the SAME machinery as the mantle-layer/exploded views
-// (BuildSlabTopCaps formed-relief tops + PlateSolidBuilder lit strata walls) with a small declared
-// JOINT GAP instead of the exploded view's radial translation.
+// The default assembled World mounts the same state-derived plate solids as the exploded view at
+// factor zero. Ordinary contacts are closed; depth testing hides stored buried underlap.
 internal sealed partial class PlanetPresentationBinder
 {
     // The DECLARED World-surface presentation parameters (S1): which presentation the World view
@@ -19,10 +14,6 @@ internal sealed partial class PlanetPresentationBinder
     // orbit. Same declared-profile pattern as _radialProfile/_slabProfile — a future host knob or
     // document-carried profile can override consciously.
     private WorldSurfacePresentationProfile _worldSurfaceProfile = WorldSurfacePresentationProfile.Default;
-
-    // Slice-2 declared joint-mechanics parameters (subduction dip, overriding margin raise, edge
-    // band width, divergent widening, structural clearance floor) — all eye-tuned via the user gate.
-    private SlabJointMechanicsProfile _jointMechanicsProfile = SlabJointMechanicsProfile.Default;
 
     // The mounted assembly root (under PlanetBody) and its reconcile flag. Driven by the
     // WorldSurfacePresentationPolicy gate in ApplyTimelineTick; entering/leaving the World view
@@ -55,93 +46,43 @@ internal sealed partial class PlanetPresentationBinder
         _worldSlabAssemblyRoot = BuildWorldSlabAssemblyRoot();
         body.AddChild(_worldSlabAssemblyRoot);
         _log.LogInformation(
-            "World slab assembly mounted: plates={PlateCount}, jointGap={JointGap}R.",
-            _worldSlabAssemblyRoot.GetChildCount() / 2,
-            _worldSurfaceProfile.SlabJointGapUnitRadius);
+            "World crust volume assembly mounted: childNodes={ChildNodeCount}, contactGap=0.",
+            _worldSlabAssemblyRoot.GetChildCount());
     }
 
-    // The World slab assembly: the SAME formed-relief slab tops (BuildSlabTopCaps — slab-declared
-    // exaggeration, born-rough sampling, NO World silhouette clamp) and lit strata walls the
-    // exploded/mantle-layer views compose, with the declared JOINT GAP as the radial offset via the
-    // pure WorldSlabAssemblyComposer — assembled, with visible joints (sketchfab exploded-plates
-    // family, assembled state).
+    // The World crust assembly uses the same state-derived caps and closed solids as the exploded
+    // view, with zero translation. Ordinary contacts remain closed and buried material is occluded.
     private Node3D BuildWorldSlabAssemblyRoot()
     {
-        var root = new Node3D { Name = "WorldSlabAssembly" };
-
+        var root = new Node3D { Name = "WorldCrustVolumeAssembly" };
         var document = _currentDocument;
         var snapshot = document?.GlobeSnapshot;
-        if (document is null || snapshot is null)
+        var volume = document?.CrustVolume;
+        if (document is null || snapshot is null || volume is null)
             return root;
 
-        var centroids = _lastCentroids;
-        if (centroids is null)
-            return root;
-
-        var (slabCaps, slabPerPlateVertexColors) = BuildSlabTopCaps(document, snapshot);
-        var thickness = ResolveCrustThicknessMetres(document);
-
-        // Slices 2+3: joint mechanics + subduction tongues via the chaining composer overload —
-        // convergent underride (dip + raised margin + the watertight tongue reaching under the
-        // overriding lip), divergent widen, transform identity. Kind + polarity come from the
-        // document's existing boundary data (contracts-tier).
-        var boundaryArcs = document.BoundaryArcs;
-        IReadOnlyList<FantaSim.App.World.Globe.PlateSolid> solids;
-        if (boundaryArcs is { Count: > 0 })
+        var centroids = _lastCentroids ?? PlateSolidBuilder.ComputeCentroids(snapshot);
+        var (caps, perPlateVertexColors) = BuildSlabTopCaps(document, snapshot);
+        var solids = PlateSolidBuilder.Build(caps, volume);
+        var interior = new MeshInstance3D
         {
-            solids = WorldSlabAssemblyComposer.BuildAssembly(
-                slabCaps,
-                centroids,
-                thickness,
-                _radialProfile.ThicknessDepthScale(),
-                _worldSurfaceProfile,
-                boundaryArcs,
-                _jointMechanicsProfile);
-            _log?.LogInformation(
-                "World slab joints shaped from canonical arcs: segments={SegmentCount}, convergent={ConvergentCount}, buriedUnderlap=hidden.",
-                boundaryArcs.Count,
-                CountConvergent(boundaryArcs));
-        }
-        else
-        {
-            solids = WorldSlabAssemblyComposer.BuildAssembly(
-                slabCaps,
-                centroids,
-                thickness,
-                _radialProfile.ThicknessDepthScale(),
-                _worldSurfaceProfile);
-        }
-
-        // The molten interior beneath the assembled slabs: every joint gap glows orange from
-        // within (acceptance image behavior). Sits just under the slab undersides.
-        var moltenGlow = new MeshInstance3D
-        {
-            Name = "MoltenInterior",
+            Name = "InteriorContext",
             Mesh = new SphereMesh { Radius = 0.86f, Height = 1.72f, RadialSegments = 48, Rings = 24 },
             MaterialOverride = PlanetShaderLibrary.BuildMoltenInteriorMaterial(),
             Scale = Vector3.One * 2.0f,
         };
-        root.AddChild(moltenGlow);
-
+        root.AddChild(interior);
         AddSlabMeshInstances(
             root,
-            slabCaps,
+            caps,
             solids,
             centroids,
-            _worldSurfaceProfile.SlabJointGapUnitRadius,
-            slabPerPlateVertexColors);
-
+            offsetMag: 0.0,
+            slabPerPlateVertexColors: perPlateVertexColors);
+        _log.LogInformation(
+            "Assembled crust volume mounted: digest={Digest}, plates={PlateCount}, contactGap=0.",
+            volume.Digest,
+            solids.Count);
         return root;
-    }
-
-    private static int CountConvergent(IReadOnlyList<PlateBoundaryArc> joints)
-    {
-        int n = 0;
-        for (int i = 0; i < joints.Count; i++)
-        {
-            if (joints[i].Kind == PlateBoundaryKind.Convergent)
-                n++;
-        }
-        return n;
     }
 }

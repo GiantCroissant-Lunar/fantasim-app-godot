@@ -4,6 +4,7 @@ using FantaSim.App.World.Dto;
 using FantaSim.App.World.Globe;
 using FantaSim.App.World.Rendering;
 using Godot;
+using Microsoft.Extensions.Logging;
 
 namespace FantaSim.App.Presentation;
 
@@ -22,6 +23,7 @@ internal sealed partial class PlanetPresentationBinder
     private bool _explodedActive;
     private double _explodedFactor;
     private Node3D? _explodedCrustRoot;
+    private Material? _neutralCrustEvidenceMaterial;
 
     // W3a: per-instance plate material so the cutaway wedge uniforms are binder-scoped (a static
     // singleton would let one binder's cutaway leak into another). Lazily built; the wedge uniforms
@@ -153,38 +155,14 @@ internal sealed partial class PlanetPresentationBinder
 
         var document = _currentDocument;
         var snapshot = document?.GlobeSnapshot;
-        if (document is null || snapshot is null)
+        var volume = document?.CrustVolume;
+        if (document is null || snapshot is null || volume is null)
             return root;
 
-        var centroids = _lastCentroids;
-        if (centroids is null)
-            return root;
-
+        var centroids = _lastCentroids ?? PlateSolidBuilder.ComputeCentroids(snapshot);
         var (slabCaps, slabPerPlateVertexColors) = BuildSlabTopCaps(document, snapshot);
-
         double factor = factorOverride ?? _explodedFactor;
-
-        var thickness = ResolveCrustThicknessMetres(document);
-        // D3: the slab thickness exaggeration is EXPLICIT and distinct from the surface relief
-        // exaggeration. The profile exposes the metres-to-unit-radius scale PlateSolidBuilder expects
-        // (CrustThicknessExaggeration / PlanetRadiusMetres), so 30 km of crust reads as ~0.038R slab
-        // walls. The slab relief (in slabCaps' top positions) acts on disjoint vertices — no compounding.
-        var solids = PlateSolidBuilder.Build(slabCaps, thickness, _radialProfile.ThicknessDepthScale());
-
-        // Keep the temporary radial solids joint-shaped, but do not append the retired tongue
-        // scaffold. Continuous buried underlap will come from the canonical crust-volume extractor;
-        // showing a false ribbon here would contradict the state even in an exploded view.
-        var explodedArcs = document.BoundaryArcs;
-        if (explodedArcs is { Count: > 0 })
-        {
-            solids = WorldSlabAssemblyComposer.ShapeSlabJoints(
-                solids,
-                explodedArcs,
-                _jointMechanicsProfile,
-                centroids,
-                _worldSurfaceProfile.SlabJointGapUnitRadius);
-        }
-
+        var solids = PlateSolidBuilder.Build(slabCaps, volume);
         var exploded = PlateSolidBuilder.ApplyExplodedFactor(solids, centroids, factor);
 
         // Slice 4 (structural): the exploded world is thick pieces around a SMALLER interior —
@@ -206,7 +184,11 @@ internal sealed partial class PlanetPresentationBinder
             centroids,
             factor * PlateSolidBuilder.DefaultMaxOffset,
             slabPerPlateVertexColors);
-
+        _log.LogInformation(
+            "Exploded crust volume mounted: digest={Digest}, factor={Factor:R}, plates={PlateCount}.",
+            volume.Digest,
+            factor,
+            exploded.Count);
         return root;
     }
 
@@ -237,11 +219,36 @@ internal sealed partial class PlanetPresentationBinder
             var solid = solids[i];
 
             var topDto = BuildExplodedTopDto(cap, centroid, offsetMag, slabPerPlateVertexColors);
-            root.AddChild(BuildExplodedMeshInstance($"Plate{cap.PlateId}_Top", topDto, HypsoPlateMaterialOverride));
+            root.AddChild(BuildExplodedMeshInstance(
+                $"Plate{cap.PlateId}_Top",
+                topDto,
+                ResolveCrustGeometryMaterial(HypsoPlateMaterialOverride)));
 
             var solidDto = BuildExplodedSolidDto(cap, solid);
-            root.AddChild(BuildExplodedSolidMeshInstance($"Plate{cap.PlateId}_Solid", solidDto, PlanetShaderLibrary.SlabWallStrataMaterial));
+            root.AddChild(BuildExplodedSolidMeshInstance(
+                $"Plate{cap.PlateId}_Solid",
+                solidDto,
+                ResolveCrustGeometryMaterial(PlanetShaderLibrary.SlabWallStrataMaterial)));
         }
+    }
+
+    private Material ResolveCrustGeometryMaterial(Material productionMaterial)
+    {
+        if (!string.Equals(
+                System.Environment.GetEnvironmentVariable("FANTASIM_NEUTRAL_CRUST_GEOMETRY"),
+                "1",
+                StringComparison.Ordinal))
+        {
+            return productionMaterial;
+        }
+
+        return _neutralCrustEvidenceMaterial ??= new StandardMaterial3D
+        {
+            AlbedoColor = new Color(0.64f, 0.64f, 0.64f, 1.0f),
+            Roughness = 0.92f,
+            Metallic = 0.0f,
+            VertexColorUseAsAlbedo = false,
+        };
     }
 
     // Directive 3b: builds the formed-relief slab TOP caps via SlabTopReliefComposer (the pure seam
@@ -255,30 +262,23 @@ internal sealed partial class PlanetPresentationBinder
         PlanetPresentationDocument document,
         WorldGlobeSnapshot snapshot)
     {
-        var slabSurfaces = SlabTopReliefComposer.BuildPlateSurfaces(snapshot, document.CellFeatures, _slabProfile);
-        var elevations = ResolveSlabTopElevations(document, snapshot);
-
-        var caps = slabSurfaces.BuildSurfaces(
-            elevations,
-            exaggeration: _slabProfile.MetresToUnitRadius(_radialProfile),
-            maxDisplacementUnitRadius: _slabProfile.MaxDisplacementUnitRadius);
-
+        var volume = document.CrustVolume;
+        if (volume is null)
+        {
+            return (
+                Array.Empty<PlateCap>(),
+                new Dictionary<int, RampColor[]>());
+        }
+        _plateSurfaces ??= new GlobePlateSurfaces(
+            snapshot,
+            noise: new FantaSim.Cartography.Globe.NoiseParams(Amplitude: 0.0));
+        var caps = _plateSurfaces.BuildVolumeSurfaces(volume);
         var vertexColors = _lastIsTerrain && _lastPerCellColor is { Count: > 0 }
             ? PlateSurfaceMeshFactory.BuildPerPlateVertexColors(
-                slabSurfaces,
+                _plateSurfaces,
                 _lastPerCellColor as RampColor[] ?? Array.Empty<RampColor>())
             : new Dictionary<int, RampColor[]>();
-
         return (caps, vertexColors);
-    }
-
-    // Same elevation resolution as BindPlateSurface: for terrain, use CellElevations when present and
-    // length-matched, else flat-zero. The slab relief is the SAME truth the World surface reads.
-    private static IReadOnlyList<double> ResolveSlabTopElevations(PlanetPresentationDocument document, WorldGlobeSnapshot snapshot)
-    {
-        return document.CellElevations is { } cellElevations && cellElevations.Count == snapshot.CellCount
-            ? cellElevations
-            : new double[snapshot.CellCount];
     }
 
     // M-B: same PlateCapMeshBuilder.Build* branch the surface uses (cached inputs), with the plate's
