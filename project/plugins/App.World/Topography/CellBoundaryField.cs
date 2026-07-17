@@ -121,43 +121,72 @@ public static class CellBoundaryField
                 ? 0.0
                 : Math.Acos(Math.Clamp(bestDot, -1.0, 1.0));
 
-            // Resolve side for convergent boundaries; symmetric kinds carry a non-negative distance.
-            int? subductingId = null;
-            bool isCollision = false;
-            double signed = distance;
-
-            if (arc.Kind == PlateBoundaryKind.Convergent)
-            {
-                subductingId = arc.SubductingPlateId;
-                isCollision = arc.IsCollision;
-                // Collision is symmetric (uplift on both sides); subduction is asymmetric
-                // (subducting side negative).
-                if (!isCollision && subductingId is int subducting)
-                {
-                    // Keep the physical side unambiguous when exact edge membership lands
-                    // exactly on the boundary: +epsilon selects the overriding arc branch;
-                    // -epsilon selects the subducting trench branch.
-                    signed = cell.PlateId == subducting
-                        ? -Math.Max(distance, double.Epsilon)
-                        : Math.Max(distance, double.Epsilon);
-                }
-            }
-
-            result[c] = new CellBoundarySample(
-                Found: true,
-                signed,
-                arc.Kind,
-                bestPoint,
-                arc.Kind == PlateBoundaryKind.Transform
-                    ? TransformPhaseCoordinate(arc, arcVecs[bestArc][bestPoint])
-                    : 0.0,
+            result[c] = CreateSample(
+                centroid,
                 cell.PlateId,
-                arc.PlateA,
-                arc.PlateB,
-                subductingId,
-                isCollision);
+                arc,
+                arcVecs[bestArc],
+                bestPoint,
+                distance);
         }
         return result;
+    }
+
+    /// <summary>
+    /// Samples the canonical boundary frame at one material-control direction. Unlike
+    /// <see cref="Build"/>, this uses the supplied direction's angular distance rather than a
+    /// cell-centroid distance, so a boundary corner remains an exact hinge.
+    /// </summary>
+    public static CellBoundarySample SampleDirection(
+        GlobeVec3 direction,
+        int plateId,
+        IReadOnlyList<PlateBoundaryArc> arcs)
+    {
+        ArgumentNullException.ThrowIfNull(arcs);
+        var sampleDirection = Unit(direction);
+        if (sampleDirection.Length() < 1e-15 || arcs.Count == 0)
+            return NotFound(plateId);
+
+        int bestArc = -1;
+        int bestPoint = -1;
+        double bestDot = -2.0;
+        var arcVecs = new Vector3D[arcs.Count][];
+        for (int a = 0; a < arcs.Count; a++)
+        {
+            var points = arcs[a].Points;
+            var vectors = new Vector3D[points.Count];
+            for (int i = 0; i < points.Count; i++)
+                vectors[i] = Unit(points[i]);
+            arcVecs[a] = vectors;
+
+            if (arcs[a].Kind == PlateBoundaryKind.Inactive
+                || (plateId != arcs[a].PlateA && plateId != arcs[a].PlateB)
+                || vectors.Length == 0)
+            {
+                continue;
+            }
+
+            int point = NearestPointIndex(sampleDirection, vectors, out double dot);
+            if (dot > bestDot + 1e-15
+                || (Math.Abs(dot - bestDot) <= 1e-15
+                    && (bestArc < 0 || CompareArcPriority(arcs[a], arcs[bestArc]) < 0)))
+            {
+                bestArc = a;
+                bestPoint = point;
+                bestDot = dot;
+            }
+        }
+
+        if (bestArc < 0)
+            return NotFound(plateId);
+
+        return CreateSample(
+            sampleDirection,
+            plateId,
+            arcs[bestArc],
+            arcVecs[bestArc],
+            bestPoint,
+            Math.Acos(Math.Clamp(bestDot, -1.0, 1.0)));
     }
 
     /// <summary>
@@ -179,6 +208,100 @@ public static class CellBoundaryField
             * (Math.Clamp(Vector3D.Dot(unit, TransformPhaseAxis), -1.0, 1.0) + 1.0);
         return pairOffset + spatial;
     }
+
+    private static CellBoundarySample CreateSample(
+        Vector3D sampleDirection,
+        int plateId,
+        PlateBoundaryArc arc,
+        IReadOnlyList<Vector3D> arcPoints,
+        int pointIndex,
+        double distance)
+    {
+        int? subductingId = arc.Kind == PlateBoundaryKind.Convergent
+            ? arc.SubductingPlateId
+            : null;
+        bool isCollision = arc.Kind == PlateBoundaryKind.Convergent && arc.IsCollision;
+        double signed = distance;
+        if (!isCollision && subductingId is int subducting)
+        {
+            // Preserve a deterministic physical side at the exact hinge.
+            signed = plateId == subducting
+                ? -Math.Max(distance, double.Epsilon)
+                : Math.Max(distance, double.Epsilon);
+        }
+
+        var frame = BoundaryFrame(sampleDirection, arcPoints, pointIndex);
+        double phase = TransformPhaseCoordinate(arc, arcPoints[pointIndex]);
+        return new CellBoundarySample(
+            Found: true,
+            signed,
+            arc.Kind,
+            pointIndex,
+            phase,
+            plateId,
+            arc.PlateA,
+            arc.PlateB,
+            subductingId,
+            isCollision)
+        {
+            NearestBoundaryPoint = ToGlobeVec(frame.Point),
+            AlongBoundaryDirection = ToGlobeVec(frame.Along),
+            AcrossBoundaryDirection = ToGlobeVec(frame.Across),
+            AlongBoundaryPhaseCoordinate = phase,
+        };
+    }
+
+    private static CellBoundarySample NotFound(int plateId)
+        => new(
+            Found: false,
+            0.0,
+            PlateBoundaryKind.Inactive,
+            0,
+            0.0,
+            plateId,
+            -1,
+            -1,
+            null,
+            IsCollision: false);
+
+    private static (Vector3D Point, Vector3D Along, Vector3D Across) BoundaryFrame(
+        Vector3D sampleDirection,
+        IReadOnlyList<Vector3D> points,
+        int pointIndex)
+    {
+        var point = points[pointIndex].Normalize();
+        int previousIndex = Math.Max(0, pointIndex - 1);
+        int nextIndex = Math.Min(points.Count - 1, pointIndex + 1);
+        var chord = points[nextIndex] - points[previousIndex];
+        var alongCandidate = chord - (point * Vector3D.Dot(chord, point));
+        var along = alongCandidate.Length() < 1e-12
+            ? default
+            : alongCandidate.Normalize();
+        if (along.Length() < 1e-12)
+        {
+            var reference = Math.Abs(point.X) < 0.9
+                ? new Vector3D(1.0, 0.0, 0.0)
+                : new Vector3D(0.0, 1.0, 0.0);
+            along = Vector3D.Cross(reference, point).Normalize();
+        }
+
+        var across = Vector3D.Cross(point, along).Normalize();
+        var towardCandidate =
+            sampleDirection - (point * Vector3D.Dot(sampleDirection, point));
+        var towardSample = towardCandidate.Length() < 1e-12
+            ? default
+            : towardCandidate.Normalize();
+        if (towardSample.Length() > 1e-12
+            && Vector3D.Dot(across, towardSample) < 0.0)
+        {
+            across *= -1.0;
+        }
+
+        return (point, along, across);
+    }
+
+    private static GlobeVec3 ToGlobeVec(Vector3D value)
+        => new((float)value.X, (float)value.Y, (float)value.Z);
 
     private static Vector3D Centroid(GlobeCell cell)
     {

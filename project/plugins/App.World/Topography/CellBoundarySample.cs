@@ -1,4 +1,5 @@
 using FantaSim.App.World;
+using FantaSim.App.World.Dto;
 
 namespace FantaSim.App.World.Topography;
 
@@ -35,4 +36,16 @@ public readonly record struct CellBoundarySample(
     int ArcPlateA,
     int ArcPlateB,
     int? SubductingPlateId,
-    bool IsCollision);
+    bool IsCollision)
+{
+    public GlobeVec3 NearestBoundaryPoint { get; init; }
+
+    /// <summary>Unit tangent along the ordered boundary polyline.</summary>
+    public GlobeVec3 AlongBoundaryDirection { get; init; }
+
+    /// <summary>Unit surface tangent from the boundary into this sample's owning plate.</summary>
+    public GlobeVec3 AcrossBoundaryDirection { get; init; }
+
+    /// <summary>Stable world-space phase shared by every boundary kind.</summary>
+    public double AlongBoundaryPhaseCoordinate { get; init; }
+}

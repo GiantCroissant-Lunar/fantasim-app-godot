@@ -36,7 +36,10 @@ public static class BoundaryProfileShape
         {
             PlateBoundaryKind.Convergent => s.IsCollision
                 ? ConvergentCollision(s.SignedDistanceRad, p)
-                : ConvergentSubduction(s.SignedDistanceRad, p),
+                : ConvergentSubduction(
+                    s.SignedDistanceRad,
+                    s.AlongBoundaryPhaseCoordinate,
+                    p),
             PlateBoundaryKind.Divergent => Divergent(s.SignedDistanceRad, p),
             PlateBoundaryKind.Transform => Transform(s.SignedDistanceRad, s.TransformPhaseCoordinate, p),
             _ => 0.0,
@@ -78,7 +81,10 @@ public static class BoundaryProfileShape
     // (signed distance > 0). The trench is deepest at the boundary and tapers across TrenchHalfWidth. The
     // already-calibrated collision uplift controls express crustal thickening at the overriding wedge without
     // creating a second parameter family; the volcanic arc remains a distinct peak at ArcSetback.
-    private static double ConvergentSubduction(double signed, in BoundaryProfileParameters p)
+    private static double ConvergentSubduction(
+        double signed,
+        double alongBoundaryPhase,
+        in BoundaryProfileParameters p)
     {
         if (signed <= 0.0)
         {
@@ -88,9 +94,33 @@ public static class BoundaryProfileShape
 
         double wedge = p.ConvergentCollisionHeight
                      * Falloff(signed, p.ConvergentCollisionHalfWidthRad);
-        double u = signed - p.ConvergentArcSetbackRad;
-        double arc = p.ConvergentArcHeight * Falloff(u, p.ConvergentArcHalfWidthRad);
-        return wedge + arc;
+        double acrossArc = Falloff(
+            signed - p.ConvergentArcSetbackRad,
+            p.ConvergentArcHalfWidthRad);
+        double arc = p.ConvergentArcHeight * acrossArc;
+        double cones = VolcanoChain(alongBoundaryPhase, acrossArc, p);
+        return wedge + arc + cones;
+    }
+
+    private static double VolcanoChain(
+        double alongBoundaryPhase,
+        double acrossArc,
+        in BoundaryProfileParameters p)
+    {
+        if (acrossArc <= 0.0
+            || p.ConvergentVolcanoConeHeight == 0.0
+            || p.ConvergentVolcanoPeriodPoints <= 0.0
+            || p.ConvergentVolcanoSharpness <= 0.0)
+        {
+            return 0.0;
+        }
+
+        double phase =
+            2.0 * Math.PI * alongBoundaryPhase / p.ConvergentVolcanoPeriodPoints;
+        double crest = Math.Max(0.0, Math.Cos(phase));
+        return p.ConvergentVolcanoConeHeight
+             * Math.Pow(crest, p.ConvergentVolcanoSharpness)
+             * acrossArc;
     }
 
     private static CellCrustFeature ConvergentSubductionFeature(

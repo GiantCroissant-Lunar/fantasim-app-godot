@@ -57,6 +57,27 @@ public sealed record BoundaryProfileParameters(
     /// (the boundary arcs are pre-subdivided at 16 points/segment). Period 32 ≈ 2 segments/scarp.</summary>
     double TransformScarpPeriodPoints)
 {
+    /// <summary>Visual shell thickness in normalized planet-radius units.</summary>
+    public double VisualCrustThicknessUnitRadius { get; init; } = 0.075;
+
+    /// <summary>Tangential reach of the attached down-going material lobe.</summary>
+    public double ConvergentSlabUnderlapLengthUnitRadius { get; init; } = 0.18;
+
+    /// <summary>Inward depth of the attached down-going material lobe.</summary>
+    public double ConvergentSlabDepthUnitRadius { get; init; } = 0.14;
+
+    /// <summary>Additional visual root depth beneath the overriding wedge.</summary>
+    public double ConvergentOverridingRootDepthUnitRadius { get; init; } = 0.04;
+
+    /// <summary>Medium-scale cone height on the existing volcanic-arc foundation.</summary>
+    public double ConvergentVolcanoConeHeight { get; init; } = 1800.0;
+
+    /// <summary>World-stable phase period for the volcanic cone chain.</summary>
+    public double ConvergentVolcanoPeriodPoints { get; init; } = 42.0;
+
+    /// <summary>Exponent controlling individual cone sharpness.</summary>
+    public double ConvergentVolcanoSharpness { get; init; } = 8.0;
+
     /// <summary>
     /// Earth-like reference profile. See the type-level doc for the calibration rationale per field.
     /// </summary>
@@ -86,6 +107,10 @@ public sealed record BoundaryProfileParameters(
         ConvergentTrenchDepth = 0.0,
         ConvergentArcHeight = 0.0,
         ConvergentCollisionHeight = 0.0,
+        ConvergentSlabUnderlapLengthUnitRadius = 0.0,
+        ConvergentSlabDepthUnitRadius = 0.0,
+        ConvergentOverridingRootDepthUnitRadius = 0.0,
+        ConvergentVolcanoConeHeight = 0.0,
         DivergentSwellHeight = 0.0,
         DivergentRiftNotchDepth = 0.0,
         TransformScarpAmplitude = 0.0,
