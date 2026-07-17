@@ -1,7 +1,7 @@
 # Focused convergent-underlap inspection — Replacement B0 design
 
-**Status:** DRAFT FOR WRITTEN-SPEC REVIEW. The user approved the focused Slice-B direction on
-2026-07-17. Implementation remains blocked until the user reviews this written specification.
+**Status:** USER APPROVED, including written-spec review, on 2026-07-17. This document is the
+implementation-planning authority for the focused Replacement B0 inspection.
 
 ## 1. Purpose and authority
 
