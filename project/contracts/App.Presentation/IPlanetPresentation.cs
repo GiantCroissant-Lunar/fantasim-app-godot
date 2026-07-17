@@ -15,8 +15,11 @@ public interface IPlanetPresentation : IDisposable
     /// <summary>W3a cutaway wedge (render.cutaway ingress); width 0 clears.</summary>
     void UpdateCutaway(double azimuthDeg, double widthDeg);
 
-    /// <summary>M-B exploded solid crust (render.exploded ingress); factor in [0,1]. Factor 0 = assembled.</summary>
-    void UpdateExploded(double factor);
+    /// <summary>
+    /// M-B exploded solid crust. Factor is in [0,1]; focused mode isolates the proven convergent
+    /// pair and uses factor as the overriding-plate reveal translation.
+    /// </summary>
+    void UpdateExploded(double factor, bool focusConvergent);
 
     /// <summary>
     /// DEPRECATED render.mantle alias (directive 2, 2026-07-16): mantle convection is a LAYER, not an

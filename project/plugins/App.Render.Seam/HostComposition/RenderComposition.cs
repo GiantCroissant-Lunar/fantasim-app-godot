@@ -152,7 +152,7 @@ public static class RenderComposition
             new FantaSim.App.Command.CommandDescriptor(
                 Id: ExplodedCommandId,
                 Title: "Exploded solid crust",
-                Description: "Activates the exploded solid-crust view (per-plate watertight slabs translated radially along their centroid direction). Payload: {\"factor\":N} where N in [0,1]. Factor 0 = assembled solid crust (thickness/side walls visible at the silhouette, no translation); factor 1 = maximum radial explode. Default: {\"factor\":0.0} (assembled).",
+                Description: "Activates the exploded solid-crust view. Payload {\"factor\":N} keeps the whole-globe radial explosion. Payload {\"factor\":N,\"focusConvergent\":true} isolates the proven convergent pair; factor 0 is exact and factor > 0 lifts only the overriding complete plate. N is clamped to [0,1].",
                 Category: "render"),
             (payloadJson, cancellationToken) =>
             {
@@ -178,13 +178,17 @@ public static class RenderComposition
                     }));
                 }
 
-                target(req.Factor);
-                log.LogInformation("render.exploded: factor={Factor}", req.Factor);
+                target(req.Factor, req.FocusConvergent);
+                log.LogInformation(
+                    "render.exploded: factor={Factor} focusConvergent={FocusConvergent}",
+                    req.Factor,
+                    req.FocusConvergent);
                 return Task.FromResult<string?>(JsonSerializer.Serialize(new
                 {
                     ok = true,
                     factor = req.Factor,
                     assembled = req.IsAssembled,
+                    focusConvergent = req.FocusConvergent,
                 }));
             });
 
@@ -310,7 +314,7 @@ public interface IRenderCompositionHandle : IDisposable
 
     void SetCutawayTarget(Action<double, double>? target);
 
-    void SetExplodedTarget(Action<double>? target);
+    void SetExplodedTarget(Action<double, bool>? target);
     void SetMantleTarget(Func<bool, string?>? target);
 
     void SetLodDebugTarget(Action<LodDebugMode>? target);
@@ -359,7 +363,7 @@ internal sealed class RenderCompositionHandle : IRenderCompositionHandle
     public void SetCutawayTarget(Action<double, double>? target)
         => _cutawayTarget.Target = target;
 
-    public void SetExplodedTarget(Action<double>? target)
+    public void SetExplodedTarget(Action<double, bool>? target)
         => _explodedTarget.Target = target;
     public void SetMantleTarget(Func<bool, string?>? target)
         => _mantleTarget.Target = target;
@@ -390,7 +394,7 @@ internal sealed class CutawayTargetHolder
 
 internal sealed class ExplodedTargetHolder
 {
-    public Action<double>? Target { get; set; }
+    public Action<double, bool>? Target { get; set; }
 }
 
 internal sealed class MantleTargetHolder

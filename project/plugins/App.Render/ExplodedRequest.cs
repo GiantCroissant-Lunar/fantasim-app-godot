@@ -11,10 +11,14 @@ namespace FantaSim.App.Render;
 ///
 /// <para>Accepted payload: <c>{"factor":N}</c> where N is a number in [0, 1]. Factor 0 is the
 /// ASSEMBLED solid crust (plates in place, thickness/side walls visible at the silhouette but not
-/// translated apart); factor 1 is the maximum radial explode. Missing factor defaults to 0.0
-/// (assembled). Factor is clamped to [0, 1].</para>
+/// translated apart); factor 1 is the maximum radial explode. Optional
+/// <c>"focusConvergent":true</c> isolates the existing proven overriding/down-going pair and uses
+/// factor as a rigid reveal translation of the overriding whole plate. Missing factor defaults to
+/// 0.0 (assembled/exact). Factor is clamped to [0, 1].</para>
 /// </summary>
-public readonly record struct ExplodedRequest(double Factor)
+public readonly record struct ExplodedRequest(
+    double Factor,
+    bool FocusConvergent = false)
 {
     /// <summary>True when the crust is assembled (factor 0) — solids drawn in place, no translation.</summary>
     public bool IsAssembled => Factor <= 0.0;
@@ -31,9 +35,24 @@ public static class ExplodedRequestParser
             ?? throw new ArgumentException("render.exploded payload must be a JSON object.");
 
         double factor = 0.0;
+        bool focusConvergent = false;
 
         if (payload["factor"] is { } fNode)
             factor = ReadDouble(fNode, "factor");
+
+        if (payload["focusConvergent"] is { } focusNode)
+        {
+            try
+            {
+                focusConvergent = focusNode.GetValue<bool>();
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or FormatException)
+            {
+                throw new ArgumentException(
+                    "render.exploded 'focusConvergent' must be a JSON boolean.",
+                    ex);
+            }
+        }
 
         if (double.IsNaN(factor))
             throw new ArgumentException("render.exploded 'factor' must be a finite JSON number.");
@@ -41,7 +60,7 @@ public static class ExplodedRequestParser
         if (factor < 0.0) factor = 0.0;
         if (factor > 1.0) factor = 1.0;
 
-        return new ExplodedRequest(factor);
+        return new ExplodedRequest(factor, focusConvergent);
     }
 
     private static double ReadDouble(JsonNode node, string fieldName)
