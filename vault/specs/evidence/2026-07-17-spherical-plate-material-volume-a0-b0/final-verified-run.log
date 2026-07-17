@@ -1,0 +1,912 @@
+WorkerThreadPool: 10 threads, 3 max low-priority.
+Initialize godot-rust (API v4.6.stable.official, runtime v4.7.stable.mono.official, safeguards strict)
+Godot Engine v4.7.stable.mono.official.5b4e0cb0f - https://godotengine.org
+TextServer: Added interface "Dummy"
+TextServer: Added interface "ICU / HarfBuzz / Graphite (Built-in)"
+SDL: Init OK!
+Accessibility: AccessKit driver loaded.
+Accessibility: window 0 adapter created.
+Devices:
+  #0: Apple Apple M4 (Apple9) - Supported, Integrated
+- Metal multiview supported:
+  max view count: 16
+  max instances: 4294967295
+Metal 4.0 - Forward+ - Using Device #0: Apple - Apple M4 (Apple9)
+Using "default" pen tablet driver...
+Shader 'CanvasSdfShaderRD' (group 0) SHA256: cf39877e178c34ede4db342bbf1779a27125701d45df76cb3d07ef7c626416f2
+Loading cache for shader CanvasSdfShaderRD, variant 0
+Loading cache for shader CanvasSdfShaderRD, variant 1
+Loading cache for shader CanvasSdfShaderRD, variant 2
+Loading cache for shader CanvasSdfShaderRD, variant 3
+Loading cache for shader CanvasSdfShaderRD, variant 4
+Loading cache for shader CanvasSdfShaderRD, variant 5
+Shader 'SkeletonShaderRD' (group 0) SHA256: 96ae677d2af41a57b62fdce29c60aed1f841a9f298c7b5dc8c21c330ee4bfbd0
+Loading cache for shader SkeletonShaderRD, variant 0
+Loading cache for shader SkeletonShaderRD, variant 1
+Shader 'SortShaderRD' (group 0) SHA256: a48873e523f14e04dd6158a6a01c5a4e4feb0c7d6714a8c6246ab619a144fa67
+Loading cache for shader SortShaderRD, variant 0
+Loading cache for shader SortShaderRD, variant 1
+Loading cache for shader SortShaderRD, variant 2
+Shader 'ParticlesShaderRD' (group 0) SHA256: b6c7d969adc2c9522906fb5ed230ec231f2f6f4ef9270fc1c37bfe95bf5330bc
+Loading cache for shader ParticlesShaderRD, variant 0
+Shader 'ParticlesCopyShaderRD' (group 0) SHA256: 24d89099f97b1cf1fc7cbbc8f348e37b3ecfeff2344b41cb9355bb1701693999
+Loading cache for shader ParticlesCopyShaderRD, variant 0
+Loading cache for shader ParticlesCopyShaderRD, variant 1
+Loading cache for shader ParticlesCopyShaderRD, variant 2
+Loading cache for shader ParticlesCopyShaderRD, variant 3
+Loading cache for shader ParticlesCopyShaderRD, variant 4
+Loading cache for shader ParticlesCopyShaderRD, variant 5
+Loading cache for shader ParticlesCopyShaderRD, variant 6
+Loading cache for shader ParticlesCopyShaderRD, variant 7
+Loading cache for shader ParticlesCopyShaderRD, variant 8
+Loading cache for shader ParticlesCopyShaderRD, variant 9
+Loading cache for shader ParticlesCopyShaderRD, variant 10
+Loading cache for shader ParticlesCopyShaderRD, variant 11
+Loading cache for shader ParticlesCopyShaderRD, variant 12
+Loading cache for shader ParticlesCopyShaderRD, variant 13
+Loading cache for shader ParticlesCopyShaderRD, variant 14
+Loading cache for shader ParticlesCopyShaderRD, variant 15
+Loading cache for shader ParticlesCopyShaderRD, variant 16
+Loading cache for shader ParticlesCopyShaderRD, variant 17
+Loading cache for shader ParticlesCopyShaderRD, variant 18
+Loading cache for shader ParticlesCopyShaderRD, variant 19
+Loading cache for shader ParticlesCopyShaderRD, variant 20
+Shader 'CanvasShaderRD' (group 0) SHA256: 9bdc1125c86af67021aafde8760184618f2961034b221ad5dbe673034858b1f3
+Loading cache for shader CanvasShaderRD, variant 0
+Loading cache for shader CanvasShaderRD, variant 1
+Loading cache for shader CanvasShaderRD, variant 2
+Loading cache for shader CanvasShaderRD, variant 3
+Loading cache for shader CanvasShaderRD, variant 4
+Loading cache for shader CanvasShaderRD, variant 5
+Shader 'CanvasOcclusionShaderRD' (group 0) SHA256: c5cf7e62fd49f618cfdba96629de618a1b26be203d90def17606a90a4e91cf73
+Loading cache for shader CanvasOcclusionShaderRD, variant 0
+Loading cache for shader CanvasOcclusionShaderRD, variant 1
+Loading cache for shader CanvasOcclusionShaderRD, variant 2
+Loading cache for shader CanvasShaderRD, variant 0
+Loading cache for shader CanvasShaderRD, variant 1
+Loading cache for shader CanvasShaderRD, variant 2
+Loading cache for shader CanvasShaderRD, variant 3
+Loading cache for shader CanvasShaderRD, variant 4
+Loading cache for shader CanvasShaderRD, variant 5
+Loading cache for shader CanvasShaderRD, variant 0
+Loading cache for shader CanvasShaderRD, variant 1
+Loading cache for shader CanvasShaderRD, variant 2
+Loading cache for shader CanvasShaderRD, variant 3
+Loading cache for shader CanvasShaderRD, variant 4
+Loading cache for shader CanvasShaderRD, variant 5
+Shader 'TexBlitShaderRD' (group 0) SHA256: d6c74a83a7053c8f0db4205307d734eb7e49dad4cffc40fefc1c098a20f56c9e
+Loading cache for shader TexBlitShaderRD, variant 0
+Loading cache for shader TexBlitShaderRD, variant 1
+Loading cache for shader TexBlitShaderRD, variant 2
+Loading cache for shader TexBlitShaderRD, variant 3
+Shader 'ClusterRenderShaderRD' (group 0) SHA256: 1e2e9d959bf97d9428c9bb1d0d014213ffbef36cd795e288cb779c418d8f8370
+Loading cache for shader ClusterRenderShaderRD, variant 0
+Loading cache for shader ClusterRenderShaderRD, variant 1
+Shader 'ClusterStoreShaderRD' (group 0) SHA256: b1853594c81af4c5dfa70c4136296237d07308f5349bba4d05aaa78ab1522328
+Loading cache for shader ClusterStoreShaderRD, variant 0
+Shader 'ClusterDebugShaderRD' (group 0) SHA256: d789d0a9a9c2a2b0b6fd18239e92cf44cf6a09f2b3a70fd374d173d50a4be406
+Loading cache for shader ClusterDebugShaderRD, variant 0
+Shader 'SceneForwardClusteredShaderRD' (group 0) SHA256: c2ccf1fba03bf988835dba74b33ff9f9690ef985335908c22dcdd30d4d0def59
+Shader 'SceneForwardClusteredShaderRD' (group 1) SHA256: 3b57f606108ded8878ba68c5c59a308a1978b2ad7788fd022d00660d3b950daa
+Shader 'SceneForwardClusteredShaderRD' (group 2) SHA256: f992b32f15c3b360ad9fb2499081c03f580cd3bcd5c852dae5a18e441f4dcc90
+Shader 'SceneForwardClusteredShaderRD' (group 3) SHA256: 63029fb9eee2470d331573517cb058629ab991547b2cce9159a56a2524bf6ae4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Shader 'BestFitNormalShaderRD' (group 0) SHA256: be7b506fb0d08c29b4041710889c21056b8092619f3689131a6dd641e054ad29
+Loading cache for shader BestFitNormalShaderRD, variant 0
+Shader 'IntegrateDfgShaderRD' (group 0) SHA256: 03e8c42f8cb7dde55d058fc79333416ad18fb6bd87bd1fb5d9a6ad14651ddaed
+Loading cache for shader IntegrateDfgShaderRD, variant 0
+Shader 'TaaResolveShaderRD' (group 0) SHA256: b72c9f24259db22023774f099c134ba5eb5e27abd84e9df475a2ab05404d0abb
+Loading cache for shader TaaResolveShaderRD, variant 0
+Shader 'Fsr2DepthClipPassShaderRD' (group 0) SHA256: 636f74877424985a3491c9f4aacd1e6a3bc5e7c47be7f5154bd8dbe63a109a6b
+Shader 'Fsr2ReconstructPreviousDepthPassShaderRD' (group 0) SHA256: 7bb138b53460583c5620036572edf3406f00775acd6cc00d6f13210abf2b576a
+Shader 'Fsr2LockPassShaderRD' (group 0) SHA256: e1f2a67ded37287c61ec8c8e1a93c5ef2f559e6cf8d3ee502740645f0ffb656e
+Shader 'Fsr2AccumulatePassShaderRD' (group 0) SHA256: 7e3388306b8b814b99d86d08901cb85411ed7874055da2a9ac7169350663fb24
+Shader 'Fsr2RcasPassShaderRD' (group 0) SHA256: 0a53240e7518f90b514d903b4572aedbe9103d60b7d67bc733918003c5971ca1
+Shader 'Fsr2ComputeLuminancePyramidPassShaderRD' (group 0) SHA256: ea30b9cf2586f5efa8adb0623d631dca2e08fcbffc511d15e430309048b62811
+Shader 'Fsr2AutogenReactivePassShaderRD' (group 0) SHA256: 15ad4238e088069ce62513ace17fccddc0a031c33651859b6182b345c260417d
+Shader 'Fsr2TcrAutogenPassShaderRD' (group 0) SHA256: 688ab227efbf4151af5ade3b8ebcdde4ec62216e405d7f11e51afb3fe8ad183f
+Shader 'SsEffectsDownsampleShaderRD' (group 0) SHA256: 97de52c4017d44cc8bc9cac07ec50ee0d950c87823a123bfe72d66c85e3b3575
+Loading cache for shader SsEffectsDownsampleShaderRD, variant 0
+Loading cache for shader SsEffectsDownsampleShaderRD, variant 1
+Loading cache for shader SsEffectsDownsampleShaderRD, variant 2
+Loading cache for shader SsEffectsDownsampleShaderRD, variant 3
+Loading cache for shader SsEffectsDownsampleShaderRD, variant 4
+Loading cache for shader SsEffectsDownsampleShaderRD, variant 5
+Loading cache for shader SsEffectsDownsampleShaderRD, variant 6
+Shader 'SsilShaderRD' (group 0) SHA256: f18f9d51995393e98ec76d65866e22e4264679600294eff5d76fb86a4d578a4d
+Loading cache for shader SsilShaderRD, variant 0
+Loading cache for shader SsilShaderRD, variant 1
+Loading cache for shader SsilShaderRD, variant 2
+Shader 'SsilImportanceMapShaderRD' (group 0) SHA256: a3a76b3fc50d25382d0ad7affa6f8aba064612da0acba818798f0d75df747359
+Loading cache for shader SsilImportanceMapShaderRD, variant 0
+Loading cache for shader SsilImportanceMapShaderRD, variant 1
+Loading cache for shader SsilImportanceMapShaderRD, variant 2
+Shader 'SsilBlurShaderRD' (group 0) SHA256: bc994cf24b385408b444f6309b8b8cc0c300e2add223d358ebac27a5cebd9b2b
+Loading cache for shader SsilBlurShaderRD, variant 0
+Loading cache for shader SsilBlurShaderRD, variant 1
+Loading cache for shader SsilBlurShaderRD, variant 2
+Shader 'SsilInterleaveShaderRD' (group 0) SHA256: 80a9244bd75179adf2d1606cc8a1f6c47b8ac606f9864a1846783007a5847725
+Loading cache for shader SsilInterleaveShaderRD, variant 0
+Loading cache for shader SsilInterleaveShaderRD, variant 1
+Loading cache for shader SsilInterleaveShaderRD, variant 2
+Shader 'SsaoShaderRD' (group 0) SHA256: dbe49ee25c27dfab06f4ceafdc245136a29423ac963551cb1ae3ac2d8a958d4b
+Loading cache for shader SsaoShaderRD, variant 0
+Loading cache for shader SsaoShaderRD, variant 1
+Loading cache for shader SsaoShaderRD, variant 2
+Shader 'SsaoImportanceMapShaderRD' (group 0) SHA256: a82018925d702b86595d2166661e310d060917d4e9ba15e44f761060c7b2de83
+Loading cache for shader SsaoImportanceMapShaderRD, variant 0
+Loading cache for shader SsaoImportanceMapShaderRD, variant 1
+Loading cache for shader SsaoImportanceMapShaderRD, variant 2
+Shader 'SsaoBlurShaderRD' (group 0) SHA256: 3ff5d62ff4747c7e9e9f6b8205a4437dc39f10b33be8fa73e629fa75fc0e0911
+Loading cache for shader SsaoBlurShaderRD, variant 0
+Loading cache for shader SsaoBlurShaderRD, variant 1
+Loading cache for shader SsaoBlurShaderRD, variant 2
+Shader 'SsaoInterleaveShaderRD' (group 0) SHA256: a9a9b2ffc2e8e2f1bd8faf3bef8e282ac615e84e8207b3a6d749db7b41115a81
+Loading cache for shader SsaoInterleaveShaderRD, variant 0
+Loading cache for shader SsaoInterleaveShaderRD, variant 1
+Loading cache for shader SsaoInterleaveShaderRD, variant 2
+Shader 'ScreenSpaceReflectionDownsampleShaderRD' (group 0) SHA256: e6325ac8b9fb9bcd737992e4214427dca872259a117a5e216101674446c7bbc7
+Loading cache for shader ScreenSpaceReflectionDownsampleShaderRD, variant 0
+Loading cache for shader ScreenSpaceReflectionDownsampleShaderRD, variant 1
+Loading cache for shader ScreenSpaceReflectionDownsampleShaderRD, variant 2
+Loading cache for shader ScreenSpaceReflectionDownsampleShaderRD, variant 3
+Shader 'ScreenSpaceReflectionHizShaderRD' (group 0) SHA256: efca221c673612faabbf11b6edf63ce1a9edff2e2832af6582fb7e1effb897fd
+Loading cache for shader ScreenSpaceReflectionHizShaderRD, variant 0
+Loading cache for shader ScreenSpaceReflectionHizShaderRD, variant 1
+Loading cache for shader ScreenSpaceReflectionHizShaderRD, variant 2
+Loading cache for shader ScreenSpaceReflectionHizShaderRD, variant 3
+Shader 'ScreenSpaceReflectionShaderRD' (group 0) SHA256: 3bd4227a42d4611084beddc1ec0cc27e071626bd471c96b27001ca3b5be9a5fd
+Loading cache for shader ScreenSpaceReflectionShaderRD, variant 0
+Shader 'ScreenSpaceReflectionFilterShaderRD' (group 0) SHA256: da59a83906e0f2e8a22548f117fe20cbea5b3be2e12acbd6b042d77f4eb1c457
+Loading cache for shader ScreenSpaceReflectionFilterShaderRD, variant 0
+Shader 'ScreenSpaceReflectionResolveShaderRD' (group 0) SHA256: 1fbb748efceb36664d4b25ed0b8b4a1e2f16fe2c8515897b284aafc846e99d5a
+Loading cache for shader ScreenSpaceReflectionResolveShaderRD, variant 0
+Shader 'SubsurfaceScatteringShaderRD' (group 0) SHA256: 67c90b70b25c773d8dba7dfab0941a884816dc2fc76ea6aab8ab19b0c93d28d4
+Loading cache for shader SubsurfaceScatteringShaderRD, variant 0
+Loading cache for shader SubsurfaceScatteringShaderRD, variant 1
+Loading cache for shader SubsurfaceScatteringShaderRD, variant 2
+Shader 'MotionVectorsStoreShaderRD' (group 0) SHA256: 053c37f599e9a1f1b6edcb0df6791e27cc04258af564ec11a8e929e1f58fc50b
+Loading cache for shader MotionVectorsStoreShaderRD, variant 0
+Shader 'SkyShaderRD' (group 0) SHA256: 5090ce1739a75f47b8eba781fdd25da47220dbf3e500e5864faf5b69a441ea65
+Loading cache for shader SkyShaderRD, variant 0
+Loading cache for shader SkyShaderRD, variant 1
+Loading cache for shader SkyShaderRD, variant 2
+Loading cache for shader SkyShaderRD, variant 3
+Loading cache for shader SkyShaderRD, variant 4
+Loading cache for shader SkyShaderRD, variant 5
+Loading cache for shader SkyShaderRD, variant 0
+Loading cache for shader SkyShaderRD, variant 1
+Loading cache for shader SkyShaderRD, variant 2
+Loading cache for shader SkyShaderRD, variant 3
+Loading cache for shader SkyShaderRD, variant 4
+Loading cache for shader SkyShaderRD, variant 5
+Shader 'VoxelGiShaderRD' (group 0) SHA256: 6c4634e4f17397a23696bbc6304a53cc281b742527f6f1883d9548d226e90453
+Loading cache for shader VoxelGiShaderRD, variant 0
+Loading cache for shader VoxelGiShaderRD, variant 1
+Loading cache for shader VoxelGiShaderRD, variant 2
+Loading cache for shader VoxelGiShaderRD, variant 3
+Loading cache for shader VoxelGiShaderRD, variant 4
+Loading cache for shader VoxelGiShaderRD, variant 5
+Loading cache for shader VoxelGiShaderRD, variant 6
+Loading cache for shader VoxelGiShaderRD, variant 7
+Shader 'VoxelGiDebugShaderRD' (group 0) SHA256: e4f59199ebe30ae358ac4d800f8e12818a876bb4b13d27a7a08ff26dc58c4ac8
+Loading cache for shader VoxelGiDebugShaderRD, variant 0
+Loading cache for shader VoxelGiDebugShaderRD, variant 1
+Loading cache for shader VoxelGiDebugShaderRD, variant 2
+Loading cache for shader VoxelGiDebugShaderRD, variant 3
+Shader 'SdfgiPreprocessShaderRD' (group 0) SHA256: cd5f8b2fdd3632531a4f732ea1bbb7e2f7ecc333fe8b90b7f7c26d12ee02c55a
+Loading cache for shader SdfgiPreprocessShaderRD, variant 0
+Loading cache for shader SdfgiPreprocessShaderRD, variant 1
+Loading cache for shader SdfgiPreprocessShaderRD, variant 2
+Loading cache for shader SdfgiPreprocessShaderRD, variant 3
+Loading cache for shader SdfgiPreprocessShaderRD, variant 4
+Loading cache for shader SdfgiPreprocessShaderRD, variant 5
+Loading cache for shader SdfgiPreprocessShaderRD, variant 6
+Loading cache for shader SdfgiPreprocessShaderRD, variant 7
+Loading cache for shader SdfgiPreprocessShaderRD, variant 8
+Shader 'SdfgiDirectLightShaderRD' (group 0) SHA256: 0401a0195f37d9da13221e9bb1ca84b6f25642d117306f2939cf9b06d7c187e1
+Loading cache for shader SdfgiDirectLightShaderRD, variant 0
+Loading cache for shader SdfgiDirectLightShaderRD, variant 1
+Shader 'SdfgiIntegrateShaderRD' (group 0) SHA256: 38020518c3928864755a430bbea0312bdfdb8c51075dc2ace5bcddaae36070ad
+Loading cache for shader SdfgiIntegrateShaderRD, variant 0
+Loading cache for shader SdfgiIntegrateShaderRD, variant 1
+Loading cache for shader SdfgiIntegrateShaderRD, variant 2
+Loading cache for shader SdfgiIntegrateShaderRD, variant 3
+Shader 'GiShaderRD' (group 0) SHA256: d0db97061545374c4aad77fca934cb9bd70afea09ec5692aab7313678fd68fca
+Shader 'GiShaderRD' (group 1) SHA256: 7e279c117959c3fc75fc6bf369f7637e2f2ce5d12eeffb808ab9bc97af873bfc
+Loading cache for shader GiShaderRD, variant 0
+Loading cache for shader GiShaderRD, variant 1
+Loading cache for shader GiShaderRD, variant 2
+Loading cache for shader GiShaderRD, variant 3
+Loading cache for shader GiShaderRD, variant 4
+Shader 'SdfgiDebugShaderRD' (group 0) SHA256: 12dbfdf4517d9a7b37b4faeb432309599b5267d4cc29abaa587181dd5ddcdbc9
+Loading cache for shader SdfgiDebugShaderRD, variant 0
+Shader 'SdfgiDebugProbesShaderRD' (group 0) SHA256: 467fda70c797000ff6af05a8cb526e04218662a9be183aa2a7b46ad2f93cce77
+Loading cache for shader SdfgiDebugProbesShaderRD, variant 0
+Loading cache for shader SdfgiDebugProbesShaderRD, variant 1
+Loading cache for shader SdfgiDebugProbesShaderRD, variant 2
+Loading cache for shader SdfgiDebugProbesShaderRD, variant 3
+Shader 'VolumetricFogShaderRD' (group 0) SHA256: 1e2a055ad4b80929a577ea9e61f3c272034f521a8e1d3663211a5bf3696e28e8
+Shader 'VolumetricFogShaderRD' (group 1) SHA256: 59d8d6bad9e8029584ea03285e0d55a37dbda33a837032e499276ba2d0382d15
+Shader 'VolumetricFogShaderRD' (group 2) SHA256: 3f2d837801de79c51f543b1445b06125a26772d9cc66b7ab3294925e4c3bdfa9
+Shader 'VolumetricFogShaderRD' (group 3) SHA256: fb13248b2f1e9f68baf9d79451a7d5e06296b2ca4920c889f0cfa13da6ecf28c
+Loading cache for shader VolumetricFogShaderRD, variant 0
+Shader 'VolumetricFogProcessShaderRD' (group 0) SHA256: 88861d94108be6765a4f5a12bf3d2c020518bf6cea2d75339515d8bfcfa33cf0
+Shader 'VolumetricFogProcessShaderRD' (group 1) SHA256: 2a432b0c26391eeeb6b041b1f390a109d3963104cd63635466aa425cb951d2c3
+Shader 'VolumetricFogProcessShaderRD' (group 2) SHA256: 20617351d59bc7de5fdd02bae5348fb9c4e0c1ca2e1ca58374bed0f7833ae521
+Shader 'VolumetricFogProcessShaderRD' (group 3) SHA256: 7c889aecf88c66deff81aaa463066acbcc812aea1d2d5abed24f7d80232e0d6d
+Loading cache for shader VolumetricFogProcessShaderRD, variant 0
+Loading cache for shader VolumetricFogProcessShaderRD, variant 1
+Loading cache for shader VolumetricFogProcessShaderRD, variant 2
+Loading cache for shader VolumetricFogProcessShaderRD, variant 3
+Loading cache for shader VolumetricFogProcessShaderRD, variant 4
+Shader 'BokehDofShaderRD' (group 0) SHA256: 9eecad1b8d87d91c2928400706561caf4a8a604a0ce721538bb779a2bc51f876
+Loading cache for shader BokehDofShaderRD, variant 0
+Loading cache for shader BokehDofShaderRD, variant 1
+Loading cache for shader BokehDofShaderRD, variant 3
+Loading cache for shader BokehDofShaderRD, variant 5
+Loading cache for shader BokehDofShaderRD, variant 6
+Shader 'CopyShaderRD' (group 0) SHA256: 06416dbb331f92a2c651ac0fcedf5ba066aafc28e591c899ee8a8f8d9167a537
+Loading cache for shader CopyShaderRD, variant 0
+Loading cache for shader CopyShaderRD, variant 1
+Loading cache for shader CopyShaderRD, variant 2
+Loading cache for shader CopyShaderRD, variant 3
+Loading cache for shader CopyShaderRD, variant 4
+Loading cache for shader CopyShaderRD, variant 5
+Loading cache for shader CopyShaderRD, variant 6
+Loading cache for shader CopyShaderRD, variant 7
+Loading cache for shader CopyShaderRD, variant 8
+Loading cache for shader CopyShaderRD, variant 9
+Loading cache for shader CopyShaderRD, variant 10
+Loading cache for shader CopyShaderRD, variant 11
+Loading cache for shader CopyShaderRD, variant 12
+Shader 'CopyToFbShaderRD' (group 0) SHA256: 516ca1db49f0c89dd5ba5b5f4bb3c26316beafa783d4ea24b25e254d8fc1c428
+Loading cache for shader CopyToFbShaderRD, variant 0
+Loading cache for shader CopyToFbShaderRD, variant 1
+Loading cache for shader CopyToFbShaderRD, variant 2
+Loading cache for shader CopyToFbShaderRD, variant 3
+Shader 'CubeToDpShaderRD' (group 0) SHA256: e83b3bb7481a3ffcfdeab999671e26d0ae4d08e0fd57c3368f137e22ad78a1e9
+Loading cache for shader CubeToDpShaderRD, variant 0
+Shader 'CubeToOctmapShaderRD' (group 0) SHA256: 0a8d46601d323eeb200276345183d0f1446febb4d2b0a580f23bde0fe45e85fa
+Loading cache for shader CubeToOctmapShaderRD, variant 0
+Shader 'OctmapDownsamplerShaderRD' (group 0) SHA256: 2232c0d2bbd0444161f6eedf2e402237f04e43c0b0a4182ae60f382701c9e84e
+Loading cache for shader OctmapDownsamplerShaderRD, variant 0
+Loading cache for shader OctmapDownsamplerShaderRD, variant 1
+Shader 'OctmapFilterShaderRD' (group 0) SHA256: 69e12a24310984e7449782cf761a5e21046453235d7d53c5f7ea355f7e0b333e
+Loading cache for shader OctmapFilterShaderRD, variant 0
+Loading cache for shader OctmapFilterShaderRD, variant 1
+Loading cache for shader OctmapFilterShaderRD, variant 2
+Loading cache for shader OctmapFilterShaderRD, variant 3
+Loading cache for shader OctmapFilterShaderRD, variant 4
+Loading cache for shader OctmapFilterShaderRD, variant 5
+Loading cache for shader OctmapFilterShaderRD, variant 6
+Loading cache for shader OctmapFilterShaderRD, variant 7
+Shader 'OctmapRoughnessShaderRD' (group 0) SHA256: 8132261fb0413e611623bf6a3742240101d2f040003a5dee889bbfbb21633b8f
+Loading cache for shader OctmapRoughnessShaderRD, variant 0
+Loading cache for shader OctmapRoughnessShaderRD, variant 1
+Shader 'SpecularMergeShaderRD' (group 0) SHA256: 2ac072fb5419de33ce27c9014825f16cc6d4060426f4ba73059bc68094b6bfa8
+Loading cache for shader SpecularMergeShaderRD, variant 0
+Loading cache for shader SpecularMergeShaderRD, variant 1
+Loading cache for shader SpecularMergeShaderRD, variant 2
+Loading cache for shader SpecularMergeShaderRD, variant 3
+Shader 'ShadowFrustumShaderRD' (group 0) SHA256: ac0cd9c7a7b5adc08e5e0770aac36764b5ca298a1a412b5d5256e978ac014583
+Loading cache for shader ShadowFrustumShaderRD, variant 0
+Shader 'MotionVectorsShaderRD' (group 0) SHA256: 50b078842febfa35329120080e7954028fe9c0f19ee8582e6d69667cc29f6f8c
+Loading cache for shader MotionVectorsShaderRD, variant 0
+Shader 'LuminanceReduceShaderRD' (group 0) SHA256: 9f184666cb5c22b85364514685d89dda5bb3f1b85537ad6d60d04e41af01af01
+Loading cache for shader LuminanceReduceShaderRD, variant 0
+Loading cache for shader LuminanceReduceShaderRD, variant 1
+Loading cache for shader LuminanceReduceShaderRD, variant 2
+Shader 'SmaaEdgeDetectionShaderRD' (group 0) SHA256: 87693d8136d46b4b64459dbec139c5405b1cabacb2c3894415b131e8782efb2a
+Loading cache for shader SmaaEdgeDetectionShaderRD, variant 0
+Shader 'SmaaWeightCalculationShaderRD' (group 0) SHA256: e920add2247a504ee41de41046b3e7179eb4952232110cb2db89172c537039b8
+Loading cache for shader SmaaWeightCalculationShaderRD, variant 0
+Shader 'SmaaBlendingShaderRD' (group 0) SHA256: 28d6881ae8e064e7bb573261202e530fa9cd61edce48d444d046e61ab449ac36
+Loading cache for shader SmaaBlendingShaderRD, variant 0
+Shader 'TonemapShaderRD' (group 0) SHA256: eb9c653c5c11c28b3c78b4b6d2fb70ca4f70e114fea55281aaa38a313893ac6c
+Loading cache for shader TonemapShaderRD, variant 0
+Loading cache for shader TonemapShaderRD, variant 1
+Loading cache for shader TonemapShaderRD, variant 2
+Loading cache for shader TonemapShaderRD, variant 3
+Shader 'FsrUpscaleShaderRD' (group 0) SHA256: 9cc3728a0cf1dd7347aee49fe0cbe3009047f904f8dfbbe122c3ae35395cd1a6
+Loading cache for shader FsrUpscaleShaderRD, variant 0
+Loading cache for shader FsrUpscaleShaderRD, variant 1
+Shader 'ResolveShaderRD' (group 0) SHA256: cfd5775dd543f5734172100a77ad23587b240dead09ab7049fc1180f7b408828
+Loading cache for shader ResolveShaderRD, variant 0
+Loading cache for shader ResolveShaderRD, variant 1
+Loading cache for shader ResolveShaderRD, variant 2
+Shader 'BlitShaderRD' (group 0) SHA256: 60730ff5d181828d793048b679aedf660ec932db990c939f300e8875dc43b3cf
+CoreAudio: detected 2 channels
+CoreAudio: output sampling rate: 48000 Hz
+CoreAudio: output audio buffer frames: 512 calculated latency: 10ms
+
+Loading cache for shader BlitShaderRD, variant 0
+Loading cache for shader BlitShaderRD, variant 1
+Loading cache for shader BlitShaderRD, variant 2
+Loading cache for shader BlitShaderRD, variant 3
+TextServer: Primary interface set to: "ICU / HarfBuzz / Graphite (Built-in)".
+.NET: Initializing module...
+Found hostfxr: /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/Resources/data_complete-app_macos_arm64/libhostfxr.dylib
+[CommonResidentLayer] hooking load context 'IsolatedComponentLoadContext(/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/Resources/data_complete-app_macos_arm64/complete-app.dll)'.
+[CommonResidentLayer] extracted 38 assemblies from common.pck; serving on demand via the component ALC's Resolving.
+[CommonResidentLayer] resolving: FantaSim.App.Timeline.Contracts, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/FantaSim.App.Timeline.Contracts.dll
+[CommonResidentLayer] resolving: FantaSim.App.GpuCompute.Contracts, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/FantaSim.App.GpuCompute.Contracts.dll
+[CommonResidentLayer] resolving: FantaSim.App.GpuShader.Contracts, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/FantaSim.App.GpuShader.Contracts.dll
+[CommonResidentLayer] resolving: UnifyStorage.Abstractions, Version=0.1.1.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/UnifyStorage.Abstractions.dll
+[CommonResidentLayer] resolving: Akka, Version=1.5.69.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/Akka.dll
+[CommonResidentLayer] resolving: MessagePipe, Version=1.7.3.0, Culture=neutral, PublicKeyToken=df4c250b14d82627 -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/MessagePipe.dll
+[CommonResidentLayer] resolving: FantaSim.App.Camera.Contracts, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/FantaSim.App.Camera.Contracts.dll
+[CommonResidentLayer] resolving: FantaSim.App.Command.Contracts, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/FantaSim.App.Command.Contracts.dll
+[CommonResidentLayer] resolving: UnifyEcs.Core, Version=0.1.1.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/UnifyEcs.Core.dll
+[CommonResidentLayer] resolving: UnifyEcs.Runtime.Arch, Version=0.1.1.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/UnifyEcs.Runtime.Arch.dll
+[CommonResidentLayer] resolving: Arch, Version=2.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/Arch.dll
+[CommonResidentLayer] resolving: FantaSim.World.Fields.Contracts, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/FantaSim.World.Fields.Contracts.dll
+[CommonResidentLayer] resolving: TimeDete.Time.Primitives, Version=0.1.1.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/TimeDete.Time.Primitives.dll
+[CommonResidentLayer] resolving: FantaSim.App.World.Contracts, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/FantaSim.App.World.Contracts.dll
+[CommonResidentLayer] resolving: Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/Newtonsoft.Json.dll
+info: FantaSim.App.Common.Bootstrap[0]
+      Resident app kernel registry #14944322 initialized with messaging=MessagePipeMessageBus, akka=fantasim.
+info: FantaSim.App.Common.Bootstrap[0]
+      App config json /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/config/app.json (loaded); env vars override at higher priority.
+[CommonResidentLayer] resolving: UnifyStorage.Runtime.LiteDb, Version=0.1.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/UnifyStorage.Runtime.LiteDb.dll
+[CommonResidentLayer] resolving: LiteDB, Version=5.0.21.0, Culture=neutral, PublicKeyToken=4ee40123013c9f27 -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/LiteDB.dll
+info: FantaSim.App.Common.Bootstrap[0]
+      Resident document store opened at /Users/apprenticegc/Library/Application Support/FantaSim/complete-app/crust-cache.litedb.
+info: Host[0]
+      initial window size requested: 2400x1350 logical, applied=3840x1978 px, scale=2, min=2560x1440 px.
+info: FantaSim.App.Common.Bootstrap[0]
+      Plugin host built with 25 collectible assembly exclusion(s).
+info: FantaSim.App.Common.Bootstrap[0]
+      Plugin host initialized.
+info: HostComposition.Resource[0]
+      registered: Resource
+info: HostComposition.SceneFlow[0]
+      [Host] registered: SceneFlow
+info: EcsSupervisorActor[0]
+      Created ECS world: main
+[CommonResidentLayer] resolving: Collections.Pooled, Version=2.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/Collections.Pooled.dll
+[CommonResidentLayer] resolving: Schedulers, Version=1.1.2.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/Schedulers.dll
+[CommonResidentLayer] resolving: Arch.LowLevel, Version=1.1.5.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/Arch.LowLevel.dll
+[CommonResidentLayer] resolving: CommunityToolkit.HighPerformance, Version=8.2.0.0, Culture=neutral, PublicKeyToken=4aff67a105548ee2 -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/CommunityToolkit.HighPerformance.dll
+info: HostComposition.Ecs[0]
+      [Host] ECS world 'main' created + initialized
+info: HostComposition.Ecs[0]
+      [Host] registered: Ecs
+info: HostComposition.Command[0]
+      [Host] registered: Command (orchestration degraded, 4 commands)
+info: BundleHost[0]
+      Bundle loaded: iii from /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/iii.pck
+info: Iii.Bridge[0]
+      IiiBridge ready @ ws://127.0.0.1:49134
+info: HostComposition.Iii[0]
+      registered: Iii (bridge, function provider, orchestration, 1 command, 4 worker definitions)
+info: HostComposition.Gpu[0]
+      registered: Gpu (compute service, resident RenderingDevice seam)
+info: HostComposition.GpuShader[0]
+      registered: GpuShader (authoring service, resident Godot Shader seam)
+info: HostComposition.Activity[0]
+      [Host] registered: Activity
+[CommonResidentLayer] resolving: BoomHud.Abstractions, Version=0.1.47.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/BoomHud.Abstractions.dll
+info: HostComposition.Ui[0]
+      registered: Ui (IViewHost + IService)
+info: FantaSim.App.Remote.HttpTransport[0]
+      Remote HTTP transport listening on http://127.0.0.1:19292/
+info: HostComposition.Remote[0]
+      registered: Remote ingress (main-thread bridge + transport).
+info: HostComposition.Camera[0]
+      registered: App.Camera IService (phantom-camera rig); camera.orbit registered = True.
+info: HostComposition.Render[0]
+      registered: render.screenshot (viewport capture), render.cutaway (wedge), render.exploded (solid crust), render.mantle (deprecated mantle-layer alias), render.lod (wireframe/density debug toggle).
+info: Host.SceneTierPckWatcher[0]
+      scene-tier pck watch installed on '/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles'.
+info: Host[0]
+      composition activated.
+info: Host[0]
+      iii bridge: IiiClient registered = True
+info: App.SceneFlow.Provider[0]
+      Loading scene bundle: stage
+info: BundleHost[0]
+      Bundle plugin extracted: stage assembly=FantaSim.App.Stage.dll dir=/var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/stage/2 dataFiles=2
+info: BundleSceneHost[0]
+      Bundle scene registered: stage
+info: BundleHost[0]
+      Bundle loaded: stage from /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/stage.pck
+info: Stage.Bootstrap[0]
+      Stage tier active — sharing the app kernel registry #14944322.
+info: App.SceneFlow.Service[0]
+      Scene entered: stage
+info: Host[0]
+      entered scene 'stage'; bundleLoaded=True; activeScenes=1
+info: BundleHost[0]
+      Bundle plugin extracted: world assembly=FantaSim.App.World.dll dir=/var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/world/3 dataFiles=3
+[CommonResidentLayer] resolving: FantaSim.App.World.Rendering, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/FantaSim.App.World.Rendering.dll
+[CommonResidentLayer] resolving: UnifyMaths, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/UnifyMaths.dll
+[CommonResidentLayer] resolving: Cartography.Globe.Contracts, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/Cartography.Globe.Contracts.dll
+info: PresentationPlugin[0]
+      PresentationPlugin: IPlanetPresentation registered.
+[CommonResidentLayer] resolving: FantaSim.World.Shared.Contracts, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/FantaSim.World.Shared.Contracts.dll
+info: PresentationPlugin[0]
+      PresentationPlugin: ITunnelPresentation registered.
+[CommonResidentLayer] resolving: FantaSim.Mythosphere.Cosmology.Contracts, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/FantaSim.Mythosphere.Cosmology.Contracts.dll
+[CommonResidentLayer] resolving: FantaSim.World.Export.Contracts, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/FantaSim.World.Export.Contracts.dll
+info: HostComposition.WorldDeclarationRegistry[0]
+      Declaration registry composed: science=5e6ec29dc4090f166dc8c0c14f001d10c4826bdcbd04246ecbe9097fd9aee82c, truth=823cd54ff651914363328b77788f62084e6a6b7fa38fd65cd3e0c162b1e231f4, presentation=7a3bb14a2ebf8e5868387a810f7d2acb61204f531f9dc344bc112505163d5281
+info: WorldPlugin[0]
+      WorldPlugin: declaration registry active (science=5e6ec29dc4090f166dc8c0c14f001d10c4826bdcbd04246ecbe9097fd9aee82c, truth=823cd54ff651914363328b77788f62084e6a6b7fa38fd65cd3e0c162b1e231f4, presentation=7a3bb14a2ebf8e5868387a810f7d2acb61204f531f9dc344bc112505163d5281)
+[CommonResidentLayer] resolving: FantaSim.World.Fields.Core, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/FantaSim.World.Fields.Core.dll
+info: HostComposition.World[0]
+      [Host] registered: World
+info: HostComposition.World[0]
+      [Host] World detail: crust function provider registered
+[CommonResidentLayer] resolving: UnifyMaths.Numerics, Version=0.1.5.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/UnifyMaths.Numerics.dll
+info: WorldPlugin[0]
+      WorldPlugin: layer-track registry registered.
+info: WorldPlugin[0]
+      WorldPlugin: registered world.run_generation_graph and registry.reload
+info: WorldPlugin[0]
+      WorldPlugin: automatic crust generation armed (window=5,000,000, graphRevision=1)
+info: BundleHost[0]
+      Bundle loaded: world from /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/world.pck
+info: Host[0]
+      loaded domain bundle 'world'; bundleLoaded=True
+info: App.SceneFlow.Provider[0]
+      Loading scene bundle: assist
+info: BundleHost[0]
+      Bundle plugin extracted: assist assembly=FantaSim.App.Assist.dll dir=/var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/assist/4 dataFiles=2
+info: BundleHost[0]
+      Bundle loaded: assist from /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/assist.pck
+info: Assist.Bootstrap[0]
+      Assist tier active — sharing the app kernel registry #14944322.
+info: App.SceneFlow.Service[0]
+      Scene entered: assist
+info: Host[0]
+      entered scene 'assist' under 'stage'; bundleLoaded=True; activeScenes=2
+info: App.SceneFlow.Provider[0]
+      Loading scene bundle: timeline
+info: BundleHost[0]
+      Bundle plugin extracted: timeline assembly=FantaSim.App.Timeline.dll dir=/var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/timeline/5 dataFiles=2
+[CommonResidentLayer] resolving: FantaSim.Cross.Abstractions, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/FantaSim.Cross.Abstractions.dll
+info: TimelinePlugin[0]
+      Tunnel default-on assert: effective=False, failureReason='tunnel mount unavailable', epoch=1.
+info: TimelinePlugin[0]
+      TimelinePlugin: IService registered.
+info: BundleSceneHost[0]
+      Resident script bound for bundle timeline: . -> FantaSim.App.Timeline.Seam.TimelineFace
+info: BundleSceneHost[0]
+      Bundle scene registered: timeline
+info: BundleHost[0]
+      Bundle loaded: timeline from /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/timeline.pck
+info: TimelinePlugin[0]
+      Tunnel default-on assert: effective=False, failureReason='tunnel mount unavailable', epoch=2.
+info: Timeline.Bootstrap[0]
+      Timeline scene-tier active — sharing the app kernel registry #14944322.
+info: App.SceneFlow.Service[0]
+      Scene entered: timeline
+info: Host[0]
+      entered scene 'timeline' under 'stage'; bundleLoaded=True; activeScenes=3
+info: BundleHost[0]
+      Bundle plugin extracted: activity assembly=FantaSim.App.Ui.Activity.dll dir=/var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/activity/6 dataFiles=3
+info: Activity.Bootstrap[0]
+      Activity plugin initializing; IViewSource contract assembly=FantaSim.App.Ui.Contracts, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null.
+info: Activity.Bootstrap[0]
+      Activity view source registered; matching view sources=1; source assembly=FantaSim.App.Ui.Activity, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null.
+info: BundleHost[0]
+      Bundle loaded: activity from /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/MacOS/bundles/activity.pck
+info: TimelinePlugin[0]
+      Tunnel default-on assert: effective=False, failureReason='tunnel mount unavailable', epoch=3.
+info: FantaSim.App.Ui.Services.Service[0]
+      View shown: activity
+info: Host[0]
+      activity view requested.
+[CommonResidentLayer] resolving: Cartography.Shared.Contracts, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/Cartography.Shared.Contracts.dll
+[CommonResidentLayer] resolving: Cartography.Globe.Core, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/Cartography.Globe.Core.dll
+[CommonResidentLayer] resolving: UnifyMaths.Numerics, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/UnifyMaths.Numerics.dll
+.NET: hostfxr initialized
+.NET: GodotPlugins initialized
+CORE API HASH: 0
+EDITOR API HASH: 0
+SceneTreeFTI: traversal method DEFAULT
+Loading resource: res://addons/phantom_camera/scripts/managers/phantom_camera_manager.gd remapped: res://addons/phantom_camera/scripts/managers/phantom_camera_manager.gd
+Completed load for: 'res://addons/phantom_camera/scripts/managers/phantom_camera_manager.gd' remapped 'res://addons/phantom_camera/scripts/managers/phantom_camera_manager.gd' at thread -1
+Loading resource: res://addons/R3.Godot/FrameProviderDispatcher.cs remapped: res://addons/R3.Godot/FrameProviderDispatcher.cs
+Completed load for: 'res://addons/R3.Godot/FrameProviderDispatcher.cs' remapped 'res://addons/R3.Godot/FrameProviderDispatcher.cs' at thread -1
+Loading resource: res://Host.cs remapped: res://Host.cs
+Completed load for: 'res://Host.cs' remapped 'res://Host.cs' at thread -1
+Loaded system CA certificates
+Loading resource: res://.godot/exported/133200997/export-113fa2234ddf702910ed42b8d28224dd-app_entry.scn remapped: res://.godot/exported/133200997/export-113fa2234ddf702910ed42b8d28224dd-app_entry.scn
+Completed load for: 'res://scenes/app_entry.tscn' remapped 'res://.godot/exported/133200997/export-113fa2234ddf702910ed42b8d28224dd-app_entry.scn' at thread -1
+[CommonResidentLayer] hooking load context 'IsolatedComponentLoadContext(/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/Resources/data_complete-app_macos_arm64/complete-app.dll)'.
+[CommonResidentLayer] extracted 38 assemblies from common.pck; serving on demand via the component ALC's Resolving.
+[Host] composition root starting...
+Loading resource: res://.godot/exported/133200997/export-9c3aed9a2cf4cd870d81b683dc3800b9-stage_entry.scn remapped: res://.godot/exported/133200997/export-9c3aed9a2cf4cd870d81b683dc3800b9-stage_entry.scn
+Loading resource: res://.godot/exported/133200997/export-75aa3d97772fc5593b80488bb6c4e11d-environment.scn remapped: res://.godot/exported/133200997/export-75aa3d97772fc5593b80488bb6c4e11d-environment.scn
+Completed load for: 'res://bundles/stage/scenes/environment.tscn' remapped 'res://.godot/exported/133200997/export-75aa3d97772fc5593b80488bb6c4e11d-environment.scn' at thread -1
+Completed load for: 'res://bundles/stage/scenes/stage_entry.tscn' remapped 'res://.godot/exported/133200997/export-9c3aed9a2cf4cd870d81b683dc3800b9-stage_entry.scn' at thread -1
+Loading resource: res://.godot/exported/133200997/export-49aeb5ceff6efaa8781392e162585b33-Timeline.scn remapped: res://.godot/exported/133200997/export-49aeb5ceff6efaa8781392e162585b33-Timeline.scn
+Completed load for: 'res://bundles/timeline/scenes/Timeline.tscn' remapped 'res://.godot/exported/133200997/export-49aeb5ceff6efaa8781392e162585b33-Timeline.scn' at thread -1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cainfo: World.PlanetPresentation[0]
+      Planet outer envelope bound: view=World, source=compatibility, crustVolumeDigest=none, buriedUnderlap=hidden, subdivision=adaptive, plates=1, triangles=5120, meshVertices=15360, scale=0.0008, trueScale=1.5696123057604772E-07, amplification=5096.8x, frequency=4, elevationMetres=[0,0], features=[none], featureMagnitudeMax=[none], boundaryArcs=[none], cellColorRange=[0.14734787224839863,0.5194475866888955], meshColorRange=[0.13900714,0.53335214], radiusRange=[0.9922293120320088,1.007134811235162], normalRadialDot=[0.9754089976018567,0.9949594479890425,0.9999993098641871].
+info: World.PlanetPresentation[0]
+      Planet presentation mounted under stage Environment: planet=app:main:L2:world:default, plates=0, cells=5120, productLayers=0, revision=0, crustVolumeDigest=none.
+info: App.Camera.CameraRig[0]
+      ConfigureGlobeOrbit pending: camera id 'globe.default' is not registered yet.
+info: World.TunnelPresentation[0]
+      Tunnel presentation prepared hidden under stage Environment.
+che for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shadinfo: World.TunnelPresentation[0]
+      Tunnel pending default-enable applied at preparation completion: effective=True, reason=''.
+info: TimelinePlugin[0]
+      Tunnel out-of-band enablement observed: enabled=True, epoch=4.
+info: ViewRenderer[activity][0]
+      BoomHud scene generated for activity: user://boomhud-surfaces/activity.tscn
+info: ViewRenderer[activity][0]
+      View renderer bound to activity.
+info: FantaSim.App.Ui.Seam.ViewHost[0]
+      View mounted: activity
+info: App.Camera.CameraRig[0]
+      Viewport rig created: main (layer bit = 1).
+info: App.Camera.CameraRig[0]
+      Camera 'globe.default' configured for globe orbit (follow target = GlobeOrbitFollowTarget, spring = 4).
+info: App.Camera.CameraRig[0]
+      Globe orbit follow engaged: cameraId=globe.default followTarget=GlobeOrbitFollowTarget.
+info: App.Camera.CameraRig[0]
+      Camera registered: globe.default (viewport = main, position = <0, 1.5, 3>).
+info: App.Camera.Service[0]
+      Camera registered: globe.default (viewport=main).
+info: App.Camera.CameraRig[0]
+      Camera activated: globe.default (viewport = main).
+info: App.Camera.Service[0]
+      Camera activated: globe.default (viewport=main).
+info: FantaSim.App.Command.Clients.InProcessClient[0]
+      Dispatching command timeline.seek
+info: World.PlanetPresentation[0]
+      Planet regime transition magma-ocean -> mobile-plate at t=100000000: refreshing presentation.
+info: FantaSim.App.World.GenerationGraph.CrustGenerationTrigger[0]
+      Crust generation triggered: tick=100,000,000, canonicalTick=100,000,000, window=20, revision=1, snapshots=5
+info: FantaSim.App.World.WorldFunctionProvider[0]
+      world invoke world.options
+info: FantaSim.App.World.WorldFunctionProvider[0]
+      world invoke crust.generate
+[CommonResidentLayer] resolving: MessagePack, Version=3.1.7.0, Culture=neutral, PublicKeyToken=b4a0369545f0a1be -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/MessagePack.dll
+[CommonResidentLayer] resolving: UnifySerialization.MessagePack.Runtime, Version=0.2.0.0, Culture=neutral, PublicKeyToken=null -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/UnifySerialization.MessagePack.Runtime.dll
+[CommonResidentLayer] resolving: MessagePack.Annotations, Version=3.1.7.0, Culture=neutral, PublicKeyToken=b4a0369545f0a1be -> /var/folders/59/0m_qs0hj5312yyc2c2zg_mf00000gn/T/fantasim_bundles/6092-3cc8941e928d420197cdca644004422a/common/1/MessagePack.Annotations.dll
+info: FantaSim.App.World.GenerationGraph.CrustGenerationTrigger[0]
+      Crust generation completed: canonicalTick=100,000,000, window=20, revision=1
+info: World.PlanetPresentation[0]
+      Crust snapshot transition <none> -> 100,000,000 at t=100000000: refreshing presentation.
+info: FantaSim.App.World.Services.Service[0]
+      Crust product ready in 41 ms via persisted-cache restore (key=CrustProductCacheKey { Seed = 7, Frequency = 4, SpinRateRadiansPerMegaAnnum = 0.0035, GraphRevision = 1, RotationAuthorityDigest = generated:v1, SnapshotTick = 100000000 }).
+info: FantaSim.App.World.Services.Service[0]
+      Crust underlap proof: digest=2b075e133d105f8f39fda489ca087f859394e95bf14e146a934fb55f83a3bc57, arc=8, overriding=7, downGoing=2, downGoingCell=300, rayOrigin=(-0.30573797,1.7226468,0.038887545), rayDirection=(0.17470741,-0.98436964,-0.022221455), overridingInterval=[0.7170115911644652,0.7955045434614672], downGoingInterval=[0.8072680995185839,0.8158645911818584].
+info: FantaSim.App.World.Services.Service[0]
+      Crust volume state materialized: algorithm=crust-volume.v2, tick=100000000, cells=5120, arcs=349, digest=2b075e133d105f8f39fda489ca087f859394e95bf14e146a934fb55f83a3bc57.
+info: World.PlanetPresentation[0]
+      Planet outer envelope bound: view=World, source=CrustVolumeState, crustVolumeDigest=2b075e133d105f8f39fda489ca087f859394e95bf14e146a934fb55f83a3bc57, buriedUnderlap=hidden, subdivision=adaptive, plates=10, triangles=11974, meshVertices=35922, scale=0.0008, trueScale=1.5696123057604772E-07, amplification=5096.8x, frequency=4, elevationMetres=[-588.161155994956,3662.0536459862255], features=[None=4254,Mountain=71,VolcanicArc=83,Trench=72,Ridge=0,Fault=640], featureMagnitudeMax=[Mountain=1,VolcanicArc=0.9996566922215144,Trench=1,Ridge=0,Fault=1], boundaryArcs=[Convergent=40,Divergent=0,Transform=309,Inactive=0], cellColorRange=[0.012318269809101686,0.8811469320849454], meshColorRange=[0,0.8874139], radiusRange=[0.9851082595417163,1.0344528674253617], normalRadialDot=[0.5609022648572054,0.9839614145741732,0.9999999533105324].
+info: World.PlanetPresentation[0]
+      Planet presentation mounted under stage Environment: planet=app:main:L2:world:default, plates=10, cells=5120, productLayers=1, revision=1, crustVolumeDigest=2b075e133d105f8f39fda489ca087f859394e95bf14e146a934fb55f83a3bc57.
+info: FantaSim.App.World.Services.Service[0]
+      Crust underlap proof: digest=2b075e133d105f8f39fda489ca087f859394e95bf14e146a934fb55f83a3bc57, arc=8, overriding=7, downGoing=2, downGoingCell=300, rayOrigin=(-0.30573797,1.7226468,0.038887545), rayDirection=(0.17470741,-0.98436964,-0.022221455), overridingInterval=[0.7170115911644652,0.7955045434614672], downGoingInterval=[0.8072680995185839,0.8158645911818584].
+info: FantaSim.App.World.Services.Service[0]
+      Crust volume state materialized: algorithm=crust-volume.v2, tick=100000000, cells=5120, arcs=349, digest=2b075e133d105f8f39fda489ca087f859394e95bf14e146a934fb55f83a3bc57.
+info: World.PlanetPresentation[0]
+      Planet surface re-bind skipped at t=100000000: content stamp unchanged (generation-completion echo).
+info: FantaSim.App.Command.Clients.InProcessClient[0]
+      Dispatching command timeline.tunnel_view
+warn: World.TunnelPresentation[0]
+      Tunnel camera restore: previously-current camera is gone; selecting the viewport's next camera.
+info: FantaSim.App.Command.Clients.InProcessClient[0]
+      Dispatching command render.cutaway
+info: HostComposition.Render[0]
+      render.cutaway: azimuth=0 width=0
+info: FantaSim.App.Command.Clients.InProcessClient[0]
+      Dispatching command camera.orbit
+info: HostComposition.Camera[0]
+      camera.orbit: yaw=35 pitch=-25 distance=8
+info: FantaSim.App.Command.Clients.InProcessClient[0]
+      Dispatching command render.screenshot
+info: HostComposition.Render[0]
+      render.screenshot: captured 3840x1914 -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/vault/specs/evidence/2026-07-17-spherical-plate-material-volume-a0-b0/assembled.png
+info: FantaSim.App.Command.Clients.InProcessClient[0]
+      Dispatching command render.exploded
+er SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading resource: res://addons/phantom_camera/scripts/phantom_camera/phantom_camera_3d.gd remapped: res://addons/phantom_camera/scripts/phantom_camera/phantom_camera_3d.gd
+Completed load for: 'res://addons/phantom_camera/scripts/phantom_camera/phantom_camera_3d.gd' remapped 'res://addons/phantom_camera/scripts/phantom_camera/phantom_camera_3d.gd' at thread -1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+MultiUmaBuffer '{DEBUG_ENABLED unavailable}' used a total of 0 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+MultiUmaBuffer '{DEBUG_ENABLED unavailable}' used a total of 0 buffers. A large number may indicate a waste of VRAM and can be brought down by tweaking MAX_EXTRA_BUFFERS for this buffer.
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache for shader SceneForwardClusteredShaderRD, variant 0
+Loading cache for shader SceneForwardClusteredShaderRD, variant 1
+Loading cache for shader SceneForwardClusteredShaderRD, variant 2
+Loading cache for shader SceneForwardClusteredShaderRD, variant 3
+Loading cache for shader SceneForwardClusteredShaderRD, variant 4
+Loading cache for shader SceneForwardClusteredShaderRD, variant 5
+Loading cache for shader SceneForwardClusteredShaderRD, variant 6
+Loading cache for shader SceneForwardClusteredShaderRD, variant 7
+Loading cache foinfo: World.PlanetPresentation[0]
+      Exploded crust volume mounted: digest=2b075e133d105f8f39fda489ca087f859394e95bf14e146a934fb55f83a3bc57, factor=1, plates=10.
+info: HostComposition.Render[0]
+      render.exploded: factor=1
+info: FantaSim.App.Command.Clients.InProcessClient[0]
+      Dispatching command render.screenshot
+info: HostComposition.Render[0]
+      render.screenshot: captured 3840x1914 -> /Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/vault/specs/evidence/2026-07-17-spherical-plate-material-volume-a0-b0/exploded.png
+info: FantaSim.App.Command.Clients.InProcessClient[0]
+      Dispatching command render.exploded
+info: World.PlanetPresentation[0]
+      Exploded crust volume mounted: digest=2b075e133d105f8f39fda489ca087f859394e95bf14e146a934fb55f83a3bc57, factor=0, plates=10.
+info: HostComposition.Render[0]
+      render.exploded: factor=0
+info: FantaSim.App.Command.Clients.InProcessClient[0]
+      Dispatching command render.exploded
+info: World.PlanetPresentation[0]
+      Exploded crust volume mounted: digest=2b075e133d105f8f39fda489ca087f859394e95bf14e146a934fb55f83a3bc57, factor=1, plates=10.
+info: HostComposition.Render[0]
+      render.exploded: factor=1

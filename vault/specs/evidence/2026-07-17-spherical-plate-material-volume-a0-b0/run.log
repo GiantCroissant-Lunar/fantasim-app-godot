@@ -1,0 +1,6 @@
+Godot Engine v4.7.stable.mono.official.5b4e0cb0f - https://godotengine.org
+Metal 4.0 - Forward+ - Using Device #0: Apple - Apple M4 (Apple9)
+
+[CommonResidentLayer] hooking load context 'IsolatedComponentLoadContext(/Users/apprenticegc/Work/lunar-horse/yokan-projects/fantasim-app-godot/build/_artifacts/0.1.2/godot/osx/complete-app.app/Contents/Resources/data_complete-app_macos_arm64/complete-app.dll)'.
+[CommonResidentLayer] extracted 38 assemblies from common.pck; serving on demand via the component ALC's Resolving.
+[Host] composition root starting...
