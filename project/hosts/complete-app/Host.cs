@@ -168,15 +168,16 @@ public partial class Host : Node
         void SeverWorldPresentation()
         {
             // Reload, Unload, and UnloadAll all remove the current generation. Sever every
-            // resident->bundle reference BEFORE that old ALC unloads: render-ingress delegates,
-            // camera orbit target, and host contract handles all point into the outgoing world.
+            // resident->bundle reference BEFORE that old ALC unloads: render-ingress delegates
+            // and host contract handles point into the outgoing world. The camera orbit target is
+            // intentionally NOT severed: it targets the resident GlobeOrbitControls node, and the
+            // resident camera's reload mount is correctly idempotent.
             lock (_worldPresentationGate)
             {
                 _worldReloadPending = true;
                 _renderComposition?.SetCutawayTarget(null);
                 _renderComposition?.SetExplodedTarget(null);
                 _renderComposition?.SetMantleTarget(null);
-                _cameraComposition?.SetOrbitTarget(null);
                 _planetPresentation = null;
                 _tunnelPresentation = null;
             }
