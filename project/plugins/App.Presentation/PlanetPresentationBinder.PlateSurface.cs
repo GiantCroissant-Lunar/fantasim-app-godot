@@ -295,8 +295,29 @@ internal sealed partial class PlanetPresentationBinder
         _lastContinentsCellColors = continentsCellColors;
         _lastContinentsFrontier = continentsFrontier;
 
+        double cellColorMin = perCellColor.Length == 0
+            ? 0.0
+            : perCellColor.Min(color => Math.Min(color.R, Math.Min(color.G, color.B)));
+        double cellColorMax = perCellColor.Length == 0
+            ? 0.0
+            : perCellColor.Max(color => Math.Max(color.R, Math.Max(color.G, color.B)));
+        float meshColorMin = meshes.Count == 0
+            ? 0.0f
+            : meshes.Min(mesh => mesh.Colors.Min());
+        float meshColorMax = meshes.Count == 0
+            ? 0.0f
+            : meshes.Max(mesh => mesh.Colors.Max());
+        double radiusMin = caps.Count == 0
+            ? 0.0
+            : caps.Min(cap => cap.Surface.Positions.Min(point =>
+                Math.Sqrt((point.X * point.X) + (point.Y * point.Y) + (point.Z * point.Z))));
+        double radiusMax = caps.Count == 0
+            ? 0.0
+            : caps.Max(cap => cap.Surface.Positions.Max(point =>
+                Math.Sqrt((point.X * point.X) + (point.Y * point.Y) + (point.Z * point.Z))));
+
         _log.LogInformation(
-            "Planet outer envelope bound: view={ViewMode}, source={Source}, crustVolumeDigest={CrustVolumeDigest}, buriedUnderlap=hidden, subdivision={Subdivision}, plates={PlateCount}, triangles={TriangleCount}, meshVertices={VertexCount}, scale={Scale}, trueScale={TrueScale}, amplification={Amplification}x, frequency={Frequency}.",
+            "Planet outer envelope bound: view={ViewMode}, source={Source}, crustVolumeDigest={CrustVolumeDigest}, buriedUnderlap=hidden, subdivision={Subdivision}, plates={PlateCount}, triangles={TriangleCount}, meshVertices={VertexCount}, scale={Scale}, trueScale={TrueScale}, amplification={Amplification}x, frequency={Frequency}, cellColorRange=[{CellColorMin},{CellColorMax}], meshColorRange=[{MeshColorMin},{MeshColorMax}], radiusRange=[{RadiusMin},{RadiusMax}].",
             viewMode,
             volume is null ? "compatibility" : nameof(CrustVolumeState),
             volume?.Digest ?? "none",
@@ -307,6 +328,12 @@ internal sealed partial class PlanetPresentationBinder
             projection.MetresToUnitRadius,
             projection.TrueScaleMetresToUnitRadius,
             projection.ReliefAmplification,
-            snapshot.Frequency);
+            snapshot.Frequency,
+            cellColorMin,
+            cellColorMax,
+            meshColorMin,
+            meshColorMax,
+            radiusMin,
+            radiusMax);
     }
 }
