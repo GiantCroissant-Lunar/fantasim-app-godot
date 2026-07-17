@@ -293,6 +293,11 @@ internal sealed partial class PlanetPresentationBinder
         CrustVolumeState volume,
         int boundaryArcIndex)
     {
+        // PlanetBody is intentionally lifted for the normal app preview, while the orbit camera
+        // still targets world origin. Focus inspection owns its framing, so cancel that inherited
+        // preview offset before rotating the chosen boundary onto the camera-facing axis.
+        root.Position = -PlanetBodyPreviewOffset;
+
         var points = volume.BoundaryArcs[boundaryArcIndex].Points;
         int middle = points.Count / 2;
         int previous = Math.Max(0, middle - 1);
