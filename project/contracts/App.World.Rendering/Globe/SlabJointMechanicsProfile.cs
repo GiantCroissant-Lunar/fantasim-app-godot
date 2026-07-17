@@ -40,6 +40,13 @@ namespace FantaSim.App.World.Globe;
 /// <param name="MinClearanceUnitRadius">Structural floor: the subducting top must clear the
 /// overriding bottom by at least this much in the overlap zone. Non-aesthetic. Default 0.004
 /// (half the default joint gap — a visible trench-line, not a knife edge).</param>
+///
+/// <para><b>Slice 3 — subduction TONGUE (assembled-world slice 3).</b> The tongue parameters are
+/// declared as init-only properties (NOT positional record parameters) so the existing 5-argument
+/// constructor and <see cref="Default"/> factory stay byte-compatible with slices 1+2. They carry
+/// the eye-tuned magnitudes for the watertight thick strip the subducting slab grows along a
+/// convergent non-collision joint — the "diving tongue beneath" of the v4/v5 reference
+/// (<c>vault/reference/2026-07-17-assembled-world-image-prompt.md</c>).</para>
 public sealed record SlabJointMechanicsProfile(
     double SubductionDipUnitRadius,
     double OverridingMarginRaiseUnitRadius,
@@ -61,6 +68,51 @@ public sealed record SlabJointMechanicsProfile(
 
     /// <summary>Structural default minimum clearance (0.004R).</summary>
     public const double DefaultMinClearanceUnitRadius = 0.004;
+
+    /// <summary>
+    /// Eye-tuned default lateral REACH of the subduction tongue (unit-radius units). The tongue's
+    /// far edge reaches this far across the joint path toward / under the overriding side — the
+    /// "diving tongue beneath" of the v4 reference. 0.05R reads as a clear underride lip from orbit
+    /// without crossing the whole overriding plate. The tongue ramps smoothly from 0 reach at the
+    /// plate edge to the full reach at the far edge. Eye-tuned; the lead + user EYE gate tunes this.
+    /// </summary>
+    public const double DefaultTongueReachUnitRadius = 0.05;
+
+    /// <summary>
+    /// Eye-tuned default radial DROP of the subduction tongue at its far edge (unit-radius units),
+    /// with a smooth ramp from 0 at the plate edge. Same scale as
+    /// <see cref="DefaultSubductionDipUnitRadius"/> (0.06R): the tongue descends past the dipped rim
+    /// so its far edge sits visibly below the overriding plate's underside — the lit gap of the v5
+    /// overlap reference. Grown structurally (same pattern as <see cref="SubductionDipUnitRadius"/>)
+    /// when the slab is thicker than the declared drop, so the tongue top always clears the
+    /// overriding bottom by at least <see cref="MinClearanceUnitRadius"/>.
+    /// </summary>
+    public const double DefaultTongueDropUnitRadius = 0.06;
+
+    /// <summary>
+    /// Eye-tuned default number of strip subdivisions along the reach direction (the tongue's
+    /// lateral extent). 2 segments give a smooth ramp silhouette without ballooning the index
+    /// buffer; the lead + user EYE gate may raise it for closer views. Must be >= 1.
+    /// </summary>
+    public const int DefaultTongueSegments = 2;
+
+    /// <summary>
+    /// Lateral reach of the subduction tongue across the joint path toward the overriding side
+    /// (unit-radius units). Eye-tuned; see <see cref="DefaultTongueReachUnitRadius"/>.
+    /// </summary>
+    public double TongueReachUnitRadius { get; init; } = DefaultTongueReachUnitRadius;
+
+    /// <summary>
+    /// Radial drop of the subduction tongue at its far edge (unit-radius units), ramped from the
+    /// plate edge. Eye-tuned; see <see cref="DefaultTongueDropUnitRadius"/>.
+    /// </summary>
+    public double TongueDropUnitRadius { get; init; } = DefaultTongueDropUnitRadius;
+
+    /// <summary>
+    /// Number of strip subdivisions along the tongue's reach direction (>= 1). Eye-tuned; see
+    /// <see cref="DefaultTongueSegments"/>.
+    /// </summary>
+    public int TongueSegments { get; init; } = DefaultTongueSegments;
 
     /// <summary>The default profile: eye-tuned magnitudes that make the three joint kinds legible.</summary>
     public static SlabJointMechanicsProfile Default { get; } = new(
