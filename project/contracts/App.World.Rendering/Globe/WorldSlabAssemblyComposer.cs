@@ -217,8 +217,9 @@ public static class WorldSlabAssemblyComposer
     }
 
     /// <summary>
-    /// Convenience overload: slice-1 assembly + slice-2 joint shaping in one call (extend-alongside
-    /// the slice-1 <see cref="BuildAssembly"/> — the existing 5-arg overload is unchanged).
+    /// Convenience overload: slice-1 assembly + slice-2 joint shaping + slice-3 subduction tongues
+    /// in one call (extend-alongside the slice-1 <see cref="BuildAssembly"/> — the existing 5-arg
+    /// overload is unchanged). Callers get tongues without a new call site.
     /// </summary>
     public static IReadOnlyList<PlateSolid> BuildAssembly(
         IReadOnlyList<PlateCap> caps,
@@ -232,7 +233,64 @@ public static class WorldSlabAssemblyComposer
     {
         ArgumentNullException.ThrowIfNull(profile);
         var gapped = BuildAssembly(caps, centroids, crustThicknessByCellMetres, thicknessDepthScale, profile, baseRadius);
-        return ShapeSlabJoints(gapped, joints, jointProfile, centroids, profile.SlabJointGapUnitRadius, baseRadius);
+        var shaped = ShapeSlabJoints(gapped, joints, jointProfile, centroids, profile.SlabJointGapUnitRadius, baseRadius);
+        return ShapeSubductionTongues(shaped, joints, jointProfile, baseRadius);
+    }
+
+    /// <summary>
+    /// Assembled-world slice 3: for every CONVERGENT, NON-COLLISION joint, the SUBDUCTING plate's
+    /// solid grows a TONGUE — a real, watertight thick-strip geometric extension that reaches
+    /// laterally past the joint path toward / under the overriding side and descends radially (the
+    /// "diving tongue beneath" of
+    /// <c>vault/reference/2026-07-17-assembled-world-image-prompt.md</c> v4/v5). Applied to the
+    /// slice-2 shaped slabs; the topology is EXTENDED (new vertices + triangles) following how
+    /// <see cref="PlateSolidBuilder"/> builds walls, so the tongued solid stays watertight.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Watertight by construction.</b> The tongue is a thick strip whose near edge reuses
+    /// the subducting rim vertices along the joint path; the rim WALL QUADS along the path are
+    /// dropped (rebuilt), so the path rim edge becomes INTERIOR (shared by the top cap and the
+    /// tongue top surface — exactly two triangles). The tongue carries its own top surface,
+    /// underside, far-end wall, and two side walls, every edge shared by exactly two triangles.</para>
+    /// <para><b>Assembled no-interpenetration.</b> The tongue descends from the (slice-2-dipped)
+    /// rim; its far-edge radial drop is grown structurally — same pattern
+    /// <see cref="ShapeSlabJoints"/> uses for the dip — so the tongue top clears the overriding
+    /// bottom by at least <see cref="SlabJointMechanicsProfile.MinClearanceUnitRadius"/>.</para>
+    /// <para><b>Exploded.</b> Tongues are part of their plate's <see cref="PlateSolid.Positions"/>,
+    /// so <see cref="PlateSolidBuilder.ApplyExplodedFactor"/> translates them with the plate — no
+    /// special-casing, no exploded-math change.</para>
+    /// <para>Pure, Godot-free, deterministic. Returns the input solid references unchanged when a
+    /// joint demands no tongue (transform/divergent/collision/non-convergent, or no qualifying
+    /// joint) — bit-identical to slice 2.</para>
+    /// </remarks>
+    /// <param name="shapedSolids">The slice-2 shape-translated slabs (from <see cref="ShapeSlabJoints"/>).</param>
+    /// <param name="joints">Per-joint classifications. Only convergent non-collision joints with a
+    /// resolved <see cref="SlabJointClassification.SubductingPlateId"/> grow a tongue.</param>
+    /// <param name="jointProfile">The declared joint-mechanics magnitudes (owns the tongue params).</param>
+    /// <param name="baseRadius">The unit-sphere base radius (default 1.0).</param>
+    /// <returns>One <see cref="PlateSolid"/> per input, SAME order. The subducting plate of each
+    /// qualifying joint carries a tongue; every other solid is the input reference unchanged.</returns>
+    public static IReadOnlyList<PlateSolid> ShapeSubductionTongues(
+        IReadOnlyList<PlateSolid> shapedSolids,
+        IReadOnlyList<SlabJointClassification> joints,
+        SlabJointMechanicsProfile jointProfile,
+        double baseRadius = GlobeSurfaceBuilder.DefaultRadius)
+    {
+        ArgumentNullException.ThrowIfNull(shapedSolids);
+        ArgumentNullException.ThrowIfNull(joints);
+        ArgumentNullException.ThrowIfNull(jointProfile);
+        if (!IsPositiveFinite(baseRadius))
+            throw new ArgumentOutOfRangeException(nameof(baseRadius), "Base radius must be positive and finite.");
+        ValidateTongueProfile(jointProfile);
+
+        // No qualifying tongue joint => pure no-op: hand back the input solids unchanged
+        // (bit-identical to slice 2).
+        if (joints.Count == 0 || !HasTongueJoint(joints))
+            return shapedSolids;
+
+        // STUB (TDD scaffold): real geometry lands in the next commit. The no-op keeps the chained
+        // BuildAssembly overload transparent while the proofs are written.
+        return shapedSolids;
     }
 
     // --- joint shaping internals ----------------------------------------------------------------
@@ -261,6 +319,31 @@ public static class WorldSlabAssemblyComposer
             throw new ArgumentOutOfRangeException(nameof(profile), "DivergentGapMultiplier must be > 1 (it widens the gap).");
         if (!IsPositiveFinite(profile.MinClearanceUnitRadius))
             throw new ArgumentOutOfRangeException(nameof(profile), "MinClearanceUnitRadius must be positive and finite.");
+    }
+
+    private static void ValidateTongueProfile(SlabJointMechanicsProfile profile)
+    {
+        if (!IsPositiveFinite(profile.TongueReachUnitRadius))
+            throw new ArgumentOutOfRangeException(nameof(profile), "TongueReachUnitRadius must be positive and finite.");
+        if (!IsPositiveFinite(profile.TongueDropUnitRadius))
+            throw new ArgumentOutOfRangeException(nameof(profile), "TongueDropUnitRadius must be positive and finite.");
+        if (profile.TongueSegments < 1)
+            throw new ArgumentOutOfRangeException(nameof(profile), "TongueSegments must be >= 1.");
+    }
+
+    // A joint demands a tongue only when it is CONVERGENT, NON-COLLISION, with a resolved
+    // subducting plate id and a usable path. Transform / divergent / collision / unresolved joints
+    // are bit-identical to slice 2 (no tongue).
+    private static bool HasTongueJoint(IReadOnlyList<SlabJointClassification> joints)
+    {
+        foreach (var j in joints)
+        {
+            if (j.Kind != SlabJointKind.Convergent) continue;
+            if (j.IsCollision) continue;
+            if (j.SubductingPlateId is not int) continue;
+            if (j.Path.Count >= 2) return true;
+        }
+        return false;
     }
 
     // The effective dip is the declared visual dip OR the structural clearance the slab thickness
