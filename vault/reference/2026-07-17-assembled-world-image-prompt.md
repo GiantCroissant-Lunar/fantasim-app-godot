@@ -85,3 +85,52 @@ clouds, vegetation, text, blur
 
 Optional single-generation variant for piece-consistency: "two views of the same object side
 by side: left fully assembled, right exploded outward".
+
+
+---
+
+# v3 — plate shapes, not puzzle shapes (second correction)
+
+v2's generations were structurally right (thickness, strata walls, molten core, closed-vs-
+offset states) but literalized "jigsaw": tab-and-socket piece shapes, near-uniform sizes.
+User: "we are not making jigsaw puzzle, this is just a term. actually each piece should be
+[the Sketchfab model] which is not regular and not jigsaw puzzle shape, some plates are
+bigger, some plates are smaller."
+
+Changes: noun is "tectonic plates"; shapes are "irregular angular fragments with jagged,
+zigzagging edges"; explicit size hierarchy (quarter-sphere plates down to narrow slivers);
+jigsaw tabs/knobs/uniform sizes banned in negatives; water/trees negatives strengthened.
+
+## Prompt A v3 — ASSEMBLED
+
+A stylized planet whose entire rocky shell is divided into tectonic plates: large irregular
+angular fragments with jagged, zigzagging edges, like the broken shell of an egg — never
+rounded puzzle shapes. The pieces vary greatly in size: two or three huge plates each spanning
+a quarter of the sphere, several medium plates, and a few small narrow slivers wedged between
+them. The plates fit together perfectly into one complete closed sphere — no gaps, nothing
+beneath them visible — but every boundary is clearly visible as a thin engraved seam line,
+faintly glowing ember-red, tracing jagged irregular outlines across the whole surface. Each
+plate carries chunky stylized dry rocky terrain: faceted mountains, plateaus, boulder fields,
+giving the planet a gently knobbly silhouette. Matte clay game-art render, cartoon shader,
+soft key light, dark space background, square format.
+
+Negative: jigsaw tabs, puzzle knobs, interlocking sockets, rounded puzzle pieces, uniform
+piece sizes, hexagonal grid, open gaps, cracks with lava rivers, exploded pieces, visible
+interior, water, rivers, lakes, trees, forests, buildings, clouds, text
+
+## Prompt B v3 — EXPLODED
+
+A stylized planet in exploded view: its rocky shell is divided into tectonic plates — large
+irregular angular fragments with jagged, zigzagging edges, never rounded puzzle shapes, their
+sizes varying greatly from huge quarter-sphere plates down to small narrow slivers. Every
+plate is lifted straight outward from the planet's center by a small equal distance, so the
+pieces no longer touch and no longer form a complete sphere — open space separates each plate
+from its neighbors. Each floating plate is a thick slab: jagged carved side walls showing
+layered rock strata, a cut underside, and chunky faceted dry rocky terrain riding on its top
+surface. Through the gaps between plates, the planet's interior is revealed: a smaller glowing
+molten orange core sphere at the center beneath the separated shell pieces. Matte clay
+game-art render, cartoon shader, soft key light, dark space background, square format.
+
+Negative: jigsaw tabs, puzzle knobs, rounded puzzle pieces, uniform piece sizes, complete
+closed sphere, touching pieces, water, rivers, lakes, trees, forests, buildings, clouds,
+text, blur
