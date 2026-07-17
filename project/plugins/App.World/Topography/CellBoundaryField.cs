@@ -9,7 +9,7 @@ namespace FantaSim.App.World.Topography;
 /// <summary>
 /// Builds the per-cell boundary field (P4): for each cell, the great-circle distance to its nearest typed
 /// boundary arc, that boundary's type, and — for convergent boundaries — which side the cell is on
-/// (subducting vs overriding), resolved from the polarity map. All sphere math uses UnifyMaths
+/// (subducting vs overriding), resolved from the canonical arc. All sphere math uses UnifyMaths
 /// <see cref="Vector3D"/> with the <c>acos(clamp(dot))</c> idiom; no hand-rolled spherical math.
 /// </summary>
 public static class CellBoundaryField
@@ -27,12 +27,10 @@ public static class CellBoundaryField
     /// </summary>
     public static IReadOnlyList<CellBoundarySample> Build(
         IReadOnlyList<GlobeCell> cells,
-        IReadOnlyList<PlateBoundaryArc> arcs,
-        IReadOnlyDictionary<(int PlateA, int PlateB), ConvergentBoundaryPolarity> polarity)
+        IReadOnlyList<PlateBoundaryArc> arcs)
     {
         ArgumentNullException.ThrowIfNull(cells);
         ArgumentNullException.ThrowIfNull(arcs);
-        ArgumentNullException.ThrowIfNull(polarity);
 
         // Pre-convert arc points to Vector3D once (each arc's polyline is reused across all cells).
         var arcVecs = new Vector3D[arcs.Count][];
@@ -130,21 +128,18 @@ public static class CellBoundaryField
 
             if (arc.Kind == PlateBoundaryKind.Convergent)
             {
-                var key = arc.PlateA <= arc.PlateB ? (arc.PlateA, arc.PlateB) : (arc.PlateB, arc.PlateA);
-                if (polarity.TryGetValue(key, out var pol))
+                subductingId = arc.SubductingPlateId;
+                isCollision = arc.IsCollision;
+                // Collision is symmetric (uplift on both sides); subduction is asymmetric
+                // (subducting side negative).
+                if (!isCollision && subductingId is int subducting)
                 {
-                    subductingId = pol.SubductingPlateId;
-                    isCollision = pol.IsCollision;
-                    // Collision is symmetric (uplift on both sides); subduction is asymmetric (subducting side negative).
-                    if (!isCollision)
-                    {
-                        // Keep the physical side unambiguous when exact edge membership lands
-                        // exactly on the boundary: +epsilon selects the overriding arc branch;
-                        // -epsilon selects the subducting trench branch.
-                        signed = cell.PlateId == pol.SubductingPlateId
-                            ? -Math.Max(distance, double.Epsilon)
-                            : Math.Max(distance, double.Epsilon);
-                    }
+                    // Keep the physical side unambiguous when exact edge membership lands
+                    // exactly on the boundary: +epsilon selects the overriding arc branch;
+                    // -epsilon selects the subducting trench branch.
+                    signed = cell.PlateId == subducting
+                        ? -Math.Max(distance, double.Epsilon)
+                        : Math.Max(distance, double.Epsilon);
                 }
             }
 

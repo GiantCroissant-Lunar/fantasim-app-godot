@@ -96,9 +96,21 @@ public sealed class WorldSlabSubductionTongueTests
         var shaped = fixture.ShapedSolids;
 
         // Three joint kinds that must NOT grow a tongue.
-        var transform = fixture.ConvergentJoint with { Kind = SlabJointKind.Transform, SubductingPlateId = null };
-        var divergent = fixture.ConvergentJoint with { Kind = SlabJointKind.Divergent, SubductingPlateId = null };
-        var collision = fixture.ConvergentJoint with { SubductingPlateId = null, IsCollision = true };
+        var transform = fixture.ConvergentJoint with
+        {
+            Kind = PlateBoundaryKind.Transform,
+            SubductingPlateId = null,
+            IsCollision = false,
+        };
+        var divergent = fixture.ConvergentJoint with
+        {
+            Kind = PlateBoundaryKind.Divergent,
+            SubductingPlateId = null,
+            IsCollision = false,
+        };
+        var collision = fixture.ConvergentJoint.WithConvergentMechanics(
+            subductingPlateId: null,
+            isCollision: true);
 
         foreach (var joint in new[] { transform, divergent, collision })
         {
@@ -120,7 +132,7 @@ public sealed class WorldSlabSubductionTongueTests
         var shaped = fixture.ShapedSolids;
 
         var tongued = WorldSlabAssemblyComposer.ShapeSubductionTongues(
-            shaped, Array.Empty<SlabJointClassification>(), SlabJointMechanicsProfile.Default);
+            shaped, Array.Empty<PlateBoundaryArc>(), SlabJointMechanicsProfile.Default);
 
         Assert.Equal(shaped.Count, tongued.Count);
         for (int p = 0; p < shaped.Count; p++)
@@ -370,7 +382,7 @@ public sealed class WorldSlabSubductionTongueTests
         public WorldGlobeSnapshot Snapshot { get; init; } = null!;
         public IReadOnlyList<PlateSolidCentroid> Centroids { get; init; } = null!;
         public IReadOnlyList<PlateSolid> ShapedSolids { get; init; } = null!; // slice-1 + slice-2 output
-        public SlabJointClassification ConvergentJoint { get; init; } = null!;
+        public PlateBoundaryArc ConvergentJoint { get; init; } = null!;
         public int SubductingPlateId { get; init; }
         public int OverridingPlateId { get; init; }
         public IReadOnlyList<GlobeVec3> SharedCornerDirections { get; init; } = null!;
@@ -418,7 +430,11 @@ public sealed class WorldSlabSubductionTongueTests
             caps, centroids, thickness, scale, WorldSurfacePresentationProfile.Default);
         var shaped = WorldSlabAssemblyComposer.ShapeSlabJoints(
             gapped,
-            new[] { new SlabJointClassification(lo, hi, SlabJointKind.Convergent, subductingPlateId, false, new[] { a, b }) },
+            new[]
+            {
+                new PlateBoundaryArc(lo, hi, PlateBoundaryKind.Convergent, new[] { a, b })
+                    .WithConvergentMechanics(subductingPlateId, isCollision: false),
+            },
             SlabJointMechanicsProfile.Default,
             centroids,
             WorldSurfacePresentationProfile.Default.SlabJointGapUnitRadius);
@@ -428,8 +444,12 @@ public sealed class WorldSlabSubductionTongueTests
             Snapshot = snapshot,
             Centroids = centroids,
             ShapedSolids = shaped,
-            ConvergentJoint = new SlabJointClassification(
-                lo, hi, SlabJointKind.Convergent, subductingPlateId, false, new[] { a, b }),
+            ConvergentJoint = new PlateBoundaryArc(
+                    lo,
+                    hi,
+                    PlateBoundaryKind.Convergent,
+                    new[] { a, b })
+                .WithConvergentMechanics(subductingPlateId, isCollision: false),
             SubductingPlateId = subductingPlateId,
             OverridingPlateId = overridingPlateId,
             SharedCornerDirections = new[] { a, b },

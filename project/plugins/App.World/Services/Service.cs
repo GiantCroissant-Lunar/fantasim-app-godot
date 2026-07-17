@@ -10,6 +10,7 @@ using FantaSim.App.World.Crust;
 using FantaSim.App.World.GenerationGraph;
 using FantaSim.App.World.Globe;
 using FantaSim.App.World.Persistence;
+using FantaSim.App.World.Topography;
 using FantaSim.Geosphere.Crust;
 using FantaSim.Geosphere.Asthenosphere.Convection;
 using Microsoft.Extensions.Logging;
@@ -891,7 +892,7 @@ public sealed class Service : IService, IDisposable
         var geosphere = SphereRegimeScheduleDefaults.GeosphereDefault;
         var atmosphere = SphereRegimeScheduleDefaults.AtmosphereFor(onsetTick);
         var currentGlobe = reconstructor.BuildGlobeAt(arcTick);
-        var currentArcs = reconstructor.BuildBoundaryArcsAt(arcTick);
+        IReadOnlyList<PlateBoundaryArc> currentArcs = reconstructor.BuildBoundaryArcsAt(arcTick);
 
         // PRE-ONSET (magma-ocean / stagnant-lid): there is NO crust — running the crust
         // pipeline with endTick < onset walks evolution ticks negative and throws inside
@@ -946,6 +947,11 @@ public sealed class Service : IService, IDisposable
         var sampledFractions = ContinentalFractionsFromState(sampledState);
 
         var sampledFeatures = sampler.SampleFeaturesAt(currentGlobe, sampledState, currentArcs);
+        currentArcs = ConvergentPolarity.Attach(
+            currentArcs,
+            currentGlobe.Cells,
+            sampledFeatures,
+            sampledState);
         var cellFeatures = BuildCellFeatures(
             products.Materialization.Tessellation.CellCount,
             sampledFeatures);

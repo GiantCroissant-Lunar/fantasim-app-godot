@@ -20,17 +20,9 @@ public sealed class BoundarySectionBuilderTests
     {
         var arc = Arc(PlateBoundaryKind.Convergent);
         var globe = Globe();
-        var state = new Dictionary<int, CellCrustState>
-        {
-            [0] = State(0, continentalFraction: 1.0),
-            [1] = State(1, continentalFraction: 0.0),
-        };
-
         var section = BoundarySectionBuilder.BuildForArc(
             globe,
             arc,
-            state,
-            features: null,
             P,
             sampleCount: 65);
 
@@ -57,8 +49,6 @@ public sealed class BoundarySectionBuilderTests
         var section = BoundarySectionBuilder.BuildForArc(
             Globe(),
             Arc(PlateBoundaryKind.Divergent),
-            new Dictionary<int, CellCrustState>(),
-            features: null,
             P,
             sampleCount: 65);
 
@@ -78,8 +68,6 @@ public sealed class BoundarySectionBuilderTests
         var section = BoundarySectionBuilder.BuildForArc(
             Globe(),
             Arc(PlateBoundaryKind.Transform),
-            new Dictionary<int, CellCrustState>(),
-            features: null,
             P,
             sampleCount: 65);
 
@@ -111,13 +99,10 @@ public sealed class BoundarySectionBuilderTests
         => new(id, plateId, point, point, point);
 
     private static PlateBoundaryArc Arc(PlateBoundaryKind kind)
-        => new(0, 1, kind, new[] { X, Y });
-
-    private static CellCrustState State(int cellId, double continentalFraction)
-        => new(
-            cellId,
-            ContinentalFraction: continentalFraction,
-            OrogenicPressure: 0.0,
-            VolcanicActivity: 0.0,
-            CrustAgeTicks: 0.0);
+    {
+        var arc = new PlateBoundaryArc(0, 1, kind, new[] { X, Y });
+        return kind == PlateBoundaryKind.Convergent
+            ? arc.WithConvergentMechanics(subductingPlateId: 1, isCollision: false)
+            : arc;
+    }
 }

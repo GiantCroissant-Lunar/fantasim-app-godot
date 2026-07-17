@@ -21,8 +21,6 @@ public static class BoundarySectionBuilder
     public static BoundarySectionDocument? BuildForArc(
         WorldGlobeSnapshot globe,
         PlateBoundaryArc arc,
-        IReadOnlyDictionary<int, CellCrustState> state,
-        IReadOnlyDictionary<int, CrustFeature>? features,
         BoundaryProfileParameters parameters,
         int sampleCount = DefaultSampleCount,
         double planetRadiusMetres = DefaultPlanetRadiusMetres,
@@ -30,7 +28,6 @@ public static class BoundarySectionBuilder
     {
         ArgumentNullException.ThrowIfNull(globe);
         ArgumentNullException.ThrowIfNull(arc);
-        ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(parameters);
 
         if (arc.Kind == PlateBoundaryKind.Inactive || arc.Points.Count < 2)
@@ -39,23 +36,19 @@ public static class BoundarySectionBuilder
             throw new ArgumentOutOfRangeException(nameof(sampleCount), sampleCount, "Boundary sections need at least three samples.");
 
         var arcs = new[] { arc };
-        var polarity = ConvergentPolarity.Derive(arcs, globe.Cells, features, state);
-        var key = arc.PlateA <= arc.PlateB ? (arc.PlateA, arc.PlateB) : (arc.PlateB, arc.PlateA);
-        polarity.TryGetValue(key, out var convergentPolarity);
-
-        var field = CellBoundaryField.Build(globe.Cells, arcs, polarity);
+        var field = CellBoundaryField.Build(globe.Cells, arcs);
         int nearestPointIndex = SelectRepresentativePointIndex(field, arc);
         double transformPhaseCoordinate = CellBoundaryField.TransformPhaseCoordinate(
             arc,
             ToVector(SelectOrigin(arc)));
-        double halfWidth = ResolveHalfWidth(arc.Kind, convergentPolarity.IsCollision, parameters);
+        double halfWidth = ResolveHalfWidth(arc.Kind, arc.IsCollision, parameters);
 
         var samples = new BoundarySectionSample[sampleCount];
         for (int i = 0; i < sampleCount; i++)
         {
             double t = sampleCount == 1 ? 0.0 : (double)i / (sampleCount - 1);
             double signedDistance = -halfWidth + (2.0 * halfWidth * t);
-            int cellPlateId = SelectSamplePlateId(arc, signedDistance, convergentPolarity);
+            int cellPlateId = SelectSamplePlateId(arc, signedDistance);
             var profileSample = new CellBoundarySample(
                 Found: true,
                 signedDistance,
@@ -65,10 +58,8 @@ public static class BoundarySectionBuilder
                 cellPlateId,
                 arc.PlateA,
                 arc.PlateB,
-                convergentPolarity.SubductingPlateId == default && arc.Kind != PlateBoundaryKind.Convergent
-                    ? null
-                    : convergentPolarity.SubductingPlateId,
-                convergentPolarity.IsCollision);
+                arc.SubductingPlateId,
+                arc.IsCollision);
             double elevation = BoundaryProfileShape.Contribution(profileSample, parameters);
             samples[i] = new BoundarySectionSample(
                 signedDistance,
@@ -95,18 +86,16 @@ public static class BoundarySectionBuilder
             InteriorBands: bands,
             Exaggeration: exaggeration,
             PlanetRadiusMetres: planetRadiusMetres,
-            LabelOverride: BuildLabel(arc.Kind, convergentPolarity),
-            SubductingPlateId: arc.Kind == PlateBoundaryKind.Convergent && !convergentPolarity.IsCollision
-                ? convergentPolarity.SubductingPlateId
+            LabelOverride: BuildLabel(arc),
+            SubductingPlateId: arc.Kind == PlateBoundaryKind.Convergent && !arc.IsCollision
+                ? arc.SubductingPlateId
                 : null,
-            IsCollision: arc.Kind == PlateBoundaryKind.Convergent && convergentPolarity.IsCollision);
+            IsCollision: arc.Kind == PlateBoundaryKind.Convergent && arc.IsCollision);
     }
 
     public static IReadOnlyList<BoundarySectionDocument> BuildRepresentativeSections(
         WorldGlobeSnapshot globe,
         IReadOnlyList<PlateBoundaryArc> arcs,
-        IReadOnlyDictionary<int, CellCrustState> state,
-        IReadOnlyDictionary<int, CrustFeature>? features,
         BoundaryProfileParameters parameters,
         int sampleCount = DefaultSampleCount,
         double planetRadiusMetres = DefaultPlanetRadiusMetres,
@@ -124,8 +113,6 @@ public static class BoundarySectionBuilder
             var section = BuildForArc(
                 globe,
                 arc,
-                state,
-                features,
                 parameters,
                 sampleCount,
                 planetRadiusMetres,
@@ -154,15 +141,14 @@ public static class BoundarySectionBuilder
 
     private static int SelectSamplePlateId(
         PlateBoundaryArc arc,
-        double signedDistance,
-        ConvergentBoundaryPolarity polarity)
+        double signedDistance)
     {
-        if (arc.Kind != PlateBoundaryKind.Convergent || polarity.IsCollision)
+        if (arc.Kind != PlateBoundaryKind.Convergent || arc.IsCollision)
             return arc.PlateA;
 
         if (signedDistance <= 0.0)
-            return polarity.SubductingPlateId;
-        return polarity.OverridingPlateId;
+            return arc.SubductingPlateId ?? arc.PlateA;
+        return arc.OverridingPlateId ?? arc.PlateB;
     }
 
     private static double ResolveHalfWidth(
@@ -193,10 +179,10 @@ public static class BoundarySectionBuilder
         return ToGlobe(normal.Length() > 1e-12 ? normal : new Vector3D(0, 0, 1));
     }
 
-    private static string BuildLabel(PlateBoundaryKind kind, ConvergentBoundaryPolarity polarity)
-        => kind switch
+    private static string BuildLabel(PlateBoundaryArc arc)
+        => arc.Kind switch
         {
-            PlateBoundaryKind.Convergent when polarity.IsCollision => "Convergent collision section",
+            PlateBoundaryKind.Convergent when arc.IsCollision => "Convergent collision section",
             PlateBoundaryKind.Convergent => "Convergent subduction section",
             PlateBoundaryKind.Divergent => "Divergent rift section",
             PlateBoundaryKind.Transform => "Transform shear section",

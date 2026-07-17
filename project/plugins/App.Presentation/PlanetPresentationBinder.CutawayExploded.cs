@@ -178,16 +178,15 @@ internal sealed partial class PlanetPresentationBinder
         var explodedArcs = document.BoundaryArcs;
         if (explodedArcs is { Count: > 0 })
         {
-            var joints = SlabJointClassifier.Classify(explodedArcs, document.BoundarySections);
             solids = WorldSlabAssemblyComposer.ShapeSlabJoints(
                 solids,
-                joints,
+                explodedArcs,
                 _jointMechanicsProfile,
                 centroids,
                 _worldSurfaceProfile.SlabJointGapUnitRadius);
             solids = WorldSlabAssemblyComposer.ShapeSubductionTongues(
                 solids,
-                joints,
+                explodedArcs,
                 _jointMechanicsProfile);
         }
 

@@ -34,11 +34,8 @@ namespace FantaSim.App.World.Tests;
 /// still shared by exactly two triangles after shaping.</item>
 /// </list>
 ///
-/// <para>The seam between <b>joint classification</b> (which pair / kind / side subducts) and
-/// <b>edge shaping</b> (geometry) is the <see cref="SlabJointClassification"/> record: tests build
-/// classifications directly, bypassing the adapter, so the geometry proofs are independent of how
-/// classifications are produced. <see cref="SlabJointClassifier"/> (the adapter) is exercised
-/// separately.</para>
+/// <para>The canonical <see cref="PlateBoundaryArc"/> carries the pair, kind, path, and convergent
+/// mechanics consumed by edge shaping.</para>
 /// </summary>
 public sealed class WorldSlabJointMechanicsTests
 {
@@ -194,7 +191,12 @@ public sealed class WorldSlabJointMechanicsTests
         Assert.True(defaultSeparation > 0.0, $"default joint gap must be positive; was {defaultSeparation:G5}");
 
         // Divergent shaping widens the gap at this joint.
-        var divergent = fixture.ConvergentJoint with { Kind = SlabJointKind.Divergent, SubductingPlateId = null };
+        var divergent = fixture.ConvergentJoint with
+        {
+            Kind = PlateBoundaryKind.Divergent,
+            SubductingPlateId = null,
+            IsCollision = false,
+        };
         var shaped = WorldSlabAssemblyComposer.ShapeSlabJoints(
             fixture.GappedSolids,
             new[] { divergent },
@@ -214,7 +216,12 @@ public sealed class WorldSlabJointMechanicsTests
     public void Transform_joint_shaping_is_bit_identical_to_slice1_assembly()
     {
         var fixture = NonCoaxialTwoPlateFixture(subductingPlateId: 0, overridingPlateId: 1);
-        var transform = fixture.ConvergentJoint with { Kind = SlabJointKind.Transform, SubductingPlateId = null };
+        var transform = fixture.ConvergentJoint with
+        {
+            Kind = PlateBoundaryKind.Transform,
+            SubductingPlateId = null,
+            IsCollision = false,
+        };
 
         var shaped = WorldSlabAssemblyComposer.ShapeSlabJoints(
             fixture.GappedSolids,
@@ -298,7 +305,7 @@ public sealed class WorldSlabJointMechanicsTests
 
         var shaped = WorldSlabAssemblyComposer.ShapeSlabJoints(
             fixture.GappedSolids,
-            Array.Empty<SlabJointClassification>(),
+            Array.Empty<PlateBoundaryArc>(),
             SlabJointMechanicsProfile.Default,
             fixture.Centroids,
             fixture.Gap);
@@ -318,7 +325,9 @@ public sealed class WorldSlabJointMechanicsTests
         // Continent-continent collision (IsCollision) is symmetric uplift: BOTH plates' edge bands
         // rise — no subduction underride, no trench. This is the mountain-piling onset on both sides.
         var fixture = NonCoaxialTwoPlateFixture(subductingPlateId: 0, overridingPlateId: 1);
-        var collision = fixture.ConvergentJoint with { SubductingPlateId = null, IsCollision = true };
+        var collision = fixture.ConvergentJoint.WithConvergentMechanics(
+            subductingPlateId: null,
+            isCollision: true);
 
         var shaped = WorldSlabAssemblyComposer.ShapeSlabJoints(
             fixture.GappedSolids,
@@ -362,7 +371,7 @@ public sealed class WorldSlabJointMechanicsTests
 
         var shaped = WorldSlabAssemblyComposer.ShapeSlabJoints(
             gapped,
-            Array.Empty<SlabJointClassification>(),
+            Array.Empty<PlateBoundaryArc>(),
             SlabJointMechanicsProfile.Default,
             centroids,
             WorldSurfacePresentationProfile.Default.SlabJointGapUnitRadius);
@@ -377,70 +386,6 @@ public sealed class WorldSlabJointMechanicsTests
         }
     }
 
-    // ─── The classifier adapter: arcs + sections -> per-joint classifications ──────────────────
-
-    [Fact]
-    public void SlabJointClassifier_builds_per_joint_classifications_from_arcs_and_sections()
-    {
-        // The adapter is the narrow seam between the existing boundary data (PlateBoundaryArc for the
-        // kind/pair/geometry + BoundarySectionDocument for the resolved subduction polarity) and the
-        // edge shaper. It emits one classification per ACTIVE plate pair, carrying the polarity.
-        var a = Unit(1, 2, 3);
-        var b = Unit(3, 1, 2);
-
-        var arcs = new[]
-        {
-            new PlateBoundaryArc(0, 1, PlateBoundaryKind.Convergent, new[] { a, b }),
-            new PlateBoundaryArc(0, 1, PlateBoundaryKind.Convergent, new[] { b, a }), // same pair, 2nd segment
-            new PlateBoundaryArc(1, 2, PlateBoundaryKind.Transform, new[] { a, b }),
-        };
-        var sections = new[]
-        {
-            new BoundarySectionDocument(
-                PlateA: 0, PlateB: 1, Kind: PlateBoundaryKind.Convergent,
-                Origin: a, NormalAxis: b,
-                Samples: Array.Empty<BoundarySectionSample>(),
-                InteriorBands: Array.Empty<BoundarySectionBand>(),
-                Exaggeration: 1.0, PlanetRadiusMetres: 6_371_000.0, LabelOverride: null,
-                SubductingPlateId: 0, IsCollision: false),
-        };
-
-        var joints = SlabJointClassifier.Classify(arcs, sections);
-
-        // One classification per active pair (the two convergent segments collapse into one pair).
-        Assert.Equal(2, joints.Count);
-
-        var convergent = joints.Single(j => j.Kind == SlabJointKind.Convergent);
-        Assert.Equal(0, convergent.PlateA);
-        Assert.Equal(1, convergent.PlateB);
-        Assert.Equal(0, convergent.SubductingPlateId);
-        Assert.False(convergent.IsCollision);
-        Assert.True(convergent.Path.Count >= 2);
-
-        var transform = joints.Single(j => j.Kind == SlabJointKind.Transform);
-        Assert.Null(transform.SubductingPlateId);
-        Assert.False(transform.IsCollision);
-    }
-
-    [Fact]
-    public void SlabJointClassifier_handles_missing_polarity_as_collision_free_unknown_subduction()
-    {
-        // A convergent pair with NO matching section document (polarity not yet resolved by the
-        // pipeline): the adapter must not crash. It emits the joint with no resolved subducting side
-        // (treated as collision-free unknown) so the shaper skips the asymmetric underride gracefully.
-        var arcs = new[]
-        {
-            new PlateBoundaryArc(2, 3, PlateBoundaryKind.Convergent, new[] { Unit(1, 0, 0), Unit(0, 1, 0) }),
-        };
-
-        var joints = SlabJointClassifier.Classify(arcs, sections: null);
-
-        var joint = Assert.Single(joints);
-        Assert.Equal(SlabJointKind.Convergent, joint.Kind);
-        Assert.Null(joint.SubductingPlateId);
-        Assert.False(joint.IsCollision);
-    }
-
     // === fixtures ===============================================================================
 
     // Two plates sharing the edge a-b on a GENERIC great circle (NOT +Z, NOT the equator). Each
@@ -450,7 +395,7 @@ public sealed class WorldSlabJointMechanicsTests
         public WorldGlobeSnapshot Snapshot { get; init; } = null!;
         public IReadOnlyList<PlateSolidCentroid> Centroids { get; init; } = null!;
         public IReadOnlyList<PlateSolid> GappedSolids { get; init; } = null!;
-        public SlabJointClassification ConvergentJoint { get; init; } = null!;
+        public PlateBoundaryArc ConvergentJoint { get; init; } = null!;
         public int SubductingPlateId { get; init; }
         public int OverridingPlateId { get; init; }
         public double Gap { get; init; }
@@ -495,13 +440,12 @@ public sealed class WorldSlabJointMechanicsTests
         var gapped = WorldSlabAssemblyComposer.BuildAssembly(
             caps, centroids, thickness, scale, WorldSurfacePresentationProfile.Default);
 
-        var joint = new SlabJointClassification(
-            PlateA: lo,
-            PlateB: hi,
-            Kind: SlabJointKind.Convergent,
-            SubductingPlateId: subductingPlateId,
-            IsCollision: false,
-            Path: new[] { a, b });
+        var joint = new PlateBoundaryArc(
+                PlateA: lo,
+                PlateB: hi,
+                Kind: PlateBoundaryKind.Convergent,
+                Points: new[] { a, b })
+            .WithConvergentMechanics(subductingPlateId, isCollision: false);
 
         return new NonCoaxialFixture
         {

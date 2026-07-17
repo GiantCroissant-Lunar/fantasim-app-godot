@@ -85,8 +85,8 @@ public sealed class BoundaryProfileIntegrationTests
         var currentAssignment = globe.Cells.ToDictionary(cell => cell.CellId, cell => cell.PlateId);
         var state = sampler.SampleAt(tick, stateAtTick, currentAssignment);
         var features = sampler.SampleFeaturesAt(globe, state, arcs);
-        var polarity = ConvergentPolarity.Derive(arcs, globe.Cells, features, state);
-        return new CurrentFrameFixture(state, features, CellBoundaryField.Build(globe.Cells, arcs, polarity));
+        var resolvedArcs = ConvergentPolarity.Attach(arcs, globe.Cells, features, state);
+        return new CurrentFrameFixture(state, features, CellBoundaryField.Build(globe.Cells, resolvedArcs));
     }
 
     private static CrustField BuildField(BoundaryProfileParameters parameters, int frequency)
@@ -101,8 +101,8 @@ public sealed class BoundaryProfileIntegrationTests
         var arcs = reconstructor.BuildBoundaryArcsAt(0);
 
         var contributions = BoundaryProfileContribution.Build(globe, arcs, state, features, parameters);
-        var polarity = ConvergentPolarity.Derive(arcs, globe.Cells, features, state);
-        var field = CellBoundaryField.Build(globe.Cells, arcs, polarity);
+        var resolvedArcs = ConvergentPolarity.Attach(arcs, globe.Cells, features, state);
+        var field = CellBoundaryField.Build(globe.Cells, resolvedArcs);
 
         int n = globe.CellCount;
         var baseline = new double[n];

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FantaSim.App.World;
 using FantaSim.App.World.Dto;
 using FantaSim.Cartography.Globe.Core;
 using FantaSim.Cartography.Shared;
@@ -92,8 +93,7 @@ public static class WorldSlabAssemblyComposer
     /// keeps transform/empty-joint cases bit-identical to slice 1).</para>
     /// </remarks>
     /// <param name="gappedSolids">The slice-1 gap-translated slabs (from <see cref="BuildAssembly"/>).</param>
-    /// <param name="joints">Per-joint classifications (from <see cref="SlabJointClassifier"/> or built
-    /// directly). Inactive joints are ignored.</param>
+    /// <param name="joints">Canonical boundary segments. Inactive segments are ignored.</param>
     /// <param name="jointProfile">The declared joint-mechanics magnitudes (eye-tuned).</param>
     /// <param name="centroids">Per-plate centroid directions (from <see cref="PlateSolidBuilder.ComputeCentroids"/>),
     /// indexed by plate id. Drives the divergent widening direction.</param>
@@ -104,7 +104,7 @@ public static class WorldSlabAssemblyComposer
     /// <returns>One shaped <see cref="PlateSolid"/> per input, SAME order, SAME triangles (positions only).</returns>
     public static IReadOnlyList<PlateSolid> ShapeSlabJoints(
         IReadOnlyList<PlateSolid> gappedSolids,
-        IReadOnlyList<SlabJointClassification> joints,
+        IReadOnlyList<PlateBoundaryArc> joints,
         SlabJointMechanicsProfile jointProfile,
         IReadOnlyList<PlateSolidCentroid> centroids,
         double jointGapUnitRadius,
@@ -131,15 +131,15 @@ public static class WorldSlabAssemblyComposer
 
         // Precompute each joint's arc as unit Vector3D points (normalized; the classifier emits unit
         // points but a defensive normalize keeps the angular-distance math exact).
-        var shapedJoints = new List<(SlabJointClassification Joint, Vector3D[] Arc, double EffectiveDip)>(joints.Count);
+        var shapedJoints = new List<(PlateBoundaryArc Joint, Vector3D[] Arc, double EffectiveDip)>(joints.Count);
         foreach (var joint in joints)
         {
-            if (joint.Kind == SlabJointKind.Inactive) continue;
-            if (joint.Path.Count < 2) continue;
-            var arc = new Vector3D[joint.Path.Count];
+            if (joint.Kind == PlateBoundaryKind.Inactive) continue;
+            if (joint.Points.Count < 2) continue;
+            var arc = new Vector3D[joint.Points.Count];
             for (int i = 0; i < arc.Length; i++)
             {
-                var p = joint.Path[i];
+                var p = joint.Points[i];
                 var v = new Vector3D(p.X, p.Y, p.Z);
                 double len = v.Length();
                 arc[i] = len > Epsilon ? v * (1.0 / len) : v;
@@ -228,7 +228,7 @@ public static class WorldSlabAssemblyComposer
         IReadOnlyList<double> crustThicknessByCellMetres,
         double thicknessDepthScale,
         WorldSurfacePresentationProfile profile,
-        IReadOnlyList<SlabJointClassification> joints,
+        IReadOnlyList<PlateBoundaryArc> joints,
         SlabJointMechanicsProfile jointProfile,
         double baseRadius = GlobeSurfaceBuilder.DefaultRadius)
     {
@@ -266,14 +266,14 @@ public static class WorldSlabAssemblyComposer
     /// </remarks>
     /// <param name="shapedSolids">The slice-2 shape-translated slabs (from <see cref="ShapeSlabJoints"/>).</param>
     /// <param name="joints">Per-joint classifications. Only convergent non-collision joints with a
-    /// resolved <see cref="SlabJointClassification.SubductingPlateId"/> grow a tongue.</param>
+    /// resolved <see cref="PlateBoundaryArc.SubductingPlateId"/> grow a tongue.</param>
     /// <param name="jointProfile">The declared joint-mechanics magnitudes (owns the tongue params).</param>
     /// <param name="baseRadius">The unit-sphere base radius (default 1.0).</param>
     /// <returns>One <see cref="PlateSolid"/> per input, SAME order. The subducting plate of each
     /// qualifying joint carries a tongue; every other solid is the input reference unchanged.</returns>
     public static IReadOnlyList<PlateSolid> ShapeSubductionTongues(
         IReadOnlyList<PlateSolid> shapedSolids,
-        IReadOnlyList<SlabJointClassification> joints,
+        IReadOnlyList<PlateBoundaryArc> joints,
         SlabJointMechanicsProfile jointProfile,
         double baseRadius = GlobeSurfaceBuilder.DefaultRadius)
     {
@@ -301,15 +301,15 @@ public static class WorldSlabAssemblyComposer
 
         foreach (var joint in joints)
         {
-            if (joint.Kind != SlabJointKind.Convergent) continue;
+            if (joint.Kind != PlateBoundaryKind.Convergent) continue;
             if (joint.IsCollision) continue;
             if (joint.SubductingPlateId is not int subductingId) continue;
-            if (joint.Path.Count < 2) continue;
+            if (joint.Points.Count < 2) continue;
             if (!indexByPlate.TryGetValue(subductingId, out int subIdx)) continue;
             int overridingId = joint.PlateA == subductingId ? joint.PlateB : joint.PlateA;
             if (!indexByPlate.TryGetValue(overridingId, out int overIdx)) continue;
 
-            var arc = NormalizeArc(joint.Path);
+            var arc = NormalizeArc(joint.Points);
             // Operate on the current (possibly already-tongued) subducting solid so tongues
             // accumulate when one plate subducts at several joints. The overriding solid is only
             // read (for the structural floor), never rebuilt here.
@@ -662,11 +662,11 @@ public static class WorldSlabAssemblyComposer
 
     private static readonly double Epsilon = Tolerance.Strict.Epsilon;
 
-    private static bool HasShapingJoint(IReadOnlyList<SlabJointClassification> joints)
+    private static bool HasShapingJoint(IReadOnlyList<PlateBoundaryArc> joints)
     {
         foreach (var j in joints)
         {
-            if (j.Kind != SlabJointKind.Inactive && j.Path.Count >= 2)
+            if (j.Kind != PlateBoundaryKind.Inactive && j.Points.Count >= 2)
                 return true;
         }
         return false;
@@ -699,14 +699,14 @@ public static class WorldSlabAssemblyComposer
     // A joint demands a tongue only when it is CONVERGENT, NON-COLLISION, with a resolved
     // subducting plate id and a usable path. Transform / divergent / collision / unresolved joints
     // are bit-identical to slice 2 (no tongue).
-    private static bool HasTongueJoint(IReadOnlyList<SlabJointClassification> joints)
+    private static bool HasTongueJoint(IReadOnlyList<PlateBoundaryArc> joints)
     {
         foreach (var j in joints)
         {
-            if (j.Kind != SlabJointKind.Convergent) continue;
+            if (j.Kind != PlateBoundaryKind.Convergent) continue;
             if (j.IsCollision) continue;
             if (j.SubductingPlateId is not int) continue;
-            if (j.Path.Count >= 2) return true;
+            if (j.Points.Count >= 2) return true;
         }
         return false;
     }
@@ -714,13 +714,13 @@ public static class WorldSlabAssemblyComposer
     // The effective dip is the declared visual dip OR the structural clearance the slab thickness
     // demands, whichever is larger — so the subducting top always clears the overriding bottom.
     private static double ResolveEffectiveDip(
-        SlabJointClassification joint,
+        PlateBoundaryArc joint,
         SlabJointMechanicsProfile profile,
         IReadOnlyList<PlateSolid> solids,
         Dictionary<int, Vector3D> centroidByPlate,
         Vector3D[] arc)
     {
-        if (joint.Kind != SlabJointKind.Convergent) return profile.SubductionDipUnitRadius;
+        if (joint.Kind != PlateBoundaryKind.Convergent) return profile.SubductionDipUnitRadius;
         if (joint.SubductingPlateId is not int subductingId) return profile.SubductionDipUnitRadius;
         int overridingId = joint.PlateA == subductingId ? joint.PlateB : joint.PlateA;
 
@@ -765,7 +765,7 @@ public static class WorldSlabAssemblyComposer
 
     // The per-vertex displacement for one (joint, plate) pair at ramp weight w. Radial along u.
     private static Vector3D JointContribution(
-        SlabJointClassification joint,
+        PlateBoundaryArc joint,
         int plateId,
         Vector3D u,
         double w,
@@ -774,7 +774,7 @@ public static class WorldSlabAssemblyComposer
         Dictionary<int, Vector3D> centroidByPlate,
         double jointGapUnitRadius)
     {
-        if (joint.Kind == SlabJointKind.Convergent)
+        if (joint.Kind == PlateBoundaryKind.Convergent)
         {
             if (joint.SubductingPlateId == plateId)
             {
@@ -785,7 +785,7 @@ public static class WorldSlabAssemblyComposer
             return u * (profile.OverridingMarginRaiseUnitRadius * w);
         }
 
-        if (joint.Kind == SlabJointKind.Divergent)
+        if (joint.Kind == PlateBoundaryKind.Divergent)
         {
             // Widen the gap: extra translation along this plate's centroid direction (the SAME
             // separation direction the base joint gap uses), scaled by (multiplier - 1) * gap.

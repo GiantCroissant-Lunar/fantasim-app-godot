@@ -26,6 +26,51 @@ public readonly record struct ConvergentBoundaryPolarity(int SubductingPlateId, 
 public static class ConvergentPolarity
 {
     /// <summary>
+    /// Attaches derived convergent mechanics to the existing canonical boundary segments without
+    /// regrouping or replacing their path geometry.
+    /// </summary>
+    public static IReadOnlyList<PlateBoundaryArc> Attach(
+        IReadOnlyList<PlateBoundaryArc> arcs,
+        IReadOnlyList<GlobeCell> cells,
+        IReadOnlyDictionary<int, CrustFeature>? features,
+        IReadOnlyDictionary<int, CellCrustState> state,
+        double nearRadiusRad = 0.15,
+        double continentalThreshold = 0.5)
+    {
+        var polarity = Derive(
+            arcs,
+            cells,
+            features,
+            state,
+            nearRadiusRad,
+            continentalThreshold);
+        var resolved = new PlateBoundaryArc[arcs.Count];
+
+        for (int i = 0; i < arcs.Count; i++)
+        {
+            var arc = arcs[i];
+            if (arc.Kind != PlateBoundaryKind.Convergent)
+            {
+                resolved[i] = arc.WithConvergentMechanics(null, isCollision: false);
+                continue;
+            }
+
+            var key = arc.PlateA <= arc.PlateB
+                ? (arc.PlateA, arc.PlateB)
+                : (arc.PlateB, arc.PlateA);
+            if (!polarity.TryGetValue(key, out var mechanics))
+                throw new InvalidOperationException(
+                    $"Convergent boundary {key.Item1}-{key.Item2} has no derived mechanics.");
+
+            resolved[i] = arc.WithConvergentMechanics(
+                mechanics.IsCollision ? null : mechanics.SubductingPlateId,
+                mechanics.IsCollision);
+        }
+
+        return resolved;
+    }
+
+    /// <summary>
     /// Builds a per-plate-pair polarity map for every Convergent arc. The map is keyed by the ordered pair
     /// <c>(min(PlateA,PlateB), max(PlateA,PlateB))</c> matching <see cref="PlateBoundaryArc"/>.
     /// </summary>

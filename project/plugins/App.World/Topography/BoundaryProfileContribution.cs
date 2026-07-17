@@ -8,7 +8,7 @@ namespace FantaSim.App.World.Topography;
 
 /// <summary>
 /// Single composition point for the per-cell boundary-profile elevation contribution (P4). Wires together
-/// <see cref="ConvergentPolarity.Derive"/> (subduction polarity from crust features) →
+/// <see cref="ConvergentPolarity.Attach"/> (subduction mechanics on canonical arcs) →
 /// <see cref="CellBoundaryField.Build"/> (per-cell nearest-boundary field) →
 /// <see cref="BoundaryProfileShape.Contribution"/> (the profile shape). The returned array is added on top of
 /// <c>CellElevationSystem.Derive</c> in the crust-surface-data path. Used by both the Service and the
@@ -33,8 +33,8 @@ public static class BoundaryProfileContribution
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(parameters);
 
-        var polarity = ConvergentPolarity.Derive(arcs, globe.Cells, features, state);
-        var field = CellBoundaryField.Build(globe.Cells, arcs, polarity);
+        var resolvedArcs = ConvergentPolarity.Attach(arcs, globe.Cells, features, state);
+        var field = CellBoundaryField.Build(globe.Cells, resolvedArcs);
 
         var contributions = new double[globe.CellCount];
         for (int c = 0; c < contributions.Length; c++)

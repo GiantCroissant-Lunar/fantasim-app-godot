@@ -38,4 +38,56 @@ public sealed record PlateBoundaryArc(
     int PlateA,
     int PlateB,
     PlateBoundaryKind Kind,
-    IReadOnlyList<GlobeVec3> Points);
+    IReadOnlyList<GlobeVec3> Points)
+{
+    /// <summary>
+    /// The down-going plate for a resolved convergent subduction segment. Null for collision and
+    /// every non-convergent boundary.
+    /// </summary>
+    public int? SubductingPlateId { get; init; }
+
+    /// <summary>
+    /// True only when this convergent segment represents continent-continent collision rather than
+    /// subduction.
+    /// </summary>
+    public bool IsCollision { get; init; }
+
+    /// <summary>The overriding plate for resolved subduction; null for collision/non-convergent.</summary>
+    public int? OverridingPlateId => SubductingPlateId switch
+    {
+        int subducting when subducting == PlateA => PlateB,
+        int subducting when subducting == PlateB => PlateA,
+        _ => null,
+    };
+
+    /// <summary>
+    /// Returns this segment with validated convergent mechanics. This is the only supported way to
+    /// attach polarity to the canonical boundary contract.
+    /// </summary>
+    public PlateBoundaryArc WithConvergentMechanics(int? subductingPlateId, bool isCollision)
+    {
+        if (Kind != PlateBoundaryKind.Convergent)
+        {
+            if (subductingPlateId is not null || isCollision)
+                throw new System.InvalidOperationException("Only convergent boundary segments carry subduction/collision mechanics.");
+            return this with { SubductingPlateId = null, IsCollision = false };
+        }
+
+        if (isCollision)
+        {
+            if (subductingPlateId is not null)
+                throw new System.InvalidOperationException("A collision boundary cannot also carry a subducting plate.");
+            return this with { SubductingPlateId = null, IsCollision = true };
+        }
+
+        if (subductingPlateId != PlateA && subductingPlateId != PlateB)
+        {
+            throw new System.ArgumentOutOfRangeException(
+                nameof(subductingPlateId),
+                subductingPlateId,
+                "The subducting plate must belong to the boundary segment pair.");
+        }
+
+        return this with { SubductingPlateId = subductingPlateId, IsCollision = false };
+    }
+}

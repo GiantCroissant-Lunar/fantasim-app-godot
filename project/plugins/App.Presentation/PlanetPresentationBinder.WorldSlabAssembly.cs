@@ -1,3 +1,4 @@
+using FantaSim.App.World;
 using FantaSim.App.World.Globe;
 using Godot;
 using Microsoft.Extensions.Logging;
@@ -88,19 +89,18 @@ internal sealed partial class PlanetPresentationBinder
         IReadOnlyList<FantaSim.App.World.Globe.PlateSolid> solids;
         if (boundaryArcs is { Count: > 0 })
         {
-            var joints = SlabJointClassifier.Classify(boundaryArcs, document.BoundarySections);
             solids = WorldSlabAssemblyComposer.BuildAssembly(
                 slabCaps,
                 centroids,
                 thickness,
                 _radialProfile.ThicknessDepthScale(),
                 _worldSurfaceProfile,
-                joints,
+                boundaryArcs,
                 _jointMechanicsProfile);
             _log?.LogInformation(
-                "World slab joints shaped: joints={JointCount}, convergent={ConvergentCount}, tongues chained.",
-                joints.Count,
-                CountConvergent(joints));
+                "World slab joints shaped from canonical arcs: segments={SegmentCount}, convergent={ConvergentCount}, tongues chained.",
+                boundaryArcs.Count,
+                CountConvergent(boundaryArcs));
         }
         else
         {
@@ -134,12 +134,12 @@ internal sealed partial class PlanetPresentationBinder
         return root;
     }
 
-    private static int CountConvergent(IReadOnlyList<SlabJointClassification> joints)
+    private static int CountConvergent(IReadOnlyList<PlateBoundaryArc> joints)
     {
         int n = 0;
         for (int i = 0; i < joints.Count; i++)
         {
-            if (joints[i].Kind == SlabJointKind.Convergent)
+            if (joints[i].Kind == PlateBoundaryKind.Convergent)
                 n++;
         }
         return n;

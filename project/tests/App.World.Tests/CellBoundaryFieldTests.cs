@@ -34,7 +34,7 @@ public sealed class CellBoundaryFieldTests
         var arcs = new[] { Arc(0, 1, PlateBoundaryKind.Divergent, East, East) };
         var cells = new[] { Cell(0, plate: 0, East) };
 
-        var field = CellBoundaryField.Build(cells, arcs, new Dictionary<(int, int), ConvergentBoundaryPolarity>());
+        var field = CellBoundaryField.Build(cells, arcs);
 
         Assert.True(field[0].Found);
         Assert.Equal(0.0, field[0].SignedDistanceRad, 6);
@@ -47,14 +47,14 @@ public sealed class CellBoundaryFieldTests
     public void Signed_distance_negative_for_subducting_side()
     {
         // Cell on the subducting plate (1), offset from the arc so it has a real distance ⇒ negative signed.
-        var arcs = new[] { Arc(0, 1, PlateBoundaryKind.Convergent, East, East) };
-        var cells = new[] { Cell(0, plate: 1, North) };
-        var polarity = new Dictionary<(int, int), ConvergentBoundaryPolarity>
+        var arcs = new[]
         {
-            [(0, 1)] = new ConvergentBoundaryPolarity(SubductingPlateId: 1, OverridingPlateId: 0, IsCollision: false),
+            Arc(0, 1, PlateBoundaryKind.Convergent, East, East)
+                .WithConvergentMechanics(subductingPlateId: 1, isCollision: false),
         };
+        var cells = new[] { Cell(0, plate: 1, North) };
 
-        var field = CellBoundaryField.Build(cells, arcs, polarity);
+        var field = CellBoundaryField.Build(cells, arcs);
 
         Assert.True(field[0].Found);
         Assert.True(field[0].SignedDistanceRad < 0.0, $"subducting side must be negative, got {field[0].SignedDistanceRad}");
@@ -65,14 +65,14 @@ public sealed class CellBoundaryFieldTests
     [Fact]
     public void Signed_distance_positive_for_overriding_side()
     {
-        var arcs = new[] { Arc(0, 1, PlateBoundaryKind.Convergent, East, East) };
-        var cells = new[] { Cell(0, plate: 0, East) };
-        var polarity = new Dictionary<(int, int), ConvergentBoundaryPolarity>
+        var arcs = new[]
         {
-            [(0, 1)] = new ConvergentBoundaryPolarity(SubductingPlateId: 1, OverridingPlateId: 0, IsCollision: false),
+            Arc(0, 1, PlateBoundaryKind.Convergent, East, East)
+                .WithConvergentMechanics(subductingPlateId: 1, isCollision: false),
         };
+        var cells = new[] { Cell(0, plate: 0, East) };
 
-        var field = CellBoundaryField.Build(cells, arcs, polarity);
+        var field = CellBoundaryField.Build(cells, arcs);
 
         Assert.True(field[0].Found);
         Assert.True(field[0].SignedDistanceRad >= 0.0, $"overriding side must be non-negative, got {field[0].SignedDistanceRad}");
@@ -81,18 +81,18 @@ public sealed class CellBoundaryFieldTests
     [Fact]
     public void Collision_convergent_keeps_non_negative_distance_on_both_sides()
     {
-        var arcs = new[] { Arc(0, 1, PlateBoundaryKind.Convergent, East, East) };
+        var arcs = new[]
+        {
+            Arc(0, 1, PlateBoundaryKind.Convergent, East, East)
+                .WithConvergentMechanics(subductingPlateId: null, isCollision: true),
+        };
         var cells = new[]
         {
             Cell(0, plate: 0, East),
             Cell(1, plate: 1, North),
         };
-        var polarity = new Dictionary<(int, int), ConvergentBoundaryPolarity>
-        {
-            [(0, 1)] = new ConvergentBoundaryPolarity(SubductingPlateId: 0, OverridingPlateId: 1, IsCollision: true),
-        };
 
-        var field = CellBoundaryField.Build(cells, arcs, polarity);
+        var field = CellBoundaryField.Build(cells, arcs);
 
         Assert.True(field[0].SignedDistanceRad >= 0.0);
         Assert.True(field[1].SignedDistanceRad >= 0.0);
@@ -113,7 +113,7 @@ public sealed class CellBoundaryFieldTests
             Cell(1, plate: 2, North),
         };
 
-        var field = CellBoundaryField.Build(cells, arcs, new Dictionary<(int, int), ConvergentBoundaryPolarity>());
+        var field = CellBoundaryField.Build(cells, arcs);
 
         Assert.True(field[0].SignedDistanceRad >= 0.0);
         Assert.True(field[1].SignedDistanceRad >= 0.0);
@@ -124,8 +124,7 @@ public sealed class CellBoundaryFieldTests
     {
         var cells = new[] { Cell(0, plate: 0, East), Cell(1, plate: 1, North) };
 
-        var field = CellBoundaryField.Build(cells, System.Array.Empty<PlateBoundaryArc>(),
-            new Dictionary<(int, int), ConvergentBoundaryPolarity>());
+        var field = CellBoundaryField.Build(cells, System.Array.Empty<PlateBoundaryArc>());
 
         Assert.All(field, s => Assert.False(s.Found));
     }
@@ -137,7 +136,7 @@ public sealed class CellBoundaryFieldTests
         var arcs = new[] { Arc(0, 1, PlateBoundaryKind.Divergent, East, North) };
         var cells = new[] { Cell(0, plate: 0, North) };
 
-        var field = CellBoundaryField.Build(cells, arcs, new Dictionary<(int, int), ConvergentBoundaryPolarity>());
+        var field = CellBoundaryField.Build(cells, arcs);
 
         Assert.Equal(1, field[0].NearestPointIndex);
     }
@@ -160,12 +159,7 @@ public sealed class CellBoundaryFieldTests
     public void Coarse_real_boundary_cell_receives_narrow_profile_while_same_plate_interior_stays_zero()
     {
         var (boundaryCell, interiorCell, arc) = RealSharedEdgeFixture(frequency: 2);
-        var polarity = new Dictionary<(int, int), ConvergentBoundaryPolarity>
-        {
-            [(0, 1)] = new ConvergentBoundaryPolarity(0, 1, IsCollision: false),
-        };
-
-        var field = CellBoundaryField.Build(new[] { boundaryCell, interiorCell }, new[] { arc }, polarity);
+        var field = CellBoundaryField.Build(new[] { boundaryCell, interiorCell }, new[] { arc });
         double boundaryContribution = BoundaryProfileShape.Contribution(field[0], BoundaryProfileParameters.Default);
         double interiorContribution = BoundaryProfileShape.Contribution(field[1], BoundaryProfileParameters.Default);
 
@@ -179,12 +173,7 @@ public sealed class CellBoundaryFieldTests
     public void Finite_cell_distance_preserves_high_frequency_boundary_profile()
     {
         var (boundaryCell, interiorCell, arc) = RealSharedEdgeFixture(frequency: 4);
-        var polarity = new Dictionary<(int, int), ConvergentBoundaryPolarity>
-        {
-            [(0, 1)] = new ConvergentBoundaryPolarity(0, 1, IsCollision: false),
-        };
-
-        var field = CellBoundaryField.Build(new[] { boundaryCell, interiorCell }, new[] { arc }, polarity);
+        var field = CellBoundaryField.Build(new[] { boundaryCell, interiorCell }, new[] { arc });
 
         Assert.Equal(-double.Epsilon, field[0].SignedDistanceRad);
         Assert.True(
@@ -200,15 +189,12 @@ public sealed class CellBoundaryFieldTests
     {
         var up = new GlobeVec3(0, 0, 1);
         var junctionCell = new GlobeCell(0, 0, East, North, up);
-        var convergentHighPair = Arc(0, 3, PlateBoundaryKind.Convergent, East, North);
-        var convergentLowPair = Arc(0, 1, PlateBoundaryKind.Convergent, North, up);
+        var convergentHighPair = Arc(0, 3, PlateBoundaryKind.Convergent, East, North)
+            .WithConvergentMechanics(subductingPlateId: null, isCollision: true);
+        var convergentLowPair = Arc(0, 1, PlateBoundaryKind.Convergent, North, up)
+            .WithConvergentMechanics(subductingPlateId: null, isCollision: true);
         var divergent = Arc(0, 2, PlateBoundaryKind.Divergent, East, North);
         var transform = Arc(0, 4, PlateBoundaryKind.Transform, North, up);
-        var polarity = new Dictionary<(int, int), ConvergentBoundaryPolarity>
-        {
-            [(0, 1)] = new ConvergentBoundaryPolarity(0, 1, IsCollision: true),
-            [(0, 3)] = new ConvergentBoundaryPolarity(0, 3, IsCollision: true),
-        };
         var permutations = new[]
         {
             new[] { transform, convergentHighPair, divergent, convergentLowPair },
@@ -217,7 +203,7 @@ public sealed class CellBoundaryFieldTests
         };
 
         var samples = permutations
-            .Select(arcs => CellBoundaryField.Build(new[] { junctionCell }, arcs, polarity)[0])
+            .Select(arcs => CellBoundaryField.Build(new[] { junctionCell }, arcs)[0])
             .ToArray();
 
         Assert.All(samples, sample =>
@@ -256,7 +242,8 @@ public sealed class CellBoundaryFieldTests
             0,
             1,
             PlateBoundaryKind.Convergent,
-            BoundaryArcSampler.SubdivideGreatCircle(shared[0], shared[1], subdiv: 16));
+            BoundaryArcSampler.SubdivideGreatCircle(shared[0], shared[1], subdiv: 16))
+            .WithConvergentMechanics(subductingPlateId: 0, isCollision: false);
 
         return (
             ToGlobeCell(tessellation, boundaryCellId, plateId: 0, frequency),

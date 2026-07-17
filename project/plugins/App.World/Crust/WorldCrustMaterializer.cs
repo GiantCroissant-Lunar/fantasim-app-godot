@@ -107,11 +107,14 @@ internal sealed record WorldCrustMaterialization(
                 return Array.Empty<BoundarySectionDocument>();
 
             Result.FeaturesByTick.TryGetValue(tick, out var featureMap);
+            var resolvedArcs = ConvergentPolarity.Attach(
+                arcsAtOnset,
+                globeAtOnset.Cells,
+                featureMap,
+                state);
             return BoundarySectionBuilder.BuildRepresentativeSections(
                 globeAtOnset,
-                arcsAtOnset,
-                state,
-                featureMap,
+                resolvedArcs,
                 Spec.BoundaryProfiles);
         }
         catch (Exception ex)
