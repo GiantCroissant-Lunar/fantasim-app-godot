@@ -39,9 +39,10 @@ public static class CrustAccentMapper
 
     // Face-on band contrast: these modulate the hypsometric base so a trench reads as a dark groove
     // and ridges/mountains read as bright caps even with zero perceived relief (no silhouette).
-    private const double TrenchAlbedoScale = 0.62;
-    private const double RidgeBrighten = 0.07;
-    private const double MountainBrighten = 0.05;
+    private const double TrenchAlbedoScale = 0.38;
+    private const double RidgeBrighten = 0.18;
+    private const double MountainBrighten = 0.15;
+    private const double VolcanicArcBrighten = 0.10;
 
     public static CrustAccent Map(byte featureKind, double magnitude) => featureKind switch
     {
@@ -52,7 +53,7 @@ public static class CrustAccentMapper
 
         KindVolcanicArc => new CrustAccent(
             AlbedoScale: 1.0,
-            AlbedoBrighten: 0.0,
+            AlbedoBrighten: VolcanicArcBrighten,
             VolcanicEmission: VolcanicIntensity(magnitude)),
 
         KindTrench => new CrustAccent(
@@ -72,6 +73,12 @@ public static class CrustAccentMapper
     // gives low-activity arcs a visible but modest glow and high-activity arcs a strong one.
     private static double VolcanicIntensity(double magnitude)
     {
+        // Boundary-profile arcs are topology-marked features and therefore carry the contract's
+        // normalized 0..1 magnitude rather than accumulated engine volcanic activity. They still
+        // represent an active overriding-side arc and must remain visible in the assembled surface.
+        if (magnitude > 0.0 && magnitude <= 1.0)
+            return 0.30 + (0.45 * Math.Sqrt(magnitude));
+
         if (magnitude <= ArcThreshold) return 0.0;
         double normalized = (magnitude - ArcThreshold) / (ArcReferenceMagnitude - ArcThreshold);
         normalized = Math.Min(normalized, 1.0);
