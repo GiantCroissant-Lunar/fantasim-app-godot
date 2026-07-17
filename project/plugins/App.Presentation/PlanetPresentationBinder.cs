@@ -286,6 +286,7 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
         root.SetMeta("revision", document.Revision);
         root.SetMeta("referenceTick", document.ReferenceTick);
         root.SetMeta("globeReferenceTick", document.GlobeReferenceTick);
+        root.SetMeta("crustVolumeDigest", document.CrustVolume?.Digest ?? "none");
         mount.AddChild(root);
         _activeRoot = root;
 
@@ -350,12 +351,13 @@ internal sealed partial class PlanetPresentationBinder : IPlanetPresentation
         ApplyTimelineTick(_timeline.Tick);
 
         _log.LogInformation(
-            "Planet presentation mounted under stage Environment: planet={PlanetId}, plates={PlateCount}, cells={CellCount}, productLayers={LayerCount}, revision={Revision}.",
+            "Planet presentation mounted under stage Environment: planet={PlanetId}, plates={PlateCount}, cells={CellCount}, productLayers={LayerCount}, revision={Revision}, crustVolumeDigest={CrustVolumeDigest}.",
             document.PlanetId,
             document.GlobeSnapshot?.PlateCount ?? 0,
             document.GlobeSnapshot?.CellCount ?? 0,
             document.Layers.Count,
-            document.Revision);
+            document.Revision,
+            document.CrustVolume?.Digest ?? "none");
         _worldBundleReload.MarkMounted();
     }
 

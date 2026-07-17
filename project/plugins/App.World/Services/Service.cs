@@ -245,18 +245,14 @@ public sealed class Service : IService, IDisposable
             MaxTick = runtime.MaxTick,
             GenerationGraphFamily = family,
             LayerProjectionProfiles = BuildLayerProjectionProfiles(runtime),
-            BoundaryArcs = runtime.BoundaryArcs,
+            CrustVolume = runtime.CrustVolume,
             BoundarySections = runtime.BoundarySections,
-            CellElevations = runtime.CellElevations,
-            CellCrustThickness = runtime.CellCrustThickness,
-            CellFeatures = runtime.CellFeatures,
             CrustSnapshotTicks = snapshotTickStates,
             VerticalExaggeration = runtime.VerticalExaggeration,
             SurfaceSubdivision = runtime.SurfaceSubdivision,
             AdaptiveSubdivisionMaxDepth = runtime.AdaptiveSubdivisionMaxDepth,
             AdaptiveSubdivisionEdgeHeightDelta = runtime.AdaptiveSubdivisionEdgeHeightDelta,
             AdaptiveSubdivisionFeatureWeightDelta = runtime.AdaptiveSubdivisionFeatureWeightDelta,
-            ContinentalFractionByCell = runtime.ContinentalFractionByCell,
 #pragma warning disable CS0618
             ContinentalPlateIds = WorldCrustRunSpec.ContinentalPlateIdsForPresentation(
                 renderOptions, SphereRegimeScheduleDefaults.PlateOnsetTick),
@@ -901,19 +897,14 @@ public sealed class Service : IService, IDisposable
         // globe with empty crust products instead.
         if (arcTick < onsetTick)
         {
-            int lidCellCount = currentGlobe.CellCount;
             return new PlanetPresentationRuntime(
                 currentGlobe,
                 arcTick,
                 geosphere,
                 atmosphere,
                 onsetTick + MobilePlateWindowTicks,
-                currentArcs,
+                null,
                 Array.Empty<BoundarySectionDocument>(),
-                new double[lidCellCount],
-                new double[lidCellCount],
-                Array.Empty<CellCrustFeature>(),
-                new Dictionary<int, double>(),
                 renderOptions.VerticalExaggeration,
                 renderOptions.SurfaceSubdivision,
                 renderOptions.AdaptiveSubdivisionMaxDepth,
@@ -977,7 +968,13 @@ public sealed class Service : IService, IDisposable
             birthRoughnessByCell: birthRoughness);
 
         var cellCrustThickness = products.Materialization.BuildCrustThickness(
-            products.GlobeAtSnapshot, arcTick, _logger);
+                products.GlobeAtSnapshot,
+                arcTick,
+                _logger)
+            ?? Enumerable.Repeat(
+                    FantaSim.App.World.Composition.CutawayStratumProfile.DefaultCrustThicknessMetres,
+                    currentGlobe.CellCount)
+                .ToArray();
 
         var boundarySections = products.Materialization.BuildBoundarySections(
             products.GlobeAtSnapshot,
@@ -985,18 +982,29 @@ public sealed class Service : IService, IDisposable
             arcTick,
             _logger);
 
+        var crustVolume = products.Materialization.BuildVolumeState(
+            currentGlobe,
+            currentArcs,
+            arcTick,
+            cellElevations,
+            cellCrustThickness,
+            cellFeatures,
+            sampledFractions);
+        _logger.LogInformation(
+            "Crust volume state materialized: tick={Tick}, cells={CellCount}, arcs={ArcCount}, digest={Digest}.",
+            crustVolume.Tick,
+            crustVolume.CellCount,
+            crustVolume.BoundaryArcs.Count,
+            crustVolume.Digest);
+
         return new PlanetPresentationRuntime(
             currentGlobe,
             arcTick,
             geosphere,
             atmosphere,
             onsetTick + MobilePlateWindowTicks,
-            currentArcs,
+            crustVolume,
             boundarySections,
-            cellElevations,
-            cellCrustThickness,
-            cellFeatures,
-            sampledFractions,
             renderOptions.VerticalExaggeration,
             renderOptions.SurfaceSubdivision,
             renderOptions.AdaptiveSubdivisionMaxDepth,
@@ -1375,12 +1383,8 @@ public sealed class Service : IService, IDisposable
         SphereRegimeSchedule GeosphereSchedule,
         SphereRegimeSchedule AtmosphereSchedule,
         long MaxTick,
-        IReadOnlyList<PlateBoundaryArc> BoundaryArcs,
+        CrustVolumeState? CrustVolume,
         IReadOnlyList<BoundarySectionDocument> BoundarySections,
-        IReadOnlyList<double>? CellElevations,
-        IReadOnlyList<double>? CellCrustThickness,
-        IReadOnlyList<CellCrustFeature>? CellFeatures,
-        IReadOnlyDictionary<int, double>? ContinentalFractionByCell,
         double VerticalExaggeration,
         SurfaceSubdivisionMode SurfaceSubdivision,
         int AdaptiveSubdivisionMaxDepth,

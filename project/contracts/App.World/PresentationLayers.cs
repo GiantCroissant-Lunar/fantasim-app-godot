@@ -123,12 +123,24 @@ public sealed record PlanetPresentationDocument(
     IReadOnlyList<PlanetPresentationLayer> Layers,
     IReadOnlyList<RenderEntityDto> RenderEntities)
 {
+    private IReadOnlyList<PlateBoundaryArc>? _legacyBoundaryArcs;
+    private IReadOnlyList<double>? _legacyCellCrustThickness;
+    private IReadOnlyList<double>? _legacyCellElevations;
+    private IReadOnlyList<CellCrustFeature>? _legacyCellFeatures;
+    private IReadOnlyDictionary<int, double>? _legacyContinentalFractionByCell;
+
     /// <summary>
     /// Plain contract-side globe geometry to be bound by a resident Godot presentation builder.
     /// The collectible world bundle owns how this data is generated; the resident seam owns only
     /// translating the DTO into nodes/meshes under the Stage-owned Environment scene.
     /// </summary>
     public WorldGlobeSnapshot? GlobeSnapshot { get; init; }
+
+    /// <summary>
+    /// Canonical plate-owned crust volume state shared by assembled and exploded/cutaway
+    /// presentations. Null in regimes with no solid crust.
+    /// </summary>
+    public CrustVolumeState? CrustVolume { get; init; }
 
     /// <summary>
     /// Canonical tick represented by <see cref="GlobeSnapshot"/>'s base geometry. Presentation
@@ -147,7 +159,11 @@ public sealed record PlanetPresentationDocument(
     /// reconstructor plus a tick-parametric service query); the arcs here are authoritative for the
     /// reference tick and the cell-cap colouring is unaffected.
     /// </remarks>
-    public IReadOnlyList<PlateBoundaryArc>? BoundaryArcs { get; init; }
+    public IReadOnlyList<PlateBoundaryArc>? BoundaryArcs
+    {
+        get => CrustVolume?.BoundaryArcs ?? _legacyBoundaryArcs;
+        init => _legacyBoundaryArcs = value;
+    }
 
     /// <summary>
     /// Boundary-normal section panels for representative convergent/divergent/transform arcs at the
@@ -188,7 +204,11 @@ public sealed record PlanetPresentationDocument(
     /// plumbed from the world's <c>crust-thickness-m</c> field (<see cref="FantaSim.App.World.Composition.GeosphereFieldCatalog.CrustThickness"/>)
     /// onto the document so the cut-face renderer reads truth, not a buried constant.
     /// </summary>
-    public IReadOnlyList<double>? CellCrustThickness { get; init; }
+    public IReadOnlyList<double>? CellCrustThickness
+    {
+        get => CrustVolume?.CrustThicknessMetresByCell ?? _legacyCellCrustThickness;
+        init => _legacyCellCrustThickness = value;
+    }
 
     /// <summary>
     /// Declared exaggeration (scale rule S1) for the cutaway STRATUM bands on the cut faces —
@@ -205,7 +225,11 @@ public sealed record PlanetPresentationDocument(
     /// this snapshot (the host falls back to flat-zero). Drives BOTH the mesh displacement (A1) and
     /// the hypsometric vertex-color tint (A2) off the SAME field, so color and relief stay coherent.
     /// </summary>
-    public IReadOnlyList<double>? CellElevations { get; init; }
+    public IReadOnlyList<double>? CellElevations
+    {
+        get => CrustVolume?.OuterElevationsMetresByCell ?? _legacyCellElevations;
+        init => _legacyCellElevations = value;
+    }
 
     /// <summary>
     /// Per-cell typed crust feature at <see cref="ReferenceTick"/>, indexed by cell id (length =
@@ -214,7 +238,11 @@ public sealed record PlanetPresentationDocument(
     /// The typed boundary POLYLINES already carry boundary-type color; these surface-level accents
     /// complement them (volcanic vent glow, trench darkening, ridge brightening), not duplicate them.
     /// </summary>
-    public IReadOnlyList<CellCrustFeature>? CellFeatures { get; init; }
+    public IReadOnlyList<CellCrustFeature>? CellFeatures
+    {
+        get => CrustVolume?.FeaturesByCell ?? _legacyCellFeatures;
+        init => _legacyCellFeatures = value;
+    }
 
     /// <summary>
     /// The resolved continental-plate id set the crust pipeline used to designate land vs ocean
@@ -231,7 +259,11 @@ public sealed record PlanetPresentationDocument(
     /// plate frame (P2A). Values are indexed by cell id (length = CellCount); ≥ 0.5 renders as land
     /// and &lt; 0.5 as ocean in the Continents view. Null when crust products have not flowed.
     /// </summary>
-    public IReadOnlyDictionary<int, double>? ContinentalFractionByCell { get; init; }
+    public IReadOnlyDictionary<int, double>? ContinentalFractionByCell
+    {
+        get => CrustVolume?.ContinentalFractionByCell ?? _legacyContinentalFractionByCell;
+        init => _legacyContinentalFractionByCell = value;
+    }
 
     /// <summary>
     /// Crust snapshot ticks that are currently available (generated) for the mobile-plate regime.

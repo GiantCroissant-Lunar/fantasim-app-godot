@@ -28,6 +28,39 @@ internal sealed record WorldCrustMaterialization(
     CrustEvolutionResult Result)
 {
     /// <summary>
+    /// Sole app-side construction seam for the compact canonical crust volume consumed by both
+    /// presentation projections. Inputs are already sampled into the current plate frame by the
+    /// service; this method binds them to the materialization and delegates contract validation and
+    /// deterministic identity to <see cref="CrustVolumeState"/>.
+    /// </summary>
+    public CrustVolumeState BuildVolumeState(
+        WorldGlobeSnapshot globe,
+        IReadOnlyList<PlateBoundaryArc> boundaryArcs,
+        long tick,
+        IReadOnlyList<double> outerElevationsMetresByCell,
+        IReadOnlyList<double> crustThicknessMetresByCell,
+        IReadOnlyList<CellCrustFeature> featuresByCell,
+        IReadOnlyDictionary<int, double> continentalFractionByCell)
+    {
+        if (tick < Spec.RotationReferenceTick)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(tick),
+                tick,
+                "A solid crust volume cannot precede the materialization rotation reference tick.");
+        }
+
+        return CrustVolumeState.Create(
+            tick,
+            globe,
+            boundaryArcs,
+            outerElevationsMetresByCell,
+            crustThicknessMetresByCell,
+            featuresByCell,
+            continentalFractionByCell);
+    }
+
+    /// <summary>
     /// Projects the materialized crust state at <paramref name="tick"/> into presentation cell
     /// elevations and typed cell features. This is the source-of-truth implementation for the
     /// presentation surface path: <see cref="CellElevationSystem.Derive"/> plus the boundary-profile
