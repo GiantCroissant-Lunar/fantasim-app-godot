@@ -68,12 +68,26 @@ internal sealed record WorldCrustMaterialization(
         var topology = new GlobePlateSurfaces(
             globe,
             noise: new NoiseParams(Amplitude: 0.0));
+        var cellBoundarySamples = CellBoundaryField.Build(globe.Cells, boundaryArcs);
+        // V1 closed-contacts fix: the assembled renderer reads OuterElevationsMetresByCell as a
+        // per-cell scalar field and gathers a GLOBAL per-vertex mean (BuildPlateVertexMetres). At a
+        // convergent contact the subducting-side trench (negative) is averaged with the overriding-
+        // side wedge (positive) at the shared hinge vertex, producing a V-valley that reads as an
+        // open channel at glancing angles. Zero the trench contribution on subducting-side cells so
+        // the assembled envelope stays closed. cornerMetres (which drives outer/inner control
+        // geometry and TryFindConvergentUnderlapProof) is built from the ORIGINAL field so the
+        // underlap gap is preserved; only the stored scalar field is zeroed.
+        var outerElevationsZeroed = ZeroSubductingTrench(
+            outerElevationsMetresByCell,
+            cellBoundarySamples,
+            profiles);
         var cornerMetres = topology.BuildSharedCornerMetres(outerElevationsMetresByCell);
         double referenceThickness = MedianPositive(crustThicknessMetresByCell);
         var outerCandidates = new GlobeVec3[globe.CellCount * 3];
+        var outerBaseCandidates = new GlobeVec3[globe.CellCount * 3];
+        var outerDeformationCandidates = new GlobeVec3[globe.CellCount * 3];
         var innerBaseCandidates = new GlobeVec3[globe.CellCount * 3];
         var innerDeformationCandidates = new GlobeVec3[globe.CellCount * 3];
-        var cellBoundarySamples = CellBoundaryField.Build(globe.Cells, boundaryArcs);
         var cornerBoundaryAgreement = topology.BuildPlateCornerAgreement(
             cellBoundarySamples
                 .Select(sample => sample.BoundaryArcIndex)
@@ -120,6 +134,7 @@ internal sealed record WorldCrustMaterialization(
                 Vector3D unit = ToVector(baseCorner).Normalize();
                 double radius = 1.0 + (cornerMetres[index] * verticalExaggeration);
                 Vector3D outer = unit * radius;
+                Vector3D outerBase = outer;
                 Vector3D innerBase = outer - (unit * visualThickness);
                 Vector3D inner = innerBase;
                 if (cornerBoundaryAgreement[index])
@@ -131,7 +146,9 @@ internal sealed record WorldCrustMaterialization(
                         ref outer,
                         ref inner);
                 }
+                outerBaseCandidates[index] = ToGlobe(outerBase);
                 outerCandidates[index] = ToGlobe(outer);
+                outerDeformationCandidates[index] = ToGlobe(outer - outerBase);
                 innerBaseCandidates[index] = ToGlobe(innerBase);
                 innerDeformationCandidates[index] = ToGlobe(inner - innerBase);
             }
@@ -151,15 +168,19 @@ internal sealed record WorldCrustMaterialization(
         };
         foreach (double deformationScale in deformationScales)
         {
+            var scaledOuterCandidates = new GlobeVec3[outerBaseCandidates.Length];
             var scaledInnerCandidates = new GlobeVec3[innerBaseCandidates.Length];
             for (int i = 0; i < scaledInnerCandidates.Length; i++)
             {
+                Vector3D outer = ToVector(outerBaseCandidates[i])
+                    + (ToVector(outerDeformationCandidates[i]) * deformationScale);
                 Vector3D inner = ToVector(innerBaseCandidates[i])
                     + (ToVector(innerDeformationCandidates[i]) * deformationScale);
+                scaledOuterCandidates[i] = ToGlobe(outer);
                 scaledInnerCandidates[i] = ToGlobe(inner);
             }
 
-            var welded = topology.WeldPlateCorners(outerCandidates, scaledInnerCandidates);
+            var welded = topology.WeldPlateCorners(scaledOuterCandidates, scaledInnerCandidates);
             string parameterDigest = ComputeVolumeParameterDigest(
                 verticalExaggeration,
                 profiles,
@@ -176,7 +197,7 @@ internal sealed record WorldCrustMaterialization(
                     boundaryArcs,
                     welded.Outer,
                     welded.Inner,
-                    outerElevationsMetresByCell,
+                    outerElevationsZeroed,
                     crustThicknessMetresByCell,
                     featuresByCell,
                     continentalFractionByCell);
@@ -207,10 +228,15 @@ internal sealed record WorldCrustMaterialization(
             return;
         }
 
-        // The outer contact is the assembled globe and must stay closed.  The down-going
-        // continuation therefore begins below the hinge by deforming the inner material
-        // controls only.  Make the transition wider than the underlap/depth displacement so
-        // the inner mapping remains monotone instead of folding a cell back across itself.
+        // V1 closed-contacts fix (vault/specs/2026-07-17 §7.1, §11). The outer contact is the
+        // assembled globe and must form ONE closed outer envelope at every shared corner. The
+        // trench is removed from the assembled scalar envelope by ZeroSubductingTrench (closes the
+        // V-valley); the outer material controls are NOT carved, because WeldPlateCorners averages
+        // outer candidates per-plate and requires cross-plate equality at shared vertices — any
+        // per-cell-corner asymmetry would break that weld. The down-going continuation therefore
+        // begins below the hinge by deforming the inner material controls only. Make the
+        // transition wider than the underlap/depth displacement so the inner mapping remains
+        // monotone instead of folding a cell back across itself.
         double bendHalfWidth = Math.Max(
             profiles.ConvergentTrenchHalfWidthRad * 2.0,
             Math.Max(
@@ -246,6 +272,38 @@ internal sealed record WorldCrustMaterialization(
     {
         double t = Math.Clamp(value, 0.0, 1.0);
         return t * t * (3.0 - (2.0 * t));
+    }
+
+    // V1 closed-contacts fix: returns a copy of elevations with the subducting-side trench
+    // contribution subtracted for every convergent-subduction cell. The assembled renderer
+    // (GlobePlateSurfaces.BuildAdaptiveSurfaces/BuildSurfaces) reads OuterElevationsMetresByCell
+    // as a per-cell scalar field and gathers a global per-vertex mean; without this zeroing the
+    // subducting-side trench (negative) averages with the overriding-side wedge (positive) at the
+    // shared hinge vertex and renders a V-valley that reads as an open channel. The trench is
+    // preserved in the exploded path via outer-control carving in ApplyConvergentDeformation.
+    // Recomputed here from the same CellBoundaryField.Build + BoundaryProfileShape.Contribution
+    // the scalar path uses, so the zeroed amount is exactly the contribution that was added.
+    private static double[] ZeroSubductingTrench(
+        IReadOnlyList<double> outerElevationsMetresByCell,
+        IReadOnlyList<CellBoundarySample> cellBoundarySamples,
+        BoundaryProfileParameters profiles)
+    {
+        var result = outerElevationsMetresByCell.ToArray();
+        for (int c = 0; c < result.Length; c++)
+        {
+            var sample = cellBoundarySamples[c];
+            if (!sample.Found
+                || sample.Kind != PlateBoundaryKind.Convergent
+                || sample.IsCollision
+                || sample.SubductingPlateId is not int subductingPlateId
+                || sample.CellPlateId != subductingPlateId)
+            {
+                continue;
+            }
+            double contribution = BoundaryProfileShape.Contribution(sample, profiles);
+            result[c] -= contribution;
+        }
+        return result;
     }
 
     private static double MedianPositive(IReadOnlyList<double> values)

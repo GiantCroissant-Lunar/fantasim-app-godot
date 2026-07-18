@@ -1039,6 +1039,11 @@ public sealed class Service : IService, IDisposable
             crustVolume.BoundaryArcs.Count,
             crustVolume.Digest);
 
+        _logger.LogInformation(
+            "World envelope closed: contacts={ClosedContacts} openContacts={OpenContacts}.",
+            crustVolume.ClosedContacts,
+            crustVolume.OpenContacts);
+
         return new PlanetPresentationRuntime(
             currentGlobe,
             arcTick,

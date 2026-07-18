@@ -48,6 +48,8 @@ public sealed class CrustVolumeState
     private readonly ReadOnlyCollection<double> _continentalFractionsView;
     private readonly IReadOnlyDictionary<int, double> _continentalFractionByCell;
     private readonly IReadOnlyDictionary<int, int[]> _cellIdsByPlate;
+    private readonly int _closedContacts;
+    private readonly int _openContacts;
 
     private CrustVolumeState(
         long tick,
@@ -92,6 +94,8 @@ public sealed class CrustVolumeState
                     group => group.Key,
                     group => group.Select(cell => cell.CellId).OrderBy(id => id).ToArray()));
         Digest = ComputeDigest();
+        ValidateMaterialWedges();
+        (_closedContacts, _openContacts) = ValidateClosedContacts();
     }
 
     public long Tick { get; }
@@ -109,6 +113,19 @@ public sealed class CrustVolumeState
     public IReadOnlyList<double> ContinentalFractionsByCell => _continentalFractionsView;
     public IReadOnlyDictionary<int, double> ContinentalFractionByCell => _continentalFractionByCell;
     public int CellCount => Globe.CellCount;
+
+    /// <summary>
+    /// Number of cross-plate outer-contact corners that passed the closed-envelope predicate
+    /// (vault/specs/2026-07-17 §7.1). Populated at construction by <see cref="ValidateClosedContacts"/>.
+    /// </summary>
+    public int ClosedContacts => _closedContacts;
+
+    /// <summary>
+    /// Number of cross-plate outer-contact corners that FAILED the closed-envelope predicate.
+    /// Always zero for a successfully constructed state — <see cref="ValidateClosedContacts"/>
+    /// throws on the first open contact. Exposed for the construction log marker.
+    /// </summary>
+    public int OpenContacts => _openContacts;
 
     public static CrustVolumeState Create(
         long tick,
@@ -240,7 +257,6 @@ public sealed class CrustVolumeState
             thickness,
             features,
             fractions);
-        state.ValidateMaterialWedges();
         return state;
     }
 
@@ -600,6 +616,84 @@ public sealed class CrustVolumeState
                     $"Cell {cell.CellId} has non-injective T0/T2 material overlap.");
             }
         }
+    }
+
+    // V1 closed-contacts predicate B (vault/specs/2026-07-17 §7.1, §11). Defense-in-depth on top of
+    // GlobePlateSurfaces.ValidateClosedOuterContacts: the weld already enforces exact cross-plate
+    // equality at every shared corner, but that predicate lives in the rendering contract and could
+    // be bypassed by a future caller that builds a CrustVolumeState without going through the weld.
+    // This state-side predicate walks every convergent arc's shared corners directly off the stored
+    // controls and confirms the outer envelope is closed (both plates write the same outer point at
+    // a shared hinge). Returns (closedCount, openCount); throws on the first open contact so the
+    // construction log marker can distinguish "passed" from "passed with N open contacts".
+    private (int ClosedContacts, int OpenContacts) ValidateClosedContacts()
+    {
+        const double contactEpsilon = 1e-6;
+        int closed = 0;
+        int open = 0;
+        foreach (var arc in BoundaryArcs)
+        {
+            if (arc.Kind != PlateBoundaryKind.Convergent
+                || arc.IsCollision
+                || arc.SubductingPlateId is not int subductingPlateId)
+            {
+                continue;
+            }
+
+            int overridingPlateId =
+                arc.PlateA == subductingPlateId ? arc.PlateB : arc.PlateA;
+            if (arc.Points.Count < 2)
+                continue;
+
+            // For every cell pair straddling the arc at a shared corner, compare the two plates'
+            // outer controls at that corner. A shared corner is a corner whose original unit
+            // direction matches an arc endpoint pair (CellTouchesArc semantics).
+            foreach (var subductingCell in Globe.Cells
+                         .Where(c => c.PlateId == subductingPlateId)
+                         .OrderBy(c => c.CellId))
+            {
+                if (!CellTouchesArc(subductingCell, arc))
+                    continue;
+
+                foreach (var overridingCell in Globe.Cells
+                             .Where(c => c.PlateId == overridingPlateId)
+                             .OrderBy(c => c.CellId))
+                {
+                    if (!CellTouchesArc(overridingCell, arc))
+                        continue;
+
+                    for (int sCorner = 0; sCorner < 3; sCorner++)
+                    {
+                        var sOriginal = OriginalCorner(subductingCell, sCorner);
+                        for (int oCorner = 0; oCorner < 3; oCorner++)
+                        {
+                            var oOriginal = OriginalCorner(overridingCell, oCorner);
+                            if (!SameDirection(sOriginal, oOriginal))
+                                continue;
+
+                            Vector3D sOuter = ToVector(
+                                OuterPointAtCellCorner(subductingCell.CellId, sCorner));
+                            Vector3D oOuter = ToVector(
+                                OuterPointAtCellCorner(overridingCell.CellId, oCorner));
+                            if ((sOuter - oOuter).Length() <= contactEpsilon)
+                            {
+                                closed++;
+                            }
+                            else
+                            {
+                                open++;
+                                throw new ArgumentException(
+                                    $"Outer contact at shared corner of cells "
+                                  + $"{subductingCell.CellId}/{overridingCell.CellId} on convergent "
+                                  + $"arc {arc.PlateA}-{arc.PlateB} is open: "
+                                  + $"{(sOuter - oOuter).Length():G6} > {contactEpsilon:G6}.");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return (closed, open);
     }
 
     private static void ValidateTetraOrientation(
